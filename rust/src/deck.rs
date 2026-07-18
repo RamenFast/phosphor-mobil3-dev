@@ -27,8 +27,22 @@ pub fn scope_ring() -> &'static Arc<Mutex<SampleRing>> {
     SCOPE.get_or_init(|| Arc::new(Mutex::new(SampleRing::new(RATE))))
 }
 
-/// True while the deck (not the demo feeder) owns the beam.
+/// True while the scope ring (deck or capture/mic, not the demo feeder) owns the beam.
 pub static DECK_ACTIVE: AtomicBool = AtomicBool::new(false);
+
+/// Capture/mic ingest (M4): Kotlin AudioRecord pushes ~10 ms interleaved-stereo chunks
+/// into the same ring the deck feeds — one seam, every source.
+pub fn push_capture(samples: &[f32]) {
+    scope_ring().lock().unwrap().push_interleaved(samples);
+}
+
+pub fn set_ring_active(active: bool) {
+    if active {
+        scope_ring().lock().unwrap().clear_pending();
+    }
+    DECK_ACTIVE.store(active, Ordering::Relaxed);
+    log::info!("scope ring active: {active}");
+}
 
 static DECK: Mutex<Option<Deck>> = Mutex::new(None);
 

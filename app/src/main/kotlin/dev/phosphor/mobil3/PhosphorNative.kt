@@ -25,6 +25,10 @@ object PhosphorNative {
 
     external fun setRenderPaused(paused: Boolean)
 
+    // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
+    external fun pushCaptureSamples(samples: FloatArray, count: Int)
+    external fun setRingActive(active: Boolean)
+
     /** Debug receipts hatch: deterministic offscreen render → selftest.json/png. */
     external fun selfTest(filesDir: String): String
 

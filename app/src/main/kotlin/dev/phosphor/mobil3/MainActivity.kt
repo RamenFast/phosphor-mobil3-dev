@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3
 
+import android.media.projection.MediaProjectionManager
 import android.os.Bundle
 import android.view.Surface
 import android.view.SurfaceHolder
@@ -7,6 +8,7 @@ import android.view.SurfaceView
 import android.view.WindowManager
 import androidx.activity.ComponentActivity
 import androidx.activity.enableEdgeToEdge
+import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.view.WindowInsetsControllerCompat
 
 // M1: the stage. One SurfaceView, edge-to-edge; the Rust render thread owns every pixel.
@@ -14,6 +16,18 @@ import androidx.core.view.WindowInsetsControllerCompat
 class MainActivity : ComponentActivity(), SurfaceHolder.Callback {
 
     private lateinit var scope: SurfaceView
+
+    // M4: MediaProjection consent round-trip; approval hands the token to CaptureService.
+    // The calm pre-consent card from UX-SPEC §2.3 arrives with M5.
+    private val captureConsent =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            result.data?.let { data ->
+                startForegroundService(
+                    android.content.Intent(this, CaptureService::class.java)
+                        .putExtra(CaptureService.EXTRA_RESULT, data)
+                )
+            }
+        }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
@@ -32,11 +46,24 @@ class MainActivity : ComponentActivity(), SurfaceHolder.Callback {
 
         // M3: the service owns the deck (MediaSession, focus, notification).
         // adb shell am start … -e open <file-in-filesDir>; SAF picker arrives with M5.
+        handleIntent(intent)
+    }
+
+    override fun onNewIntent(intent: android.content.Intent) {
+        super.onNewIntent(intent)
+        handleIntent(intent) // singleTask: relaunches land here, not onCreate
+    }
+
+    private fun handleIntent(intent: android.content.Intent) {
         intent.getStringExtra("open")?.let { path ->
             startService(
                 android.content.Intent(this, PlaybackService::class.java)
                     .putExtra(PlaybackService.EXTRA_OPEN, path)
             )
+        }
+        if (intent.getBooleanExtra("capture", false)) {
+            val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
+            captureConsent.launch(mpm.createScreenCaptureIntent())
         }
     }
 

@@ -183,6 +183,30 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckCoverArt(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_pushCaptureSamples(
+    env: JNIEnv,
+    _class: JClass,
+    samples: jni::objects::JFloatArray,
+    count: jni::sys::jint,
+) {
+    let count = count.max(0) as usize;
+    let mut buf = vec![0f32; count];
+    if env.get_float_array_region(&samples, 0, &mut buf).is_ok() {
+        crate::deck::push_capture(&buf);
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setRingActive(
+    _env: JNIEnv,
+    _class: JClass,
+    active: jni::sys::jboolean,
+) {
+    ensure_init();
+    crate::deck::set_ring_active(active != 0);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_selfTest(
     mut env: JNIEnv,
     _class: JClass,
