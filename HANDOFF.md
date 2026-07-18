@@ -1,5 +1,28 @@
 # Handoff — next session starts here
 
+## M5 pass 1 SHIPPED (2026-07-18, commit 02a102f) — the app is now usable end-to-end
+
+Compose chrome over the scope: console (carved play stone + MODE/SRC/LIGHT/⋯), four
+translucent sheets (SOURCE/MODE/LIGHT/SETTINGS), engine control via JNI (mode/beam/fps),
+predictive Back, MediaController sync. SAF file-open → copy-to-cache → deck verified with
+BitsKrieg.wav. Both repos on GitHub (RamenFast/phosphor + private RamenFast/phosphor-mobil3),
+single branch master. Toolchain now in-repo at `.toolchain/`.
+
+**FPS — the honest finding (needs Ben's call): Android's compositor vsync-locks every app
+surface to the panel (present caps = [Mailbox, Fifo], NO Immediate). True >120 *display* is
+impossible for ANY Android app.** Shipped 60/90/120/uncapped (60 & 90 verified). The real
+"more temporal detail" lever = scope oversample (SERIOUS-TODOS) — build if Ben wants the
+genuine beyond-120 quality knob.
+
+**M5 remaining (future passes):** deck sheet (queue + seek bar), the gesture map
+(1-finger drag = gain/orbit, pinch = gain/dolly, 2-finger swipe = mode step, 2-finger
+vertical = glow) + haptics, compose mode, kit browser/editor, .phos postcard share,
+the other 10 chrome rooms, resting-beam dot + `no signal` label, ember auto-dim.
+Polish nits: cache file accumulates per unique name (reuse/prune); title uses filename
+when WAV has no tag.
+
+
+
 ## M0–M4-core SHIPPED in one session (2026-07-18); next: M4 remainder (mic, capture-stop UX, Shizuku — see SERIOUS-TODOS), then M5 UX build-out
 
 - **M4 core** capture: ea05427. Consent flow works over adb (dialog: dropdown → entire
