@@ -26,6 +26,9 @@ pub enum Cmd {
     /// N > 0 = cap to N fps (Immediate present + frame limiter; N above the panel rate is
     /// honored — it just tears past the display's refresh).
     SetTargetFps(i32),
+    /// Beam-rate multiplier: sub-steps of DSP+advance per displayed frame with dt-correct
+    /// decay (1 = 120, 2 = 240, 4 = 480 effective integration rate).
+    SetOversample(u8),
 }
 
 pub const MODE_COUNT: u8 = 11;
@@ -112,6 +115,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut fps_t0 = std::time::Instant::now();
     let mut beam_color: usize = 0;
     let mut target_fps: i32 = 0; // 0 = panel vsync
+    let mut oversample: u32 = 1; // beam-rate multiplier (1× = 120, 2× = 240, 4× = 480)
+    let base_persistence = defaults.persistence;
     let mut last_present = std::time::Instant::now();
 
     loop {
@@ -213,6 +218,10 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                         log::info!("target fps: {target_fps}");
                     }
                 }
+                Cmd::SetOversample(n) => {
+                    oversample = (n as u32).clamp(1, 8);
+                    log::info!("beam oversample: {oversample}x");
+                }
             }
             continue;
         }
@@ -232,8 +241,31 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         };
         let w = a.config.width as f32;
         let h = a.config.height as f32;
-        let segments = computer.compute(&samples, w, h);
-        r.advance(segments);
+        // Beam-rate oversampling: integrate the trace over N sub-steps per displayed frame
+        // (dt-correct decay so brightness is unchanged). The panel still shows 120 Hz, but
+        // the beam is computed at 120·N — a smoother, more-recent trace ("beyond 120").
+        let mut seg_count = 0usize;
+        if oversample <= 1 {
+            let segments = computer.compute(&samples, w, h);
+            seg_count = segments.len();
+            r.advance(segments);
+        } else {
+            let n = oversample as usize;
+            r.persistence = base_persistence.powf(1.0 / n as f32);
+            let frames = samples.len() / 2;
+            let per = frames.div_ceil(n);
+            for k in 0..n {
+                let start = (k * per * 2).min(samples.len());
+                let end = ((k + 1) * per * 2).min(samples.len());
+                if start >= end {
+                    break;
+                }
+                let segments = computer.compute(&samples[start..end], w, h);
+                seg_count += segments.len();
+                r.advance(segments);
+            }
+            r.persistence = base_persistence;
+        }
 
         let frame = match a.surface.get_current_texture() {
             Ok(f) => f,
@@ -272,10 +304,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         let elapsed = fps_t0.elapsed().as_secs_f64();
         if elapsed >= 1.0 {
             log::info!(
-                "fps {:.1} ({} frames, {} segs last frame)",
+                "fps {:.1} ({} frames, {} segs last frame, {}x beam)",
                 fps_frames as f64 / elapsed,
                 fps_frames,
-                segments.len()
+                seg_count,
+                oversample
             );
             fps_frames = 0;
             fps_t0 = std::time::Instant::now();

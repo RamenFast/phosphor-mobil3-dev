@@ -169,5 +169,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setMode(index: Int) { PhosphorNative.setMode(index); ui.modeIndex = index }
     override fun setBeam(index: Int) { PhosphorNative.setBeamColor(index); ui.beamIndex = index }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
+    override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { ui.room = room }
 }

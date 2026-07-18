@@ -218,6 +218,15 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setTargetFps(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setOversample(
+    _env: JNIEnv,
+    _class: JClass,
+    n: jni::sys::jint,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetOversample(n.clamp(1, 8) as u8));
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_pushCaptureSamples(
     env: JNIEnv,
     _class: JClass,

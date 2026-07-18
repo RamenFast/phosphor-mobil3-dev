@@ -11,6 +11,7 @@ class ScopeUiState {
     var modeIndex by mutableStateOf(0)
     var beamIndex by mutableStateOf(0)
     var fpsValue by mutableStateOf(0) // engine convention: 0 = panel vsync
+    var oversample by mutableStateOf(1) // beam integration multiplier
 
     var sourceLabel by mutableStateOf("no source")
     var playing by mutableStateOf(false)

@@ -44,3 +44,17 @@ val FpsOptions = listOf(
 const val FpsNote = "The S25 panel presents at 120 Hz max (Android composites at vsync). " +
     "Uncapped renders flat out but still shows at 120."
 
+// Beam integration rate — the genuine "beyond 120" lever. Each displayed frame integrates N
+// sub-steps of the beam (dt-correct decay), so the trace is smoother and more recent even
+// though the panel shows 120. Values are the effective integration rate.
+data class RateOption(val label: String, val oversample: Int)
+
+val BeamRates = listOf(
+    RateOption("120", 1),
+    RateOption("240", 2),
+    RateOption("480", 4),
+)
+
+const val BeamRateNote = "Integrates the beam at this rate per 120 Hz frame — a denser, " +
+    "more-recent trace (the real 'beyond 120'). Higher costs battery."
+

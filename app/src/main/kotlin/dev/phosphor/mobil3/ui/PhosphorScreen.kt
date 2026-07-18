@@ -57,6 +57,7 @@ interface ScopeActions {
     fun setMode(index: Int)
     fun setBeam(index: Int)
     fun setFps(value: Int)
+    fun setOversample(n: Int)
     fun setRoom(room: Palette)
     fun makeSurface(): SurfaceView
 }
@@ -166,6 +167,18 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions) {
                     }
                 }
                 Mono(FpsNote, p.muted, 10.sp, FontFamily.SansSerif, Modifier.padding(top = 6.dp), maxLines = 3)
+
+                Mono("BEAM RATE", p.muted, 11.sp, Modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                    BeamRates.forEach { opt ->
+                        Box(Modifier.weight(1f)) {
+                            ChipCell(opt.label, active = opt.oversample == state.oversample, p = p, small = true) {
+                                actions.setOversample(opt.oversample)
+                            }
+                        }
+                    }
+                }
+                Mono(BeamRateNote, p.muted, 10.sp, FontFamily.SansSerif, Modifier.padding(top = 6.dp), maxLines = 3)
                 Mono("ROOM", p.muted, 11.sp, Modifier = Modifier.padding(top = 14.dp, bottom = 4.dp))
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                     Rooms.forEach { room ->

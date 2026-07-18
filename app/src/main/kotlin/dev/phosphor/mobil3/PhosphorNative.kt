@@ -31,6 +31,8 @@ object PhosphorNative {
     external fun setBeamColor(index: Int)
     /** -1 unlimited · 0 panel vsync · N cap to N fps (N above the panel tears, honored). */
     external fun setTargetFps(fps: Int)
+    /** Beam integration rate: 1×=120, 2×=240, 4×=480 sub-steps per displayed frame. */
+    external fun setOversample(n: Int)
 
     // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
