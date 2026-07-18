@@ -16,3 +16,5 @@
 | 2026-07-18 | **Native audio residency for the remote source — its own media notification + lock-screen player so the Tailscale audio plays "as if native" (route to earbuds/speaker); MediaSessionService for remote, notification transport drives the laptop** | **queued — next session** (HANDOFF A″; also fixes phone-audio muting) |
 | 2026-07-18 | **Full settings port (desktop Settings surface) + a bridge host field** | **queued — next session** (HANDOFF B) |
 | 2026-07-18 | **3 themes of VERY DIFFERENT UI STYLE, all mobile-friendly (not just palette swaps)** | **queued — next session, with the §0 UI redo** (HANDOFF B) |
+| 2026-07-18 | **Google Drive music: browse + play (incl. skip/back) over the bridge** | **in progress this session** (Act IV — rclone backend on the relay, cache-then-play; needs one rclone OAuth from Ben) |
+| 2026-07-18 | **Pinch to zoom in/out = gain on the mobile app** | **in progress this session** (promoted into the UI redo, Act I.13 — pinch=gain/dolly + drag=gain/orbit + readout ribbon) |
