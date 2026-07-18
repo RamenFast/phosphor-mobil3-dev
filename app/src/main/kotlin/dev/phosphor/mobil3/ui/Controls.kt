@@ -50,11 +50,19 @@ fun StoneKey(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    // The Void soul (AMOLED): no stone exists on a panel that is pure light — importance
+    // is an engraved double-hairline instead of depth, and presses invert to accent.
+    val void = p.id == "amoled"
     val face by animateColorAsState(
-        if (pressed) p.stoneLo else p.stone, motionSpec(reduced, Motion.press), label = "face"
+        when {
+            void -> if (pressed) p.accent.copy(alpha = 0.18f) else Color.Transparent
+            pressed -> p.stoneLo
+            else -> p.stone
+        },
+        motionSpec(reduced, if (void) Motion.press / 2 else Motion.press), label = "face",
     )
     val sink by animateDpAsState(
-        if (pressed) 1.dp else 0.dp, motionSpec(reduced, Motion.press), label = "sink"
+        if (pressed && !void) 1.dp else 0.dp, motionSpec(reduced, Motion.press), label = "sink"
     )
     val hi = if (pressed) p.stoneLo else p.stoneHi
     val lo = if (pressed) p.stoneHi else p.stoneLo
@@ -64,6 +72,22 @@ fun StoneKey(
             .drawBehind {
                 drawRect(face)
                 val s = 2.dp.toPx()
+                if (void) {
+                    // engraved: outer accent hairline + inner quiet hairline
+                    drawRect(
+                        if (pressed) p.accent else p.lineStrong,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                    drawRect(
+                        p.line,
+                        topLeft = Offset(3.dp.toPx(), 3.dp.toPx()),
+                        size = androidx.compose.ui.geometry.Size(
+                            this.size.width - 6.dp.toPx(), this.size.height - 6.dp.toPx(),
+                        ),
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                    return@drawBehind
+                }
                 // catch-light: top + left
                 drawRect(hi, size = androidx.compose.ui.geometry.Size(this.size.width, s))
                 drawRect(hi, size = androidx.compose.ui.geometry.Size(s, this.size.height))
@@ -83,7 +107,7 @@ fun StoneKey(
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.offset(x = sink, y = sink)) {
-            Mono(label, p.ink, Type.dataXl)
+            Mono(label, if (void && pressed) p.accent else p.ink, Type.dataXl)
         }
     }
 }
@@ -102,8 +126,14 @@ fun StoneToggle(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val down = pressed || engaged
+    val void = p.id == "amoled"
     val face by animateColorAsState(
-        if (down) p.stoneLo else p.stone, motionSpec(reduced, Motion.press), label = "face"
+        when {
+            void -> if (down) p.accent.copy(alpha = 0.14f) else Color.Transparent
+            down -> p.stoneLo
+            else -> p.stone
+        },
+        motionSpec(reduced, Motion.press), label = "face",
     )
     val hi = if (down) p.stoneLo else p.stoneHi
     val lo = if (down) p.stoneHi else p.stoneLo
@@ -113,6 +143,13 @@ fun StoneToggle(
             .drawBehind {
                 drawRect(face)
                 val s = 2.dp.toPx()
+                if (void) {
+                    drawRect(
+                        if (engaged) p.accent else p.lineStrong,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                    return@drawBehind
+                }
                 drawRect(hi, size = androidx.compose.ui.geometry.Size(this.size.width, s))
                 drawRect(hi, size = androidx.compose.ui.geometry.Size(s, this.size.height))
                 drawRect(

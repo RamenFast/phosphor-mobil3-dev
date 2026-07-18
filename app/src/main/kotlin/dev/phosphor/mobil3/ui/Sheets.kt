@@ -322,6 +322,12 @@ fun RoomSheet(
                             Mono("~beam", room.muted, Type.dataXs)
                         }
                     }
+                    if (room.id == "amoled") {
+                        Mono(
+                            "true black · made for this panel",
+                            room.muted, Type.dataXs, Modifier.padding(top = 4.dp),
+                        )
+                    }
                 }
             }
         }
