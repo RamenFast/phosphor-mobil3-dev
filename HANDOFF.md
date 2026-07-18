@@ -36,6 +36,20 @@ Host is hardcoded `100.66.109.56` in MainActivity — needs a host field (below)
 
 ## Where we're going — the queue, in priority order
 
+### 0. FIRST: full Fable quality-pass / redo of the ENTIRE M5 UI (Ben's directive, 2026-07-18)
+Ben observed the model may have switched off Fable ~1/4 into M5 and wants the whole UI
+build-out revisited with Fable's strength. **Treat M5 pass 1 (commit 02a102f + follow-ups) as
+a DRAFT to review and rebuild where it falls short of the UX-SPEC and the house design
+language (`ben-ui-design` skill).** Go surface by surface against `docs/UX-SPEC.md`: the
+stage/console, all four sheets (SOURCE/MODE/LIGHT/SETTINGS), the transport, typography,
+spacing, motion (the 80–200 ms eased transitions, the tube-flip, thermionic warm-up), the
+carved-stone dimensionality, sharp corners / hairlines / mono discipline. Keep what's good
+(Ben liked the look), sharpen the rest, and only then extend into the un-built M5 pieces
+(deck sheet, gestures, rooms, kits, compose, postcards — section B). Do this on FRESH context
+with `ben-ui-design` loaded before touching any UI. The engine/JNI/bridge below M5 are solid
+— this pass is about the Compose chrome quality, not the Rust.
+
+
 ### A. Bridge: two stream toggles + source selection (Ben's live asks — do first)
 Full design in **docs/BRIDGE.md → "Planned next"**. Short version:
 1. Config frame on connect `{audio, geometry}`; relay conditionally streams PCM (`A`) and/or
