@@ -38,6 +38,10 @@ object PhosphorNative {
     external fun setGain(gain: Float)
     /** Beam focus px (0.3..3.0, desktop slider) — smaller = sharper. */
     external fun setFocus(focus: Float)
+    /** Beam brightness budget (1.0..30.0, desktop "Beam" slider). */
+    external fun setBeamEnergy(energy: Float)
+    /** Graticule on/off (desktop grid_enabled). */
+    external fun setGrid(on: Boolean)
     external fun setGlow(persistence: Float)
     external fun orbitBy(dyaw: Float, dpitch: Float)
     external fun dollyBy(delta: Float)

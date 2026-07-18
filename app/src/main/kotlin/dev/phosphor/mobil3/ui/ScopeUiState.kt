@@ -25,8 +25,11 @@ class ScopeUiState {
     var positionMs by mutableStateOf(0L)
     var durationMs by mutableStateOf(0L)
 
-    // The instrument readouts.
+    // The instrument readouts (desktop-parity ranges: gain 0.1–6, beam 1–30, glow 0–0.98).
     var gain by mutableStateOf(1.0f)
+    var beamEnergy by mutableStateOf(8.0f)
+    var glow by mutableStateOf(0.7f)
+    var grid by mutableStateOf(true)
     var autoGain by mutableStateOf(false)
     var noSignal by mutableStateOf(false) // resting beam is up on an active source
 

@@ -287,7 +287,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setFocus(focus: Float) { PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) {
-        gainValue = g.coerceIn(0.05f, 16f)
+        gainValue = g.coerceIn(0.1f, 6f)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
     }
@@ -313,4 +313,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // Photosensitivity acceptance persists forever, as on desktop.
     override fun epilepsyAcknowledged(): Boolean = prefs().getBoolean("epilepsy_ack", false)
     override fun ackEpilepsy() { prefs().edit().putBoolean("epilepsy_ack", true).apply() }
+
+    // Desktop-parity tuning verbs (Ben's audit ask): same fields, same clamps.
+    override fun setBeamEnergy(e: Float) { PhosphorNative.setBeamEnergy(e); ui.beamEnergy = e.coerceIn(1f, 30f) }
+    override fun setGlow(g: Float) { PhosphorNative.setGlow(g); ui.glow = g.coerceIn(0f, 0.98f) }
+    override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
 }

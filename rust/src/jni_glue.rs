@@ -457,3 +457,21 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_beamColorNow(
 ) -> jni::sys::jint {
     crate::render::BEAM_RGB.load(std::sync::atomic::Ordering::Relaxed) as jni::sys::jint
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBeamEnergy(
+    _env: JNIEnv,
+    _class: JClass,
+    energy: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetBeamEnergy(energy));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGrid(
+    _env: JNIEnv,
+    _class: JClass,
+    on: jni::sys::jboolean,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetGrid(on != 0));
+}

@@ -40,6 +40,10 @@ pub enum Cmd {
     SetReducedMotion(bool),
     /// Beam focus in px (the desktop slider, 0.3..3.0) — smaller = sharper.
     SetFocus(f32),
+    /// Beam brightness budget (the desktop "Beam" slider, 1.0..30.0).
+    SetBeamEnergy(f32),
+    /// Graticule on/off (desktop grid_enabled).
+    SetGrid(bool),
     /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
     SetCustomBeam { colors: [[f32; 3]; 3], count: u8, grid: [f32; 3] },
     /// Cycle timing: seconds per color→color leg; per_track advances only on CycleAdvance.
@@ -304,8 +308,18 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     log::info!("beam oversample: {oversample}x");
                 }
                 Cmd::SetGain(g) => {
-                    computer.gain = g.clamp(0.05, 16.0);
+                    // Desktop parity: shell.rs clamps gain to 0.1..6.0.
+                    computer.gain = g.clamp(0.1, 6.0);
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
+                }
+                Cmd::SetBeamEnergy(e) => {
+                    // Desktop parity: the "Beam" slider, 1.0..30.0.
+                    computer.beam_energy = e.clamp(1.0, 30.0);
+                }
+                Cmd::SetGrid(on) => {
+                    if let Some(r) = renderer.as_mut() {
+                        r.grid_enabled = on;
+                    }
                 }
                 Cmd::SetGlow(p) => {
                     base_persistence = p.clamp(0.0, 0.98);

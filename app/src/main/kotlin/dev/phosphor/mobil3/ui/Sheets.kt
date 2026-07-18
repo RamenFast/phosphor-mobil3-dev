@@ -342,10 +342,25 @@ fun SettingsSheet(
             SectionHeading("SIGNAL", p, Modifier.padding(top = 0.dp))
             DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
             DragRule(
-                "GAIN", state.gain, 0.05f, 6.0f, p, { "×%.2f".format(it) },
+                "GAIN", state.gain, 0.1f, 6.0f, p, { "×%.2f".format(it) },
             ) { actions.setGainAbsolute(it) }
+            DragRule(
+                "BEAM", state.beamEnergy, 1.0f, 30.0f, p, { "×%.0f".format(it) },
+            ) { actions.setBeamEnergy(it) }
+            DragRule(
+                "GLOW", state.glow, 0.0f, 0.98f, p, { "%.0f %%".format(it * 100) },
+            ) { actions.setGlow(it) }
 
             SectionHeading("DISPLAY", p)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ChipCell("GRID · " + (if (state.grid) "on" else "off"), active = state.grid, p = p, small = true) {
+                        actions.setGrid(!state.grid)
+                    }
+                }
+                Spacer(Modifier.weight(2f))
+            }
+            Spacer(Modifier.height(Dim.gap))
             Mono("FRAME RATE", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 FpsOptions.forEach { opt ->
@@ -394,6 +409,9 @@ interface SheetActions {
     fun setFps(value: Int)
     fun setOversample(n: Int)
     fun setGainAbsolute(g: Float)
+    fun setBeamEnergy(e: Float)
+    fun setGlow(g: Float)
+    fun setGrid(on: Boolean)
     fun openRoom()
     fun openLight()
 }

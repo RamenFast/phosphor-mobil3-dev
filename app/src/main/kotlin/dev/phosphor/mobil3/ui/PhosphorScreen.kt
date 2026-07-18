@@ -47,6 +47,9 @@ interface ScopeActions {
     fun setFocus(focus: Float)
     fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int)
     fun setBeamCycle(seconds: Float, perTrack: Boolean)
+    fun setBeamEnergy(e: Float)
+    fun setGlow(g: Float)
+    fun setGrid(on: Boolean)
     fun epilepsyAcknowledged(): Boolean
     fun ackEpilepsy()
     fun setGainAbsolute(g: Float)
@@ -91,6 +94,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setFps(value: Int) = actions.setFps(value)
             override fun setOversample(n: Int) = actions.setOversample(n)
             override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
+            override fun setBeamEnergy(e: Float) = actions.setBeamEnergy(e)
+            override fun setGlow(g: Float) = actions.setGlow(g)
+            override fun setGrid(on: Boolean) = actions.setGrid(on)
             override fun openRoom() { }
             override fun openLight() { }
         }

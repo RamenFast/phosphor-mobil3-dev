@@ -285,6 +285,13 @@ fn start_pump(
     let (st, pz, by) = (stopping.clone(), paused.clone(), bytes.clone());
     let handle = thread::spawn(move || {
         use std::io::Read;
+        use std::time::Instant;
+        // A file decodes far faster than real time and has no sound-card clock
+        // (unlike pw-record), so the pump must pace itself: one 1920-byte /10 ms
+        // frame per 10 ms. That also drives the pause mechanism — the pipe fills,
+        // ffmpeg backpressures — and keeps position_ms honest.
+        let frame_dur = Duration::from_millis(10);
+        let mut next = Instant::now() + frame_dur;
         let mut buf = [0u8; A_FRAME];
         loop {
             if st.load(Ordering::SeqCst) {
@@ -292,6 +299,7 @@ fn start_pump(
             }
             if pz.load(Ordering::SeqCst) {
                 thread::sleep(Duration::from_millis(20));
+                next = Instant::now() + frame_dur; // don't burst to "catch up" on resume
                 continue;
             }
             match stdout.read_exact(&mut buf) {
@@ -306,6 +314,14 @@ fn start_pump(
                         }
                     }
                     by.fetch_add(A_FRAME as u64, Ordering::Relaxed);
+                    let now = Instant::now();
+                    if now < next {
+                        thread::sleep(next - now);
+                    }
+                    next += frame_dur;
+                    if next < now {
+                        next = now + frame_dur; // we fell behind; re-anchor
+                    }
                 }
                 Err(_) => {
                     if !st.load(Ordering::SeqCst) {
