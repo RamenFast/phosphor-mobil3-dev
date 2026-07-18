@@ -48,9 +48,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         override fun surfaceChanged(holder: SurfaceHolder, f: Int, w: Int, h: Int) {
             PhosphorNative.surfaceCreatedOrChanged(holder.surface, w, h, resources.displayMetrics.density)
-            // Ben's call (2026-07-18): maximum sharpness by default — 0.3 px, the
-            // bottom of the desktop slider. The settings rule adjusts live.
-            PhosphorNative.setFocus(0.3f)
+            // Ben's default: maximum sharpness (0.3). Persisted; the settings rule adjusts.
+            PhosphorNative.setFocus(focusPref)
         }
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             PhosphorNative.surfaceDestroyed()
@@ -126,6 +125,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
+        restoreTuning()
         // PiP (spec §3): Home while the beam is live → the scope becomes the floating
         // window. Pure scope, no chrome (ui.pip gates the whole chrome tree).
         setPictureInPictureParams(
@@ -204,6 +204,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onStop() {
+        saveTuning()
         tick.removeCallbacks(uiTick)
         PhosphorNative.setRenderPaused(true)
         controller?.release()
@@ -396,6 +397,42 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // The consent moment (spec §2.3): one calm card before the system dialog, first time.
     private fun prefs() = getSharedPreferences("phosphor.prefs", MODE_PRIVATE)
+
+    // ── Tuning persistence: the scope remembers its knobs across launches. ──
+    private var focusPref = 0.3f
+    private fun saveTuning() {
+        prefs().edit()
+            .putInt("mode", ui.modeIndex)
+            .putInt("beam", ui.beamIndex)
+            .putInt("fps", ui.fpsValue)
+            .putInt("oversample", ui.oversample)
+            .putFloat("gain", ui.gain)
+            .putFloat("beam_energy", ui.beamEnergy)
+            .putFloat("glow", ui.glow)
+            .putBoolean("grid", ui.grid)
+            .putFloat("focus", focusPref)
+            .putString("room", ui.room.id)
+            .putBoolean("nerd_hud", ui.nerdHud)
+            .apply()
+    }
+
+    private fun restoreTuning() {
+        val p = prefs()
+        ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
+        ui.beamIndex = p.getInt("beam", 0).also { PhosphorNative.setBeamColor(it) }
+        ui.fpsValue = p.getInt("fps", 0).also { PhosphorNative.setTargetFps(it) }
+        ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
+        gainValue = p.getFloat("gain", 1f)
+        ui.gain = gainValue
+        PhosphorNative.setGain(gainValue)
+        ui.beamEnergy = p.getFloat("beam_energy", 8f).also { PhosphorNative.setBeamEnergy(it) }
+        ui.glow = p.getFloat("glow", 0.7f).also { PhosphorNative.setGlow(it) }
+        ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
+        focusPref = p.getFloat("focus", 0.3f)
+        ui.nerdHud = p.getBoolean("nerd_hud", false)
+        dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
+            .let { baseRoom = it; ui.room = it }
+    }
     override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
 
@@ -404,7 +441,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
-    override fun setFocus(focus: Float) { PhosphorNative.setFocus(focus) }
+    override fun setFocus(focus: Float) { focusPref = focus; PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) {
         gainValue = g.coerceIn(0.1f, 6f)
