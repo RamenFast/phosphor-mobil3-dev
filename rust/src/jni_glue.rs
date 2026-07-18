@@ -636,3 +636,16 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteListingGene
 ) -> jni::sys::jint {
     crate::remote::listing_generation() as jni::sys::jint
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_scopeStats(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let fps = crate::render::FPS_X10.load(std::sync::atomic::Ordering::Relaxed) as f32 / 10.0;
+    let segs = crate::render::SEGS_LAST.load(std::sync::atomic::Ordering::Relaxed);
+    match env.new_string(format!(r#"{{"fps":{fps:.1},"segs":{segs}}}"#)) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}

@@ -88,6 +88,9 @@ pub static GAIN_MILLI: AtomicU32 = AtomicU32::new(1000);
 pub static NO_SIGNAL: AtomicBool = AtomicBool::new(false);
 /// Live beam color, packed 0xRRGGBB (for accent_follows_beam chrome breathing).
 pub static BEAM_RGB: AtomicU32 = AtomicU32::new(0x6bff8c);
+/// Nerd-HUD stats: measured fps ×10, and segments drawn in the last frame.
+pub static FPS_X10: AtomicU32 = AtomicU32::new(0);
+pub static SEGS_LAST: AtomicU32 = AtomicU32::new(0);
 
 fn pack_rgb(c: [f32; 3]) -> u32 {
     let ch = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u32;
@@ -639,9 +642,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         }
         last_present = now;
 
+        SEGS_LAST.store(seg_count as u32, Ordering::Relaxed);
         fps_frames += 1;
         let elapsed = fps_t0.elapsed().as_secs_f64();
         if elapsed >= 1.0 {
+            FPS_X10.store((fps_frames as f64 / elapsed * 10.0) as u32, Ordering::Relaxed);
             log::info!(
                 "fps {:.1} ({} frames, {} segs last frame, {}x beam)",
                 fps_frames as f64 / elapsed,

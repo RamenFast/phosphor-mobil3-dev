@@ -126,8 +126,24 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
+        // PiP (spec §3): Home while the beam is live → the scope becomes the floating
+        // window. Pure scope, no chrome (ui.pip gates the whole chrome tree).
+        setPictureInPictureParams(
+            android.app.PictureInPictureParams.Builder()
+                .setAutoEnterEnabled(true)
+                .setAspectRatio(android.util.Rational(9, 16))
+                .build()
+        )
         setContent { PhosphorScreen(ui, this, reduced) }
         handleIntent(intent)
+    }
+
+    override fun onPictureInPictureModeChanged(
+        isInPictureInPictureMode: Boolean,
+        newConfig: android.content.res.Configuration,
+    ) {
+        super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        ui.pip = isInPictureInPictureMode
     }
 
     override fun onStart() {
@@ -198,6 +214,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // One gentle heartbeat for display facts Compose can't observe directly:
     // seek position from the controller, the resting-beam flag, the breathing accent.
     private var baseRoom: Palette? = null
+    private var lastRxBytes = 0L
     private val uiTick = object : Runnable {
         override fun run() {
             controller?.let { c ->
@@ -208,6 +225,23 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.positionMs = c.currentPosition.coerceAtLeast(0L)
             }
             ui.noSignal = PhosphorNative.scopeSilent()
+            if (ui.nerdHud) {
+                val stats = runCatching {
+                    org.json.JSONObject(PhosphorNative.scopeStats())
+                }.getOrNull()
+                val rx = if (ui.remote) runCatching {
+                    org.json.JSONObject(PhosphorNative.remoteStatus()).optLong("rx_bytes")
+                }.getOrNull() ?: 0L else 0L
+                val mbps = if (lastRxBytes in 1 until rx) {
+                    (rx - lastRxBytes) * 8f * 2f / 1_000_000f // 500 ms tick → per-second
+                } else 0f
+                lastRxBytes = rx
+                ui.hudLine = buildString {
+                    append("%.1f fps".format(stats?.optDouble("fps") ?: 0.0))
+                    append(" · ${stats?.optInt("segs") ?: 0} segs")
+                    if (ui.remote) append(" · %.1f Mb/s".format(mbps))
+                }
+            }
             // accent_follows_beam rooms breathe with the live beam (desktop law: 82%
             // toward the beam hue). Recomputed at 2 Hz — gentle, not flickery.
             val base = baseRoom ?: ui.room

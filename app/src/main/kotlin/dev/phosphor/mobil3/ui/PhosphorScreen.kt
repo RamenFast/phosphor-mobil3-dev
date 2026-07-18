@@ -122,6 +122,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             // Layer 0: the scope, full-bleed under everything.
             AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
 
+            // PiP is pure scope — zero chrome (spec §3).
+            if (state.pip) return@Box
+
             // Layer 0.5: the stage — gesture arbiter (drags/pinches) + tap layer.
             // Sits BELOW the console so console controls win hit-testing in their bounds.
             if (sheet == Sheet.NONE) {
@@ -137,6 +140,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                         actions.orbitBy(dyaw, dpitch)
                                     override fun dollyBy(delta: Float) = actions.dollyBy(delta)
                                     override fun is3d() = state.mode3d
+                                    override fun modeStep(delta: Int) =
+                                        actions.setMode((state.modeIndex + delta + 11) % 11)
+                                    override fun currentGlow() = state.glow
+                                    override fun setGlowAbsolute(g: Float) = actions.setGlow(g)
                                     override fun view() = view
                                 }
                             },

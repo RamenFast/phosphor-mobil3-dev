@@ -386,6 +386,17 @@ fun SettingsSheet(
             }
             Prose(BeamRateNote, p.muted, modifier = Modifier.padding(top = 6.dp))
 
+            SectionHeading("PERFORMANCE", p)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ChipCell(
+                        "NERD HUD · " + (if (state.nerdHud) "on" else "off"),
+                        active = state.nerdHud, p = p, small = true,
+                    ) { state.nerdHud = !state.nerdHud }
+                }
+                Spacer(Modifier.weight(2f))
+            }
+
             SectionHeading("ROOM & LIGHT", p)
             SheetRow("room · ${state.room.label}", p) { actions.openRoom() }
             SheetRow("light · beam color", p) { actions.openLight() }

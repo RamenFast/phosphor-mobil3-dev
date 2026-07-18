@@ -47,6 +47,9 @@ interface StageGestureHost {
     fun orbitBy(dyaw: Float, dpitch: Float)
     fun dollyBy(delta: Float)
     fun is3d(): Boolean
+    fun modeStep(delta: Int)
+    fun currentGlow(): Float
+    fun setGlowAbsolute(g: Float)
     fun view(): View
 }
 
@@ -55,19 +58,62 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
         val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
-            var mode = 0 // 0 = undecided, 1 = drag, 2 = pinch
+            // 0 undecided · 1 drag · 2 pinch · 4 mode-step (fired) · 5 glow swipe
+            var mode = 0
             var gain = host.currentGain()
+            var glow = host.currentGlow()
             var lastDist = -1f
             var origin = first.position
+            var twoOrigin = Offset.Zero
+            var twoStartDist = 0f
             while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
                 if (pressed.isEmpty()) break
                 if (pressed.size >= 2) {
-                    if (mode != 2) { mode = 2; lastDist = -1f }
+                    if (mode == 0 || mode == 1) {
+                        mode = 2; lastDist = -1f
+                        twoOrigin = Offset(
+                            (pressed[0].position.x + pressed[1].position.x) / 2f,
+                            (pressed[0].position.y + pressed[1].position.y) / 2f,
+                        )
+                        twoStartDist = (pressed[0].position - pressed[1].position).getDistance()
+                        glow = host.currentGlow()
+                    }
                     val a = pressed[0].position
                     val b = pressed[1].position
                     val dist = (a - b).getDistance()
+                    val centroid = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
+                    val travel = centroid - twoOrigin
+                    val spread = abs(dist - twoStartDist)
+                    // Classify ONCE (single-owner law): translation clearly beats spread →
+                    // a two-finger SWIPE (horizontal = mode step, vertical = glow); else pinch.
+                    if (mode == 2 && spread < slop * 1.5f) {
+                        if (abs(travel.x) > slop * 3f && abs(travel.x) > abs(travel.y) * 1.6f) {
+                            mode = 4 // mode-step swipe: one detent per gesture
+                            host.modeStep(if (travel.x < 0f) 1 else -1)
+                            Haptics.medium(host.view())
+                            pressed.forEach { it.consume() }
+                            continue
+                        } else if (abs(travel.y) > slop * 3f && abs(travel.y) > abs(travel.x) * 1.6f) {
+                            mode = 5 // glow swipe: continuous
+                        }
+                    }
+                    if (mode == 4) {
+                        pressed.forEach { it.consume() }
+                        continue
+                    }
+                    if (mode == 5) {
+                        val d = pressed[0].position - pressed[0].previousPosition
+                        glow = (glow - d.y * 0.0011f).coerceIn(0f, 0.98f)
+                        host.setGlowAbsolute(glow)
+                        ribbon.text = "glow %.0f %%".format(glow * 100)
+                        ribbon.at = centroid
+                        ribbon.visible = true
+                        ribbon.lastTouchMs = System.currentTimeMillis()
+                        pressed.forEach { it.consume() }
+                        continue
+                    }
                     if (lastDist > 0f) {
                         val zoom = dist / lastDist
                         if (abs(zoom - 1f) > 0.001f) {
@@ -91,7 +137,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     pressed.forEach { it.consume() }
                 } else if (pressed.size == 1) {
                     val ch = pressed[0]
-                    if (mode == 2) {
+                    if (mode >= 2) {
                         // Pinch shed a finger — retire the sequence rather than re-owning it.
                         if (ch.positionChanged()) ch.consume()
                         continue

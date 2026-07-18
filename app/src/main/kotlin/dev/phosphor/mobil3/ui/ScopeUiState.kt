@@ -37,6 +37,9 @@ class ScopeUiState {
     var grid by mutableStateOf(true)
     var autoGain by mutableStateOf(false)
     var noSignal by mutableStateOf(false) // resting beam is up on an active source
+    var nerdHud by mutableStateOf(false)
+    var hudLine by mutableStateOf("")
+    var pip by mutableStateOf(false)
 
     // Custom light (LIGHT sheet): 0 slots = presets active.
     var customColors by mutableStateOf(

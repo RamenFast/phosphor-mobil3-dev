@@ -56,6 +56,8 @@ object PhosphorNative {
     external fun cycleAdvance()
     /** Live beam color packed 0xRRGGBB (accent_follows_beam chrome breathing). */
     external fun beamColorNow(): Int
+    /** Nerd-HUD stats: {"fps":119.9,"segs":960}. */
+    external fun scopeStats(): String
 
     // Remote source (Tailscale bridge, protocol v2 — docs/BRIDGE.md).
     // connect is NON-BLOCKING: it spawns the link manager; observe remoteStatus().

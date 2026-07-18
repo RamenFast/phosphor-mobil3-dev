@@ -75,7 +75,12 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean) {
             append(state.sourceLabel)
             if (state.noSignal) append("   ·   no signal")
         }
-        Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
+        androidx.compose.foundation.layout.Column {
+            Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
+            if (state.nerdHud && state.hudLine.isNotBlank()) {
+                Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
+            }
+        }
         val gainTag = "×" + String.format("%.2f", state.gain) + if (state.autoGain) "·a" else ""
         Mono("${state.modeTag} · $gainTag", p.ink2.copy(alpha = 0.70f), Type.dataSm)
     }
