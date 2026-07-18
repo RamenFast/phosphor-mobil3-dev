@@ -13,3 +13,6 @@
 | 2026-07-18 | **Revalidate audio output on the phone (worked on speakers earlier) + confirm the remote scope draws with real audio on the source machine** | **queued — next session** (note: AirPods → Spotify Connect auto-moved playback to the phone, silencing the laptop source) |
 | 2026-07-18 | **App icon — Android adaptive launcher icon (currently the default Android icon; M0 stripped the missing `@mipmap/ic_launcher` ref)** | **queued — next session** |
 | 2026-07-18 | **Re-run the ENTIRE M5 UI with Fable — Ben observed the model may have dropped off Fable ~1/4 into M5; full quality-pass/redo of the Compose chrome against UX-SPEC + ben-ui-design, on fresh context** | **queued — TOP priority next session** (HANDOFF §0) |
+| 2026-07-18 | **Native audio residency for the remote source — its own media notification + lock-screen player so the Tailscale audio plays "as if native" (route to earbuds/speaker); MediaSessionService for remote, notification transport drives the laptop** | **queued — next session** (HANDOFF A″; also fixes phone-audio muting) |
+| 2026-07-18 | **Full settings port (desktop Settings surface) + a bridge host field** | **queued — next session** (HANDOFF B) |
+| 2026-07-18 | **3 themes of VERY DIFFERENT UI STYLE, all mobile-friendly (not just palette swaps)** | **queued — next session, with the §0 UI redo** (HANDOFF B) |

@@ -76,6 +76,21 @@ genuinely muted, check Android's "background playback would be muted" hardening 
 playback may need a foreground service like the deck's PlaybackService (currently oboe runs
 without one for the remote source).
 
+### A″. Native audio residency for the remote source (Ben's ask, 2026-07-18)
+Make the Tailscale audio play **as if native** — its own media-notification + lock-screen
+presence so Ben can route it to earbuds or the phone speaker like any media app. Today the
+remote oboe output runs with NO foreground service (why Android logs "background playback would
+be muted"). Fix: route remote playback through a **MediaSessionService** (extend/reuse the
+deck's `PlaybackService` + `PhosphorPlayer` `SimpleBasePlayer` pattern), FGS type
+`mediaPlayback`, so:
+- The remote track shows in the system media notification + lock screen, metadata (title/
+  artist/album/art) fed from the relay's `M` frames.
+- Notification/lock-screen transport (prev/play/next) drives the LAPTOP via the bridge
+  (`remoteTransport`) — the loaded-deck-owns-the-transport law, remote edition.
+- Audio focus + `BECOMING_NOISY` + `AudioDeviceCallback` handled → clean earbud↔speaker
+  switching, no ducking surprises. This is the fix for the "revalidate phone audio" item.
+- Net effect: the remote source is indistinguishable from a local media app to the OS.
+
 ### A′. Remote music file-browser (Ben's ask, 2026-07-18) — bundle with the bridge work
 Browse the source PC's music library over the bridge, pick a file, stream + scope it — a
 "remote library" mode distinct from live-output capture.
@@ -98,9 +113,22 @@ Browse the source PC's music library over the bridge, pick a file, stream + scop
   verbs SetGain/SetGlow/SetCamera + a GestureArbiter in Compose. Haptics on detents.
 - **Resting-beam dot + `no signal · <source>`** when silent (currently black — a
   SERIOUS-TODO).
-- **Remaining 10 chrome rooms** (only Blossom Dark + AMOLED ported; port the rest from
-  theme.rs PALETTES), **kits** browser/editor, **compose** mode (finger-draw → WAV),
-  **.phos postcards** (share-sheet), snapshot/clip exports.
+- **Full settings port** (Ben's ask, 2026-07-18): port the desktop's whole settings surface
+  (phosphor-proto `Settings` + the desktop panel — RENDERER/SCOPE/APPEARANCE/SIGNAL-KIT/
+  PERFORMANCE): Focus (beam px), scope sample rate, glow/persistence, gain + auto-gain, grid,
+  glass, color cycle (1–3 colors, timer/per-track) + the **photosensitivity guard**, kit path,
+  GPU quality, max-fps — plus a **host field** for the bridge. Mobile currently exposes only
+  frame-rate / beam-rate / room / beam-color; this is the rest, laid out thumb-friendly.
+- **Themes — 3 of VERY DIFFERENT UI STYLE, all mobile-friendly** (Ben's ask, 2026-07-18): NOT
+  just palette swaps. Design three distinct-personality UIs — different control character,
+  density, motion feel, dimensionality — each still obeying the house non-negotiables
+  (`ben-ui-design`: sharp corners, hairlines, mono data, Obsidian-dismiss). Think e.g. a warm
+  carved/dimensional room (Blossom-family), a stark true-black minimalist room (AMOLED-family,
+  flatter/quieter), and a third with its own clear identity. Elevate 3 rooms from the 12 to
+  full distinct-style treatments rather than porting all 12 as palette-only. This belongs with
+  the §0 M5 UI redo — theme character is core UI, do it with `ben-ui-design` loaded.
+- **Remaining rooms** (palette-only), **kits** browser/editor, **compose** mode (finger-draw →
+  WAV), **.phos postcards** (share-sheet), snapshot/clip exports.
 
 ### B′. App icon (Ben's ask, 2026-07-18)
 The app ships with the default Android icon — M0 removed the missing `@mipmap/ic_launcher`
