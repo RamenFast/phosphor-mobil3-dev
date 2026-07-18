@@ -7,3 +7,4 @@ app/src/main/jniLibs/
 .kotlin/
 captures/
 *.log
+.toolchain/

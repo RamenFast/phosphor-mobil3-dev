@@ -24,10 +24,13 @@ Requires a sibling checkout of [phosphor](../phosphor) (the engine crates are pa
 source of truth stays there) and the Android toolchain:
 
 ```
-scripts/bootstrap-android.sh     # one-shot, idempotent, installs to ~/Android (no sudo)
+scripts/bootstrap-android.sh     # one-shot, idempotent; installs in-repo to .toolchain/ (no sudo)
 source scripts/env.sh
 dev/pm3 build                    # → app/build/outputs/apk/debug/app-debug.apk
 ```
+
+The whole Android toolchain (JDK, SDK, NDK, Gradle) lives under `.toolchain/` in the repo —
+gitignored, self-contained, no home-folder clutter. `env.sh` is self-locating.
 
 Dev loop against a device (wireless adb):
 

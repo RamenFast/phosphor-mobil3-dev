@@ -22,3 +22,5 @@ have it (`pm3 smoke` exits 2 on a release install).
 - Receipts: every milestone's "done" is a `pm3` command output pasted into the commit.
 - One branch besides master at a time; push to master only on Ben's word.
 - No authored Python anywhere, build tooling included.
+- The Android toolchain lives in-repo at `.toolchain/` (gitignored). Do not scatter it into
+  the home folder — Ben's ask, 2026-07-18. `scripts/env.sh` is self-locating.
