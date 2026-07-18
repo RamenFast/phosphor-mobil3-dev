@@ -30,10 +30,13 @@ class MainActivity : ComponentActivity(), SurfaceHolder.Callback {
         scope.holder.addCallback(this)
         setContentView(scope)
 
-        // M2 receipt path: adb shell am start … -e open <file-in-filesDir>.
-        // The deck sheet + SAF picker arrive with M3/M5.
+        // M3: the service owns the deck (MediaSession, focus, notification).
+        // adb shell am start … -e open <file-in-filesDir>; SAF picker arrives with M5.
         intent.getStringExtra("open")?.let { path ->
-            Thread { PhosphorNative.deckOpen(path) }.start()
+            startService(
+                android.content.Intent(this, PlaybackService::class.java)
+                    .putExtra(PlaybackService.EXTRA_OPEN, path)
+            )
         }
     }
 

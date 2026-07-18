@@ -63,6 +63,7 @@ impl AudioOutputCallback for DeckOutput {
 }
 
 pub struct Deck {
+    path: String,
     session: PlayerSession,
     stream: AudioStreamAsync<Output, DeckOutput>,
     paused: Arc<AtomicBool>,
@@ -73,6 +74,10 @@ pub struct Deck {
 unsafe impl Send for Deck {}
 
 pub fn open(path: &str) -> Result<(), String> {
+    open_at(path, 0.0)
+}
+
+pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
     close();
 
     let audible = AudibleRing::new(RATE);
@@ -81,7 +86,7 @@ pub fn open(path: &str) -> Result<(), String> {
 
     let config = PlayerConfig {
         path: PathBuf::from(path),
-        seek_seconds: 0.0,
+        seek_seconds,
         loop_forever: false,
         vacuum: false,
         pipe_rate: RATE,
@@ -103,9 +108,50 @@ pub fn open(path: &str) -> Result<(), String> {
 
     scope_ring().lock().unwrap().clear_pending();
     DECK_ACTIVE.store(true, Ordering::Relaxed);
-    *DECK.lock().unwrap() = Some(Deck { session, stream, paused, _events_rx: events_rx });
-    log::info!("deck open: {path}");
+    *DECK.lock().unwrap() =
+        Some(Deck { path: path.to_owned(), session, stream, paused, _events_rx: events_rx });
+    log::info!("deck open: {path} @ {seek_seconds}s");
     Ok(())
+}
+
+pub fn set_paused(paused: bool) {
+    if let Some(deck) = DECK.lock().unwrap().as_ref() {
+        deck.paused.store(paused, Ordering::Relaxed);
+        log::info!("deck paused: {paused}");
+    }
+}
+
+pub fn seek_ms(ms: u64) -> Result<(), String> {
+    let (path, was_paused) = {
+        let guard = DECK.lock().unwrap();
+        let Some(deck) = guard.as_ref() else { return Err("no deck loaded".into()) };
+        (deck.path.clone(), deck.paused.load(Ordering::Relaxed))
+    };
+    // The desktop seeks by restarting decode at the offset; same here.
+    open_at(&path, ms as f64 / 1000.0)?;
+    set_paused(was_paused);
+    Ok(())
+}
+
+pub fn metadata_json() -> String {
+    let guard = DECK.lock().unwrap();
+    let Some(deck) = guard.as_ref() else { return "{}".into() };
+    let meta = deck.session.shared.current_metadata.lock().unwrap().clone();
+    serde_json::json!({
+        "path": deck.path,
+        "title": meta.title,
+        "artist": meta.artist,
+        "album": meta.album,
+        "duration_ms": meta.duration.map(|s| (s * 1000.0) as u64),
+    })
+    .to_string()
+}
+
+pub fn cover_art() -> Option<Vec<u8>> {
+    let guard = DECK.lock().unwrap();
+    let deck = guard.as_ref()?;
+    let cover = deck.session.shared.current_cover.lock().unwrap();
+    cover.as_ref().map(|c| c.data.clone())
 }
 
 /// Returns the new playing state (true = playing).

@@ -125,6 +125,64 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckPositionMs(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckSetPaused(
+    _env: JNIEnv,
+    _class: JClass,
+    paused: jni::sys::jboolean,
+) {
+    crate::deck::set_paused(paused != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckSeekMs(
+    _env: JNIEnv,
+    _class: JClass,
+    ms: jni::sys::jlong,
+) -> jni::sys::jboolean {
+    match crate::deck::seek_ms(ms.max(0) as u64) {
+        Ok(()) => 1,
+        Err(e) => {
+            log::error!("deckSeekMs: {e}");
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckClose(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    crate::deck::close();
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckMetadata(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let json = crate::deck::metadata_json();
+    match env.new_string(&json) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckCoverArt(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jbyteArray {
+    match crate::deck::cover_art() {
+        Some(data) => match env.byte_array_from_slice(&data) {
+            Ok(arr) => arr.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_selfTest(
     mut env: JNIEnv,
     _class: JClass,
