@@ -27,3 +27,12 @@ later `--ez remote true` delivery via onNewIntent, and no failure surfaced anywh
 (startRemote has no failure feedback). Clean relaunch with the extra connected
 instantly. Status: superseded by the bridge-v2 client state machine
 (CONNECTING/FAILED + fix strings surfaced in the status band).
+
+## #4 · 2026-07-18 · crash-loop on launch: PiP params without the manifest flag
+
+`setPictureInPictureParams` in onCreate without `android:supportsPictureInPicture="true"`
+→ IllegalStateException before the first app log line; Samsung's error dialog ate the
+launch. ~10 min window in the field (Ben caught it). Root process failure: that one
+install went out WITHOUT a launch verification — the only unverified install of the
+session, and the one that bit. Fix: manifest flag added; launch now verified by pid +
+120 fps log before commit. Law reaffirmed: every install gets a boot receipt.

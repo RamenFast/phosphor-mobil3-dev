@@ -398,6 +398,8 @@ fn manager(my_gen: u64) {
             }
             SessionEnd::Healthy => {
                 backoff = 1; // a good run resets the ladder before the next drop
+                l.state.store(ST_RECONNECTING, Ordering::Relaxed);
+                std::thread::sleep(Duration::from_secs(1)); // never hot-loop a flapping peer
             }
         }
     }
@@ -531,7 +533,13 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         }
         if reader_done.load(Ordering::Relaxed) {
             teardown_session(&out_slot);
-            return SessionEnd::Failed("link closed by peer".into());
+            // Audit finding 11: a run that reached streaming resets the backoff ladder
+            // (report Healthy; the manager still reconnects, just without punishment).
+            return if was_streaming {
+                SessionEnd::Healthy
+            } else {
+                SessionEnd::Failed("link closed by peer".into())
+            };
         }
         if last_ping.elapsed() >= Duration::from_secs(2) {
             send_frame(b'K', format!(r#"{{"ts_ms":{}}}"#, now_ms()).as_bytes());
