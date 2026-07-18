@@ -48,9 +48,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         override fun surfaceChanged(holder: SurfaceHolder, f: Int, w: Int, h: Int) {
             PhosphorNative.surfaceCreatedOrChanged(holder.surface, w, h, resources.displayMetrics.density)
-            // Mobile ships a sharper default focus than the desktop's 1.6 — density-3
-            // panels turn the desktop default to fuzz. The settings rule adjusts live.
-            PhosphorNative.setFocus(1.1f)
+            // Ben's call (2026-07-18): maximum sharpness by default — 0.3 px, the
+            // bottom of the desktop slider. The settings rule adjusts live.
+            PhosphorNative.setFocus(0.3f)
         }
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             PhosphorNative.surfaceDestroyed()
@@ -125,7 +125,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         PhosphorNative.cycleAdvance()
                     }
                 })
+                // Initial sync: the world may have moved while the Activity slept
+                // (earbud skips with the screen off) — mirror the session's truth now,
+                // not just on the next change event.
                 ui.playing = c.isPlaying
+                c.mediaMetadata.let { m ->
+                    m.title?.toString()?.let { ui.trackTitle = it }
+                    ui.trackArtist = m.artist?.toString()
+                    val src = m.extras?.getString("source")
+                    ui.remote = src == "remote"
+                    if (ui.remote) {
+                        val host = m.extras?.getString("host") ?: "remote"
+                        ui.sourceLabel = "remote · $host"
+                    }
+                }
             }
         }, MoreExecutors.directExecutor())
         tick.post(uiTick)

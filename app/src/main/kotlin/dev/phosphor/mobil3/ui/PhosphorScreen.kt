@@ -65,7 +65,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     var overflow by remember { mutableStateOf(false) }
-    var focusValue by remember { mutableFloatStateOf(1.1f) }
+    var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
 
     // Predictive back peels one layer at a time: popout → sheet → console → system.

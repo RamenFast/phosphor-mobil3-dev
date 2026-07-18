@@ -1,5 +1,36 @@
 # Handoff — next session starts here
 
+## ⚡ FABLE SESSION LIVE LOG (2026-07-18, evening) — supersedes the queue below where marked
+
+The Fable redo session is IN PROGRESS (plan: ~/.claude/plans/scalable-sparking-planet.md).
+Shipped so far this session (all committed+pushed on master):
+- **Act 0** ✅ bridge revalidated with real music; black-scope ROOT-CAUSED = parec
+  burstiness (BUGLOG #1); 20 ms PULSE_LATENCY_MSEC hotfix live on thinkcenter (Ben
+  confirms cleaner audio).
+- **Act I (§0 redo)** ✅ tokens (12 rooms verbatim incl. Fable's room, JetBrains Mono +
+  IBM Plex bundled), carved StoneKey/StoneToggle w/ press-sink, status band w/ ×gain,
+  console w/ seek rule + marquee, sheet mechanics (drag-dismiss), SOURCE hierarchy +
+  consent card + LIVE stone, MODE grouped w/ engraved glyphs, LIGHT v2 (custom 1-3
+  colors, HSV, gradient ring, cycle timer/per-track, photosensitivity guard persisted),
+  ROOM sheet (12), SETTINGS structure (FOCUS/GAIN/BEAM/GLOW rules + GRID), engine verbs
+  (SetGain/SetGlow/OrbitBy/DollyBy/SetFocus/SetBeamEnergy/SetGrid/SetCustomBeam/
+  SetBeamCycle/CycleAdvance/SetReducedMotion), tube-flip + thermionic warm-up + resting
+  dot envelopes, gesture arbiter core (pinch=gain/dolly, drag=gain/orbit + ribbon —
+  Ben field-confirmed), accent-follows-beam breathing, adaptive launcher icon (v2 with
+  companion glyphs in flight). Desktop-parity audit DONE (gain 0.1-6, beam 1-30, glow
+  0-0.98, grid — same fields/clamps).
+- **Act III core** ✅ residency: ONE session TWO players (RemotePlayer ghost-playlist
+  pattern), setPlayer swap, FGS mediaPlayback, media-button session owned by phosphor
+  (dumpsys receipt), media keys → bridge → playerctl (relay log receipt), 25 s background
+  ZERO mute warnings. Earbuds drive the laptop; phone Spotify untouched.
+- **In flight:** relay v2 P1 (opus worker, near done — protocol W/H/G/M/S/L/R/E/K,
+  pw-record per-app, 10 ms A-frames, CLI+systemd install script); icon v2 (companion
+  glyphs). Next: Act II phone-side (remote.rs v2 rewrite + state machine + host list UI),
+  then Act IV library+Drive (rclone; needs one Ben OAuth), Act V deck sheet+settings
+  persistence, Act VI three souls, Act VII PiP/ember/HUD/M6-prep.
+- Narration rig live (kitty transcript right of screen + intercom TTS; Ben recording OBS).
+- Correction banked: **thinkcenter = LAPTOP; interserve-linux = PC/desktop (dev box).**
+
 ## Where we are (2026-07-18): M0–M5(pass 1) + a working Tailscale bridge, all on GitHub
 
 phosphor-mobil3 is a usable Android scope-music app on Ben's S25. Both repos are on GitHub

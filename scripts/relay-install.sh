@@ -106,7 +106,8 @@ command -v scp >/dev/null 2>&1 || die "scp not found" "install openssh-client" 2
 
 say "staging binary + unit on ${HOST}"
 scp -q "$BIN" "${HOST}:/tmp/${BIN_NAME}.new" || die "scp binary to ${HOST} failed" "check: ssh ${HOST} (is it reachable on the tailnet?)" 4
-unit_text | ssh "$HOST" "cat > /tmp/${UNIT_NAME}.new" || die "scp unit to ${HOST} failed" "check ssh access to ${HOST}" 4
+# fixed literal remote path (no client-side var expansion) — write the unit there
+unit_text | ssh "$HOST" 'cat > /tmp/phosphor-relay.service.new' || die "scp unit to ${HOST} failed" "check ssh access to ${HOST}" 4
 
 say "installing on ${HOST} over ssh"
 # The remote block is single-quoted (no local expansion); it exports the user
