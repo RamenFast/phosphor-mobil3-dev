@@ -2,13 +2,17 @@ package dev.phosphor.mobil3.ui
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import kotlin.math.pow
 
-// House design tokens, ported verbatim from phosphor/crates/phosphor-app/src/theme.rs.
-// Sharp corners, hairline frames, mono data, dimensional stone for the few important controls.
+// House design tokens, ported verbatim from phosphor/crates/phosphor-app/src/theme.rs
+// (PALETTES[12], same order). Sharp corners, hairline frames, mono data, dimensional
+// stone for the few important controls. Blossom Dark is THE default; the last four are
+// the distinct-visual-system rooms — bevel city, true black, warm paper, amber CRT.
 @Immutable
 data class Palette(
     val id: String,
     val label: String,
+    val dark: Boolean,
     val plane: Color,
     val surface: Color,
     val surface2: Color,
@@ -23,13 +27,38 @@ data class Palette(
     val stoneHi: Color,
     val stoneLo: Color,
     val accentFollowsBeam: Boolean,
-)
+) {
+    // Blend a beam color into the accent (accent_follows_beam rooms only) —
+    // port of theme.rs with_beam: gamma-lift, then 82% toward the beam hue.
+    fun withBeam(beam: FloatArray): Palette {
+        if (!accentFollowsBeam) return this
+        fun lift(c: Float) = (c.toDouble().pow(1.0 / 2.2).coerceIn(0.0, 1.0) * 255.0).toInt()
+        fun mix(beamCh: Int, base: Int) = ((beamCh * 0.82 + base * 0.18).toInt()).coerceAtLeast(base)
+        return copy(
+            accent = Color(
+                mix(lift(beam[0]), 0x30),
+                mix(lift(beam[1]), 0x40),
+                mix(lift(beam[2]), 0x38),
+            )
+        )
+    }
+}
 
 private fun c(hex: Long) = Color(0xFF000000 or hex)
 private fun ca(r: Int, g: Int, b: Int, a: Int) = Color(r, g, b, a)
 
+val Blossom = Palette(
+    id = "blossom", label = "Blossom", dark = false,
+    plane = c(0xf3e6e6), surface = c(0xfcf4f3), surface2 = c(0xf6e9e9),
+    ink = c(0x2b2128), ink2 = c(0x5f4f57), muted = c(0x9c8890),
+    line = ca(43, 33, 40, 41), lineStrong = ca(43, 33, 40, 77),
+    accent = c(0xc85a7c), onAccent = c(0xfff7f9),
+    stone = c(0xe7dad9), stoneHi = c(0xfffafa), stoneLo = c(0xc9b6b8),
+    accentFollowsBeam = false,
+)
+
 val BlossomDark = Palette(
-    id = "blossom_dark", label = "Blossom Dark",
+    id = "blossom_dark", label = "Blossom Dark", dark = true,
     plane = c(0x1c1016), surface = c(0x281821), surface2 = c(0x33212c),
     ink = c(0xf5eaef), ink2 = c(0xc9b0bc), muted = c(0x917986),
     line = ca(244, 233, 238, 36), lineStrong = ca(244, 233, 238, 82),
@@ -38,8 +67,68 @@ val BlossomDark = Palette(
     accentFollowsBeam = true,
 )
 
+val LightRoom = Palette(
+    id = "light", label = "Light", dark = false,
+    plane = c(0xeaeef2), surface = c(0xffffff), surface2 = c(0xf5f8fa),
+    ink = c(0x0e1620), ink2 = c(0x43515e), muted = c(0x7a8894),
+    line = ca(14, 22, 32, 31), lineStrong = ca(14, 22, 32, 71),
+    accent = c(0x0c94a2), onAccent = c(0xffffff),
+    stone = c(0xe4e9ee), stoneHi = c(0xffffff), stoneLo = c(0xc2ccd4),
+    accentFollowsBeam = false,
+)
+
+val DarkRoom = Palette(
+    id = "dark", label = "Dark", dark = true,
+    plane = c(0x0a0810), surface = c(0x141019), surface2 = c(0x1b1522),
+    ink = c(0xf0eaf0), ink2 = c(0xb3a6b3), muted = c(0x7d6f7d),
+    line = ca(240, 234, 240, 31), lineStrong = ca(240, 234, 240, 66),
+    accent = c(0xe78aa6), onAccent = c(0x160810),
+    stone = c(0x241d29), stoneHi = c(0x332838), stoneLo = c(0x140f18),
+    accentFollowsBeam = false,
+)
+
+val Chromacore = Palette(
+    id = "chromacore", label = "Chromacore", dark = true,
+    plane = c(0x080810), surface = c(0x0d0d16), surface2 = c(0x12121e),
+    ink = c(0xe8e8f0), ink2 = c(0xa8b4c4), muted = c(0x606a7e),
+    line = ca(0, 229, 255, 28), lineStrong = ca(0, 229, 255, 64),
+    accent = c(0x00e5ff), onAccent = c(0x030a0e),
+    stone = c(0x10181e), stoneHi = c(0x1a2a30), stoneLo = c(0x060c10),
+    accentFollowsBeam = false,
+)
+
+val Basalt = Palette(
+    id = "basalt", label = "Basalt", dark = true,
+    plane = c(0x171719), surface = c(0x222225), surface2 = c(0x1a1a1d),
+    ink = c(0xdbd7ce), ink2 = c(0x9a968e), muted = c(0x66635d),
+    line = ca(0, 0, 0, 110), lineStrong = ca(0, 0, 0, 150),
+    accent = c(0x9cb4c9), onAccent = c(0x101215),
+    stone = c(0x2c2c30), stoneHi = c(0x4a4a50), stoneLo = c(0x0e0e10),
+    accentFollowsBeam = false,
+)
+
+val Afterglow = Palette(
+    id = "afterglow", label = "Afterglow", dark = true,
+    plane = c(0x050607), surface = c(0x0b0d0e), surface2 = c(0x101314),
+    ink = c(0xd6e0dc), ink2 = c(0x8c9c96), muted = c(0x55625d),
+    line = ca(255, 255, 255, 20), lineStrong = ca(255, 255, 255, 46),
+    accent = c(0x63ffb0), onAccent = c(0x020805),
+    stone = c(0x121615), stoneHi = c(0x202825), stoneLo = c(0x060a08),
+    accentFollowsBeam = true,
+)
+
+val Stonework95 = Palette(
+    id = "stonework95", label = "Stonework 95", dark = false,
+    plane = c(0xc8c5bd), surface = c(0xd9d6ce), surface2 = c(0xc3c0b8),
+    ink = c(0x1a1a1f), ink2 = c(0x45454d), muted = c(0x6e6e76),
+    line = ca(26, 26, 31, 64), lineStrong = ca(26, 26, 31, 115),
+    accent = c(0x20328c), onAccent = c(0xf2f2f7),
+    stone = c(0xd4d0c8), stoneHi = c(0xfffffb), stoneLo = c(0x86837c),
+    accentFollowsBeam = false,
+)
+
 val Amoled = Palette(
-    id = "amoled", label = "AMOLED",
+    id = "amoled", label = "AMOLED", dark = true,
     plane = c(0x000000), surface = c(0x000000), surface2 = c(0x0d0d0d),
     ink = c(0xffffff), ink2 = c(0xc4c4c4), muted = c(0x8a8a8a),
     line = ca(255, 255, 255, 46), lineStrong = ca(255, 255, 255, 92),
@@ -48,5 +137,41 @@ val Amoled = Palette(
     accentFollowsBeam = false,
 )
 
-// The rooms shipped so far (the remaining desktop rooms port in later M5 passes).
-val Rooms = listOf(BlossomDark, Amoled)
+val Paper = Palette(
+    id = "paper", label = "Paper", dark = false,
+    plane = c(0xf2ecdf), surface = c(0xfaf6ec), surface2 = c(0xece5d6),
+    ink = c(0x2e2820), ink2 = c(0x5c5244), muted = c(0x8f8472),
+    line = ca(46, 40, 32, 46), lineStrong = ca(46, 40, 32, 92),
+    accent = c(0xc33d2e), onAccent = c(0xfdf9f2),
+    stone = c(0xe8e0d0), stoneHi = c(0xfffdf6), stoneLo = c(0xc0b5a0),
+    accentFollowsBeam = false,
+)
+
+val CrtAmber = Palette(
+    id = "amber", label = "CRT Amber", dark = true,
+    plane = c(0x0e0802), surface = c(0x170e04), surface2 = c(0x201406),
+    ink = c(0xffc966), ink2 = c(0xc99642), muted = c(0x8a662e),
+    line = ca(255, 176, 0, 38), lineStrong = ca(255, 176, 0, 84),
+    accent = c(0xffb000), onAccent = c(0x1a0f00),
+    stone = c(0x241708), stoneHi = c(0x452d10), stoneLo = c(0x080501),
+    accentFollowsBeam = false,
+)
+
+// The model that built v4 signs the guestbook: a storyteller's room. 🐢
+val Fable = Palette(
+    id = "fable", label = "Fable", dark = true,
+    plane = c(0x0a1411), surface = c(0x111e1a), surface2 = c(0x172822),
+    ink = c(0xeaf2ec), ink2 = c(0xadc4b8), muted = c(0x6e877b),
+    line = ca(158, 232, 200, 34), lineStrong = ca(158, 232, 200, 72),
+    accent = c(0xeac279), onAccent = c(0x141a10),
+    stone = c(0x1c2e27), stoneHi = c(0x2e463b), stoneLo = c(0x0c1612),
+    accentFollowsBeam = false,
+)
+
+// Menu order = desktop menu order. All 12 rooms, verbatim.
+val Rooms = listOf(
+    Blossom, BlossomDark, LightRoom, DarkRoom, Chromacore, Basalt,
+    Afterglow, Stonework95, Amoled, Paper, CrtAmber, Fable,
+)
+
+fun paletteById(id: String): Palette = Rooms.find { it.id == id } ?: BlossomDark

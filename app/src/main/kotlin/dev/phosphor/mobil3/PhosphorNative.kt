@@ -34,6 +34,18 @@ object PhosphorNative {
     /** Beam integration rate: 1×=120, 2×=240, 4×=480 sub-steps per displayed frame. */
     external fun setOversample(n: Int)
 
+    // The instrument feel (Act I): gain/glow/camera verbs + envelope control.
+    external fun setGain(gain: Float)
+    /** Beam focus px (0.3..3.0, desktop slider) — smaller = sharper. */
+    external fun setFocus(focus: Float)
+    external fun setGlow(persistence: Float)
+    external fun orbitBy(dyaw: Float, dpitch: Float)
+    external fun dollyBy(delta: Float)
+    external fun setReducedMotion(reduced: Boolean)
+    external fun gainNow(): Float
+    /** True when an active source has been silent past the sleep window (resting beam up). */
+    external fun scopeSilent(): Boolean
+
     // Remote source (Tailscale bridge): connect to a desktop phosphor-relay.
     external fun remoteConnect(host: String, port: Int): Boolean
     external fun remoteTransport(cmd: String) // "next" | "prev" | "playpause"

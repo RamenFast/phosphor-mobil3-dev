@@ -15,10 +15,22 @@ class ScopeUiState {
 
     var sourceLabel by mutableStateOf("no source")
     var remote by mutableStateOf(false) // remote (Tailscale) source active
+    var live by mutableStateOf(false) // capture or mic actively feeding the beam
     var playing by mutableStateOf(false)
     var trackTitle by mutableStateOf<String?>(null)
     var trackArtist by mutableStateOf<String?>(null)
 
+    // Seek rule (console): live position from the controller when the deck is seekable.
+    var seekable by mutableStateOf(false)
+    var positionMs by mutableStateOf(0L)
+    var durationMs by mutableStateOf(0L)
+
+    // The instrument readouts.
+    var gain by mutableStateOf(1.0f)
+    var autoGain by mutableStateOf(false)
+    var noSignal by mutableStateOf(false) // resting beam is up on an active source
+
     val modeLabel: String get() = ModeLabels.getOrElse(modeIndex) { "?" }
     val modeTag: String get() = ModeTags.getOrElse(modeIndex) { "?" }
+    val mode3d: Boolean get() = modeIndex == 4 || modeIndex == 5 // attractor, helix
 }

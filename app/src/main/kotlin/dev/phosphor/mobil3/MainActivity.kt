@@ -7,6 +7,8 @@ import android.content.pm.PackageManager
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -26,6 +28,7 @@ import dev.phosphor.mobil3.ui.Palette
 import dev.phosphor.mobil3.ui.PhosphorScreen
 import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
+import dev.phosphor.mobil3.ui.readReducedMotion
 import java.io.File
 
 // M5: the app. Compose chrome over the scope SurfaceView; the loaded deck owns the transport
@@ -35,7 +38,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private val ui = ScopeUiState()
     private val mic = MicController()
     private var controller: MediaController? = null
-    private var pendingCaptureRequest = false
+    private var reduced = false
+    private var gainValue = 1.0f
+    private val tick = Handler(Looper.getMainLooper())
 
     private val surfaceCallback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {
@@ -43,6 +48,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         override fun surfaceChanged(holder: SurfaceHolder, f: Int, w: Int, h: Int) {
             PhosphorNative.surfaceCreatedOrChanged(holder.surface, w, h, resources.displayMetrics.density)
+            // Mobile ships a sharper default focus than the desktop's 1.6 — density-3
+            // panels turn the desktop default to fuzz. The settings rule adjusts live.
+            PhosphorNative.setFocus(1.1f)
         }
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             PhosphorNative.surfaceDestroyed()
@@ -62,12 +70,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         .putExtra(CaptureService.EXTRA_RESULT, data)
                 )
                 ui.sourceLabel = "capture"
+                ui.live = true
             }
         }
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) { mic.start(); ui.sourceLabel = "mic" }
+            if (granted) { mic.start(); ui.sourceLabel = "mic"; ui.live = true }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -79,7 +88,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
 
-        setContent { PhosphorScreen(ui, this) }
+        reduced = readReducedMotion(this)
+        PhosphorNative.setReducedMotion(reduced)
+        setContent { PhosphorScreen(ui, this, reduced) }
         handleIntent(intent)
     }
 
@@ -100,13 +111,31 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.playing = c.isPlaying
             }
         }, MoreExecutors.directExecutor())
+        tick.post(uiTick)
     }
 
     override fun onStop() {
+        tick.removeCallbacks(uiTick)
         PhosphorNative.setRenderPaused(true)
         controller?.release()
         controller = null
         super.onStop()
+    }
+
+    // One gentle heartbeat for display facts Compose can't observe directly:
+    // seek position from the controller, the resting-beam flag from the engine.
+    private val uiTick = object : Runnable {
+        override fun run() {
+            controller?.let { c ->
+                val dur = c.duration
+                ui.seekable = !ui.remote && dur > 0 &&
+                    c.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
+                ui.durationMs = if (dur > 0) dur else 0L
+                ui.positionMs = c.currentPosition.coerceAtLeast(0L)
+            }
+            ui.noSignal = PhosphorNative.scopeSilent()
+            tick.postDelayed(this, 500)
+        }
     }
 
     override fun onNewIntent(intent: Intent) {
@@ -115,7 +144,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun handleIntent(intent: Intent) {
-        intent.getStringExtra("open")?.let { openDeck(it, "library") }
+        intent.getStringExtra("open")?.let { openDeck(it, "deck") }
         if (intent.getBooleanExtra("capture", false)) startCapture()
         if (intent.getBooleanExtra("remote", false)) startRemote()
     }
@@ -130,7 +159,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             contentResolver.openInputStream(uri)?.use { input ->
                 dst.outputStream().use { input.copyTo(it) }
             }
-            runOnUiThread { openDeck(dst.absolutePath, "library") }
+            runOnUiThread { openDeck(dst.absolutePath, "deck") }
         }.start()
     }
 
@@ -161,6 +190,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun prev() {
         if (ui.remote) PhosphorNative.remoteTransport("prev") else controller?.seekToPrevious()
+    }
+
+    override fun seekTo(ms: Long) {
+        if (!ui.remote) controller?.seekTo(ms)
     }
 
     override fun startRemote() {
@@ -198,21 +231,48 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun startMic() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
-        ) { mic.start(); ui.sourceLabel = "mic" } else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        ) { mic.start(); ui.sourceLabel = "mic"; ui.live = true }
+        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
     override fun startCapture() {
+        markConsentSeen()
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         captureConsent.launch(mpm.createScreenCaptureIntent())
     }
 
+    override fun stopLive() {
+        mic.stop()
+        startService(
+            Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP)
+        )
+        PhosphorNative.setRingActive(false)
+        ui.live = false
+        if (ui.sourceLabel == "capture" || ui.sourceLabel == "mic") ui.sourceLabel = "no source"
+    }
+
+    // The consent moment (spec §2.3): one calm card before the system dialog, first time.
+    private fun prefs() = getSharedPreferences("phosphor.prefs", MODE_PRIVATE)
+    override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
+    private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
+
     override fun setMode(index: Int) { PhosphorNative.setMode(index); ui.modeIndex = index }
 
-    // Laptop (thinkcenter) over Tailscale. A host field in settings is the next polish step.
+    // Laptop (thinkcenter) over Tailscale. The host list lands with bridge v2 (Act II).
     private val REMOTE_HOST = "100.66.109.56"
     private val REMOTE_PORT = 45777
     override fun setBeam(index: Int) { PhosphorNative.setBeamColor(index); ui.beamIndex = index }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { ui.room = room }
+    override fun setFocus(focus: Float) { PhosphorNative.setFocus(focus) }
+
+    override fun setGainAbsolute(g: Float) {
+        gainValue = g.coerceIn(0.05f, 16f)
+        PhosphorNative.setGain(gainValue)
+        ui.gain = gainValue
+    }
+
+    override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
+    override fun dollyBy(delta: Float) = PhosphorNative.dollyBy(delta)
 }

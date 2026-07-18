@@ -332,3 +332,74 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_engineInfo(
         }
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGain(
+    _env: JNIEnv,
+    _class: JClass,
+    gain: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetGain(gain));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGlow(
+    _env: JNIEnv,
+    _class: JClass,
+    persistence: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetGlow(persistence));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_orbitBy(
+    _env: JNIEnv,
+    _class: JClass,
+    dyaw: jni::sys::jfloat,
+    dpitch: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::OrbitBy(dyaw, dpitch));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_dollyBy(
+    _env: JNIEnv,
+    _class: JClass,
+    delta: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::DollyBy(delta));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setReducedMotion(
+    _env: JNIEnv,
+    _class: JClass,
+    reduced: jni::sys::jboolean,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetReducedMotion(reduced != 0));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_gainNow(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jfloat {
+    crate::render::GAIN_MILLI.load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_scopeSilent(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jboolean {
+    crate::render::NO_SIGNAL.load(std::sync::atomic::Ordering::Relaxed) as jni::sys::jboolean
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setFocus(
+    _env: JNIEnv,
+    _class: JClass,
+    focus: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetFocus(focus));
+}
