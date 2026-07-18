@@ -1,6 +1,12 @@
 # Handoff — next session starts here
 
-## M0–M3 SHIPPED in one session (2026-07-18); M4 (capture + mic + Shizuku spike) is next
+## M0–M4-core SHIPPED in one session (2026-07-18); next: M4 remainder (mic, capture-stop UX, Shizuku — see SERIOUS-TODOS), then M5 UX build-out
+
+- **M4 core** capture: ea05427. Consent flow works over adb (dialog: dropdown → entire
+  screen → Next); Chrome mp3 drawn live (960 segs/frame). GOTCHAS: singleTask launches
+  land in onNewIntent (extras silently ignored in onCreate-only handling); FGS must be
+  foreground BEFORE getMediaProjection; Chrome needs a tap to start a bare-mp3 page
+  (autoplay policy). Spotify/YT Music silence is EXPECTED (opt-out) — documented.
 
 - **M0** scaffold+toolchain+device: commit 2db590b/ebd53b0.
 - **M1** the beam at 120 Hz: 919fd0b/20caa45. fps receipt via logcat counter +
