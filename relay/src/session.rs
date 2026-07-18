@@ -130,7 +130,7 @@ impl SessionState {
             "pick a source again — falling back to the default output",
             serde_json::json!({ "was": self.selected }),
         );
-        self.capture = None;
+        self.stop_capture(); // join the dead pump's thread (which reaps the child)
         if let Some(def) = capture::default_monitor_id() {
             self.selected = def;
         }
@@ -421,6 +421,12 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
     let (wtx, wrx) = mpsc::sync_channel::<Vec<u8>>(256);
     let writer = thread::spawn(move || {
         let mut w = write_half;
+        // A write timeout is load-bearing: if the client stops reading, the
+        // socket send buffer fills and a plain write_all would block forever —
+        // shutdown() can't discard a full buffer. The timeout guarantees the
+        // writer can always error out and exit, which drops the channel receiver
+        // and unblocks every producer's send, so teardown can never wedge.
+        let _ = w.set_write_timeout(Some(Duration::from_secs(5)));
         for frame in wrx {
             if w.write_all(&frame).is_err() {
                 break;

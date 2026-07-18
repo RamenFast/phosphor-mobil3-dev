@@ -175,11 +175,12 @@ pub struct CapturePump {
 }
 
 impl CapturePump {
-    /// We asked it to stop (source switch / teardown) — kill quietly, no EOF event.
+    /// We asked it to stop (source switch / teardown) — kill quietly (no EOF
+    /// event) and let the pump thread reap the child on its way out.
     pub fn stop(mut self) {
         self.stopping.store(true, Ordering::SeqCst);
-        if let Some(mut c) = self.child.lock().unwrap().take() {
-            let _ = c.kill();
+        if let Some(c) = self.child.lock().unwrap().as_mut() {
+            let _ = c.kill(); // unblock the read; the thread wait()s it
         }
         if let Some(h) = self.handle.take() {
             let _ = h.join();
@@ -201,7 +202,7 @@ pub fn start(
     let child = Arc::new(Mutex::new(Some(child)));
     let stopping = Arc::new(AtomicBool::new(false));
 
-    let stopping_t = stopping.clone();
+    let (stopping_t, child_t) = (stopping.clone(), child.clone());
     let handle = thread::spawn(move || {
         use std::io::Read;
         let mut buf = [0u8; A_FRAME];
@@ -227,6 +228,10 @@ pub fn start(
                     break;
                 }
             }
+        }
+        // reap the child (whether it died on its own or we killed it) — no zombie.
+        if let Some(mut c) = child_t.lock().unwrap().take() {
+            let _ = c.wait();
         }
     });
 

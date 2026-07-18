@@ -248,8 +248,8 @@ struct FilePump {
 impl FilePump {
     fn stop(mut self) {
         self.stopping.store(true, Ordering::SeqCst);
-        if let Some(mut c) = self.child.lock().unwrap().take() {
-            let _ = c.kill();
+        if let Some(c) = self.child.lock().unwrap().as_mut() {
+            let _ = c.kill(); // unblock the read; the thread wait()s it
         }
         if let Some(h) = self.handle.take() {
             let _ = h.join();
@@ -282,7 +282,7 @@ fn start_pump(
     let paused = Arc::new(AtomicBool::new(paused_initial));
     let bytes = Arc::new(AtomicU64::new(0));
 
-    let (st, pz, by) = (stopping.clone(), paused.clone(), bytes.clone());
+    let (st, pz, by, child_t) = (stopping.clone(), paused.clone(), bytes.clone(), child.clone());
     let handle = thread::spawn(move || {
         use std::io::Read;
         use std::time::Instant;
@@ -330,6 +330,10 @@ fn start_pump(
                     break;
                 }
             }
+        }
+        // reap ffmpeg (natural EOF or a kill from stop/seek/advance) — no zombie.
+        if let Some(mut c) = child_t.lock().unwrap().take() {
+            let _ = c.wait();
         }
     });
 

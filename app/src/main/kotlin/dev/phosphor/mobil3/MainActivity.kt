@@ -106,6 +106,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     override fun onMediaMetadataChanged(m: MediaMetadata) {
                         ui.trackTitle = m.title?.toString()
                         ui.trackArtist = m.artist?.toString()
+                        // The session's metadata extras are the remote deck's mirror
+                        // channel: source/conn/host without a second state path.
+                        val src = m.extras?.getString("source")
+                        ui.remote = src == "remote"
+                        if (ui.remote) {
+                            val conn = m.extras?.getString("conn")
+                            val host = m.extras?.getString("host") ?: "remote"
+                            ui.sourceLabel = when (conn) {
+                                "CONNECTING" -> "remote · connecting…"
+                                "LOST" -> "remote · reconnecting…"
+                                "FAILED" -> "remote · unreachable"
+                                else -> "remote · $host"
+                            }
+                        }
                         // Track boundary: advance a per-song light cycle (engine ignores
                         // it unless per-track cycling is active).
                         PhosphorNative.cycleAdvance()
@@ -196,20 +210,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun makeSurface(): SurfaceView =
         SurfaceView(this).apply { holder.addCallback(surfaceCallback) }
 
+    // The transport law, unified: ALL transport goes through the one MediaController —
+    // the session's player routes to the local deck or the bridge. Notification, lock
+    // screen, earbuds and the console are therefore the same code path.
     override fun togglePlay() {
-        if (ui.remote) { PhosphorNative.remoteTransport("playpause"); ui.playing = !ui.playing; return }
         val c = controller
-        if (c != null) { if (c.isPlaying) c.pause() else c.play() }
+        if (c != null) { if (c.playWhenReady) c.pause() else c.play() }
         else ui.playing = PhosphorNative.deckToggle() // no session yet (nothing loaded)
     }
 
-    override fun next() {
-        if (ui.remote) PhosphorNative.remoteTransport("next") else controller?.seekToNext()
-    }
+    override fun next() { controller?.seekToNext() }
 
-    override fun prev() {
-        if (ui.remote) PhosphorNative.remoteTransport("prev") else controller?.seekToPrevious()
-    }
+    override fun prev() { controller?.seekToPrevious() }
 
     override fun seekTo(ms: Long) {
         if (!ui.remote) controller?.seekTo(ms)
@@ -217,32 +229,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun startRemote() {
         mic.stop()
-        Thread {
-            val ok = PhosphorNative.remoteConnect(REMOTE_HOST, REMOTE_PORT)
-            runOnUiThread {
-                if (ok) {
-                    ui.remote = true
-                    ui.playing = true
-                    ui.sourceLabel = "remote"
-                    pollRemoteMeta()
-                }
-            }
-        }.start()
-    }
-
-    private fun pollRemoteMeta() {
-        if (!ui.remote) return
-        Thread {
-            while (ui.remote) {
-                val m = runCatching { org.json.JSONObject(PhosphorNative.remoteMetadata()) }.getOrNull()
-                if (m != null) runOnUiThread {
-                    ui.trackTitle = m.optString("title").ifBlank { null }
-                    ui.trackArtist = m.optString("artist").ifBlank { null }
-                    if (m.has("playing")) ui.playing = m.optBoolean("playing")
-                }
-                Thread.sleep(1000)
-            }
-        }.start()
+        ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
+        startService(
+            Intent(this, PlaybackService::class.java)
+                .setAction(PlaybackService.ACTION_REMOTE_CONNECT)
+                .putExtra(PlaybackService.EXTRA_HOST, REMOTE_HOST)
+                .putExtra(PlaybackService.EXTRA_PORT, REMOTE_PORT)
+                .putExtra(PlaybackService.EXTRA_LABEL, "thinkcenter")
+        )
     }
 
     override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))

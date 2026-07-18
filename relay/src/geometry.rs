@@ -26,6 +26,7 @@ impl Geometry {
         self.on.store(false, Ordering::SeqCst);
         if let Some(mut c) = self.child.lock().unwrap().take() {
             let _ = c.kill();
+            let _ = c.wait(); // reap — no zombie phosphor-tap
         }
         if let Some(h) = self.supervisor.take() {
             let _ = h.join();
@@ -100,6 +101,7 @@ pub fn start(
 
             if let Some(mut c) = slot_t.lock().unwrap().take() {
                 let _ = c.kill();
+                let _ = c.wait(); // reap before a possible respawn
             }
             let _ = reader.join();
 
