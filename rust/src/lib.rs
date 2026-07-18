@@ -3,6 +3,7 @@
 //! everything JNI lives behind `cfg(target_os = "android")` in `jni_glue`.
 
 pub mod engine;
+pub mod selftest;
 
 #[cfg(target_os = "android")]
 pub mod render;

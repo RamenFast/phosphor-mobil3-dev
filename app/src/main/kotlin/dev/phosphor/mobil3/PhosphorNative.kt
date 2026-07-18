@@ -24,4 +24,7 @@ object PhosphorNative {
     external fun surfaceDestroyed()
 
     external fun setRenderPaused(paused: Boolean)
+
+    /** Debug receipts hatch: deterministic offscreen render → selftest.json/png. */
+    external fun selfTest(filesDir: String): String
 }

@@ -187,7 +187,31 @@ fps)
   ;;
 
 smoke)
-  fail 2 "on-device SELFTEST lands with M1 (offscreen render + golden compare)" "track task M1; until then: pm3 run && pm3 logcat shows engineInfo from the Rust core"
+  d="$(need_device)"
+  adb -s "$d" shell pm dump "$PKG" 2>/dev/null | grep -q "pkgFlags.*DEBUGGABLE" \
+    || fail 2 "installed build is not debuggable — the SELFTEST hatch honestly does not exist in release builds" "pm3 build && pm3 install (debug), then retry"
+  adb -s "$d" shell am broadcast -a "$PKG.SELFTEST" -n "$PKG/.SelfTestReceiver" >/dev/null 2>&1 \
+    || fail 4 "broadcast failed" "pm3 install a current debug build"
+  # Offscreen render of 512² through the real engine takes a moment.
+  report=""
+  for _ in $(seq 1 20); do
+    sleep 0.5
+    report="$(adb -s "$d" shell run-as "$PKG" cat files/selftest.json 2>/dev/null)"
+    [ -n "$report" ] && break
+  done
+  [ -n "$report" ] || fail 4 "selftest.json never appeared" "pm3 logcat — look for 'SELFTEST' lines"
+  outp="$REPO/docs/dev/receipts/selftest-$(date +%Y%m%d-%H%M%S).png"
+  mkdir -p "$(dirname "$outp")"
+  adb -s "$d" shell run-as "$PKG" cat files/selftest.png > "$outp" 2>/dev/null
+  adb -s "$d" shell run-as "$PKG" rm files/selftest.json >/dev/null 2>&1
+  okflag="$(printf '%s' "$report" | grep -o '"ok":[a-z]*' | head -1)"
+  if want_json; then
+    printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","report":%s,"png_pulled":"%s"}\n' \
+      "$TOOL" "$VERSION" "$(now)" "$report" "$outp"
+  else
+    echo "$report"; echo "png: $outp"
+  fi
+  [ "$okflag" = '"ok":true' ] && exit 0 || exit 4
   ;;
 
 schema)

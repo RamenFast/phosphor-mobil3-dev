@@ -92,6 +92,25 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setRenderPaused(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_selfTest(
+    mut env: JNIEnv,
+    _class: JClass,
+    files_dir: jni::objects::JString,
+) -> jstring {
+    ensure_init();
+    let dir: String = env
+        .get_string(&files_dir)
+        .map(|s| s.into())
+        .unwrap_or_default();
+    let report = crate::selftest::run(&dir);
+    log::info!("selftest: {report}");
+    match env.new_string(&report) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_engineInfo(
     env: JNIEnv,
     _class: JClass,
