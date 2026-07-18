@@ -772,8 +772,10 @@ dependencies = [
  "phosphor-proto",
  "phosphor-render-cpu",
  "phosphor-render-gpu",
+ "pollster",
  "serde",
  "serde_json",
+ "wgpu",
 ]
 
 [[package]]

@@ -28,6 +28,44 @@ pub fn engine_info() -> String {
     .to_string()
 }
 
+/// Synthetic scope feed for M1: an evolving Lissajous figure, phase-continuous across
+/// frames, sample-domain identical to what a real track would push. Host-testable.
+pub struct Feeder {
+    t0: std::time::Instant,
+    last: f64,
+    phase_x: f64,
+    phase_y: f64,
+}
+
+impl Feeder {
+    pub fn new() -> Feeder {
+        Feeder { t0: std::time::Instant::now(), last: 0.0, phase_x: 0.0, phase_y: 0.0 }
+    }
+    pub fn reset(&mut self) {
+        self.t0 = std::time::Instant::now();
+        self.last = 0.0;
+    }
+    /// Interleaved stereo at 48 kHz covering the wall-clock time since the last call.
+    pub fn frame_samples(&mut self) -> Vec<f32> {
+        let now = self.t0.elapsed().as_secs_f64();
+        let dt = (now - self.last).clamp(0.0, 0.05);
+        self.last = now;
+        let n = ((dt * 48_000.0) as usize).clamp(64, 4096);
+
+        // A slowly morphing ratio walks the figure through the Lissajous family.
+        let base = 220.0 * std::f64::consts::TAU / 48_000.0;
+        let ratio = 1.5 + 0.5 * (now * 0.11).sin();
+        let mut out = Vec::with_capacity(n * 2);
+        for _ in 0..n {
+            self.phase_x += base * ratio;
+            self.phase_y += base;
+            out.push((self.phase_x.sin() * 0.75) as f32);
+            out.push((self.phase_y.sin() * 0.75) as f32);
+        }
+        out
+    }
+}
+
 #[cfg(test)]
 mod tests {
     #[test]

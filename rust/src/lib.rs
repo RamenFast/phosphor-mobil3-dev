@@ -5,4 +5,7 @@
 pub mod engine;
 
 #[cfg(target_os = "android")]
+pub mod render;
+
+#[cfg(target_os = "android")]
 mod jni_glue;
