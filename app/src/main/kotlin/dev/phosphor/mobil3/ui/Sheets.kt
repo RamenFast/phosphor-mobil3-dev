@@ -201,13 +201,13 @@ fun SourceSheet(
         }
         SectionHeading("REMOTE", p)
         SheetRow(
-            "desktop · thinkcenter (Tailscale)", p,
+            "laptop · thinkcenter (Tailscale)", p,
             checked = state.remote,
         ) { actions.startRemote(); onDismiss() }
         Prose(
-            "Remote scopes a desktop's audio over Tailscale — it plays here and the " +
-                "transport drives the desktop. Local capture can't see Spotify or DRM " +
-                "apps; games, browsers and local players work.",
+            "Remote scopes another machine's audio over Tailscale — it plays here and " +
+                "the transport drives that machine. Local capture can't see Spotify or " +
+                "DRM apps; games, browsers and local players work.",
             p.muted, modifier = Modifier.padding(top = Dim.gap, bottom = Dim.gapLg),
         )
         StoneToggle(
@@ -268,28 +268,6 @@ fun ModeSheet(
                 p.muted, modifier = Modifier.padding(top = 4.dp),
             )
         }
-    }
-}
-
-// ── LIGHT (spec §2.5, pass 1): the 9 preset phosphors. Custom + cycle land next pass. ──
-@Composable
-fun LightSheet(
-    state: ScopeUiState,
-    p: Palette,
-    reduced: Boolean,
-    onPick: (Int) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    SheetHost(p, "LIGHT", reduced, onDismiss) {
-        LazyVerticalGrid(columns = GridCells.Fixed(3)) {
-            itemsIndexed(BeamColors) { i, sw ->
-                SwatchCell(sw, active = i == state.beamIndex, p = p) { onPick(i) }
-            }
-        }
-        Prose(
-            "the beam wears it immediately — browse freely",
-            p.muted, modifier = Modifier.padding(top = Dim.gap),
-        )
     }
 }
 

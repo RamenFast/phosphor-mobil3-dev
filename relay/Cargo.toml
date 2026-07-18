@@ -1,9 +1,9 @@
 [package]
 name = "phosphor-relay"
-version = "0.1.0"
+version = "2.0.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
-description = "Laptop-side half of the phosphor-mobil3 Tailscale bridge: streams the desktop's audio + player metadata to the phone and forwards transport commands to MPRIS."
+description = "Desktop-side half of the phosphor-mobil3 bridge: streams per-app/output audio, now-playing metadata, and phosphor beam geometry to the phone over one framed TCP connection, and drives the desktop player + a browsable music library back."
 
 [[bin]]
 name = "phosphor-relay"

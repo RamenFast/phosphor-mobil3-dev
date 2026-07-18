@@ -30,6 +30,18 @@ class ScopeUiState {
     var autoGain by mutableStateOf(false)
     var noSignal by mutableStateOf(false) // resting beam is up on an active source
 
+    // Custom light (LIGHT sheet): 0 slots = presets active.
+    var customColors by mutableStateOf(
+        listOf(
+            androidx.compose.ui.graphics.Color(0xFF6BFF8C),
+            androidx.compose.ui.graphics.Color(0xFF35BFFF),
+            androidx.compose.ui.graphics.Color(0xFFFF4CE1),
+        )
+    )
+    var customCount by mutableStateOf(0)
+    var cycleSeconds by mutableStateOf(3.0f)
+    var cyclePerTrack by mutableStateOf(false)
+
     val modeLabel: String get() = ModeLabels.getOrElse(modeIndex) { "?" }
     val modeTag: String get() = ModeTags.getOrElse(modeIndex) { "?" }
     val mode3d: Boolean get() = modeIndex == 4 || modeIndex == 5 // attractor, helix

@@ -34,15 +34,17 @@ pub const VERSION: &str = "2.0.0";
 pub const TOOL: &str = "phosphor-relay";
 
 /// Read error distinguishes an oversize declaration (→ E + close) from a plain
-/// disconnect (→ clean teardown).
+/// disconnect/EOF (→ clean teardown). The IO cause isn't needed downstream —
+/// both mean "this connection is done".
+#[derive(Debug)]
 pub enum ReadErr {
     Oversize(usize),
-    Io(io::Error),
+    Io,
 }
 
 impl From<io::Error> for ReadErr {
-    fn from(e: io::Error) -> Self {
-        ReadErr::Io(e)
+    fn from(_: io::Error) -> Self {
+        ReadErr::Io
     }
 }
 
@@ -189,8 +191,8 @@ pub struct Stats {
 
 #[derive(Deserialize, Clone, Copy)]
 pub struct Hello {
-    #[serde(default)]
-    pub proto: u32,
+    // `proto` and `client` ride on the wire but the relay doesn't branch on
+    // them; serde ignores the extra keys.
     #[serde(default)]
     pub audio: bool,
     #[serde(default)]

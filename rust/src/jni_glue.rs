@@ -403,3 +403,57 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setFocus(
 ) {
     let _ = crate::render::sender().send(crate::render::Cmd::SetFocus(focus));
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setCustomBeam(
+    env: JNIEnv,
+    _class: JClass,
+    rgb: jni::objects::JFloatArray, // 9 floats: 3 slots × RGB (linear 0..1)
+    count: jni::sys::jint,
+) {
+    let mut buf = [0f32; 9];
+    if env.get_float_array_region(&rgb, 0, &mut buf).is_err() {
+        return;
+    }
+    let colors = [
+        [buf[0], buf[1], buf[2]],
+        [buf[3], buf[4], buf[5]],
+        [buf[6], buf[7], buf[8]],
+    ];
+    // Grid follows slot 0 at reduced saturation (the desktop's custom-grid default idea).
+    let grid = [buf[0] * 0.85, buf[1] * 0.85, buf[2] * 0.85];
+    let _ = crate::render::sender().send(crate::render::Cmd::SetCustomBeam {
+        colors,
+        count: count.clamp(0, 3) as u8,
+        grid,
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBeamCycle(
+    _env: JNIEnv,
+    _class: JClass,
+    seconds: jni::sys::jfloat,
+    per_track: jni::sys::jboolean,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetBeamCycle {
+        seconds,
+        per_track: per_track != 0,
+    });
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_cycleAdvance(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::CycleAdvance);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_beamColorNow(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    crate::render::BEAM_RGB.load(std::sync::atomic::Ordering::Relaxed) as jni::sys::jint
+}

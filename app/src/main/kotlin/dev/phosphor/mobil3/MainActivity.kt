@@ -106,6 +106,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     override fun onMediaMetadataChanged(m: MediaMetadata) {
                         ui.trackTitle = m.title?.toString()
                         ui.trackArtist = m.artist?.toString()
+                        // Track boundary: advance a per-song light cycle (engine ignores
+                        // it unless per-track cycling is active).
+                        PhosphorNative.cycleAdvance()
                     }
                 })
                 ui.playing = c.isPlaying
@@ -123,7 +126,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // One gentle heartbeat for display facts Compose can't observe directly:
-    // seek position from the controller, the resting-beam flag from the engine.
+    // seek position from the controller, the resting-beam flag, the breathing accent.
+    private var baseRoom: Palette? = null
     private val uiTick = object : Runnable {
         override fun run() {
             controller?.let { c ->
@@ -134,6 +138,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.positionMs = c.currentPosition.coerceAtLeast(0L)
             }
             ui.noSignal = PhosphorNative.scopeSilent()
+            // accent_follows_beam rooms breathe with the live beam (desktop law: 82%
+            // toward the beam hue). Recomputed at 2 Hz — gentle, not flickery.
+            val base = baseRoom ?: ui.room
+            if (base.accentFollowsBeam) {
+                val rgb = PhosphorNative.beamColorNow()
+                val beam = floatArrayOf(
+                    ((rgb shr 16) and 0xff) / 255f,
+                    ((rgb shr 8) and 0xff) / 255f,
+                    (rgb and 0xff) / 255f,
+                )
+                // beamColorNow is already gamma-encoded; withBeam lifts linear — feed it
+                // the linearized value so the lift round-trips.
+                fun lin(v: Float) = Math.pow(v.toDouble(), 2.2).toFloat()
+                ui.room = base.withBeam(floatArrayOf(lin(beam[0]), lin(beam[1]), lin(beam[2])))
+            }
             tick.postDelayed(this, 500)
         }
     }
@@ -264,7 +283,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setBeam(index: Int) { PhosphorNative.setBeamColor(index); ui.beamIndex = index }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
-    override fun setRoom(room: Palette) { ui.room = room }
+    override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
     override fun setFocus(focus: Float) { PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) {
@@ -275,4 +294,23 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
     override fun dollyBy(delta: Float) = PhosphorNative.dollyBy(delta)
+
+    override fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int) {
+        val rgb = FloatArray(9)
+        colors.take(3).forEachIndexed { i, c ->
+            rgb[i * 3] = c.red; rgb[i * 3 + 1] = c.green; rgb[i * 3 + 2] = c.blue
+        }
+        PhosphorNative.setCustomBeam(rgb, count)
+        ui.customCount = count
+    }
+
+    override fun setBeamCycle(seconds: Float, perTrack: Boolean) {
+        PhosphorNative.setBeamCycle(seconds, perTrack)
+        ui.cycleSeconds = seconds
+        ui.cyclePerTrack = perTrack
+    }
+
+    // Photosensitivity acceptance persists forever, as on desktop.
+    override fun epilepsyAcknowledged(): Boolean = prefs().getBoolean("epilepsy_ack", false)
+    override fun ackEpilepsy() { prefs().edit().putBoolean("epilepsy_ack", true).apply() }
 }

@@ -45,6 +45,10 @@ interface ScopeActions {
     fun setOversample(n: Int)
     fun setRoom(room: Palette)
     fun setFocus(focus: Float)
+    fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int)
+    fun setBeamCycle(seconds: Float, perTrack: Boolean)
+    fun epilepsyAcknowledged(): Boolean
+    fun ackEpilepsy()
     fun setGainAbsolute(g: Float)
     fun orbitBy(dyaw: Float, dpitch: Float)
     fun dollyBy(delta: Float)
@@ -178,9 +182,14 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.MODE -> ModeSheet(state, p, reduced, onPick = { actions.setMode(it) }) {
                     sheet = Sheet.NONE
                 }
-                Sheet.LIGHT -> LightSheet(state, p, reduced, onPick = { actions.setBeam(it) }) {
-                    sheet = Sheet.NONE
-                }
+                Sheet.LIGHT -> LightSheetV2(
+                    state, p, reduced,
+                    onPickPreset = { actions.setBeam(it) },
+                    onCustomChange = { colors, count -> actions.setCustomBeam(colors, count) },
+                    onCycleChange = { secs, perTrack -> actions.setBeamCycle(secs, perTrack) },
+                    epilepsyAcknowledged = { actions.epilepsyAcknowledged() },
+                    ackEpilepsy = { actions.ackEpilepsy() },
+                ) { sheet = Sheet.NONE }
                 Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) }) {
                     sheet = Sheet.NONE
                 }

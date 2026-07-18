@@ -40,6 +40,12 @@ pub enum Cmd {
     SetReducedMotion(bool),
     /// Beam focus in px (the desktop slider, 0.3..3.0) — smaller = sharper.
     SetFocus(f32),
+    /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
+    SetCustomBeam { colors: [[f32; 3]; 3], count: u8, grid: [f32; 3] },
+    /// Cycle timing: seconds per color→color leg; per_track advances only on CycleAdvance.
+    SetBeamCycle { seconds: f32, per_track: bool },
+    /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
+    CycleAdvance,
 }
 
 pub const MODE_COUNT: u8 = 11;
@@ -66,6 +72,13 @@ pub static CURRENT_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::Atomic
 pub static GAIN_MILLI: AtomicU32 = AtomicU32::new(1000);
 /// True when an active source has been silent past the sleep window (resting beam is up).
 pub static NO_SIGNAL: AtomicBool = AtomicBool::new(false);
+/// Live beam color, packed 0xRRGGBB (for accent_follows_beam chrome breathing).
+pub static BEAM_RGB: AtomicU32 = AtomicU32::new(0x6bff8c);
+
+fn pack_rgb(c: [f32; 3]) -> u32 {
+    let ch = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u32;
+    (ch(c[0]) << 16) | (ch(c[1]) << 8) | ch(c[2])
+}
 
 /// ndk's NativeWindow is a refcounted ANativeWindow; the NDK API is thread-safe, so
 /// moving the ref onto the render thread is sound. The wrapper says so explicitly.
@@ -164,6 +177,16 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut flip: Option<Flip> = None;
     let mut silent_since: Option<std::time::Instant> = None;
     let mut rest_phase: f32 = 0.0;
+
+    // Custom light + cycle: colors lerp slot→slot over `cycle_secs` per leg (timer mode)
+    // or advance one leg per track boundary (per-track mode; exempt from the guard).
+    let mut custom_colors: [[f32; 3]; 3] = [[0.42, 1.0, 0.55]; 3];
+    let mut custom_count: u8 = 0; // 0 = presets active
+    let mut custom_grid: [f32; 3] = [0.35, 1.0, 0.45];
+    let mut cycle_secs: f32 = 3.0;
+    let mut cycle_per_track = false;
+    let mut cycle_t0 = std::time::Instant::now();
+    let mut cycle_leg: usize = 0;
 
     loop {
         // Idle (no surface, or paused): block on the channel. Active: drain then draw.
@@ -305,6 +328,31 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                         log::info!("beam focus: {:.2}", r.beam_focus);
                     }
                 }
+                Cmd::SetCustomBeam { colors, count, grid } => {
+                    custom_colors = colors;
+                    custom_count = count.min(3);
+                    custom_grid = grid;
+                    cycle_leg = 0;
+                    cycle_t0 = std::time::Instant::now();
+                    if custom_count == 0 {
+                        if let Some(r) = renderer.as_mut() {
+                            r.theme = phosphor_beam::THEME_PRESETS[beam_color].1;
+                        }
+                    }
+                    log::info!("custom beam: {} colors", custom_count);
+                }
+                Cmd::SetBeamCycle { seconds, per_track } => {
+                    cycle_secs = seconds.clamp(0.1, 60.0);
+                    cycle_per_track = per_track;
+                    cycle_t0 = std::time::Instant::now();
+                    log::info!("beam cycle: {cycle_secs}s per_track={cycle_per_track}");
+                }
+                Cmd::CycleAdvance => {
+                    if custom_count >= 2 && cycle_per_track {
+                        cycle_leg = (cycle_leg + 1) % custom_count as usize;
+                        cycle_t0 = std::time::Instant::now();
+                    }
+                }
                 Cmd::SetReducedMotion(rm) => {
                     reduced_motion = rm;
                     if rm {
@@ -388,6 +436,38 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             }
         }
         let transform_active = scale_xy < 1.0 || scale_y < 1.0 || brightness < 1.0;
+
+        // Custom light: static color, or the cycle lerping slot→slot. Timer mode loops
+        // continuously; per-track mode fades one leg per CycleAdvance then holds.
+        if custom_count >= 1 {
+            let cur = if custom_count == 1 {
+                custom_colors[0]
+            } else {
+                let t = (cycle_t0.elapsed().as_secs_f32() / cycle_secs).min(if cycle_per_track { 1.0 } else { f32::MAX });
+                let (leg, frac) = if cycle_per_track {
+                    (cycle_leg, t.min(1.0))
+                } else {
+                    let total = t + cycle_leg as f32;
+                    let leg = (total as usize) % custom_count as usize;
+                    (leg, total.fract())
+                };
+                let a = custom_colors[leg % custom_count as usize];
+                let b = custom_colors[(leg + 1) % custom_count as usize];
+                let s = smoothstep(frac);
+                [
+                    a[0] + (b[0] - a[0]) * s,
+                    a[1] + (b[1] - a[1]) * s,
+                    a[2] + (b[2] - a[2]) * s,
+                ]
+            };
+            r.theme = phosphor_beam::Theme::custom(cur, custom_grid);
+            BEAM_RGB.store(pack_rgb(cur), Ordering::Relaxed);
+        } else {
+            BEAM_RGB.store(
+                pack_rgb(phosphor_beam::THEME_PRESETS[beam_color].1.beam_color),
+                Ordering::Relaxed,
+            );
+        }
 
         // Beam-rate oversampling: integrate the trace over N sub-steps per displayed frame
         // (dt-correct decay so brightness is unchanged). The panel still shows 120 Hz, but

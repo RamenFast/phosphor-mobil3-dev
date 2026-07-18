@@ -46,6 +46,13 @@ object PhosphorNative {
     /** True when an active source has been silent past the sleep window (resting beam up). */
     external fun scopeSilent(): Boolean
 
+    // Custom light + cycle (LIGHT sheet). rgb = 9 floats (3 slots × linear RGB).
+    external fun setCustomBeam(rgb: FloatArray, count: Int)
+    external fun setBeamCycle(seconds: Float, perTrack: Boolean)
+    external fun cycleAdvance()
+    /** Live beam color packed 0xRRGGBB (accent_follows_beam chrome breathing). */
+    external fun beamColorNow(): Int
+
     // Remote source (Tailscale bridge): connect to a desktop phosphor-relay.
     external fun remoteConnect(host: String, port: Int): Boolean
     external fun remoteTransport(cmd: String) // "next" | "prev" | "playpause"

@@ -56,7 +56,6 @@ pub fn serve_event(name: &str, extra: serde_json::Value) {
 /// Shared, read-mostly handles the control loop and its handlers need.
 struct Ctx {
     cfg: Arc<Config>,
-    caps: proto::Caps,
     wtx: SyncSender<Vec<u8>>,
     ctl: Sender<Ev>,
     counters: Arc<Counters>,
@@ -441,7 +440,7 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
         .or_else(|| capture::enumerate().into_iter().find(|s| s.kind == "monitor").map(|s| s.id))
         .unwrap_or_else(|| "device:default.monitor".into());
 
-    let ctx = Ctx { cfg: cfg.clone(), caps, wtx: wtx.clone(), ctl: ctl.clone(), counters: counters.clone(), snap: snap.clone(), art: art.clone() };
+    let ctx = Ctx { cfg: cfg.clone(), wtx: wtx.clone(), ctl: ctl.clone(), counters: counters.clone(), snap: snap.clone(), art: art.clone() };
 
     // W immediately; nothing else streams until H arrives.
     let _ = ctx.wtx.send(proto::encode_frame(proto::W, &build_welcome(&cfg, caps, &selected)));
@@ -468,7 +467,7 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
                     let _ = r_ctl.send(Ev::Disconnect);
                     break;
                 }
-                Err(ReadErr::Io(_)) => {
+                Err(ReadErr::Io) => {
                     let _ = r_ctl.send(Ev::Disconnect);
                     break;
                 }
