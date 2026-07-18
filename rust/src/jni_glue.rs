@@ -218,6 +218,53 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setTargetFps(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteConnect(
+    mut env: JNIEnv,
+    _class: JClass,
+    host: jni::objects::JString,
+    port: jni::sys::jint,
+) -> jni::sys::jboolean {
+    ensure_init();
+    let host: String = env.get_string(&host).map(|s| s.into()).unwrap_or_default();
+    match crate::remote::connect(&host, port.max(0) as u16) {
+        Ok(()) => 1,
+        Err(e) => {
+            log::error!("remoteConnect: {e}");
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteTransport(
+    mut env: JNIEnv,
+    _class: JClass,
+    cmd: jni::objects::JString,
+) {
+    let cmd: String = env.get_string(&cmd).map(|s| s.into()).unwrap_or_default();
+    crate::remote::transport(&cmd);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteMetadata(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    match env.new_string(crate::remote::metadata_json()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteDisconnect(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    crate::remote::disconnect();
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setOversample(
     _env: JNIEnv,
     _class: JClass,

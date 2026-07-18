@@ -34,6 +34,12 @@ object PhosphorNative {
     /** Beam integration rate: 1×=120, 2×=240, 4×=480 sub-steps per displayed frame. */
     external fun setOversample(n: Int)
 
+    // Remote source (Tailscale bridge): connect to a desktop phosphor-relay.
+    external fun remoteConnect(host: String, port: Int): Boolean
+    external fun remoteTransport(cmd: String) // "next" | "prev" | "playpause"
+    external fun remoteMetadata(): String
+    external fun remoteDisconnect()
+
     // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
     external fun setRingActive(active: Boolean)

@@ -54,6 +54,9 @@ interface ScopeActions {
     fun openFile()
     fun startMic()
     fun startCapture()
+    fun next()
+    fun prev()
+    fun startRemote()
     fun setMode(index: Int)
     fun setBeam(index: Int)
     fun setFps(value: Int)
@@ -122,7 +125,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions) {
         ) {
             Console(state, p, onMode = { sheet = Sheet.MODE }, onSrc = { sheet = Sheet.SOURCE },
                 onMore = { sheet = Sheet.SETTINGS }, onLight = { sheet = Sheet.LIGHT },
-                onPlay = { actions.togglePlay() })
+                onPlay = { actions.togglePlay() }, onNext = { actions.next() }, onPrev = { actions.prev() })
         }
 
         // Layer 2: sheets.
@@ -131,10 +134,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions) {
                 SheetRow("open file / folder…", p) { actions.openFile(); sheet = Sheet.NONE }
                 SheetRow("microphone · room", p) { actions.startMic(); sheet = Sheet.NONE }
                 SheetRow("other apps · capture", p) { actions.startCapture(); sheet = Sheet.NONE }
+                SheetRow("remote · desktop (Tailscale)", p) { actions.startRemote(); sheet = Sheet.NONE }
                 Mono(
-                    "Spotify & DRM apps opt out of capture — they arrive silent. Games, browsers and local players work.",
+                    "Remote scopes a desktop's audio over Tailscale (Spotify included) — it plays here and the transport drives the desktop. Local capture can't see Spotify/DRM apps; games, browsers and local players work.",
                     p.muted, 11.sp, FontFamily.SansSerif,
-                    Modifier.padding(top = 8.dp),
+                    Modifier.padding(top = 8.dp), maxLines = 5,
                 )
             }
             Sheet.MODE -> SheetScrim(p, "MODE", { sheet = Sheet.NONE }) {
@@ -205,8 +209,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions) {
 private fun Console(
     state: ScopeUiState, p: Palette,
     onMode: () -> Unit, onSrc: () -> Unit, onMore: () -> Unit, onLight: () -> Unit,
-    onPlay: () -> Unit,
+    onPlay: () -> Unit, onNext: () -> Unit, onPrev: () -> Unit,
 ) {
+    val hasTransport = state.trackTitle != null || state.remote
     Column(
         Modifier
             .fillMaxWidth()
@@ -226,13 +231,19 @@ private fun Console(
             Spacer(Modifier.height(8.dp))
         }
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (hasTransport) {
+                FlatKey("◂◂", p, onPrev)
+                Spacer(Modifier.width(8.dp))
+            }
             StoneKey(if (state.playing) "❚❚" else "▶", p, onPlay)
-            Spacer(Modifier.width(14.dp))
+            if (hasTransport) {
+                Spacer(Modifier.width(8.dp))
+                FlatKey("▸▸", p, onNext)
+            }
+            Spacer(Modifier.width(12.dp))
             FlatKey("MODE", p, onMode)
             Spacer(Modifier.width(8.dp))
             FlatKey("SRC", p, onSrc)
-            Spacer(Modifier.width(8.dp))
-            FlatKey("LIGHT", p, onLight)
             Spacer(Modifier.weight(1f))
             FlatKey("⋯", p, onMore)
         }

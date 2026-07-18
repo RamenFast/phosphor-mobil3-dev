@@ -14,6 +14,7 @@ class ScopeUiState {
     var oversample by mutableStateOf(1) // beam integration multiplier
 
     var sourceLabel by mutableStateOf("no source")
+    var remote by mutableStateOf(false) // remote (Tailscale) source active
     var playing by mutableStateOf(false)
     var trackTitle by mutableStateOf<String?>(null)
     var trackArtist by mutableStateOf<String?>(null)

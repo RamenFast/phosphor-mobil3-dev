@@ -117,6 +117,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun handleIntent(intent: Intent) {
         intent.getStringExtra("open")?.let { openDeck(it, "library") }
         if (intent.getBooleanExtra("capture", false)) startCapture()
+        if (intent.getBooleanExtra("remote", false)) startRemote()
     }
 
     // Copy the picked document into a cache file named after its real display name (so the
@@ -148,9 +149,48 @@ class MainActivity : ComponentActivity(), ScopeActions {
         SurfaceView(this).apply { holder.addCallback(surfaceCallback) }
 
     override fun togglePlay() {
+        if (ui.remote) { PhosphorNative.remoteTransport("playpause"); ui.playing = !ui.playing; return }
         val c = controller
         if (c != null) { if (c.isPlaying) c.pause() else c.play() }
         else ui.playing = PhosphorNative.deckToggle() // no session yet (nothing loaded)
+    }
+
+    override fun next() {
+        if (ui.remote) PhosphorNative.remoteTransport("next") else controller?.seekToNext()
+    }
+
+    override fun prev() {
+        if (ui.remote) PhosphorNative.remoteTransport("prev") else controller?.seekToPrevious()
+    }
+
+    override fun startRemote() {
+        mic.stop()
+        Thread {
+            val ok = PhosphorNative.remoteConnect(REMOTE_HOST, REMOTE_PORT)
+            runOnUiThread {
+                if (ok) {
+                    ui.remote = true
+                    ui.playing = true
+                    ui.sourceLabel = "remote"
+                    pollRemoteMeta()
+                }
+            }
+        }.start()
+    }
+
+    private fun pollRemoteMeta() {
+        if (!ui.remote) return
+        Thread {
+            while (ui.remote) {
+                val m = runCatching { org.json.JSONObject(PhosphorNative.remoteMetadata()) }.getOrNull()
+                if (m != null) runOnUiThread {
+                    ui.trackTitle = m.optString("title").ifBlank { null }
+                    ui.trackArtist = m.optString("artist").ifBlank { null }
+                    if (m.has("playing")) ui.playing = m.optBoolean("playing")
+                }
+                Thread.sleep(1000)
+            }
+        }.start()
     }
 
     override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))
@@ -167,6 +207,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun setMode(index: Int) { PhosphorNative.setMode(index); ui.modeIndex = index }
+
+    // Laptop (thinkcenter) over Tailscale. A host field in settings is the next polish step.
+    private val REMOTE_HOST = "100.66.109.56"
+    private val REMOTE_PORT = 45777
     override fun setBeam(index: Int) { PhosphorNative.setBeamColor(index); ui.beamIndex = index }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
