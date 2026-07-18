@@ -20,7 +20,34 @@ pub enum Cmd {
     SurfaceChanged { width: u32, height: u32 },
     SurfaceDestroyed { ack: mpsc::SyncSender<()> },
     Paused(bool),
+    SetMode(u8),
+    SetBeamColor(u8),
+    /// -1 = unlimited (Immediate present, may exceed the panel), 0 = panel vsync (Fifo),
+    /// N > 0 = cap to N fps (Immediate present + frame limiter; N above the panel rate is
+    /// honored — it just tears past the display's refresh).
+    SetTargetFps(i32),
 }
+
+pub const MODE_COUNT: u8 = 11;
+
+fn mode_from_index(i: u8) -> Mode {
+    match i % MODE_COUNT {
+        0 => Mode::Xy,
+        1 => Mode::Xy45,
+        2 => Mode::XySwirl,
+        3 => Mode::XyDots,
+        4 => Mode::XyzTakens,
+        5 => Mode::Helix,
+        6 => Mode::Waveform,
+        7 => Mode::Ring,
+        8 => Mode::Spectrum,
+        9 => Mode::SpectrumRadial,
+        _ => Mode::Tunnel,
+    }
+}
+
+/// Live mode index, readable from any thread for the status band.
+pub static CURRENT_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 
 /// ndk's NativeWindow is a refcounted ANativeWindow; the NDK API is thread-safe, so
 /// moving the ref onto the render thread is sound. The wrapper says so explicitly.
@@ -50,9 +77,24 @@ struct Gpu {
 struct Active {
     surface: wgpu::Surface<'static>,
     config: wgpu::SurfaceConfiguration,
+    present_caps: Vec<wgpu::PresentMode>,
     // Held so the ANativeWindow outlives the wgpu Surface built on it. Field order is
     // drop order: Surface first, then the window ref.
     _window: SendWindow,
+}
+
+/// Fifo for panel-vsync (target 0). Anything else wants Immediate (uncapped or
+/// higher-than-panel with a software limiter); Mailbox is the fallback, Fifo the last.
+fn present_mode_for(target_fps: i32, caps: &[wgpu::PresentMode]) -> wgpu::PresentMode {
+    if target_fps == 0 {
+        return wgpu::PresentMode::Fifo;
+    }
+    for want in [wgpu::PresentMode::Immediate, wgpu::PresentMode::Mailbox] {
+        if caps.contains(&want) {
+            return want;
+        }
+    }
+    wgpu::PresentMode::Fifo
 }
 
 fn render_thread(rx: mpsc::Receiver<Cmd>) {
@@ -68,6 +110,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut feeder = Feeder::new();
     let mut fps_frames: u32 = 0;
     let mut fps_t0 = std::time::Instant::now();
+    let mut beam_color: usize = 0;
+    let mut target_fps: i32 = 0; // 0 = panel vsync
+    let mut last_present = std::time::Instant::now();
 
     loop {
         // Idle (no surface, or paused): block on the channel. Active: drain then draw.
@@ -90,7 +135,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     // Drop any previous surface first — two swapchains on one
                     // ANativeWindow is a Vulkan conflict.
                     active = None;
-                    match bring_up(&mut gpu, window, width, height) {
+                    match bring_up(&mut gpu, window, width, height, target_fps) {
                         Ok(a) => {
                             let g = gpu.as_ref().unwrap();
                             match renderer.as_mut() {
@@ -146,6 +191,28 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     paused = p;
                     log::info!("render paused: {p}");
                 }
+                Cmd::SetMode(i) => {
+                    computer.mode = mode_from_index(i);
+                    CURRENT_MODE.store(i % MODE_COUNT, std::sync::atomic::Ordering::Relaxed);
+                    log::info!("mode: {}", computer.mode.name());
+                }
+                Cmd::SetBeamColor(i) => {
+                    beam_color = (i as usize) % phosphor_beam::THEME_PRESETS.len();
+                    if let Some(r) = renderer.as_mut() {
+                        r.theme = phosphor_beam::THEME_PRESETS[beam_color].1;
+                    }
+                    log::info!("beam color: {}", phosphor_beam::THEME_PRESETS[beam_color].0);
+                }
+                Cmd::SetTargetFps(fps) => {
+                    if fps != target_fps {
+                        target_fps = fps;
+                        if let (Some(a), Some(g)) = (active.as_mut(), gpu.as_ref()) {
+                            a.config.present_mode = present_mode_for(target_fps, &a.present_caps);
+                            a.surface.configure(&g.device, &a.config);
+                        }
+                        log::info!("target fps: {target_fps}");
+                    }
+                }
             }
             continue;
         }
@@ -190,6 +257,17 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         g.queue.submit([encoder.finish()]);
         frame.present();
 
+        // Software frame limiter for capped targets (target > 0). Fifo self-paces at 0;
+        // unlimited (-1) never sleeps.
+        if target_fps > 0 {
+            let budget = std::time::Duration::from_secs_f64(1.0 / target_fps as f64);
+            let elapsed = last_present.elapsed();
+            if elapsed < budget {
+                std::thread::sleep(budget - elapsed);
+            }
+        }
+        last_present = std::time::Instant::now();
+
         fps_frames += 1;
         let elapsed = fps_t0.elapsed().as_secs_f64();
         if elapsed >= 1.0 {
@@ -230,7 +308,8 @@ fn configure(
     surface: &wgpu::Surface<'_>,
     width: u32,
     height: u32,
-) -> wgpu::SurfaceConfiguration {
+    target_fps: i32,
+) -> (wgpu::SurfaceConfiguration, Vec<wgpu::PresentMode>) {
     let caps = surface.get_capabilities(&g.adapter);
     let format = caps
         .formats
@@ -243,13 +322,13 @@ fn configure(
         format,
         width: width.max(1),
         height: height.max(1),
-        present_mode: wgpu::PresentMode::Fifo,
+        present_mode: present_mode_for(target_fps, &caps.present_modes),
         alpha_mode: caps.alpha_modes[0],
         view_formats: vec![],
         desired_maximum_frame_latency: 2,
     };
     surface.configure(&g.device, &config);
-    config
+    (config, caps.present_modes)
 }
 
 fn bring_up(
@@ -257,6 +336,7 @@ fn bring_up(
     window: SendWindow,
     width: u32,
     height: u32,
+    target_fps: i32,
 ) -> Result<Active, String> {
     if gpu.is_none() {
         let instance = wgpu::Instance::default();
@@ -272,12 +352,13 @@ fn bring_up(
                 .map_err(|e| format!("no device: {e}"))?;
         log::info!("adapter: {:?}", adapter.get_info());
         let g = Gpu { instance, adapter, device, queue };
-        let config = configure(&g, &surface, width, height);
+        let (config, present_caps) = configure(&g, &surface, width, height, target_fps);
+        log::info!("present modes: {present_caps:?}");
         *gpu = Some(g);
-        return Ok(Active { surface, config, _window: window });
+        return Ok(Active { surface, config, present_caps, _window: window });
     }
     let g = gpu.as_ref().unwrap();
     let surface = create_surface(&g.instance, &window)?;
-    let config = configure(g, &surface, width, height);
-    Ok(Active { surface, config, _window: window })
+    let (config, present_caps) = configure(g, &surface, width, height, target_fps);
+    Ok(Active { surface, config, present_caps, _window: window })
 }

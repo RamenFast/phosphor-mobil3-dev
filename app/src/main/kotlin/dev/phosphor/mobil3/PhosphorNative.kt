@@ -25,6 +25,13 @@ object PhosphorNative {
 
     external fun setRenderPaused(paused: Boolean)
 
+    // Scope controls (M5).
+    external fun setMode(index: Int)
+    external fun currentMode(): Int
+    external fun setBeamColor(index: Int)
+    /** -1 unlimited · 0 panel vsync · N cap to N fps (N above the panel tears, honored). */
+    external fun setTargetFps(fps: Int)
+
     // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
     external fun setRingActive(active: Boolean)

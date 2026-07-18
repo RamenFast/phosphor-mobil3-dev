@@ -183,6 +183,41 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckCoverArt(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setMode(
+    _env: JNIEnv,
+    _class: JClass,
+    index: jni::sys::jint,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetMode(index.max(0) as u8));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_currentMode(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    crate::render::CURRENT_MODE.load(std::sync::atomic::Ordering::Relaxed) as jni::sys::jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBeamColor(
+    _env: JNIEnv,
+    _class: JClass,
+    index: jni::sys::jint,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetBeamColor(index.max(0) as u8));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setTargetFps(
+    _env: JNIEnv,
+    _class: JClass,
+    fps: jni::sys::jint,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetTargetFps(fps));
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_pushCaptureSamples(
     env: JNIEnv,
     _class: JClass,

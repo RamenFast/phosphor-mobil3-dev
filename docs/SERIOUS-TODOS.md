@@ -14,3 +14,9 @@
   apps (Spotify/YT Music/DRM). Do not revisit.** The honest capture story stands: deck +
   browsers/games/non-DRM apps + mic.
 - [ ] Resting-beam dot (desktop law) not yet on mobile: silent source shows black, should show the centered dot + `no signal · <source>` label (M5).
+- [ ] Genuine ">120" quality lever (Ben wants above-120): Android can't PRESENT above the panel
+  rate (compositor vsync-locks all app surfaces; caps = [Mailbox, Fifo], no Immediate). The
+  honest "more temporal detail" knob is the desktop's scope reconstruction rate /
+  Computer::set_sample_rate(rate, oversample) — expose 48/96/192/384 kHz oversampling so the
+  beam is integrated at higher effective rate per displayed 120 Hz frame. Needs decay-dt
+  correctness (persistence scaled per substep) to avoid dimming. Wire in an M5 polish pass.
