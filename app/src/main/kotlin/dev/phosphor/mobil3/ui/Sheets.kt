@@ -48,7 +48,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlin.math.roundToInt
 
-enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM }
+enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK }
 
 // ── Sheet mechanics (shared): translucent surface over the live scope, hairline top
 // rule, drag-down / scrim-tap / ✕ / Back to dismiss, 200 ms decelerate, no bounce. ──
@@ -185,9 +185,13 @@ fun SourceSheet(
             }
         } else {
         SectionHeading("MY LIBRARY", p, Modifier.padding(top = 0.dp))
-        SheetRow("open file / folder…", p, checked = state.sourceLabel == "deck") {
+        SheetRow("open file…", p, checked = state.sourceLabel == "deck" && state.queueTitles.size <= 1) {
             actions.openFile(); onDismiss()
         }
+        SheetRow(
+            "open folder → queue", p,
+            checked = state.sourceLabel == "deck" && state.queueTitles.size > 1,
+        ) { actions.openFolder(); onDismiss() }
         SectionHeading("OTHER APPS", p)
         SheetRow(
             "everything playing", p,
@@ -416,6 +420,7 @@ interface SheetActions {
     fun startRemoteHost(label: String, host: String, port: Int)
     fun setRemoteStreams(audio: Boolean, geometry: Boolean)
     fun disconnectRemote()
+    fun openFolder()
 }
 
 // ── The remote flow (SOURCE ▸ REMOTE): hosts → toggles → desktop sources → library.

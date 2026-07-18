@@ -202,6 +202,7 @@ fun Console(
 @Composable
 fun OverflowPopout(
     p: Palette,
+    onDeck: () -> Unit,
     onLight: () -> Unit,
     onRoom: () -> Unit,
     onSettings: () -> Unit,
@@ -227,6 +228,7 @@ fun OverflowPopout(
             .width(200.dp),
     ) {
         listOf(
+            "deck" to onDeck,
             "light" to onLight,
             "room" to onRoom,
             "settings" to onSettings,

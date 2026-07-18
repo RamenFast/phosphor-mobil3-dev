@@ -20,3 +20,4 @@
   Computer::set_sample_rate(rate, oversample) — expose 48/96/192/384 kHz oversampling so the
   beam is integrated at higher effective rate per displayed 120 Hz frame. Needs decay-dt
   correctness (persistence scaled per substep) to avoid dimming. Wire in an M5 polish pass.
+- [ ] rclone shared client_id retires during 2026 — mint our own Drive client_id (https://rclone.org/drive/#making-your-own-client-id) before it breaks

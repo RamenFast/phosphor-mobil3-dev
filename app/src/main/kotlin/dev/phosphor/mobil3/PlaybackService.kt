@@ -121,17 +121,91 @@ class PlaybackService : MediaSessionService() {
         intent?.getStringExtra(EXTRA_OPEN)?.let { path ->
             // Loading a local file takes the deck back (stops remote first, the law).
             if (session?.player === remotePlayer) stopRemote()
-            Thread {
-                if (PhosphorNative.deckOpen(path)) {
-                    requestFocus()
-                    main.post {
-                        switchTo(localPlayer)
-                        localPlayer.onTrackOpened()
-                    }
-                }
-            }.start()
+            localPlayer.setQueue(
+                listOf(PhosphorPlayer.QueueEntry(path, path.substringAfterLast('/'))), 0
+            )
+            queuePaths = mutableListOf(path)
+            queueUris = mutableListOf(null)
+            stageAndOpen(0)
+        }
+        if (intent?.action == ACTION_OPEN_QUEUE) {
+            if (session?.player === remotePlayer) stopRemote()
+            val uris = intent.getStringArrayListExtra(EXTRA_QUEUE_URIS) ?: arrayListOf()
+            val titles = intent.getStringArrayListExtra(EXTRA_QUEUE_TITLES) ?: arrayListOf()
+            val start = intent.getIntExtra(EXTRA_QUEUE_START, 0)
+            queueUris = uris.map { it as String? }.toMutableList()
+            queuePaths = MutableList(uris.size) { null }
+            localPlayer.setQueue(
+                uris.mapIndexed { i, _ ->
+                    PhosphorPlayer.QueueEntry("", titles.getOrElse(i) { "track ${i + 1}" })
+                },
+                start,
+            )
+            stageAndOpen(start)
         }
         return super.onStartCommand(intent, flags, startId)
+    }
+
+    // ── The queue engine: SAF URIs staged into filesDir on demand, next prefetched. ──
+    private var queueUris: MutableList<String?> = mutableListOf()
+    private var queuePaths: MutableList<String?> = mutableListOf()
+    private var stageGen = 0
+
+    private fun stagedPath(i: Int): String? {
+        queuePaths.getOrNull(i)?.let { return it }
+        val uriStr = queueUris.getOrNull(i) ?: return null
+        val uri = android.net.Uri.parse(uriStr ?: return null)
+        val name = "q$i-" + (uri.lastPathSegment ?: "track").substringAfterLast('/')
+            .substringAfterLast(':').replace('/', '_')
+        val dst = java.io.File(filesDir, "queue/$name")
+        dst.parentFile?.mkdirs()
+        return runCatching {
+            contentResolver.openInputStream(uri)?.use { input ->
+                dst.outputStream().use { input.copyTo(it) }
+            }
+            dst.absolutePath.also { queuePaths[i] = it }
+        }.getOrNull()
+    }
+
+    private fun stageAndOpen(i: Int) {
+        val gen = ++stageGen
+        Thread {
+            val path = stagedPath(i)
+            if (path != null && gen == stageGen && PhosphorNative.deckOpen(path)) {
+                requestFocus()
+                main.post {
+                    if (gen != stageGen) return@post
+                    switchTo(localPlayer)
+                    localPlayer.onTrackOpened()
+                    startEndWatcher()
+                }
+                // Prefetch the next entry so the gapless hand-off has a local file ready.
+                if (i + 1 < queueUris.size) stagedPath(i + 1)
+            }
+        }.start()
+    }
+
+    // End-of-track watcher: drives auto-advance through the queue.
+    private var watching = false
+    private fun startEndWatcher() {
+        if (watching) return
+        watching = true
+        main.post(object : Runnable {
+            override fun run() {
+                if (session?.player !== localPlayer || localPlayer.queueSize() == 0) {
+                    watching = false
+                    return
+                }
+                val dur = localPlayer.currentDurationMs()
+                val pos = PhosphorNative.deckPositionMs()
+                if (localPlayer.playWhenReady && dur > 0 && pos >= dur - 350) {
+                    if (!localPlayer.advanceIfPossible()) {
+                        localPlayer.playWhenReady = false // end of queue: rest
+                    }
+                }
+                main.postDelayed(this, 400)
+            }
+        })
     }
 
     private fun startRemote(host: String, port: Int, label: String) {
@@ -259,6 +333,10 @@ class PlaybackService : MediaSessionService() {
 
     companion object {
         const val EXTRA_OPEN = "open"
+        const val ACTION_OPEN_QUEUE = "dev.phosphor.mobil3.OPEN_QUEUE"
+        const val EXTRA_QUEUE_URIS = "queue_uris"
+        const val EXTRA_QUEUE_TITLES = "queue_titles"
+        const val EXTRA_QUEUE_START = "queue_start"
         const val ACTION_REMOTE_CONNECT = "dev.phosphor.mobil3.REMOTE_CONNECT"
         const val ACTION_REMOTE_DISCONNECT = "dev.phosphor.mobil3.REMOTE_DISCONNECT"
         const val EXTRA_HOST = "host"

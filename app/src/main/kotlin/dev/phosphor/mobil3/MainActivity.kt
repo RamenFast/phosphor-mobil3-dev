@@ -62,6 +62,42 @@ class MainActivity : ComponentActivity(), ScopeActions {
             uri?.let { loadUri(it) }
         }
 
+    // Folder → gapless queue (spec §2.2 Full). Persisted permission so the library
+    // survives relaunches; audio files sorted by name = the album order law.
+    private val openFolderLauncher =
+        registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            uri ?: return@registerForActivityResult
+            contentResolver.takePersistableUriPermission(
+                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
+            )
+            Thread {
+                val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri)
+                val audio = root?.listFiles().orEmpty()
+                    .filter { f ->
+                        f.isFile && (f.type?.startsWith("audio/") == true ||
+                            f.name?.substringAfterLast('.')?.lowercase() in
+                            setOf("wav", "flac", "mp3", "ogg", "opus", "m4a", "aac", "aiff"))
+                    }
+                    .sortedBy { it.name?.lowercase() ?: "" }
+                if (audio.isEmpty()) return@Thread
+                val intent = Intent(this, PlaybackService::class.java)
+                    .setAction(PlaybackService.ACTION_OPEN_QUEUE)
+                    .putStringArrayListExtra(
+                        PlaybackService.EXTRA_QUEUE_URIS,
+                        ArrayList(audio.map { it.uri.toString() }),
+                    )
+                    .putStringArrayListExtra(
+                        PlaybackService.EXTRA_QUEUE_TITLES,
+                        ArrayList(audio.map { it.name ?: "track" }),
+                    )
+                    .putExtra(PlaybackService.EXTRA_QUEUE_START, 0)
+                runOnUiThread {
+                    startService(intent)
+                    ui.sourceLabel = "deck"
+                }
+            }.start()
+        }
+
     private val captureConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             result.data?.let { data ->
@@ -103,9 +139,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
             controller = future.get().also { c ->
                 c.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = isPlaying }
+                    override fun onTimelineChanged(
+                        t: androidx.media3.common.Timeline, reason: Int,
+                    ) = syncQueue(c)
+                    override fun onMediaItemTransition(
+                        item: androidx.media3.common.MediaItem?, reason: Int,
+                    ) = syncQueue(c)
                     override fun onMediaMetadataChanged(m: MediaMetadata) {
                         ui.trackTitle = m.title?.toString()
                         ui.trackArtist = m.artist?.toString()
+                        ui.artwork = m.artworkData
                         // The session's metadata extras are the remote deck's mirror
                         // channel: source/conn/host without a second state path.
                         val src = m.extras?.getString("source")
@@ -207,6 +250,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
             runOnUiThread { openDeck(dst.absolutePath, "deck") }
         }.start()
+    }
+
+    // Mirror the session's timeline into the deck sheet's queue rows (ghost items from
+    // the remote deck are filtered by their reserved ids).
+    private fun syncQueue(c: MediaController) {
+        val n = c.mediaItemCount
+        val titles = mutableListOf<String>()
+        var remoteGhosts = false
+        for (i in 0 until n) {
+            val item = c.getMediaItemAt(i)
+            if (item.mediaId.startsWith("remote:")) { remoteGhosts = true; break }
+            titles += item.mediaMetadata.title?.toString() ?: "track ${i + 1}"
+        }
+        ui.queueTitles = if (remoteGhosts) emptyList() else titles
+        ui.queueIndex = c.currentMediaItemIndex.coerceAtLeast(0)
     }
 
     private fun queryDisplayName(uri: Uri): String? =
@@ -346,4 +404,26 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setBeamEnergy(e: Float) { PhosphorNative.setBeamEnergy(e); ui.beamEnergy = e.coerceIn(1f, 30f) }
     override fun setGlow(g: Float) { PhosphorNative.setGlow(g); ui.glow = g.coerceIn(0f, 0.98f) }
     override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
+
+    // ── Deck sheet verbs ──
+    override fun openFolder() = openFolderLauncher.launch(null)
+    override fun jumpToQueue(index: Int) { controller?.seekTo(index, 0) }
+
+    private val audioMan by lazy { getSystemService(AUDIO_SERVICE) as android.media.AudioManager }
+    override fun volumeFrac(): Float {
+        val max = audioMan.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+        val cur = audioMan.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
+        // Inverse of the cubic taper so the rule position matches perception.
+        return Math.cbrt((cur.toFloat() / max).toDouble()).toFloat()
+    }
+
+    override fun setVolume(frac: Float) {
+        val max = audioMan.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
+        val cubic = frac.coerceIn(0f, 1f).let { it * it * it } // spec: cubic-taper rule
+        audioMan.setStreamVolume(
+            android.media.AudioManager.STREAM_MUSIC,
+            (cubic * max).toInt().coerceIn(0, max),
+            0,
+        )
+    }
 }

@@ -21,6 +21,9 @@ class ScopeUiState {
     var playing by mutableStateOf(false)
     var trackTitle by mutableStateOf<String?>(null)
     var trackArtist by mutableStateOf<String?>(null)
+    var artwork by mutableStateOf<ByteArray?>(null)
+    var queueTitles by mutableStateOf<List<String>>(emptyList())
+    var queueIndex by mutableStateOf(0)
 
     // Seek rule (console): live position from the controller when the deck is seekable.
     var seekable by mutableStateOf(false)

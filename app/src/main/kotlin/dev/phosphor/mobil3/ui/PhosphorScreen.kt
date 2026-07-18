@@ -59,6 +59,10 @@ interface ScopeActions {
     fun setGainAbsolute(g: Float)
     fun orbitBy(dyaw: Float, dpitch: Float)
     fun dollyBy(delta: Float)
+    fun openFolder()
+    fun jumpToQueue(index: Int)
+    fun volumeFrac(): Float
+    fun setVolume(frac: Float)
     fun makeSurface(): SurfaceView
 }
 
@@ -109,6 +113,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setRemoteStreams(audio: Boolean, geometry: Boolean) =
                 actions.setRemoteStreams(audio, geometry)
             override fun disconnectRemote() = actions.disconnectRemote()
+            override fun openFolder() = actions.openFolder()
         }
     }
 
@@ -184,6 +189,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 ) {
                     OverflowPopout(
                         p,
+                        onDeck = { sheet = Sheet.DECK },
                         onLight = { sheet = Sheet.LIGHT },
                         onRoom = { sheet = Sheet.ROOM },
                         onSettings = { sheet = Sheet.SETTINGS },
@@ -209,6 +215,17 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) }) {
                     sheet = Sheet.NONE
                 }
+                Sheet.DECK -> DeckSheet(
+                    state, p, reduced,
+                    onPlay = { actions.togglePlay() },
+                    onNext = { actions.next() },
+                    onPrev = { actions.prev() },
+                    onSeek = { actions.seekTo(it) },
+                    onJump = { actions.jumpToQueue(it) },
+                    volumeFrac = { actions.volumeFrac() },
+                    onVolume = { actions.setVolume(it) },
+                    onOpenFolder = { actions.openFolder() },
+                ) { sheet = Sheet.NONE }
                 Sheet.SETTINGS -> SettingsSheet(
                     state, p, reduced,
                     sheetActions.withSheetRouting(

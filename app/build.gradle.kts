@@ -111,4 +111,5 @@ dependencies {
     implementation(libs.androidx.lifecycle.runtime.compose)
     implementation(libs.media3.session)
     implementation(libs.media3.common)
+    implementation("androidx.documentfile:documentfile:1.1.0")
 }

@@ -12,10 +12,22 @@ import org.json.JSONObject
 
 // The Media3 bridge: the Rust deck is the engine, this is its Player face.
 // The loaded deck owns the transport (the v4.7.0 law) — this player IS the loaded deck.
+// v2: a REAL playlist. The queue (a folder, gaplessly ordered) maps to Media3 items;
+// next/prev from any surface — console, lock screen, earbuds — walks it.
 class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     private var playing = false
-    private var item: MediaItemData? = null
+    private var queue: List<QueueEntry> = emptyList()
+    private var index = 0
+
+    data class QueueEntry(
+        val path: String, // local path once staged, else "" until resolved
+        val title: String,
+        val durationMs: Long = C.TIME_UNSET,
+    )
+
+    /** The service resolves + stages files; the player face asks it to switch tracks. */
+    var onSwitchTrack: ((Int) -> Unit)? = null
 
     override fun getState(): State {
         val commands = Player.Commands.Builder()
@@ -30,30 +42,62 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
                 Player.COMMAND_GET_METADATA,
                 Player.COMMAND_RELEASE,
             )
+            .apply {
+                if (index < queue.size - 1) {
+                    addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+                }
+                if (index > 0) {
+                    addAll(
+                        Player.COMMAND_SEEK_TO_PREVIOUS,
+                        Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
+                    )
+                }
+            }
             .build()
         val b = State.Builder()
             .setAvailableCommands(commands)
             .setPlayWhenReady(playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
-            .setPlaybackState(if (item == null) Player.STATE_IDLE else Player.STATE_READY)
-        item?.let {
-            b.setPlaylist(listOf(it))
-            b.setCurrentMediaItemIndex(0)
+            .setPlaybackState(if (queue.isEmpty()) Player.STATE_IDLE else Player.STATE_READY)
+        if (queue.isNotEmpty()) {
+            b.setPlaylist(queue.mapIndexed { i, e -> itemData(i, e) })
+            b.setCurrentMediaItemIndex(index)
             b.setContentPositionMs { PhosphorNative.deckPositionMs() }
         }
         return b.build()
     }
 
-    /** Called (on the player looper) after the Rust deck opened a track. */
+    private fun itemData(i: Int, e: QueueEntry): MediaItemData {
+        val loaded = i == index
+        val meta = if (loaded) loadedMetadata() else null
+        val mm = meta ?: MediaMetadata.Builder().setTitle(e.title).build()
+        return MediaItemData.Builder("q$i:${e.title}")
+            .setMediaItem(MediaItem.Builder().setMediaId("q$i").setMediaMetadata(mm).build())
+            .setDurationUs(
+                when {
+                    loaded && loadedDurationMs > 0 -> loadedDurationMs * 1000
+                    e.durationMs != C.TIME_UNSET -> e.durationMs * 1000
+                    else -> C.TIME_UNSET
+                }
+            )
+            .setIsSeekable(true)
+            .build()
+    }
+
+    private var loadedDurationMs: Long = C.TIME_UNSET
+    private var loadedMeta: MediaMetadata? = null
+
+    private fun loadedMetadata(): MediaMetadata? = loadedMeta
+
+    /** Called (on the player looper) after the Rust deck opened the CURRENT queue entry. */
     fun onTrackOpened() {
         val meta = JSONObject(PhosphorNative.deckMetadata())
         val path = meta.optString("path", "")
-        val durationMs =
+        loadedDurationMs =
             if (meta.isNull("duration_ms")) C.TIME_UNSET else meta.getLong("duration_ms")
         val title =
             if (meta.isNull("title")) path.substringAfterLast('/').ifEmpty { "phosphor" }
             else meta.getString("title")
-        android.util.Log.i("phosphor-mobil3", "onTrackOpened title=$title durationMs=$durationMs")
-        val mm = MediaMetadata.Builder()
+        loadedMeta = MediaMetadata.Builder()
             .setTitle(title)
             .setArtist(if (meta.isNull("artist")) null else meta.getString("artist"))
             .setAlbumTitle(if (meta.isNull("album")) null else meta.getString("album"))
@@ -63,14 +107,29 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
                 }
             }
             .build()
-        val mediaItem = MediaItem.Builder().setMediaId(path).setMediaMetadata(mm).build()
-        item = MediaItemData.Builder(path)
-            .setMediaItem(mediaItem)
-            .setDurationUs(if (durationMs == C.TIME_UNSET) C.TIME_UNSET else durationMs * 1000)
-            .setIsSeekable(true)
-            .build()
         playing = true
         invalidateState()
+    }
+
+    /** Install a fresh queue (folder play). The service stages + opens entry `start`. */
+    fun setQueue(entries: List<QueueEntry>, start: Int) {
+        queue = entries
+        index = start.coerceIn(0, (entries.size - 1).coerceAtLeast(0))
+        loadedMeta = null
+        loadedDurationMs = C.TIME_UNSET
+        invalidateState()
+    }
+
+    fun queueSize(): Int = queue.size
+    fun currentIndex(): Int = index
+    fun currentDurationMs(): Long = loadedDurationMs
+
+    /** Auto-advance at end-of-track (service's position watcher calls this). */
+    fun advanceIfPossible(): Boolean {
+        if (index >= queue.size - 1) return false
+        index++
+        onSwitchTrack?.invoke(index)
+        return true
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
@@ -84,13 +143,23 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         positionMs: Long,
         seekCommand: Int,
     ): ListenableFuture<*> {
-        PhosphorNative.deckSeekMs(positionMs)
+        if (mediaItemIndex != index && mediaItemIndex in queue.indices) {
+            index = mediaItemIndex
+            loadedMeta = null
+            loadedDurationMs = C.TIME_UNSET
+            onSwitchTrack?.invoke(index)
+        } else {
+            PhosphorNative.deckSeekMs(positionMs)
+        }
+        invalidateState()
         return Futures.immediateVoidFuture()
     }
 
     override fun handleStop(): ListenableFuture<*> {
         playing = false
-        item = null
+        queue = emptyList()
+        index = 0
+        loadedMeta = null
         PhosphorNative.deckClose()
         return Futures.immediateVoidFuture()
     }
