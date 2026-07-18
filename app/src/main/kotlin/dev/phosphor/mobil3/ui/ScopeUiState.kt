@@ -15,6 +15,8 @@ class ScopeUiState {
 
     var sourceLabel by mutableStateOf("no source")
     var remote by mutableStateOf(false) // remote (Tailscale) source active
+    var remoteAudio by mutableStateOf(true) // bridge stream toggles (H frame)
+    var remoteGeometry by mutableStateOf(false)
     var live by mutableStateOf(false) // capture or mic actively feeding the beam
     var playing by mutableStateOf(false)
     var trackTitle by mutableStateOf<String?>(null)

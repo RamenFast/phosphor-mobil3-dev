@@ -50,6 +50,10 @@ interface ScopeActions {
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
     fun setGrid(on: Boolean)
+    fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
+    fun startRemoteHost(label: String, host: String, port: Int)
+    fun setRemoteStreams(audio: Boolean, geometry: Boolean)
+    fun disconnectRemote()
     fun epilepsyAcknowledged(): Boolean
     fun ackEpilepsy()
     fun setGainAbsolute(g: Float)
@@ -99,6 +103,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setGrid(on: Boolean) = actions.setGrid(on)
             override fun openRoom() { }
             override fun openLight() { }
+            override fun remoteHosts() = actions.remoteHosts()
+            override fun startRemoteHost(label: String, host: String, port: Int) =
+                actions.startRemoteHost(label, host, port)
+            override fun setRemoteStreams(audio: Boolean, geometry: Boolean) =
+                actions.setRemoteStreams(audio, geometry)
+            override fun disconnectRemote() = actions.disconnectRemote()
         }
     }
 

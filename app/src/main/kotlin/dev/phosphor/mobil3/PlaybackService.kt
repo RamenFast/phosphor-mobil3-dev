@@ -137,20 +137,14 @@ class PlaybackService : MediaSessionService() {
     private fun startRemote(host: String, port: Int, label: String) {
         switchTo(remotePlayer)
         remotePlayer.onConnecting(label)
-        Thread {
-            val ok = PhosphorNative.remoteConnect(host, port)
-            main.post {
-                if (ok) {
-                    requestFocus()
-                    remotePlayer.onConnected()
-                    startRemotePoll()
-                } else {
-                    remotePlayer.onConnectFailed(
-                        "couldn't reach $host:$port — is the relay up on the tailnet?"
-                    )
-                }
-            }
-        }.start()
+        requestFocus()
+        // v2 connect is non-blocking: rust owns link mechanics (timeout, watchdog,
+        // reconnect backoff); this service owns policy via the status pump below.
+        if (!PhosphorNative.remoteConnect(host, port, true, false)) {
+            remotePlayer.onConnectFailed("couldn't start the bridge link")
+            return
+        }
+        startRemotePoll()
     }
 
     private fun stopRemote() {
@@ -160,19 +154,73 @@ class PlaybackService : MediaSessionService() {
         switchTo(localPlayer)
     }
 
-    // 1 Hz metadata pump: M frames land in rust; the player face re-publishes them to
-    // the session (notification + lock screen + controllers). Replaces the Activity poll.
+    // 1 Hz status+metadata pump. Rust exposes generation counters so quiet ticks cost
+    // one JNI read; state transitions drive the player face; art rides art_id changes.
+    private var lastMetaGen = -1
+    private var lastArtGen = -1
+    private var lastArtId = ""
+    private var failingSinceMs = 0L
     private fun startRemotePoll() {
         if (remotePolling) return
         remotePolling = true
+        lastMetaGen = -1; lastArtGen = -1; lastArtId = ""
+        failingSinceMs = 0L
         main.post(object : Runnable {
             override fun run() {
                 if (!remotePolling || session?.player !== remotePlayer) {
                     remotePolling = false
                     return
                 }
-                runCatching { JSONObject(PhosphorNative.remoteMetadata()) }.getOrNull()
-                    ?.let { remotePlayer.onMeta(it) }
+                val status = runCatching { JSONObject(PhosphorNative.remoteStatus()) }.getOrNull()
+                if (status != null) {
+                    when (status.optString("state")) {
+                        "streaming" -> {
+                            failingSinceMs = 0L
+                            remotePlayer.onConnected()
+                        }
+                        "stalled", "reconnecting", "connecting" -> {
+                            // Give-up policy: 60 s of not-streaming → surface failure.
+                            val now = System.currentTimeMillis()
+                            if (failingSinceMs == 0L) failingSinceMs = now
+                            if (now - failingSinceMs > 60_000) {
+                                remotePolling = false
+                                PhosphorNative.remoteDisconnect()
+                                remotePlayer.onConnectFailed(
+                                    status.optJSONObject("last_error")?.optString("error")
+                                        ?: "bridge unreachable"
+                                )
+                                return
+                            }
+                            remotePlayer.onConnectionLost()
+                        }
+                        "failed" -> {
+                            remotePolling = false
+                            remotePlayer.onConnectFailed(
+                                status.optJSONObject("last_error")?.let {
+                                    it.optString("error") + " — " + it.optString("fix")
+                                } ?: "bridge failed"
+                            )
+                            return
+                        }
+                    }
+                    val mg = status.optInt("meta_gen")
+                    if (mg != lastMetaGen) {
+                        lastMetaGen = mg
+                        runCatching { JSONObject(PhosphorNative.remoteMetadata()) }
+                            .getOrNull()?.let { remotePlayer.onMeta(it) }
+                    }
+                    // Art: ask when the id changes; consume when the bytes land.
+                    val artId = status.optString("art_id")
+                    if (artId.isNotBlank() && artId != lastArtId) {
+                        lastArtId = artId
+                        PhosphorNative.remoteRequestArt(artId)
+                    }
+                    val ag = status.optInt("art_gen")
+                    if (ag != lastArtGen) {
+                        lastArtGen = ag
+                        remotePlayer.onArt(PhosphorNative.remoteArt())
+                    }
+                }
                 main.postDelayed(this, 1000)
             }
         })

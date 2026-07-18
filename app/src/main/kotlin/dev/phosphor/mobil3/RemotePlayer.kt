@@ -131,8 +131,17 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     fun onConnected() {
-        conn = Conn.STREAMING
-        invalidateState()
+        if (conn != Conn.STREAMING) {
+            conn = Conn.STREAMING
+            invalidateState()
+        }
+    }
+
+    fun onConnectionLost() {
+        if (conn == Conn.STREAMING || conn == Conn.CONNECTING) {
+            conn = Conn.LOST
+            invalidateState()
+        }
     }
 
     fun onConnectFailed(message: String) {
@@ -183,9 +192,11 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         // playpause is a TOGGLE on the wire: only send when intent differs from the last
         // known source-machine state, then trust the next M frame to reconcile.
         if (playWhenReady != playing) {
-            PhosphorNative.remoteTransport("playpause")
+            PhosphorNative.remoteTransport(if (playWhenReady) "play" else "pause")
             playing = playWhenReady // optimistic; M reconciles ≤1 s
         }
+        // Instant local silence ahead of the ~300 ms bridge round-trip.
+        PhosphorNative.remoteSetMuted(!playWhenReady)
         return Futures.immediateVoidFuture()
     }
 
@@ -200,8 +211,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
             Player.COMMAND_SEEK_TO_PREVIOUS, Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ->
                 PhosphorNative.remoteTransport("prev")
             else -> if (canSeek) {
-                // v2 relay: absolute seek rides transport as "seek <ms>".
-                PhosphorNative.remoteTransport("seek $positionMs")
+                PhosphorNative.remoteSeekMs(positionMs)
                 this.positionMs = positionMs
                 positionAtMs = SystemClock.elapsedRealtime()
             }

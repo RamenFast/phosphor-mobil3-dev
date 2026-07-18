@@ -223,16 +223,13 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteConnect(
     _class: JClass,
     host: jni::objects::JString,
     port: jni::sys::jint,
+    audio: jni::sys::jboolean,
+    geometry: jni::sys::jboolean,
 ) -> jni::sys::jboolean {
     ensure_init();
     let host: String = env.get_string(&host).map(|s| s.into()).unwrap_or_default();
-    match crate::remote::connect(&host, port.max(0) as u16) {
-        Ok(()) => 1,
-        Err(e) => {
-            log::error!("remoteConnect: {e}");
-            0
-        }
-    }
+    crate::remote::connect(&host, port.max(0) as u16, audio != 0, geometry != 0)
+        as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]
@@ -474,4 +471,168 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGrid(
     on: jni::sys::jboolean,
 ) {
     let _ = crate::render::sender().send(crate::render::Cmd::SetGrid(on != 0));
+}
+
+// ── Bridge v2 surface ────────────────────────────────────────────────────────
+
+fn jstr(env: &JNIEnv, s: String) -> jstring {
+    env.new_string(s).map(|x| x.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteStatus(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    jstr(&env, crate::remote::status_json())
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSetStreams(
+    _env: JNIEnv,
+    _class: JClass,
+    audio: jni::sys::jboolean,
+    geometry: jni::sys::jboolean,
+) {
+    crate::remote::set_streams(audio != 0, geometry != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSetMuted(
+    _env: JNIEnv,
+    _class: JClass,
+    muted: jni::sys::jboolean,
+) {
+    crate::remote::set_muted(muted != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSeekMs(
+    _env: JNIEnv,
+    _class: JClass,
+    ms: jni::sys::jlong,
+) {
+    crate::remote::seek_ms(ms.max(0) as u64);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteRequestSources(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    crate::remote::request_sources();
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSources(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    jstr(&env, crate::remote::sources_json())
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteChooseSource(
+    mut env: JNIEnv,
+    _class: JClass,
+    id: jni::objects::JString,
+) {
+    let id: String = env.get_string(&id).map(|s| s.into()).unwrap_or_default();
+    crate::remote::choose_source(&id);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteBrowse(
+    mut env: JNIEnv,
+    _class: JClass,
+    root: jni::objects::JString,
+    path: jni::objects::JString,
+) {
+    let root: String = env.get_string(&root).map(|s| s.into()).unwrap_or_default();
+    let path: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+    crate::remote::browse(&root, &path);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteListing(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    jstr(&env, crate::remote::listing_json())
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remotePlayFile(
+    mut env: JNIEnv,
+    _class: JClass,
+    root: jni::objects::JString,
+    path: jni::objects::JString,
+) {
+    let root: String = env.get_string(&root).map(|s| s.into()).unwrap_or_default();
+    let path: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+    crate::remote::play_file(&root, &path);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteStopFile(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    crate::remote::stop_file();
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteRequestArt(
+    mut env: JNIEnv,
+    _class: JClass,
+    id: jni::objects::JString,
+) {
+    let id: String = env.get_string(&id).map(|s| s.into()).unwrap_or_default();
+    crate::remote::request_art(&id);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteArt(
+    env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jbyteArray {
+    match crate::remote::art_bytes() {
+        Some(bytes) => match env.byte_array_from_slice(&bytes) {
+            Ok(a) => a.into_raw(),
+            Err(_) => std::ptr::null_mut(),
+        },
+        None => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteMetaGeneration(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    crate::remote::meta_generation() as jni::sys::jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteArtGeneration(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    crate::remote::art_generation() as jni::sys::jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSourcesGeneration(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    crate::remote::sources_generation() as jni::sys::jint
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteListingGeneration(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    crate::remote::listing_generation() as jni::sys::jint
 }

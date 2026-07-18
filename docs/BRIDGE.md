@@ -1,91 +1,68 @@
-# The Tailscale remote-scope bridge
+# The Tailscale bridge — protocol v2 reference
 
-**Ben's idea (2026-07-18), greenlit:** the phone can't capture Spotify (Android role-locks
-`CAPTURE_AUDIO_OUTPUT`), but a Linux desktop/laptop CAN — via PipeWire — and it's already on
-the tailnet. So the desktop becomes a **capture + control proxy**: it streams the audio it's
-playing to the phone, the phone scopes AND plays it, and the phone's transport buttons drive
-the desktop's player over MPRIS. Pure fortress: Ben's metal, Tailscale, no cloud.
+**v2 (2026-07-18, Fable session).** The desktop/laptop relay captures audio (whole output
+OR one app, read-only), streams it to the phone with metadata/art/position, forwards
+desktop-scope geometry, serves the machine's music library (local dirs + rclone/Drive),
+and takes transport — all over one TCP connection on the tailnet. The phone plays it,
+scopes it, and fronts it as a native media app (see Act III residency).
 
-Ben's requirement: **remote scope AND audio pass-through** (hear it on the phone), plus
-next / back / play-pause control.
+Topology: `thinkcenter` laptop 100.66.109.56 · `interserve-linux` PC 100.114.165.77
+(both run `phosphor-relay` as a systemd user service, port 45777) · s25 phone
+100.102.2.83. Source of truth for the relay: `relay/` (10 modules, serde-only).
+Install/upgrade: `scripts/relay-install.sh [--host <h>]`. Ops receipts:
+`phosphor-relay doctor|sources|probe --host <h> --rms|schema`.
 
-## Topology (all tailnet nodes, verified reachable)
+## Framing
 
-```
-thinkcenter (laptop, 100.66.109.56)          s25 (phone, 100.102.2.83)
-  Spotify → default sink                        phosphor-mobil3 "remote" source
-  phosphor-relay  ── TCP over Tailscale ──►      oboe playback + scope (SampleRing)
-  playerctl -p spotify  ◄── transport ──         next / back / play-pause buttons
-```
+`[1-byte type][4-byte BE u32 payload length][payload]` — one TCP conn. Caps: client→server
+64 KiB (violation → `E` + close), server→client 8 MiB. **Unknown types are read-and-
+skipped by both sides** (forward compatibility). Connect: relay sends `W` immediately;
+client sends `H` immediately (no round-trip stall); `K`+`M` flow after `H`, `A`/`G` per
+toggles. v1 detection: first byte `A`/`M` instead of `W` → the peer is v1.
 
-Dev box: interserve-linux (desktop, 100.114.165.77) — builds the relay (laptop has no
-cargo), scp's the x86_64 binary to the laptop, and drives the phone over adb.
+## Server → client
 
-## Wire protocol (one TCP connection, framed)
+| tag | payload |
+|---|---|
+| `W` 0x57 | JSON `{proto:2, tool, version, host, caps:{audio,geometry,per_app,library,art}, selected, libraries:[{id,label,path}]}` |
+| `A` 0x41 | raw s16le stereo 48 kHz PCM, **fixed 1920 B = 10 ms, real-time ~100/s** (short final chunk allowed) — capture AND file playback |
+| `G` 0x47 | `phosphor tap` frame JSON verbatim (`polyline` ≤64 pts, `trace_size`, `peak`…), ≤60 fps latest-wins |
+| `M` 0x4D | JSON `{title,artist,album,playing, position_ms, duration_ms\|null, can_seek, source:"player"\|"file", art_id\|null, path\|null}` — on change + 1 Hz while playing |
+| `S` 0x53 | JSON `{sources:[{id,kind:"app"\|"monitor",label,available}], selected}` — reply to `Q`, pushed on vanish-fallback |
+| `L` 0x4C | JSON `{root, path, dirs:[], files:[{name,size}]}` |
+| `R` 0x52 | `[u16 BE header_len][{id,mime} JSON][raw image bytes]` |
+| `E` 0x45 | JSON `{error, fix, context}` — every error carries `fix` |
+| `K` 0x4B | JSON `{ts_ms, tx_a, tx_g, dropped_a}` every 1 s |
 
-Frame = `[1 byte type][4 byte BE u32 length][payload]`.
+## Client → server
 
-Server → client:
-- `A` (0x41): raw PCM, **s16le interleaved stereo 48000 Hz** (the audio).
-- `M` (0x4D): UTF-8 JSON `{title, artist, album, playing}` (metadata, ~1 Hz).
+| tag | payload |
+|---|---|
+| `H` 0x48 | JSON `{proto:2, client, audio:bool, geometry:bool, geometry_fps}` — resendable; relay diffs and starts/stops pumps |
+| `T` 0x54 | JSON `{cmd:"playpause"\|"play"\|"pause"\|"next"\|"prev"\|"seek", ms?}` — bare v1 strings also accepted |
+| `Q` 0x51 | empty → `S` |
+| `C` 0x43 | JSON `{id}` — switch capture target (kills pump, spawns new; exits file mode) |
+| `B` 0x42 | JSON `{root, path}` (relative, jailed) → `L` |
+| `P` 0x50 | JSON `{root, path}` play file · `{action:"stop"}` back to capture |
+| `R` 0x52 | JSON `{id}` → `R` reply (ask when `M.art_id` changes) |
+| `K` 0x4B | JSON `{ts_ms}` — **client MUST ping every 2 s; 8 s of silence tears the session down** (kills all relay children — the zombie law) |
 
-Client → server:
-- `T` (0x54): UTF-8 transport command — `next` | `prev` | `playpause`.
+Notes: `art_id` = first 16 hex of sha256(artUrl). File `position_ms` = consumed bytes/192
++ seek base; pause = stop-reading backpressure (sample-exact resume); seek preserves
+pause state; EOF auto-advances through the sorted directory. Source ids mirror desktop
+targets.rs: `device:<node.name>.monitor`, `app:<application.name>` (+`+` dedup). The
+`audio` toggle governs live capture; `P` file playback streams regardless. Bandwidth:
+A ≈ 1.54 Mb/s · G ≈ 0.5–1 Mb/s · M+K ≈ 100 B/s.
 
-Audio chunks ~20 ms (3840 bytes). Bandwidth ≈ 1.5 Mbps — trivial for Tailscale.
+## Deployment state (2026-07-18)
 
-## Relay (laptop side — `relay/`, standalone x86_64 Rust binary)
+- interserve-linux: **v2 systemd user service LIVE** (probe: 97 A/s, all caps true).
+- thinkcenter: **v1 + PULSE_LATENCY_MSEC=20 hotfix** — stays until the phone speaks v2
+  (clean-break discipline), then `scripts/relay-install.sh --host thinkcenter`.
+- rclone: not yet installed anywhere — Drive roots activate after `rclone config` (Ben's
+  one OAuth) + a `{"id":"drive0","label":"google drive","rclone":"gdrive:"}` config root.
 
-- Captures the default sink monitor with `parec --format=s16le --rate=48000 --channels=2`
-  (everything Spotify plays). Monitor auto-detected from `pactl get-default-sink` + `.monitor`.
-- Polls `playerctl -p spotify metadata`/`status` at 1 Hz → `M` frames.
-- Reads `T` frames → `playerctl -p spotify next|previous|play-pause`.
-- Binds TCP (default 45777). Deployed: `cargo build --release` here → scp to laptop → run.
+## v1 (historical)
 
-## Phone client (`RemoteSource`)
-
-- Connects to `<laptop-tailscale-ip>:45777`.
-- `A` → push PCM into an AudibleRing (oboe plays it, Ben hears it) AND the scope SampleRing
-  (the beam draws it) — reuses the exact rings the deck/capture already use.
-- `M` → update the MediaSession + console title/artist.
-- Transport buttons → `T` frames.
-- Surfaced in the SOURCE sheet as "remote · <host>".
-
-## Status
-
-- [x] Feasibility confirmed; laptop reachable, tools present, Spotify live.
-- [x] Relay binary (`relay/`, built x86_64, scp'd to laptop `/tmp/phosphor-relay`).
-- [x] Phone RemoteSource — connects, plays PCM via oboe, scopes it, metadata, transport.
-- [x] End-to-end proven: laptop test tone → 960 segs on the phone; metadata + transport live.
-- Field note: **Spotify Connect moves playback to the phone when buds connect** — the laptop
-  then outputs silence and the bridge captures silence. Keep Spotify's device = the laptop.
-
-## Planned next (Ben's asks, 2026-07-18)
-
-### 1. Two independent stream toggles (bandwidth control)
-Client sends a config frame on connect: `{audio: bool, geometry: bool}`.
-- **Music (audio)** on → relay streams PCM (`A`); phone plays it AND scopes locally (full
-  fidelity). ~1.5 Mbps.
-- **Visualizer (geometry)** on → relay runs `phosphor tap` and forwards each frame's
-  `polyline` as `G` frames; phone draws the desktop's exact (decimated) beam without needing
-  audio. Lower fidelity, but works with music off for a low-bandwidth visual.
-- Render precedence on the phone: geometry stream if on, else local scope from audio.
-- `phosphor tap` frame shape (verified): `{event:"frame", segments:N, polyline:[…], peak,
-  bbox, centroid, trace_size:[w,h]}` + a `hello` line first + `tick` when quiet. The phone
-  parses `polyline` → segments → `GpuRenderer::advance`, bypassing the DSP.
-
-### 2. Source selection (mirror desktop phosphor's picker, non-disruptively)
-The phone picks WHICH desktop source to scope: **primary output** (default sink monitor) or a
-**specific application** (Spotify, browser, …) — like desktop phosphor, without changing the
-PC's own audio routing or its phosphor.
-- Relay adds a verb/frame: enumerate sources — `pactl list sinks short` (outputs) +
-  `pactl list sink-inputs` (apps: index, `application.name`, the Sink they feed).
-- Client picks one; relay captures it:
-  - **primary output** → `parec -d <default-sink>.monitor` (current behavior).
-  - **an app** → the honest non-disruptive path is PipeWire: `pw-record --target <node-id>`
-    of the app's output node, OR capture the monitor of the sink the app feeds (catches all
-    apps on that sink — simpler but not solo). True per-app solo = link a capture stream to
-    the app's node like desktop phosphor's `mirror.rs`/`targets.rs` do; port that logic into
-    the relay. MUST NOT move the app's stream (no vacuum) — read-only tap only.
-- Phone UI: the SOURCE sheet's "remote" row opens a sub-list of the desktop's sources
-  (fetched from the relay), plus the two stream toggles and a host field.
+`A`(s16le bursty)/`M`(title,artist,album,playing)/`T`(bare strings) only, no handshake,
+no liveness — the burstiness + zombie bugs are BUGLOG #1/#2. Superseded above.

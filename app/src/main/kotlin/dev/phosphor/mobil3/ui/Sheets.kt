@@ -31,6 +31,7 @@ import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -200,10 +201,7 @@ fun SourceSheet(
             actions.startMic(); onDismiss()
         }
         SectionHeading("REMOTE", p)
-        SheetRow(
-            "laptop · thinkcenter (Tailscale)", p,
-            checked = state.remote,
-        ) { actions.startRemote(); onDismiss() }
+        RemoteFlow(state, p, actions, onDismiss)
         Prose(
             "Remote scopes another machine's audio over Tailscale — it plays here and " +
                 "the transport drives that machine. Local capture can't see Spotify or " +
@@ -414,4 +412,124 @@ interface SheetActions {
     fun setGrid(on: Boolean)
     fun openRoom()
     fun openLight()
+    fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
+    fun startRemoteHost(label: String, host: String, port: Int)
+    fun setRemoteStreams(audio: Boolean, geometry: Boolean)
+    fun disconnectRemote()
+}
+
+// ── The remote flow (SOURCE ▸ REMOTE): hosts → toggles → desktop sources → library.
+//    Read-only wire data (status/sources/listing) comes straight from PhosphorNative;
+//    lifecycle actions go through the host interface. ──
+@Composable
+fun RemoteFlow(
+    state: ScopeUiState,
+    p: Palette,
+    actions: SheetActions,
+    onDismiss: () -> Unit,
+) {
+    var showSources by remember { mutableStateOf(false) }
+    var browsing by remember { mutableStateOf(false) }
+    var browseRoot by remember { mutableStateOf("") }
+    var browsePath by remember { mutableStateOf("") }
+    var sourcesJson by remember { mutableStateOf("") }
+    var listingJson by remember { mutableStateOf("") }
+
+    // Gentle wire poll while the remote panels are open (generation-gated on the JNI side).
+    LaunchedEffect(state.remote, showSources, browsing) {
+        while (state.remote && (showSources || browsing)) {
+            sourcesJson = dev.phosphor.mobil3.PhosphorNative.remoteSources()
+            listingJson = dev.phosphor.mobil3.PhosphorNative.remoteListing()
+            kotlinx.coroutines.delay(400)
+        }
+    }
+
+    actions.remoteHosts().forEach { (label, hostPort) ->
+        val connected = state.remote && state.sourceLabel.contains(label)
+        SheetRow("$label (Tailscale)", p, checked = connected) {
+            if (!connected) {
+                actions.startRemoteHost(label, hostPort.first, hostPort.second)
+            }
+        }
+    }
+
+    if (state.remote) {
+        Row(horizontalArrangement = Arrangement.spacedBy(Dim.gap)) {
+            FlatKey("MUSIC " + if (state.remoteAudio) "· on" else "· off", p, active = state.remoteAudio) {
+                actions.setRemoteStreams(!state.remoteAudio, state.remoteGeometry)
+            }
+            FlatKey("VISUALIZER " + if (state.remoteGeometry) "· on" else "· off", p, active = state.remoteGeometry) {
+                actions.setRemoteStreams(state.remoteAudio, !state.remoteGeometry)
+            }
+        }
+        Spacer(Modifier.height(Dim.gap))
+        SheetRow("desktop sources…", p) {
+            showSources = !showSources
+            if (showSources) dev.phosphor.mobil3.PhosphorNative.remoteRequestSources()
+        }
+        if (showSources && sourcesJson.isNotBlank()) {
+            runCatching { org.json.JSONObject(sourcesJson) }.getOrNull()?.let { s ->
+                val arr = s.optJSONArray("sources")
+                val selected = s.optString("selected")
+                if (arr != null) for (i in 0 until arr.length()) {
+                    val src = arr.getJSONObject(i)
+                    val id = src.optString("id")
+                    SheetRow(
+                        src.optString("label", id), p,
+                        checked = id == selected,
+                    ) { dev.phosphor.mobil3.PhosphorNative.remoteChooseSource(id) }
+                }
+            }
+        }
+        SheetRow("browse library…", p) {
+            browsing = !browsing
+            if (browsing) {
+                // Roots come from the relay's welcome; default to the first.
+                val st = runCatching {
+                    org.json.JSONObject(dev.phosphor.mobil3.PhosphorNative.remoteStatus())
+                }.getOrNull()
+                val libs = st?.optJSONObject("welcome")?.optJSONArray("libraries")
+                if (libs != null && libs.length() > 0) {
+                    browseRoot = libs.getJSONObject(0).optString("id", "music0")
+                    browsePath = ""
+                    dev.phosphor.mobil3.PhosphorNative.remoteBrowse(browseRoot, "")
+                }
+            }
+        }
+        if (browsing && listingJson.isNotBlank()) {
+            runCatching { org.json.JSONObject(listingJson) }.getOrNull()?.let { l ->
+                val path = l.optString("path")
+                Mono(
+                    "library › " + (path.ifBlank { "(root)" }), p.muted, Type.dataXs,
+                    Modifier.padding(vertical = 4.dp),
+                )
+                if (path.isNotBlank()) {
+                    SheetRow("‹ up", p) {
+                        val parent = path.substringBeforeLast('/', "")
+                        browsePath = parent
+                        dev.phosphor.mobil3.PhosphorNative.remoteBrowse(browseRoot, parent)
+                    }
+                }
+                val dirs = l.optJSONArray("dirs")
+                if (dirs != null) for (i in 0 until dirs.length()) {
+                    val d = dirs.getString(i)
+                    SheetRow("$d /", p) {
+                        browsePath = if (path.isBlank()) d else "$path/$d"
+                        dev.phosphor.mobil3.PhosphorNative.remoteBrowse(browseRoot, browsePath)
+                    }
+                }
+                val files = l.optJSONArray("files")
+                if (files != null) for (i in 0 until files.length()) {
+                    val f = files.getJSONObject(i)
+                    val name = f.optString("name")
+                    SheetRow(name, p) {
+                        val full = if (path.isBlank()) name else "$path/$name"
+                        dev.phosphor.mobil3.PhosphorNative.remotePlayFile(browseRoot, full)
+                        onDismiss()
+                    }
+                }
+            }
+        }
+        SheetRow("disconnect", p) { actions.disconnectRemote(); onDismiss() }
+    }
 }

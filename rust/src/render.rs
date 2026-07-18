@@ -50,6 +50,16 @@ pub enum Cmd {
     SetBeamCycle { seconds: f32, per_track: bool },
     /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
     CycleAdvance,
+    /// Remote geometry mode: draw the desktop's decimated beam, bypassing the DSP.
+    GeometryActive(bool),
+    /// One desktop tap frame (normalized 0..1 points in trace space).
+    GeometryFrame(GeomFrame),
+}
+
+pub struct GeomFrame {
+    pub points: Vec<[f32; 2]>,
+    pub aspect: f32,
+    pub intensity: f32,
 }
 
 pub const MODE_COUNT: u8 = 11;
@@ -182,6 +192,10 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut silent_since: Option<std::time::Instant> = None;
     let mut rest_phase: f32 = 0.0;
 
+    // Remote geometry (bridge visualizer mode): latest frame wins, decay keeps ticking.
+    let mut geometry_active = false;
+    let mut geom_frame: Option<GeomFrame> = None;
+
     // Custom light + cycle: colors lerp slot→slot over `cycle_secs` per leg (timer mode)
     // or advance one leg per track boundary (per-track mode; exempt from the guard).
     let mut custom_colors: [[f32; 3]; 3] = [[0.42, 1.0, 0.55]; 3];
@@ -193,21 +207,26 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut cycle_leg: usize = 0;
 
     loop {
-        // Idle (no surface, or paused): block on the channel. Active: drain then draw.
-        let cmd = if active.is_none() || paused {
+        // Idle (no surface, or paused): block on the channel. Active: drain ALL pending
+        // commands then draw — 60 fps geometry frames must never back-queue behind vsync.
+        let mut cmds: Vec<Cmd> = Vec::new();
+        if active.is_none() || paused {
             match rx.recv() {
-                Ok(c) => Some(c),
+                Ok(c) => cmds.push(c),
                 Err(_) => return,
             }
         } else {
-            match rx.try_recv() {
-                Ok(c) => Some(c),
-                Err(mpsc::TryRecvError::Empty) => None,
-                Err(mpsc::TryRecvError::Disconnected) => return,
+            loop {
+                match rx.try_recv() {
+                    Ok(c) => cmds.push(c),
+                    Err(mpsc::TryRecvError::Empty) => break,
+                    Err(mpsc::TryRecvError::Disconnected) => return,
+                }
             }
-        };
+        }
 
-        if let Some(cmd) = cmd {
+        let had_cmds = !cmds.is_empty();
+        for cmd in cmds.drain(..) {
             match cmd {
                 Cmd::SurfaceCreated { window, width, height, density } => {
                     // Drop any previous surface first — two swapchains on one
@@ -379,7 +398,19 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     }
                     log::info!("reduced motion: {rm}");
                 }
+                Cmd::GeometryActive(on) => {
+                    geometry_active = on;
+                    if !on {
+                        geom_frame = None;
+                    }
+                    log::info!("geometry mode: {on}");
+                }
+                Cmd::GeometryFrame(f) => {
+                    geom_frame = Some(f); // latest wins
+                }
             }
+        }
+        if had_cmds && (active.is_none() || paused) {
             continue;
         }
 
@@ -397,8 +428,12 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         };
 
         // Resting-beam bookkeeping: an idle stage (no source) rests immediately; an
-        // active-but-silent source rests after the sleep window.
-        let resting = if samples.is_empty() {
+        // active-but-silent source rests after the sleep window. Geometry mode IS the
+        // signal — the local ring rests by design, never the display.
+        let resting = if geometry_active {
+            silent_since = None;
+            false
+        } else if samples.is_empty() {
             if source_active {
                 let since = *silent_since.get_or_insert_with(std::time::Instant::now);
                 since.elapsed().as_secs_f32() > REST_AFTER_SECS
@@ -511,7 +546,33 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 }
             };
 
-        if resting {
+        if geometry_active {
+            // The desktop's beam, letterboxed into this panel; empty advances keep the
+            // decay honest between frames.
+            if let Some(f) = geom_frame.take() {
+                let aspect = f.aspect.max(0.05);
+                let rect_w = w.min(h * aspect);
+                let rect_h = rect_w / aspect;
+                let ox = (w - rect_w) * 0.5;
+                let oy = (h - rect_h) * 0.5;
+                let segs: Vec<[f32; 5]> = f
+                    .points
+                    .windows(2)
+                    .map(|p| {
+                        [
+                            ox + p[0][0] * rect_w,
+                            oy + p[0][1] * rect_h,
+                            ox + p[1][0] * rect_w,
+                            oy + p[1][1] * rect_h,
+                            f.intensity,
+                        ]
+                    })
+                    .collect();
+                advance(r, &segs, &mut seg_count);
+            } else {
+                advance(r, &[], &mut seg_count);
+            }
+        } else if resting {
             // The resting beam: a small breathing point at center — never a black mystery.
             rest_phase += 1.0 / 40.0;
             let i = 0.45 + 0.25 * (rest_phase * 0.8).sin();

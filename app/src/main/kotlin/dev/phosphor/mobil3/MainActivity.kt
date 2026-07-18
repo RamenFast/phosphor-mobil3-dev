@@ -240,16 +240,41 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (!ui.remote) controller?.seekTo(ms)
     }
 
-    override fun startRemote() {
+    override fun startRemote() = startRemoteHost("thinkcenter", "100.66.109.56", 45777)
+
+    // The tailnet hosts the phone knows. Seeded with Ben's two machines; add/edit UI
+    // rides the full settings port (Act V). thinkcenter = laptop, interserve-linux = PC.
+    override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> = listOf(
+        "thinkcenter" to ("100.66.109.56" to 45777),
+        "interserve-linux" to ("100.114.165.77" to 45777),
+    )
+
+    override fun startRemoteHost(label: String, host: String, port: Int) {
         mic.stop()
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
+        ui.remote = true
         startService(
             Intent(this, PlaybackService::class.java)
                 .setAction(PlaybackService.ACTION_REMOTE_CONNECT)
-                .putExtra(PlaybackService.EXTRA_HOST, REMOTE_HOST)
-                .putExtra(PlaybackService.EXTRA_PORT, REMOTE_PORT)
-                .putExtra(PlaybackService.EXTRA_LABEL, "thinkcenter")
+                .putExtra(PlaybackService.EXTRA_HOST, host)
+                .putExtra(PlaybackService.EXTRA_PORT, port)
+                .putExtra(PlaybackService.EXTRA_LABEL, label)
         )
+    }
+
+    override fun setRemoteStreams(audio: Boolean, geometry: Boolean) {
+        PhosphorNative.remoteSetStreams(audio, geometry)
+        ui.remoteAudio = audio
+        ui.remoteGeometry = geometry
+    }
+
+    override fun disconnectRemote() {
+        startService(
+            Intent(this, PlaybackService::class.java)
+                .setAction(PlaybackService.ACTION_REMOTE_DISCONNECT)
+        )
+        ui.remote = false
+        ui.sourceLabel = "no source"
     }
 
     override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))
@@ -283,10 +308,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
 
     override fun setMode(index: Int) { PhosphorNative.setMode(index); ui.modeIndex = index }
-
-    // Laptop (thinkcenter) over Tailscale. The host list lands with bridge v2 (Act II).
-    private val REMOTE_HOST = "100.66.109.56"
-    private val REMOTE_PORT = 45777
     override fun setBeam(index: Int) { PhosphorNative.setBeamColor(index); ui.beamIndex = index }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }

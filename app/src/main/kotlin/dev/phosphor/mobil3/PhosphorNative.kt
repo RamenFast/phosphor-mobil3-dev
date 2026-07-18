@@ -57,11 +57,29 @@ object PhosphorNative {
     /** Live beam color packed 0xRRGGBB (accent_follows_beam chrome breathing). */
     external fun beamColorNow(): Int
 
-    // Remote source (Tailscale bridge): connect to a desktop phosphor-relay.
-    external fun remoteConnect(host: String, port: Int): Boolean
-    external fun remoteTransport(cmd: String) // "next" | "prev" | "playpause"
+    // Remote source (Tailscale bridge, protocol v2 — docs/BRIDGE.md).
+    // connect is NON-BLOCKING: it spawns the link manager; observe remoteStatus().
+    external fun remoteConnect(host: String, port: Int, audio: Boolean, geometry: Boolean): Boolean
+    external fun remoteTransport(cmd: String) // bare verb or JSON {cmd,ms}
     external fun remoteMetadata(): String
     external fun remoteDisconnect()
+    external fun remoteStatus(): String // {state,host,port,rx_*,art_id,*_gen,welcome,last_error}
+    external fun remoteSetStreams(audio: Boolean, geometry: Boolean)
+    external fun remoteSetMuted(muted: Boolean)
+    external fun remoteSeekMs(ms: Long)
+    external fun remoteRequestSources()
+    external fun remoteSources(): String
+    external fun remoteChooseSource(id: String)
+    external fun remoteBrowse(root: String, path: String)
+    external fun remoteListing(): String
+    external fun remotePlayFile(root: String, path: String)
+    external fun remoteStopFile()
+    external fun remoteRequestArt(id: String)
+    external fun remoteArt(): ByteArray?
+    external fun remoteMetaGeneration(): Int
+    external fun remoteArtGeneration(): Int
+    external fun remoteSourcesGeneration(): Int
+    external fun remoteListingGeneration(): Int
 
     // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
