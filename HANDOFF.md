@@ -1,6 +1,28 @@
 # Handoff — next session starts here
 
-## M0 in flight (2026-07-18)
+## M0–M3 SHIPPED in one session (2026-07-18); M4 (capture + mic + Shizuku spike) is next
+
+- **M0** scaffold+toolchain+device: commit 2db590b/ebd53b0.
+- **M1** the beam at 120 Hz: 919fd0b/20caa45. fps receipt via logcat counter +
+  `frameRateOverride 120.00001` in dumpsys display; SELFTEST hatch + `pm3 smoke`
+  (fnv fingerprint 7e91d807fdb542eb — compare across builds).
+- **M2** real light: a24aba1 (+ upstream phosphor b72154c — feature gate, NOT pushed).
+  Deck = spawn_player + oboe; pause = stop popping (backpressure). GOTCHA: oboe needs
+  `shared-stdcxx` + libc++_shared.so copied by the Gradle cargo task (dlopen
+  __cxa_pure_virtual crash otherwise).
+- **M3** Media3: cf5c56a. GOTCHAS that cost an hour: (1) session must be `addSession()`ed
+  explicitly when no controller connects; (2) COMMAND_GET_TIMELINE required for the
+  notification. One UI media card lives in expanded Quick Settings, not the shade
+  (`cmd statusbar expand-settings` for screenshots).
+- Test track staged on-device: `files/acidrain.wav` (push via
+  `adb shell 'cat /data/local/tmp/x.wav | run-as dev.phosphor.mobil3 sh -c "cat > files/x.wav"'`
+  — shell CAN'T write Android/data, and apps can't read /data/local/tmp).
+- Current device serial flips between `192.168.1.229:34443` and the mdns name
+  `adb-R3CY90HEZ3M-yaSG5C._adb-tls-connect._tcp`; pm3 uses whichever is first.
+- M5 polish list so far: media card artist shows literal "null" for untagged WAVs;
+  demo Lissajous should become the SRC "demo" entry; deck sheet UI per UX-SPEC.
+
+## Original M0 notes (2026-07-18)
 
 Repo scaffolded from the ratified plan (`~/.claude/plans/steady-prancing-bee.md` holds the
 full text; docs/ARCHITECTURE.md + docs/UX-SPEC.md are the standing extracts).
