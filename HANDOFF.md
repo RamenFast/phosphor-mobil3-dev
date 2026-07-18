@@ -51,6 +51,30 @@ chunks (currently bursty → the scope draws ~400 segs then 0 between chunks; vi
 smooth). And the status band showed "no source" once when connect raced — verify the
 `ui.sourceLabel="remote"` update always lands.
 
+**FIRST THING to revalidate next session (Ben, 2026-07-18):** the remote scope was still
+black in real use AND phone audio needs a re-check (it worked on the phone's speakers earlier
+this session). The black scope was almost certainly because **Spotify Connect moved playback
+to the phone the moment AirPods connected** — so the laptop source went silent and the bridge
+captured silence (proven: a laptop test *tone* drew 960 segs fine). Revalidate by putting real
+audio on the SOURCE machine (Spotify device = laptop, or play a local file on the laptop) and
+confirm: (1) the remote scope draws, (2) audio plays on the phone. If the phone audio is
+genuinely muted, check Android's "background playback would be muted" hardening — the remote
+playback may need a foreground service like the deck's PlaybackService (currently oboe runs
+without one for the remote source).
+
+### A′. Remote music file-browser (Ben's ask, 2026-07-18) — bundle with the bridge work
+Browse the source PC's music library over the bridge, pick a file, stream + scope it — a
+"remote library" mode distinct from live-output capture.
+- Relay gains `list <dir>` (JSON: dirs + audio files) and `play-file <path>` (decode the file
+  → stream as `A` PCM, reusing the audio path — e.g. `ffmpeg -i <path> -f s16le -ar 48000 -ac 2 -`
+  piped into the frame writer). Roots to expose: **the PC's main-drive music dir** (confirm
+  path — likely `~/Music` / `~/Music/WAV versions`, Ben's scope-music WAVs live there) **and
+  Mass storage music** (`/media/ben/Mass storage/…` — that drive is on the DESKTOP
+  `interserve-linux`, NOT the laptop, so the relay may need to run on the desktop, or expose
+  both machines' roots). **Confirm with Ben which machine(s) host the music + exact paths.**
+- Phone: the remote SOURCE flow gets a "browse library" path (folder/file list from the relay)
+  alongside "live output" and the app/source picker.
+
 ### B. Finish M5 UX (per docs/UX-SPEC.md)
 - **Deck sheet**: now-playing (cover art via MediaController artworkData), seek bar (scrub →
   controller.seekTo), queue from a folder (SAF OpenDocumentTree → list audio). Makes local
