@@ -1,88 +1,95 @@
 # Handoff — next session starts here
 
-## M5 pass 1 SHIPPED (2026-07-18, commit 02a102f) — the app is now usable end-to-end
+## Where we are (2026-07-18): M0–M5(pass 1) + a working Tailscale bridge, all on GitHub
 
-Compose chrome over the scope: console (carved play stone + MODE/SRC/LIGHT/⋯), four
-translucent sheets (SOURCE/MODE/LIGHT/SETTINGS), engine control via JNI (mode/beam/fps),
-predictive Back, MediaController sync. SAF file-open → copy-to-cache → deck verified with
-BitsKrieg.wav. Both repos on GitHub (RamenFast/phosphor + private RamenFast/phosphor-mobil3),
-single branch master. Toolchain now in-repo at `.toolchain/`.
+phosphor-mobil3 is a usable Android scope-music app on Ben's S25. Both repos are on GitHub
+under RamenFast (phosphor public, **phosphor-mobil3 private**), single branch `master`, pushed.
+Toolchain is in-repo at `.toolchain/` (Ben's ask — no home clutter; `scripts/env.sh` self-locates).
 
-**FPS — the honest finding (needs Ben's call): Android's compositor vsync-locks every app
-surface to the panel (present caps = [Mailbox, Fifo], NO Immediate). True >120 *display* is
-impossible for ANY Android app.** Shipped 60/90/120/uncapped (60 & 90 verified). The real
-"more temporal detail" lever = scope oversample (SERIOUS-TODOS) — build if Ben wants the
-genuine beyond-120 quality knob.
+**The dev loop** (memorize this): `source scripts/env.sh` then `dev/pm3 <verb>`
+(doctor/build/install/run/logcat/screenshot/record/media/fps/smoke). Device serial rotates —
+always resolve it: `D="$(adb devices|awk 'NR>1&&$2=="device"{print $1;exit}')"`. If the phone
+drops off wireless adb: `adb connect "$(adb mdns services|awk '/_adb-tls-connect/{print $3;exit}')"`.
+Pairing (needs Ben): he opens Settings → Developer options → Wireless debugging → Pair with code,
+sends the ip:port + 6-digit code; `adb pair <ip:port> <code>` (LAN 192.168.1.x works; the
+pairing dialog mints a NEW port each time it opens — `adb mdns services` discovers it).
 
-**M5 remaining (future passes):** deck sheet (queue + seek bar), the gesture map
-(1-finger drag = gain/orbit, pinch = gain/dolly, 2-finger swipe = mode step, 2-finger
-vertical = glow) + haptics, compose mode, kit browser/editor, .phos postcard share,
-the other 10 chrome rooms, resting-beam dot + `no signal` label, ember auto-dim.
-Polish nits: cache file accumulates per unique name (reuse/prune); title uses filename
-when WAV has no tag.
+### Milestones shipped (commits on master)
+- **M0** scaffold + toolchain + device (2db590b, ebd53b0)
+- **M1** wgpu beam at 120 Hz + SELFTEST/smoke (919fd0b, 20caa45)
+- **M2** oboe deck, sample-locked (a24aba1; upstream phosphor gate b72154c pushed)
+- **M3** Media3 lock-screen deck (cf5c56a)
+- **M4** capture + mic + Shizuku spike closed NEGATIVE (ea05427, bae1163)
+- **toolchain move** to .toolchain/ (ef23967)
+- **M5 pass 1** Compose chrome — console, 4 sheets, mode/beam/room control, SAF file open,
+  MediaController sync (02a102f)
+- **M5 beam-rate oversampling** — the honest "beyond 120" (7861910)
+- **M5 Tailscale bridge** — Spotify on the phone via desktop proxy (ca02a66)
 
+### The bridge (works, proven) — see docs/BRIDGE.md
+Laptop (`thinkcenter`, tailscale 100.66.109.56) runs `relay/` (built here, scp'd to
+`/tmp/phosphor-relay`, restart: `ssh thinkcenter 'nohup setsid /tmp/phosphor-relay --port 45777
+</dev/null >/tmp/relay.log 2>&1 & disown'`). Phone connects (SOURCE → "remote · desktop", or
+`am start -n dev.phosphor.mobil3/.MainActivity --ez remote true` for testing), plays PCM via
+oboe + scopes it + drives transport. Proven: a laptop test tone drew 960 segs on the phone.
+Host is hardcoded `100.66.109.56` in MainActivity — needs a host field (below).
 
+## Where we're going — the queue, in priority order
 
-## M0–M4-core SHIPPED in one session (2026-07-18); next: M4 remainder (mic, capture-stop UX, Shizuku — see SERIOUS-TODOS), then M5 UX build-out
+### A. Bridge: two stream toggles + source selection (Ben's live asks — do first)
+Full design in **docs/BRIDGE.md → "Planned next"**. Short version:
+1. Config frame on connect `{audio, geometry}`; relay conditionally streams PCM (`A`) and/or
+   `phosphor tap` polyline (`G`); phone draws geometry when on (bypass DSP via
+   `GpuRenderer::advance`), else local-scopes the audio. Two toggles in the remote UI.
+2. Source picker: relay enumerates `pactl` sinks + sink-inputs; phone picks primary-output or
+   a specific app; relay captures it **read-only** (no vacuum, don't move the app's stream).
+   Per-app solo = port desktop phosphor's mirror/targets node-linking. `phosphor tap` frame
+   format is captured in BRIDGE.md.
+3. Add a host field (settings) so it's not hardcoded to the laptop IP.
+Also: set parec low-latency (`--latency-msec`) so streamed audio arrives in steady small
+chunks (currently bursty → the scope draws ~400 segs then 0 between chunks; visible but not
+smooth). And the status band showed "no source" once when connect raced — verify the
+`ui.sourceLabel="remote"` update always lands.
 
-- **M4 core** capture: ea05427. Consent flow works over adb (dialog: dropdown → entire
-  screen → Next); Chrome mp3 drawn live (960 segs/frame). GOTCHAS: singleTask launches
-  land in onNewIntent (extras silently ignored in onCreate-only handling); FGS must be
-  foreground BEFORE getMediaProjection; Chrome needs a tap to start a bare-mp3 page
-  (autoplay policy). Spotify/YT Music silence is EXPECTED (opt-out) — documented.
+### B. Finish M5 UX (per docs/UX-SPEC.md)
+- **Deck sheet**: now-playing (cover art via MediaController artworkData), seek bar (scrub →
+  controller.seekTo), queue from a folder (SAF OpenDocumentTree → list audio). Makes local
+  playback feel real. (Ben: "get local and web playback looking amazing.")
+- **Gestures** (the instrument feel): 1-finger drag = GAIN (2D) / ORBIT (3D), pinch =
+  gain/dolly, 2-finger horizontal swipe = mode step, 2-finger vertical = glow. Needs engine
+  verbs SetGain/SetGlow/SetCamera + a GestureArbiter in Compose. Haptics on detents.
+- **Resting-beam dot + `no signal · <source>`** when silent (currently black — a
+  SERIOUS-TODO).
+- **Remaining 10 chrome rooms** (only Blossom Dark + AMOLED ported; port the rest from
+  theme.rs PALETTES), **kits** browser/editor, **compose** mode (finger-draw → WAV),
+  **.phos postcards** (share-sheet), snapshot/clip exports.
 
-- **M0** scaffold+toolchain+device: commit 2db590b/ebd53b0.
-- **M1** the beam at 120 Hz: 919fd0b/20caa45. fps receipt via logcat counter +
-  `frameRateOverride 120.00001` in dumpsys display; SELFTEST hatch + `pm3 smoke`
-  (fnv fingerprint 7e91d807fdb542eb — compare across builds).
-- **M2** real light: a24aba1 (+ upstream phosphor b72154c — feature gate, NOT pushed).
-  Deck = spawn_player + oboe; pause = stop popping (backpressure). GOTCHA: oboe needs
-  `shared-stdcxx` + libc++_shared.so copied by the Gradle cargo task (dlopen
-  __cxa_pure_virtual crash otherwise).
-- **M3** Media3: cf5c56a. GOTCHAS that cost an hour: (1) session must be `addSession()`ed
-  explicitly when no controller connects; (2) COMMAND_GET_TIMELINE required for the
-  notification. One UI media card lives in expanded Quick Settings, not the shade
-  (`cmd statusbar expand-settings` for screenshots).
-- Test track staged on-device: `files/acidrain.wav` (push via
-  `adb shell 'cat /data/local/tmp/x.wav | run-as dev.phosphor.mobil3 sh -c "cat > files/x.wav"'`
-  — shell CAN'T write Android/data, and apps can't read /data/local/tmp).
-- Current device serial flips between `192.168.1.229:34443` and the mdns name
-  `adb-R3CY90HEZ3M-yaSG5C._adb-tls-connect._tcp`; pm3 uses whichever is first.
-- M5 polish list so far: media card artist shows literal "null" for untagged WAVs;
-  demo Lissajous should become the SRC "demo" entry; deck sheet UI per UX-SPEC.
+### C. M6 — PiP + polish + v1.0.0 release
+PiP auto-enter (setAutoEnterEnabled), ember auto-dim, thermal pass, keystore
+(`~/.android-keys/phosphor-mobil3.jks`, NEVER in git — back it up), release.sh (apksigner
+verify + 16 KB llvm-readelf check + SHA256SUMS + `gh release create --notes-file`), README
+screenshots, concourse registration of pm3, flip the GitHub repo public for the APK release.
 
-## Original M0 notes (2026-07-18)
+## Decisions & honest limits (don't relitigate)
+- **>120 fps display is impossible on Android** (compositor vsync-locks all surfaces; caps =
+  [Mailbox,Fifo], no Immediate). Shipped 60/90/120/uncapped + the genuine "beyond 120" =
+  beam-rate oversampling (120/240/480 substeps, dt-correct decay).
+- **Spotify/DRM apps can't be captured on-device** (CAPTURE_AUDIO_OUTPUT is role-managed;
+  Shizuku can't help — tested). The bridge is the answer for Spotify.
+- Zenfone 9s (Ben has spares) = possible later port target, not now.
+- Non-DRM apps that DO capture on-device: browsers (verified: Chrome web audio → 960 segs),
+  games, local/open players (NewPipe likely). Spotify/YT Music/Netflix opt out.
 
-Repo scaffolded from the ratified plan (`~/.claude/plans/steady-prancing-bee.md` holds the
-full text; docs/ARCHITECTURE.md + docs/UX-SPEC.md are the standing extracts).
-
-Done so far:
-- Toolchain bootstrapped to `~/Android` (JDK 21 Temurin, SDK 36, build-tools 36, NDK
-  28.2.13676358, Gradle dist 9.1.0 + wrapper **9.3.1** in-repo, cargo-ndk 4.1.2,
-  aarch64-linux-android target). `scripts/bootstrap-android.sh` is idempotent.
-- Engine crates (beam/dsp/proto/render-gpu/render-cpu) cross-compile to Android **clean,
-  first try**, wgpu 27 included. Host `cargo test` green in rust/ (DSP emits segments).
-- Gradle build green: AGP 9.1.1 (NOTE: AGP 9 has built-in Kotlin — do NOT add the
-  kotlin-android plugin; compose plugin rides alongside), compose BOM 2026.06.01,
-  core-ktx pinned 1.17.0 + lifecycle 2.10.0 (1.19/2.11 demand compileSdk 37, which has no
-  published platform yet — revisit when platforms;android-37 exists).
-- `dev/pm3` CLI live and conforming; `pm3 doctor` all-ok except device (needs first-time
-  wireless pairing — Ben's hands), `pm3 build` returns enveloped APK receipt.
-- M0 APK: black stage + mono engineInfo JSON from the Rust core (proves Kotlin→JNI→
-  phosphor-dsp on device).
-
-Next (rest of M0): pair the S25 (`pm3 pair <ip:port> <code>` → `pm3 connect`), install,
-run, screenshot receipt into docs/dev/receipts/, first commit. Then M1 (see task list /
-ARCHITECTURE.md): render thread + surface lifecycle handshake + SELFTEST hatch.
-
-## Keystore (M6, not yet created)
-
-Release keystore will live at `~/.android-keys/phosphor-mobil3.jks`, NEVER in the repo.
-Losing it means users uninstall/reinstall — back it up when created.
-
-## Standing gotchas
-
-- Sibling `../phosphor` checkout is required (path deps). `pm3 doctor` reports its HEAD.
-- `local.properties` (gitignored) needs `sdk.dir=/home/ben/Android/Sdk`.
-- Wireless adb port changes every time wireless debugging toggles; `pm3 connect` mdns-
-  discovers it.
+## Gotchas that bit (so they don't again)
+- AGP 9 has built-in Kotlin — do NOT apply the kotlin-android plugin.
+- core-ktx ≥1.19 / lifecycle ≥2.11 demand compileSdk 37 (unpublished) — pinned 1.17.0/2.10.0.
+- oboe needs `shared-stdcxx` + libc++_shared.so copied by the Gradle cargo task.
+- Media3: `addSession()` explicitly when no controller connects; COMMAND_GET_TIMELINE or no
+  notification. One UI media card = expanded Quick Settings, not the shade.
+- Compose over SurfaceView: the stage tap-catcher must sit BELOW the console (drawn earlier)
+  so buttons win taps; a full-screen detector on the root eats them.
+- `push_interleaved_le_bytes` expects **f32** bytes; the relay sends **s16** — convert to f32
+  once and use `push_interleaved`. (This was the black-remote-scope bug.)
+- On-device WAV staging for tests: `adb shell 'cat /sdcard/x.wav | run-as dev.phosphor.mobil3
+  sh -c "cat > files/x.wav"'` (shell can't write Android/data; apps can't read /data/local/tmp).
+- Blind adb taps on the console can hit ▸▸ and skip Ben's real Spotify — be careful.

@@ -54,6 +54,38 @@ Audio chunks ~20 ms (3840 bytes). Bandwidth ≈ 1.5 Mbps — trivial for Tailsca
 ## Status
 
 - [x] Feasibility confirmed; laptop reachable, tools present, Spotify live.
-- [ ] Relay binary (in progress).
-- [ ] Phone RemoteSource.
-- [ ] End-to-end test against live Spotify.
+- [x] Relay binary (`relay/`, built x86_64, scp'd to laptop `/tmp/phosphor-relay`).
+- [x] Phone RemoteSource — connects, plays PCM via oboe, scopes it, metadata, transport.
+- [x] End-to-end proven: laptop test tone → 960 segs on the phone; metadata + transport live.
+- Field note: **Spotify Connect moves playback to the phone when buds connect** — the laptop
+  then outputs silence and the bridge captures silence. Keep Spotify's device = the laptop.
+
+## Planned next (Ben's asks, 2026-07-18)
+
+### 1. Two independent stream toggles (bandwidth control)
+Client sends a config frame on connect: `{audio: bool, geometry: bool}`.
+- **Music (audio)** on → relay streams PCM (`A`); phone plays it AND scopes locally (full
+  fidelity). ~1.5 Mbps.
+- **Visualizer (geometry)** on → relay runs `phosphor tap` and forwards each frame's
+  `polyline` as `G` frames; phone draws the desktop's exact (decimated) beam without needing
+  audio. Lower fidelity, but works with music off for a low-bandwidth visual.
+- Render precedence on the phone: geometry stream if on, else local scope from audio.
+- `phosphor tap` frame shape (verified): `{event:"frame", segments:N, polyline:[…], peak,
+  bbox, centroid, trace_size:[w,h]}` + a `hello` line first + `tick` when quiet. The phone
+  parses `polyline` → segments → `GpuRenderer::advance`, bypassing the DSP.
+
+### 2. Source selection (mirror desktop phosphor's picker, non-disruptively)
+The phone picks WHICH desktop source to scope: **primary output** (default sink monitor) or a
+**specific application** (Spotify, browser, …) — like desktop phosphor, without changing the
+PC's own audio routing or its phosphor.
+- Relay adds a verb/frame: enumerate sources — `pactl list sinks short` (outputs) +
+  `pactl list sink-inputs` (apps: index, `application.name`, the Sink they feed).
+- Client picks one; relay captures it:
+  - **primary output** → `parec -d <default-sink>.monitor` (current behavior).
+  - **an app** → the honest non-disruptive path is PipeWire: `pw-record --target <node-id>`
+    of the app's output node, OR capture the monitor of the sink the app feeds (catches all
+    apps on that sink — simpler but not solo). True per-app solo = link a capture stream to
+    the app's node like desktop phosphor's `mirror.rs`/`targets.rs` do; port that logic into
+    the relay. MUST NOT move the app's stream (no vacuum) — read-only tap only.
+- Phone UI: the SOURCE sheet's "remote" row opens a sub-list of the desktop's sources
+  (fetched from the relay), plus the two stream toggles and a host field.
