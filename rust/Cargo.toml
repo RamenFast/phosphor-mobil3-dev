@@ -15,6 +15,7 @@ phosphor-dsp = { path = "../../phosphor/crates/phosphor-dsp" }
 phosphor-proto = { path = "../../phosphor/crates/phosphor-proto" }
 phosphor-render-gpu = { path = "../../phosphor/crates/phosphor-render-gpu" }
 phosphor-render-cpu = { path = "../../phosphor/crates/phosphor-render-cpu" }
+phosphor-audio = { path = "../../phosphor/crates/phosphor-audio", default-features = false }
 
 serde = { version = "1", features = ["derive"] }
 serde_json = "1"
@@ -27,6 +28,7 @@ png = "0.17"
 jni = "0.21"
 ndk = { version = "0.9", features = ["api-level-30"] }
 android_logger = "0.15"
+oboe = { version = "0.6", features = ["shared-stdcxx"] }
 
 [profile.dev]
 # -O0 DSP is unusable in real time.

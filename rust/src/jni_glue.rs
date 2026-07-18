@@ -92,6 +92,39 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setRenderPaused(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckOpen(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: jni::objects::JString,
+) -> jni::sys::jboolean {
+    ensure_init();
+    let path: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+    match crate::deck::open(&path) {
+        Ok(()) => 1,
+        Err(e) => {
+            log::error!("deckOpen({path}): {e}");
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckToggle(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jboolean {
+    crate::deck::toggle() as jni::sys::jboolean
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckPositionMs(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jlong {
+    (crate::deck::position_micros() / 1000) as jni::sys::jlong
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_selfTest(
     mut env: JNIEnv,
     _class: JClass,

@@ -156,7 +156,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             continue;
         };
 
-        let samples = feeder.frame_samples();
+        let samples = if crate::deck::DECK_ACTIVE.load(std::sync::atomic::Ordering::Relaxed) {
+            let s = crate::deck::scope_ring().lock().unwrap().take_stereo_samples();
+            feeder.reset(); // demo feeder restarts clean if the deck closes
+            s
+        } else {
+            feeder.frame_samples()
+        };
         let w = a.config.width as f32;
         let h = a.config.height as f32;
         let segments = computer.compute(&samples, w, h);

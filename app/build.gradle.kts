@@ -77,6 +77,14 @@ fun registerCargoTask(name: String, profileArgs: List<String>) =
         inputs.dir(rootProject.file("rust/src"))
         inputs.files(rootProject.file("rust/Cargo.toml"))
         outputs.dir(jniLibsDir)
+        // oboe's C++ needs libc++_shared.so packaged alongside our cdylib.
+        doLast {
+            val src = File(ndkHome(), "toolchains/llvm/prebuilt/linux-x86_64/sysroot/usr/lib/aarch64-linux-android/libc++_shared.so")
+            val dst = File(jniLibsDir.asFile, "arm64-v8a/libc++_shared.so")
+            if (!dst.exists() || src.lastModified() > dst.lastModified()) {
+                src.copyTo(dst, overwrite = true)
+            }
+        }
     }
 
 val cargoBuildDebug = registerCargoTask("cargoBuildDebug", emptyList())

@@ -6,6 +6,9 @@ pub mod engine;
 pub mod selftest;
 
 #[cfg(target_os = "android")]
+pub mod deck;
+
+#[cfg(target_os = "android")]
 pub mod render;
 
 #[cfg(target_os = "android")]

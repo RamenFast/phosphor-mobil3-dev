@@ -27,4 +27,9 @@ object PhosphorNative {
 
     /** Debug receipts hatch: deterministic offscreen render → selftest.json/png. */
     external fun selfTest(filesDir: String): String
+
+    // Deck (M2): open a local file, toggle play/pause, read the position clock.
+    external fun deckOpen(path: String): Boolean
+    external fun deckToggle(): Boolean
+    external fun deckPositionMs(): Long
 }

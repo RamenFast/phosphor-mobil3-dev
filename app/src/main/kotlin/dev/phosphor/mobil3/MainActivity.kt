@@ -29,6 +29,12 @@ class MainActivity : ComponentActivity(), SurfaceHolder.Callback {
         scope = SurfaceView(this)
         scope.holder.addCallback(this)
         setContentView(scope)
+
+        // M2 receipt path: adb shell am start … -e open <file-in-filesDir>.
+        // The deck sheet + SAF picker arrive with M3/M5.
+        intent.getStringExtra("open")?.let { path ->
+            Thread { PhosphorNative.deckOpen(path) }.start()
+        }
     }
 
     override fun surfaceCreated(holder: SurfaceHolder) {
