@@ -1,0 +1,236 @@
+#!/usr/bin/env bash
+# pm3 — the agent-first dev CLI for phosphor-mobil3 (the project's conforming surface
+# per AGENT-CLI-STANDARD; the APK itself has no argv/stdout and cannot conform).
+# One-shots emit ONE enveloped JSON object; logcat is a declared raw stream.
+set -uo pipefail
+
+TOOL="pm3"
+VERSION="0.1.0"
+PKG="dev.phosphor.mobil3"
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+# shellcheck disable=SC1091
+[ -f "$REPO/scripts/env.sh" ] && source "$REPO/scripts/env.sh"
+
+JSON_FORCE=0
+ARGS=()
+for a in "$@"; do
+  case "$a" in
+    --json) JSON_FORCE=1 ;;
+    *) ARGS+=("$a") ;;
+  esac
+done
+set -- "${ARGS[@]:-}"
+VERB="${1:-}"; shift 2>/dev/null || true
+
+want_json() { [ "$JSON_FORCE" = 1 ] || [ ! -t 1 ]; }
+now() { date -Iseconds; }
+esc() { printf '%s' "$1" | sed 's/\\/\\\\/g; s/"/\\"/g' | tr -d '\n'; }
+
+# ok '"extra":"fields"'  |  fail EXITCODE "error" "fix"
+ok() {
+  local extra="${1:-}"
+  if want_json; then
+    printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s"%s}\n' \
+      "$TOOL" "$VERSION" "$(now)" "${extra:+,$extra}"
+  else
+    [ -n "$extra" ] && printf '%s\n' "$extra" | sed 's/^,//' || echo "ok"
+  fi
+  exit 0
+}
+fail() {
+  local code="$1" err="$2" fix="$3"
+  if want_json; then
+    printf '{"status":"error","tool":"%s","version":"%s","ts":"%s","error":"%s","fix":"%s"}\n' \
+      "$TOOL" "$VERSION" "$(now)" "$(esc "$err")" "$(esc "$fix")"
+  else
+    echo "error: $err" >&2
+    echo "fix:   $fix" >&2
+  fi
+  exit "$code"
+}
+
+need_adb() { command -v adb >/dev/null || fail 2 "adb not on PATH" "run scripts/bootstrap-android.sh then source scripts/env.sh"; }
+device() {
+  need_adb
+  adb devices | awk 'NR>1 && $2=="device" {print $1; exit}'
+}
+need_device() {
+  local d; d="$(device)"
+  [ -n "$d" ] || fail 2 "no device connected" "pm3 pair <ip:port> <code> once (phone: Settings > Developer options > Wireless debugging > Pair device with pairing code), then pm3 connect <ip:port>"
+  echo "$d"
+}
+apk_path() {
+  if [ "${1:-debug}" = "release" ]; then
+    echo "$REPO/app/build/outputs/apk/release/app-release.apk"
+  else
+    echo "$REPO/app/build/outputs/apk/debug/app-debug.apk"
+  fi
+}
+
+case "$VERB" in
+
+doctor)
+  checks=""
+  add() { checks="${checks:+$checks,}{\"check\":\"$1\",\"ok\":$2,\"detail\":\"$(esc "$3")\"}"; }
+  j="$JAVA_HOME/bin/javac"; [ -x "$j" ] && add javac true "$("$j" -version 2>&1)" || add javac false "missing — run scripts/bootstrap-android.sh"
+  s="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"; [ -x "$s" ] && add sdkmanager true "$s" || add sdkmanager false "missing"
+  [ -d "$ANDROID_NDK_HOME" ] && add ndk true "$ANDROID_NDK_HOME" || add ndk false "missing — bootstrap installs 28.2.13676358"
+  command -v adb >/dev/null && add adb true "$(adb --version | head -1)" || add adb false "missing"
+  rustup target list --installed 2>/dev/null | grep -q aarch64-linux-android && add rust_target true "aarch64-linux-android" || add rust_target false "rustup target add aarch64-linux-android"
+  command -v cargo-ndk >/dev/null && add cargo_ndk true "$(cargo ndk --version 2>/dev/null)" || add cargo_ndk false "cargo install cargo-ndk --locked"
+  [ -x "$REPO/gradlew" ] && add gradlew true "$REPO/gradlew" || add gradlew false "missing wrapper"
+  if [ -d "$REPO/../phosphor/.git" ]; then
+    eng="$(git -C "$REPO/../phosphor" rev-parse --short HEAD) dirty=$(git -C "$REPO/../phosphor" status --porcelain | wc -l)"
+    add engine_repo true "$eng"
+  else
+    add engine_repo false "sibling checkout ../phosphor required (path deps)"
+  fi
+  d="$(device)"; [ -n "$d" ] && add device true "$d" || add device false "pm3 pair / pm3 connect"
+  allok=true; echo "$checks" | grep -q '"ok":false' && allok=false
+  if want_json; then
+    printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","all_ok":%s,"checks":[%s]}\n' "$TOOL" "$VERSION" "$(now)" "$allok" "$checks"
+  else
+    printf '%s\n' "$checks" | tr ',' '\n' | grep -E '"check"|"ok"|"detail"' >/dev/null
+    echo "$checks" | sed 's/},{/}\n{/g' | sed 's/[{}"]//g; s/check:/• /; s/,ok:true/ ✓ /; s/,ok:false/ ✗ /; s/,detail:/ — /'
+    [ "$allok" = true ] && echo "all ok" || echo "NOT all ok"
+  fi
+  [ "$allok" = true ] && exit 0 || exit 2
+  ;;
+
+pair)
+  need_adb
+  [ $# -ge 2 ] || fail 3 "usage: pm3 pair <ip:port> <code>" "get both from the phone's Wireless debugging > Pair device with pairing code dialog"
+  out="$(adb pair "$1" "$2" 2>&1)" || fail 4 "pairing failed: $out" "re-open the pairing dialog (codes expire) and retry"
+  ok "\"paired\":\"$1\",\"detail\":\"$(esc "$out")\""
+  ;;
+
+connect)
+  need_adb
+  target="${1:-}"
+  if [ -z "$target" ]; then
+    target="$(adb mdns services 2>/dev/null | awk '/_adb-tls-connect/ {print $3; exit}')"
+    [ -n "$target" ] || fail 2 "no target given and mdns found no device" "phone: keep Wireless debugging ON; or pm3 connect <ip:port> with the port from the Wireless debugging screen"
+  fi
+  out="$(adb connect "$target" 2>&1)"
+  echo "$out" | grep -qE "connected|already" || fail 4 "connect failed: $out" "check phone and PC share a network; port changes on every toggle of wireless debugging"
+  d="$(device)"
+  [ -n "$d" ] || fail 4 "connected but device not ready: $out" "adb devices; accept the debugging prompt on the phone"
+  ok "\"device\":\"$d\""
+  ;;
+
+build)
+  profile="debug"; [ "${1:-}" = "--release" ] && profile="release"
+  task="assembleDebug"; [ "$profile" = release ] && task="assembleRelease"
+  logf="$REPO/build-$profile.log"
+  if ! (cd "$REPO" && ./gradlew "$task") >"$logf" 2>&1; then
+    fail 4 "gradle $task failed — tail: $(tail -3 "$logf" | tr '\n' ' ')" "read $logf"
+  fi
+  apk="$(apk_path "$profile")"
+  [ -f "$apk" ] || fail 4 "build succeeded but APK missing at $apk" "check outputs dir naming"
+  ok "\"apk\":\"$apk\",\"bytes\":$(stat -c%s "$apk"),\"sha256\":\"$(sha256sum "$apk" | cut -d' ' -f1)\""
+  ;;
+
+install)
+  d="$(need_device)"
+  apk="$(apk_path "${1:-debug}")"
+  [ -f "$apk" ] || fail 2 "APK not built: $apk" "pm3 build first"
+  out="$(adb -s "$d" install -r "$apk" 2>&1)" || fail 4 "install failed: $out" "check device storage and that the phone accepted the install"
+  ver="$(adb -s "$d" shell dumpsys package "$PKG" 2>/dev/null | grep -m1 versionName | sed 's/.*versionName=//' | tr -d '\r ')"
+  ok "\"device\":\"$d\",\"installed_version\":\"$ver\""
+  ;;
+
+run)
+  d="$(need_device)"
+  adb -s "$d" shell am start -n "$PKG/.MainActivity" >/dev/null 2>&1 || fail 4 "am start failed" "pm3 install first"
+  sleep 1
+  pid="$(adb -s "$d" shell pidof "$PKG" | tr -d '\r ')"
+  [ -n "$pid" ] || fail 4 "app did not stay up (no pid)" "pm3 logcat for the crash"
+  ok "\"device\":\"$d\",\"pid\":$pid"
+  ;;
+
+logcat)  # declared raw stream (not enveloped): diagnostics feed
+  d="$(need_device)"
+  exec adb -s "$d" logcat -v time -s phosphor-mobil3:V AndroidRuntime:E DEBUG:F
+  ;;
+
+screenshot)
+  d="$(need_device)"
+  outp="${1:-$REPO/docs/dev/receipts/screen-$(date +%Y%m%d-%H%M%S).png}"
+  mkdir -p "$(dirname "$outp")"
+  adb -s "$d" exec-out screencap -p > "$outp" 2>/dev/null
+  [ -s "$outp" ] || fail 4 "screencap produced no bytes" "is the screen on and unlocked?"
+  ok "\"png\":\"$outp\",\"bytes\":$(stat -c%s "$outp")"
+  ;;
+
+record)
+  d="$(need_device)"
+  secs="${1:-10}"
+  outp="$REPO/docs/dev/receipts/record-$(date +%Y%m%d-%H%M%S).mp4"
+  mkdir -p "$(dirname "$outp")"
+  adb -s "$d" shell screenrecord --time-limit "$secs" /sdcard/pm3-rec.mp4 || fail 4 "screenrecord failed" "screen must be on"
+  adb -s "$d" pull /sdcard/pm3-rec.mp4 "$outp" >/dev/null && adb -s "$d" shell rm /sdcard/pm3-rec.mp4
+  ok "\"mp4\":\"$outp\",\"bytes\":$(stat -c%s "$outp"),\"seconds\":$secs"
+  ;;
+
+media)
+  d="$(need_device)"
+  ms="$(adb -s "$d" shell dumpsys media_session 2>/dev/null | grep -iA6 "$PKG" | head -20)"
+  au="$(adb -s "$d" shell dumpsys audio 2>/dev/null | grep -i "$PKG" | head -10)"
+  ok "\"media_session\":\"$(esc "${ms:-none}")\",\"audio\":\"$(esc "${au:-none}")\""
+  ;;
+
+fps)
+  d="$(need_device)"
+  gfx="$(adb -s "$d" shell dumpsys gfxinfo "$PKG" 2>/dev/null | grep -E "Total frames|Janky|percentile" | head -8)"
+  [ -n "$gfx" ] || fail 2 "no gfxinfo for $PKG (SurfaceView frames appear once the M1 render path exists)" "pm3 run first; full frame stats land with M1"
+  ok "\"gfxinfo\":\"$(esc "$gfx")\""
+  ;;
+
+smoke)
+  fail 2 "on-device SELFTEST lands with M1 (offscreen render + golden compare)" "track task M1; until then: pm3 run && pm3 logcat shows engineInfo from the Rust core"
+  ;;
+
+schema)
+  cat <<'EOF'
+{"status":"ok","tool":"pm3","version":"0.1.0","ts":"","schema":{
+ "tool":"pm3","description":"host-side dev CLI for phosphor-mobil3 (the APK cannot conform; this is the declared agent surface)",
+ "envelope":{"fields":["status","tool","version","ts"],"error_extra":["error","fix"]},
+ "exit_codes":{"0":"ok","2":"unavailable (fix says what would make it available)","3":"bad arguments","4":"runtime failure"},
+ "streams":{"logcat":"raw adb logcat passthrough, declared non-JSON"},
+ "verbs":{
+  "doctor":{"args":[],"returns":{"all_ok":"bool","checks":[{"check":"string","ok":"bool","detail":"string"}]},"exit":"0 all ok, 2 otherwise"},
+  "pair":{"args":["ip:port","code"],"returns":{"paired":"string"}},
+  "connect":{"args":["[ip:port]"],"returns":{"device":"string"},"note":"no arg = mdns autodiscover"},
+  "build":{"args":["[--release]"],"returns":{"apk":"path","bytes":"int","sha256":"hex"}},
+  "install":{"args":["[release]"],"returns":{"device":"string","installed_version":"string"}},
+  "run":{"args":[],"returns":{"device":"string","pid":"int"}},
+  "logcat":{"args":[],"returns":"raw stream"},
+  "screenshot":{"args":["[out.png]"],"returns":{"png":"path","bytes":"int"}},
+  "record":{"args":["[seconds=10]"],"returns":{"mp4":"path","bytes":"int","seconds":"int"}},
+  "media":{"args":[],"returns":{"media_session":"string","audio":"string"}},
+  "fps":{"args":[],"returns":{"gfxinfo":"string"}},
+  "smoke":{"args":[],"returns":"unavailable until M1"},
+  "schema":{"args":[],"returns":"this document"}
+ },
+ "additionalProperties":false}}
+EOF
+  exit 0
+  ;;
+
+""|help|-h|--help)
+  if want_json; then
+    fail 3 "no verb given" "pm3 <doctor|pair|connect|build|install|run|logcat|screenshot|record|media|fps|smoke|schema>"
+  fi
+  cat <<EOF
+pm3 $VERSION — phosphor-mobil3 dev CLI
+  doctor · pair <ip:port> <code> · connect [ip:port] · build [--release] · install [release]
+  run · logcat · screenshot [out] · record [secs] · media · fps · smoke · schema
+  --json forces structured output (auto when piped)
+EOF
+  exit 0
+  ;;
+
+*)
+  fail 3 "unknown verb: $VERB" "pm3 help; pm3 schema for the full contract"
+  ;;
+esac

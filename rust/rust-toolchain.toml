@@ -1,0 +1,4 @@
+[toolchain]
+# Same compiler as the desktop engine (phosphor pins 1.96.0) — parity by construction.
+channel = "1.96.0"
+targets = ["aarch64-linux-android"]

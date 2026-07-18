@@ -1,0 +1,35 @@
+[package]
+name = "phosphor-mobil3-core"
+version = "0.1.0"
+edition = "2024"
+license = "GPL-3.0-or-later"
+
+[lib]
+name = "phosphor_mobil3_core"
+crate-type = ["cdylib", "lib"]
+
+[dependencies]
+# The engine — source of truth stays in the desktop repo (sibling checkout required).
+phosphor-beam = { path = "../../phosphor/crates/phosphor-beam" }
+phosphor-dsp = { path = "../../phosphor/crates/phosphor-dsp" }
+phosphor-proto = { path = "../../phosphor/crates/phosphor-proto" }
+phosphor-render-gpu = { path = "../../phosphor/crates/phosphor-render-gpu" }
+phosphor-render-cpu = { path = "../../phosphor/crates/phosphor-render-cpu" }
+
+serde = { version = "1", features = ["derive"] }
+serde_json = "1"
+log = "0.4"
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"
+ndk = { version = "0.9", features = ["api-level-30"] }
+android_logger = "0.15"
+
+[profile.dev]
+# -O0 DSP is unusable in real time.
+opt-level = 1
+
+[profile.release]
+lto = "thin"
+strip = "symbols"
+panic = "abort"

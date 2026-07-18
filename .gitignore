@@ -1,0 +1,9 @@
+.gradle/
+build/
+local.properties
+*.jks
+rust/target/
+app/src/main/jniLibs/
+.kotlin/
+captures/
+*.log
