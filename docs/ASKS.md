@@ -11,3 +11,4 @@
 | 2026-07-18 | Bridge: pick desktop source — primary output OR a specific app — like desktop phosphor, non-disruptive (don't touch PC's sound/phosphor) | **queued — next session** (design in docs/BRIDGE.md) |
 | 2026-07-18 | **Remote music file-browser: browse the PC's music dir (main drive Music) + Mass storage music over the bridge, pick a file, stream + scope it** | **queued — next session** (see HANDOFF "Remote library") |
 | 2026-07-18 | **Revalidate audio output on the phone (worked on speakers earlier) + confirm the remote scope draws with real audio on the source machine** | **queued — next session** (note: AirPods → Spotify Connect auto-moved playback to the phone, silencing the laptop source) |
+| 2026-07-18 | **App icon — Android adaptive launcher icon (currently the default Android icon; M0 stripped the missing `@mipmap/ic_launcher` ref)** | **queued — next session** |

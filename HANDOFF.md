@@ -88,6 +88,17 @@ Browse the source PC's music library over the bridge, pick a file, stream + scop
   theme.rs PALETTES), **kits** browser/editor, **compose** mode (finger-draw → WAV),
   **.phos postcards** (share-sheet), snapshot/clip exports.
 
+### B′. App icon (Ben's ask, 2026-07-18)
+The app ships with the default Android icon — M0 removed the missing `@mipmap/ic_launcher`
+reference from AndroidManifest.xml (add it back once the icon exists). Make a proper **Android
+adaptive icon**: `mipmap-anydpi-v26/ic_launcher.xml` (+ round) pointing at a foreground +
+background layer, with PNG fallbacks across densities (mdpi→xxxhdpi). Derive it from the
+desktop scope identity — `phosphor` repo's `packaging/phosphor4-scope.svg` (the 4-panel scope
+glyph) — and honor the **`phosphor-icon` skill's laws** (closed-figure traces, compose-on-
+transparency-first verification, guard-band scans, stale icon-cache gotchas). AMOLED-friendly:
+the beam/scope figure on a true-black or plane-dark background reads best on the S25. Then set
+`android:icon`/`roundIcon` in the manifest and rebuild.
+
 ### C. M6 — PiP + polish + v1.0.0 release
 PiP auto-enter (setAutoEnterEnabled), ember auto-dim, thermal pass, keystore
 (`~/.android-keys/phosphor-mobil3.jks`, NEVER in git — back it up), release.sh (apksigner
