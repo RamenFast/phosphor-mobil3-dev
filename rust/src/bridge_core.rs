@@ -45,7 +45,7 @@ pub fn run_writer<W: Write>(
         .min(Duration::from_millis(250))
         .max(Duration::from_millis(5));
     let result = (|| -> Result<(), String> {
-        let mut put = |sink: &mut W, buf: &[u8], what: &str| -> Result<(), String> {
+        let put = |sink: &mut W, buf: &[u8], what: &str| -> Result<(), String> {
             sink.write_all(buf)
                 .and_then(|_| sink.flush())
                 .map_err(|e| format!("{what} write: {e}"))

@@ -8,7 +8,6 @@
 //! the oboe route-change restart. The Android SERVICE owns policy — when to connect,
 //! when to give up, and every surface the OS sees.
 
-use std::io::Read;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -155,13 +154,71 @@ impl SessionShared {
     }
 }
 
+/// The session's joinable thread handles (C4 folds this into a full Session
+/// RAII struct; until then it rides run_session's stack).
+#[derive(Default)]
+struct SessionParts {
+    writer: Option<std::thread::JoinHandle<()>>,
+    reader: Option<std::thread::JoinHandle<()>>,
+    audio: Option<std::thread::JoinHandle<()>>,
+    oboe: Option<std::thread::JoinHandle<()>>,
+}
+
 fn json_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
 }
 
+// ── The audio path seam (audit finding 10 lands here in Act II) ──────────────
+// Two opaque endpoints around the ring: the worker pushes through AudioSink,
+// the RT callback pops through AudioTap. Swapping the AudibleRing internals for
+// the lock-free SPSC BlockRing (../phosphor/docs/dev/SPSC-RING-DESIGN.md) is a
+// contained change behind these types — no signature churn on the callback or
+// worker. Deliberately no trait: a vtable has no place on the RT path.
+
+#[derive(Clone)]
+struct AudioPath {
+    ring: Arc<AudibleRing>,
+}
+
+impl AudioPath {
+    fn new(rate: u32) -> Self {
+        Self { ring: AudibleRing::new(rate) }
+    }
+    fn sink(&self) -> AudioSink {
+        AudioSink(self.ring.clone())
+    }
+    /// One tap per oboe stream; streams never overlap (the supervisor installs
+    /// a replacement only after AAudio closed the old one), so the single-
+    /// consumer discipline holds by usage.
+    fn tap(&self) -> AudioTap {
+        AudioTap(self.ring.clone())
+    }
+    fn close(&self) {
+        self.ring.close();
+    }
+    fn clear(&self) {
+        self.ring.clear();
+    }
+}
+
+struct AudioSink(Arc<AudibleRing>);
+impl AudioSink {
+    /// Blocking push; returns false once the path is closed (teardown's waker).
+    fn push(&mut self, samples: &[f32]) -> bool {
+        self.0.push_blocking(samples)
+    }
+}
+
+struct AudioTap(Arc<AudibleRing>);
+impl AudioTap {
+    fn pop_into(&mut self, out: &mut [f32]) -> usize {
+        self.0.pop_into(out)
+    }
+}
+
 // ── Oboe output (with mute + route-change restart) ───────────────────────────
 struct RemoteOutput {
-    audible: Arc<AudibleRing>,
+    tap: AudioTap,
     scratch: Vec<f32>,
     muted: Arc<AtomicBool>,
     restart_tx: std::sync::mpsc::Sender<()>,
@@ -176,7 +233,7 @@ impl AudioOutputCallback for RemoteOutput {
     ) -> DataCallbackResult {
         let need = frames.len() * 2;
         self.scratch.resize(need, 0.0);
-        let got = self.audible.pop_into(&mut self.scratch);
+        let got = self.tap.pop_into(&mut self.scratch);
         self.scratch[got..need].fill(0.0);
         // Instant local mute: keep draining (no stale-buffer buildup), emit silence.
         let muted = self.muted.load(Ordering::Relaxed);
@@ -206,7 +263,7 @@ impl AudioOutputCallback for RemoteOutput {
 }
 
 fn open_output(
-    audible: Arc<AudibleRing>,
+    path: &AudioPath,
     muted: Arc<AtomicBool>,
     restart_tx: std::sync::mpsc::Sender<()>,
 ) -> Result<AudioStreamAsync<Output, RemoteOutput>, String> {
@@ -218,7 +275,7 @@ fn open_output(
         .set_format::<f32>()
         .set_channel_count::<Stereo>()
         .set_callback(RemoteOutput {
-            audible,
+            tap: path.tap(),
             scratch: Vec::new(),
             muted,
             restart_tx,
@@ -503,10 +560,10 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     // before the relay ever hears H. An oboe failure here returns with the
     // socket unpublished and un-greeted — it simply drops (FIN), and the relay
     // never creates pumps for a half-session.
-    let audible = AudibleRing::new(RATE);
+    let path = AudioPath::new(RATE);
     let muted = Arc::new(AtomicBool::new(l.muted.load(Ordering::Relaxed)));
     let (restart_tx, restart_rx) = std::sync::mpsc::channel::<()>();
-    let out = match open_output(audible.clone(), muted.clone(), restart_tx.clone()) {
+    let out = match open_output(&path, muted.clone(), restart_tx.clone()) {
         Ok(o) => o,
         Err(e) => return SessionEnd::Failed(e),
     };
@@ -578,78 +635,147 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             .ok()
     };
     if writer_handle.is_none() {
-        teardown_session(&shared, &mut writer_handle, &out_slot);
+        let mut parts = SessionParts::default();
+        teardown_session(&shared, &path, &mut parts, &out_slot);
         return SessionEnd::Failed("spawn writer thread".into());
     }
 
-    // Route-change supervisor: reopen the stream when AAudio disconnects it.
-    {
-        let audible = audible.clone();
+    // Route-change supervisor (audit findings 3 + 7): token-cancelled via
+    // recv_timeout (it legitimately owns a restart_tx clone for reopened
+    // streams, so channel-disconnect can never be its exit signal), coalesces
+    // signal bursts, retries reopen on a bounded ladder, installs ONLY under
+    // the slot lock with a post-open cancellation check, and on ladder
+    // exhaustion trips the whole session — one audible reconnect, never
+    // permanent silence behind a "streaming" state.
+    let oboe_handle = {
+        let path = path.clone();
         let muted_flag = muted.clone();
         let out_slot = out_slot.clone();
         let restart_tx = restart_tx.clone();
+        let shared_s = shared.clone();
         std::thread::Builder::new()
             .name("phosphor-remote-oboe".into())
             .spawn(move || {
-                let l = link();
-                while restart_rx.recv().is_ok() {
-                    if l.quit.load(Ordering::Relaxed)
-                        || l.generation.load(Ordering::SeqCst) != my_gen
-                    {
-                        break;
-                    }
-                    match open_output(audible.clone(), muted_flag.clone(), restart_tx.clone()) {
-                        Ok(new_out) => {
-                            *out_slot.lock().unwrap() = Some(new_out);
-                            log::info!("remote oboe restarted after disconnect");
+                use std::sync::mpsc::RecvTimeoutError;
+                const LADDER_MS: [u64; 6] = [0, 250, 500, 1000, 2000, 4000];
+                'supervise: loop {
+                    match restart_rx.recv_timeout(Duration::from_millis(250)) {
+                        Ok(()) => {}
+                        Err(RecvTimeoutError::Timeout) => {
+                            if shared_s.cancelled() {
+                                return;
+                            }
+                            continue;
                         }
-                        Err(e) => log::error!("oboe restart failed: {e}"),
+                        Err(RecvTimeoutError::Disconnected) => return,
                     }
+                    while restart_rx.try_recv().is_ok() {} // coalesce a burst
+                    for (rung, wait) in LADDER_MS.iter().enumerate() {
+                        if shared_s.cancelled() {
+                            return;
+                        }
+                        if *wait > 0 {
+                            let t0 = Instant::now();
+                            while t0.elapsed() < Duration::from_millis(*wait) {
+                                if shared_s.cancelled() {
+                                    return;
+                                }
+                                match restart_rx.recv_timeout(Duration::from_millis(100)) {
+                                    Ok(()) => {} // coalesce — this ladder run covers it
+                                    Err(RecvTimeoutError::Disconnected) => return,
+                                    Err(RecvTimeoutError::Timeout) => {}
+                                }
+                            }
+                        }
+                        match open_output(&path, muted_flag.clone(), restart_tx.clone()) {
+                            Ok(new_out) => {
+                                // Install gate UNDER the slot lock (finding 3's
+                                // late-install race): teardown sets cancel BEFORE
+                                // taking the slot, so an install that begins after
+                                // teardown provably observes it; one that raced
+                                // earlier gets taken and dropped by teardown.
+                                let mut slot = plock(&out_slot);
+                                if shared_s.cancelled() {
+                                    drop(slot);
+                                    drop(new_out); // outside the lock
+                                    return;
+                                }
+                                *slot = Some(new_out);
+                                drop(slot);
+                                log::info!("remote oboe restarted after disconnect (rung {rung})");
+                                continue 'supervise;
+                            }
+                            Err(e) => log::warn!("oboe reopen rung {rung} failed: {e}"),
+                        }
+                    }
+                    log::error!(
+                        "oboe reopen ladder exhausted — tripping session for a clean restart"
+                    );
+                    shared_s.trip();
+                    return;
                 }
             })
-            .ok();
-    }
+            .ok()
+    };
 
-    // Audio writer: bounded, drop-if-behind — audio can glitch, the scope never stalls.
+    // Audio worker: bounded, drop-if-behind — audio can glitch, the scope never
+    // stalls. Exits on cancel, on a closed ring (finding 5's waker), or when the
+    // reader drops the sender.
     let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(24);
-    {
-        let audible = audible.clone();
+    let audio_handle = {
+        let mut sink = path.sink();
+        let shared_a = shared.clone();
         std::thread::Builder::new()
             .name("phosphor-remote-audio".into())
             .spawn(move || {
-                let l = link();
-                while !l.quit.load(Ordering::Relaxed)
-                    && l.generation.load(Ordering::SeqCst) == my_gen
-                {
+                while !shared_a.cancelled() {
                     match audio_rx.recv_timeout(Duration::from_millis(300)) {
                         Ok(buf) => {
-                            audible.push_blocking(&buf);
+                            if !sink.push(&buf) {
+                                break; // path closed by teardown
+                            }
                         }
                         Err(std::sync::mpsc::RecvTimeoutError::Timeout) => continue,
                         Err(_) => break,
                     }
                 }
             })
-            .ok();
-    }
+            .ok()
+    };
 
-    // Reader thread.
+    // Reader thread: SO_RCVTIMEO 1 s + partial-progress reads, so teardown's
+    // cancel is observed within a second even if a FIN goes missing.
+    read_stream.set_read_timeout(Some(Duration::from_secs(1))).ok();
     let reader_done = Arc::new(AtomicBool::new(false));
     let saw_w = Arc::new(AtomicBool::new(false));
     let saw_v1 = Arc::new(AtomicBool::new(false));
-    {
+    let reader_handle = {
         let done = reader_done.clone();
         let saw_w = saw_w.clone();
         let saw_v1 = saw_v1.clone();
+        let shared_r = shared.clone();
         std::thread::Builder::new()
             .name("phosphor-remote".into())
             .spawn(move || {
-                reader(my_gen, read_stream, audio_tx, saw_w, saw_v1);
+                reader(shared_r, read_stream, audio_tx, saw_w, saw_v1);
                 done.store(true, Ordering::Relaxed);
             })
-            .ok();
-    }
+            .ok()
+    };
 
+    let mut parts = SessionParts {
+        writer: writer_handle.take(),
+        reader: reader_handle,
+        audio: audio_handle,
+        oboe: oboe_handle,
+    };
+
+    // Policy flips gated on liveness (a disconnect that raced session setup must
+    // not flip the deck on for a corpse).
+    if l.quit.load(Ordering::Relaxed) || shared.cancelled() {
+        teardown_session(&shared, &path, &mut parts, &out_slot);
+        return SessionEnd::Quit;
+    }
     scope_ring().lock().unwrap().clear_pending();
     crate::deck::DECK_ACTIVE.store(true, Ordering::Relaxed);
     if l.cfg_geometry.load(Ordering::Relaxed) {
@@ -663,15 +789,15 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let mut was_streaming = false;
     loop {
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
-            teardown_session(&shared, &mut writer_handle, &out_slot);
+            teardown_session(&shared, &path, &mut parts, &out_slot);
             return SessionEnd::Quit;
         }
         if saw_v1.load(Ordering::Relaxed) {
-            teardown_session(&shared, &mut writer_handle, &out_slot);
+            teardown_session(&shared, &path, &mut parts, &out_slot);
             return SessionEnd::V1Relay;
         }
         if reader_done.load(Ordering::Relaxed) {
-            teardown_session(&shared, &mut writer_handle, &out_slot);
+            teardown_session(&shared, &path, &mut parts, &out_slot);
             // Audit finding 11: a run that reached streaming resets the backoff ladder
             // (report Healthy; the manager still reconnects, just without punishment).
             return if was_streaming {
@@ -687,7 +813,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         }
         match bridge_core::watchdog_action(quiet_ms, st == ST_STREAMING, st == ST_STALLED) {
             bridge_core::WatchdogAction::Dead => {
-                teardown_session(&shared, &mut writer_handle, &out_slot);
+                teardown_session(&shared, &path, &mut parts, &out_slot);
                 return if was_streaming {
                     SessionEnd::Failed("10 s of silence — link presumed dead".into())
                 } else {
@@ -708,15 +834,28 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     }
 }
 
+/// Ordered, idempotent session teardown (audit findings 1, 3, 5). Every step's
+/// position is load-bearing:
+///   1 cancel+FIN gates all publishes and wakes blocked reads/writes
+///   2 unpublish only OUR handle (Arc identity — never a successor's)
+///   3 writer join (already unblocked by the FIN; 3 s > worst 2 s send timeout)
+///   4 ring close+clear — unblocks a worker parked in push, purges ghost audio
+///   5 reader join (FIN + 1 s SO_RCVTIMEO bound it)
+///   6 audio worker join (300 ms recv + 200 ms push slice bound it)
+///   7 supervisor join BEFORE the slot clear — else a mid-open supervisor could
+///     resurrect a stream into an already-cleared slot (the late-install race)
+///   8 take the stream under the lock, DROP IT OUTSIDE (oboe close can block
+///     briefly while a callback drains — never under our lock)
+/// Policy (DECK_ACTIVE / GeometryActive / meta) is NOT touched here — it lives
+/// in disconnect() and terminal paths; the deck flag is shared with the local
+/// deck and a deferred clear would stomp a freshly opened local session.
 fn teardown_session(
     shared: &Arc<SessionShared>,
-    writer_handle: &mut Option<std::thread::JoinHandle<()>>,
+    path: &AudioPath,
+    parts: &mut SessionParts,
     out_slot: &Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>>,
 ) {
     let l = link();
-    // Idempotent, ordered: cancel + FIN first (wakes writer/reader), unpublish
-    // ONLY our own handle (Arc identity — a stale teardown can never unpublish a
-    // successor), then the bounded writer join, then the oboe stream.
     shared.trip();
     {
         let mut cur = plock(&l.current);
@@ -724,19 +863,26 @@ fn teardown_session(
             *cur = None;
         }
     }
-    if let Some(h) = writer_handle.take() {
-        bridge_core::bounded_join(
-            h,
-            "phosphor-remote-writer",
-            Duration::from_secs(3),
-            &l.leaked_threads,
-        );
+    if let Some(h) = parts.writer.take() {
+        bridge_core::bounded_join(h, "phosphor-remote-writer", Duration::from_secs(3), &l.leaked_threads);
     }
-    *out_slot.lock().unwrap() = None; // drops + stops the oboe stream
+    path.close();
+    path.clear();
+    if let Some(h) = parts.reader.take() {
+        bridge_core::bounded_join(h, "phosphor-remote", Duration::from_secs(2), &l.leaked_threads);
+    }
+    if let Some(h) = parts.audio.take() {
+        bridge_core::bounded_join(h, "phosphor-remote-audio", Duration::from_secs(1), &l.leaked_threads);
+    }
+    if let Some(h) = parts.oboe.take() {
+        bridge_core::bounded_join(h, "phosphor-remote-oboe", Duration::from_secs(2), &l.leaked_threads);
+    }
+    let stream = plock(out_slot).take();
+    drop(stream); // outside the lock
 }
 
 fn reader(
-    my_gen: u64,
+    shared: Arc<SessionShared>,
     mut s: TcpStream,
     audio_tx: std::sync::mpsc::SyncSender<Vec<f32>>,
     saw_w: Arc<AtomicBool>,
@@ -745,9 +891,12 @@ fn reader(
     let l = link();
     let mut hdr = [0u8; 5];
     let mut first = true;
-    while !l.quit.load(Ordering::Relaxed) && l.generation.load(Ordering::SeqCst) == my_gen {
-        if s.read_exact(&mut hdr).is_err() {
-            break;
+    loop {
+        // Partial-progress reads (bridge_core::read_fully): SO_RCVTIMEO wakes us
+        // to observe cancellation without ever desyncing the frame stream.
+        match bridge_core::read_fully(&mut s, &mut hdr, &shared.cancel) {
+            Ok(true) => {}
+            Ok(false) | Err(_) => break,
         }
         let tag = hdr[0];
         if first {
@@ -765,13 +914,14 @@ fn reader(
             break;
         }
         let mut payload = vec![0u8; len];
-        if s.read_exact(&mut payload).is_err() {
-            break;
+        match bridge_core::read_fully(&mut s, &mut payload, &shared.cancel) {
+            Ok(true) => {}
+            Ok(false) | Err(_) => break,
         }
         // Post-blocking-read gate (audit finding 1): a frame that arrived for a
-        // retired generation must not touch shared state — a reader that passed
-        // the loop guard, then blocked, could otherwise publish one stale frame.
-        if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
+        // retired session must not touch shared state — a reader that passed the
+        // loop guard, then blocked, could otherwise publish one stale frame.
+        if shared.cancelled() {
             break;
         }
         l.rx_bytes.fetch_add((5 + len) as u64, Ordering::Relaxed);
@@ -869,5 +1019,5 @@ fn reader(
             _ => {}    // unknown: skipped (forward compatibility)
         }
     }
-    log::info!("remote reader ended (gen {my_gen})");
+    log::info!("remote reader ended (gen {})", shared.session_gen);
 }
