@@ -21,11 +21,13 @@
   beam is integrated at higher effective rate per displayed 120 Hz frame. Needs decay-dt
   correctness (persistence scaled per substep) to avoid dimming. Wire in an M5 polish pass.
 - [ ] rclone shared client_id retires during 2026 — mint our own Drive client_id (https://rclone.org/drive/#making-your-own-client-id) before it breaks
-- [ ] **Bridge v2 concurrency hardening (RELEASE BLOCKER for M6)** — GPT-5.6-SOL xhigh audit
-  (docs/dev/codex-bridge-audit-2026-07-18.md, 13 findings) verdict "not ship-safe yet":
-  findings 1–4 are blockers (phone cross-generation socket race; blocking send_frame can
-  ANR main-thread JNI callers — needs a dedicated writer thread + queue; oboe restart
-  supervisor leak + late-install race; relay watchdog starvation behind blocking rclone/
-  ffmpeg handlers). 5–9 before calling reconnect hardened; 10 (lock-free SPSC ring in the
-  oboe callback) with them. Finding 11 (backoff reset) FIXED this session. Happy-path is
-  fine for daily driving; do NOT cut v1.0.0 before this lands.
+- [x] **Bridge v2 concurrency hardening — LANDED (service-bench session, 2026-07-18 evening).**
+  All 13 audit findings addressed across commits c824caf…b1fda36 (phone Session RAII +
+  control thread + writer thread + oboe supervisor rework + SPSC ring; relay deadlines +
+  jobs + pump ids + Drop RAII + monotonic clocks; relay 2.1.0 on both machines). Receipts
+  in the commit messages + docs/BRIDGE.md "Lifecycle & hardening". Self-assessed
+  ship-safe pending Ben's polish round; an optional codex re-audit before v1.0.0 would
+  be honest ceremony.
+- [ ] Relay browse/play stayed sync-with-deadline where fast and became async jobs where
+  slow (Drive fetch/browse) — if any NEW slow handler lands, it must be a job too; the
+  control loop's budget is the phone's 3 s stall window.

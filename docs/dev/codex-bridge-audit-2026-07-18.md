@@ -105,3 +105,31 @@ Scope: `rust/src/remote.rs`, `relay/src/session.rs`, their direct callers/helper
 ## Verdict
 
 **Not ship-safe yet.** The protocol ordering and nominal heartbeat design are coherent, and the relay's ordinary writer/pump teardown is substantially better than v1, but the phone has a cross-generation socket ownership race, unrecoverable blocking writes on Android's main-thread call paths, and unowned Oboe/audio workers; the relay can also miss its zombie law when its control loop blocks or unwinds. Findings 1-4 should be release blockers, with 5-9 fixed before calling reconnect/route-change lifecycle hardened.
+
+---
+
+## Resolution footer (2026-07-18 evening, the service-bench session)
+
+All 13 findings addressed on master, commits `c824caf..b1fda36`:
+
+| finding | fix | commit |
+|---|---|---|
+| 1 | generation-tagged publish → single-owner control thread (overlap impossible) | c824caf → ed70d89 |
+| 2 | dedicated writer thread, fail-fast JNI enqueue, K unstarvable | aad0e34 |
+| 3 | supervisor token + recv_timeout + install gate under slot lock, joined | 663bf0b |
+| 4 | run_cancellable deadlines + cancel flag (watchdog/disconnect) + browse/fetch jobs | f087ec3 |
+| 5 | ring close+clear before bounded worker join (ordered teardown) | 663bf0b |
+| 6 | pump-id-tagged CaptureEof/FileEof, stale ids ignored | f087ec3 |
+| 7 | bounded reopen ladder; exhaustion trips the session (one reconnect, never silence) | 663bf0b |
+| 8 | Drop RAII on every pump + SessionState + RunningGuard; catch_unwind logs only | f087ec3 |
+| 9 | full audio stack opens BEFORE publish + H | c824caf |
+| 10 | lock-free SPSC BlockRing + preallocated scratch + no-log callback | 570549a |
+| 11 | (pre-session fix preserved) Healthy backoff reset | a7e4904 |
+| 12 | Full/Disconnected split, wire-counted tx_a, 32-frame audio queue | f087ec3 |
+| 13 | monotonic liveness both sides; wall clock only in K/logs | c824caf + f087ec3 |
+
+Field additions the audit didn't ask for: BUGLOG #5 (stale mute across sessions) found
+live and fixed; catch-up policy field-tuned with Ben's ears (sustained gate — the first
+cut skipped inside normal wifi jitter). Verdict flip: **ship-safe pending Ben's polish
+round** — the daily-driver path now carries its own instrumentation (remoteStatus:
+audio_buf_ms/skips/a_drops/leaked_threads + the Nerd HUD bridge line).

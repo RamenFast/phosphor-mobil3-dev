@@ -54,13 +54,44 @@ targets.rs: `device:<node.name>.monitor`, `app:<application.name>` (+`+` dedup).
 `audio` toggle governs live capture; `P` file playback streams regardless. Bandwidth:
 A ≈ 1.54 Mb/s · G ≈ 0.5–1 Mb/s · M+K ≈ 100 B/s.
 
-## Deployment state (2026-07-18)
+## Lifecycle & hardening (2026-07-18, the service-bench session — relay 2.1.0)
 
-- interserve-linux: **v2 systemd user service LIVE** (probe: 97 A/s, all caps true).
-- thinkcenter: **v1 + PULSE_LATENCY_MSEC=20 hotfix** — stays until the phone speaks v2
-  (clean-break discipline), then `scripts/relay-install.sh --host thinkcenter`.
-- rclone: not yet installed anywhere — Drive roots activate after `rclone config` (Ben's
-  one OAuth) + a `{"id":"drive0","label":"google drive","rclone":"gdrive:"}` config root.
+The codex audit's 13 findings (docs/dev/codex-bridge-audit-2026-07-18.md) are all
+addressed; the load-bearing invariants, so nobody "simplifies" them away:
+
+**Phone:** ONE long-lived control thread owns every session sequentially (overlap
+impossible by construction); JNI verbs are pure intent-writers (atomics + trip + mailbox,
+O(µs), never socket I/O); a dedicated writer thread owns the write half (K self-generated
+on its own 2 s cadence — unstarvable; H coalesced via dirty flag — unlosable; any write
+error trips the session); Session RAII tears down in a documented order (cancel → FIN →
+writer join → ring close+clear → reader → audio → supervisor BEFORE slot clear → drop
+stream outside the lock), bounded joins detach-and-count (`leaked_threads` in
+remoteStatus must stay 0); the oboe supervisor is token-cancelled with a bounded reopen
+ladder (exhaustion trips the session — never silence behind "streaming"); mute is
+playback POLICY, reset on connect (BUGLOG #5). Monotonic clocks for all liveness.
+
+**Audio path:** lock-free SPSC ring (rust/src/spsc.rs, first implementation of desktop's
+SPSC-RING-DESIGN) — the RT callback does no alloc/lock/syscall/log. Latency constants
+(field-tuned with Ben's ears): ~400 ms elastic ring · catch-up only after ~250 ms
+SUSTAINED above 350 ms, cutting to 250 ms · audio channel 32×10 ms. Jitter soaks in
+silently; runaway lag dies in one cut; `audio_buf_ms/skips/skip_ms/a_drops` live in
+remoteStatus + the Nerd HUD bridge line.
+
+**Relay:** every external command runs under `util::run_cancellable` (hard deadline +
+25 ms-polled cancel flag flipped by watchdog AND client-disconnect — no child holds the
+session hostage); browse + Drive fetch are supersede-tokened JOBS (control loop stays
+inside the phone's 3 s stall window; capture keeps playing through a download); EOF
+events carry pump ids (stale deaths ignored); CapturePump/FilePump/Geometry/FileSession/
+SessionState are Drop-RAII + a RunningGuard (panic unwind cleans the whole graph;
+catch_unwind logs only); tx_a counts wire writes; audio queue 32 frames (~320 ms max
+hoard); monotonic liveness.
+
+## Deployment state (2026-07-18, evening)
+
+- interserve-linux: **relay 2.1.0 LIVE** (systemd user service).
+- thinkcenter: **relay 2.1.0 LIVE** (systemd user service; v1 hotfix era over).
+- rclone: installed on interserve-linux with `gdrive:` OAuth done; Drive root live in its
+  config. thinkcenter local roots only.
 
 ## v1 (historical)
 
