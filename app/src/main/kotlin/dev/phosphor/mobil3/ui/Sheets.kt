@@ -435,8 +435,8 @@ fun DragRule(
 }
 
 // Two-thumb sibling of DragRule: drag scrubs the NEAREST square handle, the accent
-// hairline spans the kept [lo, hi] sub-range. The label cell is the ⚄ arming surface —
-// tappable, accent-lit while armed.
+// hairline spans the kept [lo, hi] sub-range. A real checkbox leads the row — the
+// visible arm/disarm toggle for the ⚄ behavior (checked = armed, re-rolls per track).
 @Composable
 fun RangeDragRule(
     label: String,
@@ -455,14 +455,24 @@ fun RangeDragRule(
         Modifier.fillMaxWidth().padding(vertical = 6.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
-        Mono(
-            label,
-            if (armed) p.accent else p.ink2,
-            Type.data,
+        Row(
             Modifier.width(96.dp).then(
                 if (onLabelTap != null) Modifier.clickable { onLabelTap() } else Modifier
             ),
-        )
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Box(
+                Modifier
+                    .size(16.dp)
+                    .border(Dim.hairline, if (armed) p.accent else p.line)
+                    .padding(4.dp)
+                    .then(Modifier.drawBehind {
+                        if (armed) drawRect(p.accent)
+                    }),
+            )
+            Spacer(Modifier.width(8.dp))
+            Mono(label, if (armed) p.accent else p.ink2, Type.data)
+        }
         Box(
             Modifier
                 .weight(1f)
@@ -1027,8 +1037,9 @@ fun SettingsSheet(
                 format = { "%.0f %%".format(it * 100) },
             ) { lo, hi -> actions.setGlowRandomRange(lo, hi) }
             Prose(
-                "⚄ rolls a new value inside the kept range — armed, it re-rolls on every " +
-                    "track, like the mode die. Dragging the rule above takes over and disarms.",
+                "check a ⚄ box to arm the die: it rolls inside the kept range now and " +
+                    "re-rolls on every track, like the mode die. Dragging the plain rule " +
+                    "above takes over and unchecks it.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
         }
