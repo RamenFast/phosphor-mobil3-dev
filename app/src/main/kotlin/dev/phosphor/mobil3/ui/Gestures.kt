@@ -197,7 +197,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                                 host.dollyBy((1f - zoom) * 2.2f)
                             } else {
                                 val old = gain
-                                gain = (gain * zoom).coerceIn(0.1f, 6f)
+                                gain = (gain * zoom).coerceIn(0.1f, 7f)
                                 host.setGainAbsolute(gain)
                                 if ((old - 1f) * (gain - 1f) <= 0f && old != gain) {
                                     Haptics.light(host.view())
@@ -246,7 +246,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             host.orbitBy(d.x * 0.006f, d.y * 0.006f)
                         } else {
                             val old = gain
-                            gain = (gain * exp(-d.y * 0.0042f)).coerceIn(0.1f, 6f)
+                            gain = (gain * exp(-d.y * 0.0042f)).coerceIn(0.1f, 7f)
                             host.setGainAbsolute(gain)
                             if ((old - 1f) * (gain - 1f) <= 0f && old != gain) {
                                 Haptics.light(host.view())

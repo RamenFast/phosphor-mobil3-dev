@@ -11,6 +11,7 @@ import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectHorizontalDragGestures
+import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
@@ -32,7 +33,7 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.draw.alpha
+import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
@@ -155,7 +156,7 @@ fun SeekRule(
     }
 }
 
-// ── Console strip — the summoned chrome band at the thumb. ──
+// ── Console card — summoned chrome, floated clear of the panel's curved glass. ──
 @Composable
 fun Console(
     state: ScopeUiState,
@@ -172,58 +173,76 @@ fun Console(
 ) {
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
-    Column(
+    val style = LocalRoomStyle.current
+    val cardShape = RoundedCornerShape(style.cornerRadius)
+    Box(
         Modifier
             .fillMaxWidth()
-            .background(p.surface.copy(alpha = Dim.consoleAlpha))
-            .border(Dim.hairline, p.line)
-            .windowInsetsPadding(chromeSafeDrawingInsets(Dim.consolePadH, Dim.consolePadV))
-            .padding(horizontal = Dim.consolePadH, vertical = Dim.consolePadV)
-            // The play bar owns this deliberate upward reveal. Stage drags remain
-            // gain/orbit gestures, and horizontal seek scrubs keep their lane.
-            .playBarSwipeUp(onSettingsSwipe)
-            .burnInWalk(reduced),
-    ) {
-        state.trackTitle?.let { title ->
-            Mono(
-                buildString {
-                    append(title)
-                    state.trackArtist?.let {
-                        if (it.isNotBlank() && it != "null") append("  —  $it")
-                    }
-                },
-                p.ink, Type.dataLg,
-                Modifier.basicMarquee(iterations = Int.MAX_VALUE, initialDelayMillis = 2200, velocity = 24.dp),
+            .windowInsetsPadding(
+                chromeSafeDrawingInsets(Dim.cardMarginH, Dim.cardMarginBottom)
             )
-            Spacer(Modifier.height(Dim.gap))
-        }
-        if (state.seekable && state.durationMs > 0) {
-            SeekRule(p, state.positionMs, state.durationMs, onSeek)
-            Spacer(Modifier.height(Dim.gap))
-        }
-        Row(verticalAlignment = Alignment.CenterVertically) {
-            if (hasTransport) {
-                FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
+            .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
+            .burnInWalk(reduced),
+        contentAlignment = Alignment.BottomCenter,
+    ) {
+        Column(
+            Modifier
+                .fillMaxWidth()
+                .clip(cardShape)
+                .background(
+                    p.surface.copy(alpha = Dim.consoleAlpha * style.panelAlphaScale)
+                )
+                .border(Dim.hairline, p.line, cardShape)
+                .padding(horizontal = Dim.consolePadH, vertical = Dim.consolePadV)
+                // The play bar owns this deliberate upward reveal. Stage drags remain
+                // gain/orbit gestures, and horizontal seek scrubs keep their lane.
+                .playBarSwipeUp(onSettingsSwipe),
+        ) {
+            state.trackTitle?.let { title ->
+                Mono(
+                    buildString {
+                        append(title)
+                        state.trackArtist?.let {
+                            if (it.isNotBlank() && it != "null") append("  —  $it")
+                        }
+                    },
+                    p.ink, Type.dataLg,
+                    Modifier.basicMarquee(
+                        iterations = Int.MAX_VALUE,
+                        initialDelayMillis = 2200,
+                        velocity = 24.dp,
+                    ),
+                )
+                Spacer(Modifier.height(Dim.gap))
+            }
+            if (state.seekable && state.durationMs > 0) {
+                SeekRule(p, state.positionMs, state.durationMs, onSeek)
+                Spacer(Modifier.height(Dim.gap))
+            }
+            Row(verticalAlignment = Alignment.CenterVertically) {
+                if (hasTransport) {
+                    FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
+                    Spacer(Modifier.width(Dim.gap))
+                }
+                StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced, designator = "S1") {
+                    Haptics.light(view); onPlay()
+                }
+                if (hasTransport) {
+                    Spacer(Modifier.width(Dim.gap))
+                    FlatKey("▸▸", p) { Haptics.light(view); onNext() }
+                }
+                Spacer(Modifier.width(Dim.gapLg))
+                // Reference-designator conventions, honestly applied: V = the tube
+                // (the mode IS the displayed figure), J = input jack, S = switch.
+                FlatKey("MODE", p, designator = "V2") {
+                    if (state.randomModeArmed) state.requestRandomMode()
+                    onMode()
+                }
                 Spacer(Modifier.width(Dim.gap))
+                FlatKey("SRC", p, designator = "J1", onClick = onSrc)
+                Spacer(Modifier.weight(1f))
+                FlatKey("⋯", p, designator = "S9", onClick = onMore)
             }
-            StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced, designator = "S1") {
-                Haptics.light(view); onPlay()
-            }
-            if (hasTransport) {
-                Spacer(Modifier.width(Dim.gap))
-                FlatKey("▸▸", p) { Haptics.light(view); onNext() }
-            }
-            Spacer(Modifier.width(Dim.gapLg))
-            // Reference-designator conventions, honestly applied: V = the tube
-            // (the mode IS the displayed figure), J = input jack, S = switch.
-            FlatKey("MODE", p, designator = "V2") {
-                if (state.randomModeArmed) state.requestRandomMode()
-                onMode()
-            }
-            Spacer(Modifier.width(Dim.gap))
-            FlatKey("SRC", p, designator = "J1", onClick = onSrc)
-            Spacer(Modifier.weight(1f))
-            FlatKey("⋯", p, designator = "S9", onClick = onMore)
         }
     }
 }

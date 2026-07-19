@@ -19,7 +19,7 @@ impl AutoGain {
         Self {
             enabled: false,
             peak: 0.0,
-            effective: manual_gain.clamp(0.1, 6.0),
+            effective: manual_gain.clamp(0.1, 7.0),
         }
     }
 
@@ -29,14 +29,16 @@ impl AutoGain {
             // Re-measure from the next sound; the glide starts wherever it was.
             self.peak = 0.0;
         } else {
-            self.effective = manual_gain.clamp(0.1, 6.0);
+            self.effective = manual_gain.clamp(0.1, 7.0);
         }
         self.effective
     }
 
     pub(crate) fn set_manual(&mut self, gain: f32) -> f32 {
         self.enabled = false;
-        self.effective = gain.clamp(0.1, 6.0);
+        // Manual reaches 7 (Ben's ask); the AUTO target law below stays 0.1..6
+        // desktop-verbatim.
+        self.effective = gain.clamp(0.1, 7.0);
         self.effective
     }
 

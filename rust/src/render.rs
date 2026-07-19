@@ -208,7 +208,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut computer = Computer::new();
     crate::engine::set_reconstruction_rate(&mut computer, 1);
     computer.mode = Mode::Xy;
-    let mut manual_gain = defaults.gain.clamp(0.1, 6.0);
+    let mut manual_gain = defaults.gain.clamp(0.1, 7.0);
     computer.gain = manual_gain;
     let mut auto_gain = crate::engine::AutoGain::new(manual_gain);
     let mut fps_frames: u32 = 0;
@@ -369,8 +369,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     log::info!("beam oversample: {oversample}x");
                 }
                 Cmd::SetGain(g) => {
-                    // Desktop parity: shell.rs clamps gain to 0.1..6.0.
-                    manual_gain = g.clamp(0.1, 6.0);
+                    // Manual range is 0.1..7 (Ben's ask — one past the desktop's 6);
+                    // AUTO-GAIN still lands inside the desktop-verbatim 0.1..6 law.
+                    manual_gain = g.clamp(0.1, 7.0);
                     computer.gain = auto_gain.set_manual(manual_gain);
                     GAIN_AUTO.store(false, Ordering::Relaxed);
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
@@ -593,6 +594,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 Ordering::Relaxed,
             );
         }
+
+        // The graticule zooms with the figure (Ben's ask): grid spacing rides the live
+        // effective gain so a pinch reads as zooming the WORLD, not just amplifying the
+        // trace. Clamped so the grid never degenerates into stripes or one giant cell.
+        r.grid_spacing_fraction = (0.1125 * computer.gain).clamp(0.035, 0.55);
 
         // The DSP reconstructs the contiguous 48 kHz tap at the selected factor. One display
         // frame means one compute + one decay/deposit, matching desktop cadence — splitting

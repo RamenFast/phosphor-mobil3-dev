@@ -34,3 +34,5 @@
 | 2026-07-18 | **Save my user settings in between (agent test cycles must not clobber on-device prefs)** | adopted — standing practice + memory (snapshot/restore around every sweep) |
 | 2026-07-18 | **Fullscreen should be togglable (settings)** | queued — this session (SETTINGS → DISPLAY toggle; insets helper already handles both states) |
 | 2026-07-18 | **Mobile scope less accurate than PC — "a clean circle is 2-3 circles out of sync"; remediate** | **in flight this session** (root-cause hunt running: torn sample window / phase discontinuity hypotheses; fix + regression test to follow) |
+| 2026-07-18 | **Grid should zoom with pinch + gain ceiling to 7x** | **SHIPPED same night** (grid_spacing_fraction rides effective gain, clamped legible; all manual clamps → 7.0, auto-target stays desktop-verbatim 6; remote honest limit: desktop ctl gain still clamps 6.0) |
+| 2026-07-18 | **Kill the bottom box highlight — UI flows like a card; tall sheets curl in at top like a book/scroll; swipe-up is the settings door** | **in flight same night** (card chrome wave; swipe-up already shipped) |

@@ -38,8 +38,10 @@ import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
+import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -47,6 +49,7 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -55,6 +58,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
@@ -65,8 +69,94 @@ import kotlin.math.roundToInt
 
 enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK }
 
-// ── Sheet mechanics (shared): translucent surface over the live scope, hairline top
-// rule, drag-down / scrim-tap / ✕ / Back to dismiss, 200 ms decelerate, no bounce. ──
+private fun sheetCurlProgress(
+    fillFraction: Float,
+    style: RoomStyle,
+    reduced: Boolean,
+): Float {
+    val continuous = (
+        (fillFraction - Dim.sheetCurlStartFraction) /
+            (Dim.sheetCurlFullFraction - Dim.sheetCurlStartFraction)
+        ).coerceIn(0f, 1f)
+    if (reduced) return if (continuous >= 0.5f) 1f else 0f
+    return when (style.motion) {
+        MotionFeel.Cut -> if (continuous > 0f) 1f else 0f
+        MotionFeel.Detented -> (continuous * 4f).roundToInt() / 4f
+        MotionFeel.Springy -> continuous * continuous * (3f - 2f * continuous)
+        MotionFeel.Eased -> continuous
+    }
+}
+
+/**
+ * A geometry-only page curl: tall sheets pinch inward at the top while their
+ * lower corners retain the room's ordinary card shape. The clipped fill and
+ * hairline share this exact path, so there is no shadow/elevation language.
+ */
+private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.compose.ui.unit.Density): Shape {
+    val roomRadius = with(density) { style.cornerRadius.toPx() }
+    val curlInset = with(density) { Dim.sheetCurlInset.toPx() }
+    val curlDepth = with(density) { Dim.sheetCurlDepth.toPx() }
+    return GenericShape { size, _ ->
+        val width = size.width
+        val height = size.height
+        val inset = (roomRadius + (curlInset - roomRadius) * curl)
+            .coerceAtMost(width * 0.24f)
+        val shoulder = (roomRadius + (curlDepth - roomRadius) * curl)
+            .coerceAtMost(height * 0.24f)
+        val bottomRadius = roomRadius.coerceAtMost(minOf(width, height) * 0.24f)
+
+        moveTo(0f, shoulder)
+        if (curl <= 0f) {
+            if (roomRadius > 0f) quadraticBezierTo(0f, 0f, inset, 0f)
+            else lineTo(0f, 0f)
+        } else when (style.character) {
+            ChromeCharacter.Glass -> quadraticBezierTo(0f, 0f, inset, 0f)
+            ChromeCharacter.Annotated -> {
+                lineTo(inset * 0.42f, shoulder)
+                lineTo(inset * 0.42f, shoulder * 0.48f)
+                lineTo(inset, shoulder * 0.48f)
+                lineTo(inset, 0f)
+            }
+            ChromeCharacter.Carved -> {
+                lineTo(inset * 0.32f, shoulder)
+                lineTo(inset, 0f)
+            }
+            ChromeCharacter.Engraved -> lineTo(inset, 0f)
+        }
+
+        lineTo(width - inset, 0f)
+        if (curl <= 0f) {
+            if (roomRadius > 0f) quadraticBezierTo(width, 0f, width, shoulder)
+            else lineTo(width, 0f)
+        } else when (style.character) {
+            ChromeCharacter.Glass -> quadraticBezierTo(width, 0f, width, shoulder)
+            ChromeCharacter.Annotated -> {
+                lineTo(width - inset, shoulder * 0.48f)
+                lineTo(width - inset * 0.42f, shoulder * 0.48f)
+                lineTo(width - inset * 0.42f, shoulder)
+                lineTo(width, shoulder)
+            }
+            ChromeCharacter.Carved -> {
+                lineTo(width - inset * 0.32f, shoulder)
+                lineTo(width, shoulder)
+            }
+            ChromeCharacter.Engraved -> lineTo(width, shoulder)
+        }
+
+        lineTo(width, height - bottomRadius)
+        if (bottomRadius > 0f) {
+            quadraticBezierTo(width, height, width - bottomRadius, height)
+        } else lineTo(width, height)
+        lineTo(bottomRadius, height)
+        if (bottomRadius > 0f) {
+            quadraticBezierTo(0f, height, 0f, height - bottomRadius)
+        } else lineTo(0f, height)
+        close()
+    }
+}
+
+// ── Sheet mechanics (shared): a safe-area floating card over the live scope;
+// fill-driven top curl; drag-down / scrim-tap / ✕ / Back to dismiss. ──
 @Composable
 fun SheetHost(
     p: Palette,
@@ -78,8 +168,18 @@ fun SheetHost(
     var dragPx by remember { mutableFloatStateOf(0f) }
     val style = LocalRoomStyle.current
     val bloom = LocalBloomPull.current
-    val bloomTravelPx = with(LocalDensity.current) { 28.dp.toPx() }
+    val density = LocalDensity.current
+    val bloomTravelPx = with(density) { 28.dp.toPx() }
     val bloomOffsetPx = -(bloom?.visualPull ?: 0f) * bloomTravelPx
+    var availableHeightPx by remember { mutableIntStateOf(0) }
+    var sheetHeightPx by remember { mutableIntStateOf(0) }
+    val fillFraction = if (availableHeightPx > 0) {
+        sheetHeightPx.toFloat() / availableHeightPx
+    } else 0f
+    val curl = sheetCurlProgress(fillFraction, style, reduced)
+    val sheetShape = remember(style, curl, density) {
+        sheetCardShape(style, curl, density)
+    }
     // Expressive dismiss (Ben's ask): the old `visible = true` meant the exit
     // could NEVER play — dismissal was an instant removal. Now the sheet owns a
     // real open/close state: ✕/scrim/drag/Back play the departure (accelerating
@@ -98,61 +198,68 @@ fun SheetHost(
             .fillMaxSize()
             .background(Color.Black.copy(alpha = Dim.scrimAlpha))
             .pointerInput(Unit) { detectTapGestures(onTap = { dismiss() }) },
-        contentAlignment = Alignment.BottomCenter,
     ) {
-        AnimatedVisibility(
-            visibleState = openState,
-            enter = if (reduced) fadeIn() else if (style.motion == MotionFeel.Springy)
-            // The one room that bounces (glass): a gentle spring settle.
-                slideInVertically(
-                    spring(dampingRatio = 0.72f, stiffness = 380f,
-                        visibilityThreshold = IntOffset.VisibilityThreshold)
-                ) { it / 3 } + fadeIn(styleSpec(false, style, Motion.sheet))
-            else
-                slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
-                    fadeIn(styleSpec(false, style, Motion.sheet)),
-            exit = if (reduced) fadeOut() else
-                slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
-                    fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate)),
+        Box(
+            Modifier
+                .fillMaxSize()
+                .windowInsetsPadding(
+                    chromeSafeDrawingInsets(Dim.cardMarginH, Dim.cardMarginBottom)
+                )
+                .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
+                .onSizeChanged { availableHeightPx = it.height },
+            contentAlignment = Alignment.BottomCenter,
         ) {
-            val sheetShape = RoundedCornerShape(
-                topStart = style.cornerRadius, topEnd = style.cornerRadius
-            )
-            Column(
-                Modifier
-                    .offset {
-                        IntOffset(0, (dragPx.coerceAtLeast(0f) + bloomOffsetPx).roundToInt())
-                    }
-                    .fillMaxWidth()
-                    .clip(sheetShape)
-                    .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
-                    .border(Dim.hairline, p.lineStrong, sheetShape)
-                    .windowInsetsPadding(chromeSafeDrawingInsets(Dim.sheetPad, Dim.sheetPad))
-                    .padding(Dim.sheetPad)
-                    // Swallow taps; own vertical drags for the pull-down dismiss.
-                    .pointerInput(Unit) { detectTapGestures(onTap = {}) }
-                    .pointerInput(Unit) {
-                        detectVerticalDragGestures(
-                            onDragEnd = {
-                                if (dragPx > 140f) dismiss()
-                                dragPx = 0f
-                            },
-                            onDragCancel = { dragPx = 0f },
-                        ) { change, delta ->
-                            change.consume()
-                            dragPx = (dragPx + delta).coerceAtLeast(0f)
-                        }
-                    },
+            AnimatedVisibility(
+                visibleState = openState,
+                enter = if (reduced) fadeIn() else if (style.motion == MotionFeel.Springy)
+                // The one room that bounces (glass): a gentle spring settle.
+                    slideInVertically(
+                        spring(dampingRatio = 0.72f, stiffness = 380f,
+                            visibilityThreshold = IntOffset.VisibilityThreshold)
+                    ) { it / 3 } + fadeIn(styleSpec(false, style, Motion.sheet))
+                else
+                    slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
+                        fadeIn(styleSpec(false, style, Motion.sheet)),
+                exit = if (reduced) fadeOut() else
+                    slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
+                        fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate)),
             ) {
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                    Mono(title, p.ink2, Type.data)
-                    Mono(
-                        "✕", p.ink2, Type.dataXl,
-                        Modifier.clickable(onClick = dismiss).padding(horizontal = 6.dp),
-                    )
+                Column(
+                    Modifier
+                        .offset {
+                            IntOffset(0, (dragPx.coerceAtLeast(0f) + bloomOffsetPx).roundToInt())
+                        }
+                        .fillMaxWidth()
+                        .onSizeChanged { sheetHeightPx = it.height }
+                        .clip(sheetShape)
+                        .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
+                        .border(Dim.hairline, p.lineStrong, sheetShape)
+                        .padding(Dim.sheetPad)
+                        // Swallow taps; own vertical drags for the pull-down dismiss.
+                        .pointerInput(Unit) { detectTapGestures(onTap = {}) }
+                        .pointerInput(Unit) {
+                            detectVerticalDragGestures(
+                                onDragEnd = {
+                                    if (dragPx > 140f) dismiss()
+                                    dragPx = 0f
+                                },
+                                onDragCancel = { dragPx = 0f },
+                            ) { change, delta ->
+                                change.consume()
+                                dragPx = (dragPx + delta).coerceAtLeast(0f)
+                            }
+                        },
+                ) {
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                        Mono(title, p.ink2, Type.data)
+                        Mono(
+                            "✕", p.ink2, Type.dataXl,
+                            Modifier.clickable(onClick = dismiss).padding(horizontal = 6.dp),
+                        )
+                    }
+                    Spacer(Modifier.height(Dim.gapLg))
+                    body()
                 }
-                Spacer(Modifier.height(Dim.gapLg))
-                body()
             }
         }
     }
@@ -595,7 +702,7 @@ fun SettingsSheet(
             )
             DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
             DragRule(
-                "GAIN", state.gain, 0.1f, 6.0f, p, { "×%.2f".format(it) },
+                "GAIN", state.gain, 0.1f, 7.0f, p, { "×%.2f".format(it) },
             ) { actions.setGainAbsolute(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {

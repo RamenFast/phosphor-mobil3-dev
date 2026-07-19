@@ -578,7 +578,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setFocus(focus: Float) { focusPref = focus; PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) {
-        gainValue = g.coerceIn(0.1f, 6f)
+        gainValue = g.coerceIn(0.1f, 7f)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
         ui.autoGain = false
