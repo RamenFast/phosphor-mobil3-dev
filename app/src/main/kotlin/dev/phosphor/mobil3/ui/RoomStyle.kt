@@ -85,3 +85,20 @@ val Palette.style: RoomStyle
 
 /** Provided at the PhosphorScreen root from the DISPLAYED room (crossfade-aware). */
 val LocalRoomStyle = compositionLocalOf { CarvedStyle }
+
+// ── User overrides (Ben's ask: customizable UX/UI elements) ──────────────────
+// Null = match the room. Persisted; applied on top of whichever room is live.
+@Immutable
+data class StyleOverride(
+    val character: ChromeCharacter? = null,
+    val motion: MotionFeel? = null,
+    val radiusDp: Int? = null,
+    val designators: Boolean? = null,
+)
+
+fun RoomStyle.overridden(o: StyleOverride): RoomStyle = copy(
+    character = o.character ?: character,
+    motion = o.motion ?: motion,
+    cornerRadius = o.radiusDp?.dp ?: cornerRadius,
+    designators = o.designators ?: designators,
+)

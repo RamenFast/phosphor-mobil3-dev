@@ -93,7 +93,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val t = fade.value
     val p = if (t >= 1f) target else fromRoom.lerpTo(target, smoothstep(t))
     SideEffect { lastShown = p }
-    val style = (if (t >= 0.5f) target else fromRoom).style
+    val style = (if (t >= 0.5f) target else fromRoom).style.overridden(state.styleOverride)
     val view = LocalView.current
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }

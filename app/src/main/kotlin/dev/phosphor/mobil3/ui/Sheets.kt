@@ -3,6 +3,13 @@ package dev.phosphor.mobil3.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.RepeatMode
+import androidx.compose.animation.core.VisibilityThreshold
+import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.infiniteRepeatable
+import androidx.compose.animation.core.rememberInfiniteTransition
+import androidx.compose.animation.core.spring
+import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -27,9 +34,14 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.heightIn
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.shape.RoundedCornerShape
+import androidx.compose.ui.draw.clip
+import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
@@ -87,19 +99,29 @@ fun SheetHost(
     ) {
         AnimatedVisibility(
             visibleState = openState,
-            enter = if (reduced) fadeIn() else
+            enter = if (reduced) fadeIn() else if (style.motion == MotionFeel.Springy)
+            // The one room that bounces (glass): a gentle spring settle.
+                slideInVertically(
+                    spring(dampingRatio = 0.72f, stiffness = 380f,
+                        visibilityThreshold = IntOffset.VisibilityThreshold)
+                ) { it / 3 } + fadeIn(styleSpec(false, style, Motion.sheet))
+            else
                 slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
                     fadeIn(styleSpec(false, style, Motion.sheet)),
             exit = if (reduced) fadeOut() else
                 slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
                     fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate)),
         ) {
+            val sheetShape = RoundedCornerShape(
+                topStart = style.cornerRadius, topEnd = style.cornerRadius
+            )
             Column(
                 Modifier
                     .offset { IntOffset(0, dragPx.coerceAtLeast(0f).roundToInt()) }
                     .fillMaxWidth()
-                    .background(p.surface.copy(alpha = Dim.sheetAlpha))
-                    .border(Dim.hairline, p.lineStrong)
+                    .clip(sheetShape)
+                    .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
+                    .border(Dim.hairline, p.lineStrong, sheetShape)
                     .windowInsetsPadding(WindowInsets.safeDrawing)
                     .padding(Dim.sheetPad)
                     // Swallow taps; own vertical drags for the pull-down dismiss.
@@ -302,46 +324,69 @@ fun RoomSheet(
     onDismiss: () -> Unit,
 ) {
     SheetHost(p, "ROOM", reduced, onDismiss) {
-        LazyVerticalGrid(columns = GridCells.Fixed(2)) {
+        // Breathing pulse for follows-beam tiles (one clock for all).
+        val breath by rememberInfiniteTransition(label = "breath").animateFloat(
+            initialValue = 0.35f, targetValue = 1f,
+            animationSpec = infiniteRepeatable(
+                tween(1400, easing = Motion.standard), RepeatMode.Reverse
+            ),
+            label = "breathA",
+        )
+        LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.heightIn(max = 340.dp)) {
             itemsIndexed(Rooms) { _, room ->
                 val active = room.id == state.room.id
+                val rs = room.style
                 Column(
                     Modifier
                         .padding(4.dp)
                         .background(room.plane)
                         .border(Dim.hairline, if (active) p.accent else room.lineStrong)
-                        .clickable { onPick(room) }
+                        .clickable {
+                            if (room.id == "amoled") state.amoledCaptionSeen = true
+                            onPick(room)
+                        }
                         .padding(10.dp),
                 ) {
                     Box(
                         Modifier
                             .fillMaxWidth()
                             .height(34.dp)
-                            .background(room.surface)
-                            .border(Dim.hairline, room.line),
+                            .clip(RoundedCornerShape(rs.cornerRadius))
+                            .background(
+                                if (rs.character == ChromeCharacter.Glass)
+                                    room.surface.copy(alpha = 0.6f)
+                                else room.surface
+                            )
+                            .border(Dim.hairline, room.line, RoundedCornerShape(rs.cornerRadius)),
                         contentAlignment = Alignment.CenterStart,
                     ) {
-                        Mono("  " + room.label, room.ink, Type.dataXs)
+                        Mono(
+                            "  " + room.label, room.ink, Type.dataXs,
+                            letterSpacing = if (rs.designators) 1.2.sp else TextUnit.Unspecified,
+                        )
+                        if (rs.designators) {
+                            Mono(
+                                "A2 ", room.muted, Type.dataXs,
+                                Modifier.align(Alignment.CenterEnd),
+                            )
+                        }
                     }
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Box(
-                            Modifier.width(22.dp).height(8.dp).background(room.accent),
-                        )
+                        // Its own beam, tracing: the room's self-portrait glyph.
+                        ModeGlyph(2, room.accent)
                         Spacer(Modifier.width(6.dp))
-                        Box(
-                            Modifier
-                                .width(22.dp)
-                                .height(8.dp)
-                                .background(room.stone)
-                                .border(Dim.hairline, room.stoneHi),
-                        )
+                        // A sample of the room's control character:
+                        StyleSampleChip(room)
                         if (room.accentFollowsBeam) {
                             Spacer(Modifier.width(6.dp))
-                            Mono("~beam", room.muted, Type.dataXs)
+                            Box(
+                                Modifier.size(6.dp)
+                                    .background(room.accent.copy(alpha = breath))
+                            )
                         }
                     }
-                    if (room.id == "amoled") {
+                    if (room.id == "amoled" && !state.amoledCaptionSeen) {
                         Mono(
                             "true black · made for this panel",
                             room.muted, Type.dataXs, Modifier.padding(top = 4.dp),
@@ -349,6 +394,99 @@ fun RoomSheet(
                     }
                 }
             }
+        }
+
+        // ── CUSTOM STYLE (Ben's ask: customizable UX/UI elements): per-user
+        // overrides on top of the active room's personality. `match` = none. ──
+        SectionHeading("STYLE", p)
+        val ov = state.styleOverride
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.weight(1f)) {
+                ChipCell(
+                    "FEEL · " + (ov.character?.name?.lowercase() ?: "match"),
+                    active = ov.character != null, p = p, small = true,
+                ) {
+                    val all = listOf(null) + ChromeCharacter.entries
+                    state.styleOverride = ov.copy(
+                        character = all[(all.indexOf(ov.character) + 1) % all.size]
+                    )
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                ChipCell(
+                    "MOTION · " + (ov.motion?.name?.lowercase() ?: "match"),
+                    active = ov.motion != null, p = p, small = true,
+                ) {
+                    val all = listOf(null) + MotionFeel.entries
+                    state.styleOverride = ov.copy(
+                        motion = all[(all.indexOf(ov.motion) + 1) % all.size]
+                    )
+                }
+            }
+        }
+        Spacer(Modifier.height(6.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+            Box(Modifier.weight(1f)) {
+                ChipCell(
+                    "CORNERS · " + (ov.radiusDp?.let { "${it}dp" } ?: "match"),
+                    active = ov.radiusDp != null, p = p, small = true,
+                ) {
+                    val all = listOf(null, 0, 8, 12)
+                    state.styleOverride = ov.copy(
+                        radiusDp = all[(all.indexOf(ov.radiusDp) + 1) % all.size]
+                    )
+                }
+            }
+            Box(Modifier.weight(1f)) {
+                ChipCell(
+                    "LABELS · " + (ov.designators?.let { if (it) "part-nos" else "plain" } ?: "match"),
+                    active = ov.designators != null, p = p, small = true,
+                ) {
+                    val all = listOf(null, true, false)
+                    state.styleOverride = ov.copy(
+                        designators = all[(all.indexOf(ov.designators) + 1) % all.size]
+                    )
+                }
+            }
+        }
+        Prose(
+            "overrides ride on top of whichever room you are in — match hands the choice back",
+            p.muted, modifier = Modifier.padding(top = 6.dp),
+        )
+    }
+}
+
+// A tiny swatch of a room's control character — carved bevel, engraved outline,
+// annotated bevel, or a glass slab.
+@Composable
+private fun StyleSampleChip(room: Palette) {
+    val rs = room.style
+    val shape = RoundedCornerShape(if (rs.character == ChromeCharacter.Glass) 4.dp else 0.dp)
+    Box(
+        Modifier
+            .width(26.dp)
+            .height(12.dp)
+            .clip(shape)
+            .background(
+                when (rs.character) {
+                    ChromeCharacter.Engraved -> Color.Transparent
+                    ChromeCharacter.Glass -> room.stone.copy(alpha = 0.55f)
+                    else -> room.stone
+                }
+            )
+            .border(
+                Dim.hairline,
+                when (rs.character) {
+                    ChromeCharacter.Engraved -> room.lineStrong
+                    ChromeCharacter.Glass -> room.stoneHi.copy(alpha = 0.9f)
+                    else -> room.stoneHi
+                },
+                shape,
+            ),
+        contentAlignment = Alignment.Center,
+    ) {
+        if (rs.character == ChromeCharacter.Annotated) {
+            Mono("A2", room.muted, 7.sp)
         }
     }
 }

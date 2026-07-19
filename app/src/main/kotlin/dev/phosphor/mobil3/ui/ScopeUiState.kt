@@ -45,6 +45,8 @@ class ScopeUiState {
     // Desktop-truth band line while VISUALIZER feeds the beam (`swirl · auto · pc`);
     // null = local rendering, show the local mode/gain as always.
     var remoteScopeLine by mutableStateOf<String?>(null)
+    var styleOverride by mutableStateOf(StyleOverride()) // user style knobs (ROOM sheet)
+    var amoledCaptionSeen by mutableStateOf(false)       // one-time Void caption
     var pip by mutableStateOf(false)
 
     // Custom light (LIGHT sheet): 0 slots = presets active.

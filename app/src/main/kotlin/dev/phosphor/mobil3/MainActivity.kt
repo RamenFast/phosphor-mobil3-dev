@@ -124,12 +124,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         // Fullscreen by default (Ben's ask): the scope owns the whole panel;
         // system bars return transiently on an edge swipe.
-        WindowInsetsControllerCompat(window, window.decorView).apply {
-            isAppearanceLightStatusBars = false
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
-        }
+        applyImmersive()
 
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
@@ -449,6 +444,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putString("room", ui.room.id)
             .putBoolean("nerd_hud", ui.nerdHud)
             .putInt("band_mode", ui.bandMode)
+            .putBoolean("amoled_seen", ui.amoledCaptionSeen)
+            .putInt("ov_char", ui.styleOverride.character?.ordinal ?: -1)
+            .putInt("ov_motion", ui.styleOverride.motion?.ordinal ?: -1)
+            .putInt("ov_radius", ui.styleOverride.radiusDp ?: -1)
+            .putInt("ov_desig", when (ui.styleOverride.designators) {
+                null -> -1; true -> 1; false -> 0
+            })
             .putString(
                 "cal_date",
                 java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
@@ -473,6 +475,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.nerdHud = p.getBoolean("nerd_hud", false)
         ui.bandMode = p.getInt("band_mode", 0)
         ui.calDate = p.getString("cal_date", "") ?: ""
+        ui.amoledCaptionSeen = p.getBoolean("amoled_seen", false)
+        ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride(
+            character = p.getInt("ov_char", -1).takeIf { it >= 0 }
+                ?.let { dev.phosphor.mobil3.ui.ChromeCharacter.entries.getOrNull(it) },
+            motion = p.getInt("ov_motion", -1).takeIf { it >= 0 }
+                ?.let { dev.phosphor.mobil3.ui.MotionFeel.entries.getOrNull(it) },
+            radiusDp = p.getInt("ov_radius", -1).takeIf { it >= 0 },
+            designators = when (p.getInt("ov_desig", -1)) {
+                1 -> true; 0 -> false; else -> null
+            },
+        )
         dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
             .let { baseRoom = it; ui.room = it }
     }
@@ -515,6 +528,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
     private var lastRemoteGainMs = 0L
+
+    private fun applyImmersive() {
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
+    }
+
+    // Android can undo an onCreate-time hide when the window (re)gains focus —
+    // the classic immersive pattern re-asserts here (caught by a live receipt).
+    override fun onWindowFocusChanged(hasFocus: Boolean) {
+        super.onWindowFocusChanged(hasFocus)
+        if (hasFocus) applyImmersive()
+    }
 
     override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
     override fun dollyBy(delta: Float) = PhosphorNative.dollyBy(delta)

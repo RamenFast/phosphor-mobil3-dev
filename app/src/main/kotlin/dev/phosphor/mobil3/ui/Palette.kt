@@ -186,6 +186,19 @@ val CrtAmber = Palette(
     accentFollowsBeam = false,
 )
 
+// Liquid Glass (Ben's ask, mobile-first — desktop backport is a future ask):
+// the instrument dissolved into translucency. Glacial ink over cool near-black;
+// the beam refracts through the accent (follows_beam — glass bends light).
+val LiquidGlass = Palette(
+    id = "glass", label = "Liquid Glass", dark = true,
+    plane = c(0x05070c), surface = c(0x10131c), surface2 = c(0x181c28),
+    ink = c(0xe8eefc), ink2 = c(0xaeb9d6), muted = c(0x67718c),
+    line = ca(160, 190, 255, 42), lineStrong = ca(180, 205, 255, 90),
+    accent = c(0x7fb8ff), onAccent = c(0x061018),
+    stone = c(0x151a26), stoneHi = c(0x3a4a68), stoneLo = c(0x090b12),
+    accentFollowsBeam = true,
+)
+
 // The model that built v4 signs the guestbook: a storyteller's room. 🐢
 val Fable = Palette(
     id = "fable", label = "Fable", dark = true,
@@ -197,10 +210,10 @@ val Fable = Palette(
     accentFollowsBeam = false,
 )
 
-// Menu order = desktop menu order. All 12 rooms, verbatim.
+// Menu order = desktop menu order (12 verbatim) + the mobile-first 13th.
 val Rooms = listOf(
     Blossom, BlossomDark, LightRoom, DarkRoom, Chromacore, Basalt,
-    Afterglow, Stonework95, Amoled, Paper, CrtAmber, Fable,
+    Afterglow, Stonework95, Amoled, Paper, CrtAmber, Fable, LiquidGlass,
 )
 
 fun paletteById(id: String): Palette = Rooms.find { it.id == id } ?: BlossomDark

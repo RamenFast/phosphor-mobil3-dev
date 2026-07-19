@@ -62,8 +62,10 @@ fun StoneKey(
     // accent. Annotated/Glass refine atop the carved base in their own souls.
     val style = LocalRoomStyle.current
     val void = style.character == ChromeCharacter.Engraved
+    val glass = style.character == ChromeCharacter.Glass
     val face by animateColorAsState(
         when {
+            glass -> if (pressed) p.surface2.copy(alpha = 0.88f) else p.surface2.copy(alpha = 0.55f)
             void -> if (pressed) p.accent.copy(alpha = 0.18f) else Color.Transparent
             pressed -> p.stoneLo
             else -> p.stone
@@ -71,7 +73,7 @@ fun StoneKey(
         styleSpec(reduced, style, Motion.press), label = "face",
     )
     val sink by animateDpAsState(
-        if (pressed && !void) 1.dp else 0.dp, styleSpec(reduced, style, Motion.press), label = "sink"
+        if (pressed && !void && !glass) 1.dp else 0.dp, styleSpec(reduced, style, Motion.press), label = "sink"
     )
     val hi = if (pressed) p.stoneLo else p.stoneHi
     val lo = if (pressed) p.stoneHi else p.stoneLo
@@ -79,6 +81,26 @@ fun StoneKey(
         modifier
             .size(size)
             .drawBehind {
+                if (glass) {
+                    // A glass slab: translucent fill, iOS-6 gloss (top sheen),
+                    // specular rim. Press deepens the pane — light through glass.
+                    val r = style.cornerRadius.toPx()
+                    val rad = androidx.compose.ui.geometry.CornerRadius(r, r)
+                    drawRoundRect(face, cornerRadius = rad)
+                    drawRoundRect(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0f to Color.White.copy(alpha = 0.10f),
+                            0.45f to Color.Transparent,
+                        ),
+                        cornerRadius = rad,
+                    )
+                    drawRoundRect(
+                        p.stoneHi.copy(alpha = if (pressed) 1f else 0.85f),
+                        cornerRadius = rad,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                    return@drawBehind
+                }
                 drawRect(face)
                 val s = 2.dp.toPx()
                 if (void) {
@@ -145,8 +167,10 @@ fun StoneToggle(
     val down = pressed || engaged
     val style = LocalRoomStyle.current
     val void = style.character == ChromeCharacter.Engraved
+    val glass = style.character == ChromeCharacter.Glass
     val face by animateColorAsState(
         when {
+            glass -> if (down) p.accent.copy(alpha = 0.30f) else p.surface2.copy(alpha = 0.55f)
             void -> if (down) p.accent.copy(alpha = 0.14f) else Color.Transparent
             down -> p.stoneLo
             else -> p.stone
@@ -159,6 +183,24 @@ fun StoneToggle(
         modifier
             .height(Dim.stoneKey)
             .drawBehind {
+                if (glass) {
+                    val r = style.cornerRadius.toPx()
+                    val rad = androidx.compose.ui.geometry.CornerRadius(r, r)
+                    drawRoundRect(face, cornerRadius = rad)
+                    drawRoundRect(
+                        androidx.compose.ui.graphics.Brush.verticalGradient(
+                            0f to Color.White.copy(alpha = 0.10f),
+                            0.45f to Color.Transparent,
+                        ),
+                        cornerRadius = rad,
+                    )
+                    drawRoundRect(
+                        if (engaged) p.accent else p.stoneHi.copy(alpha = 0.85f),
+                        cornerRadius = rad,
+                        style = androidx.compose.ui.graphics.drawscope.Stroke(1.dp.toPx()),
+                    )
+                    return@drawBehind
+                }
                 drawRect(face)
                 val s = 2.dp.toPx()
                 if (void) {
