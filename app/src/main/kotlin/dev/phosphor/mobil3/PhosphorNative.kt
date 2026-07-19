@@ -65,7 +65,8 @@ object PhosphorNative {
     external fun remoteTransport(cmd: String) // bare verb or JSON {cmd,ms}
     external fun remoteMetadata(): String
     external fun remoteDisconnect()
-    external fun remoteStatus(): String // {state,host,port,rx_*,art_id,*_gen,welcome,last_error}
+    external fun remoteStatus(): String // {state,host,port,rx_*,art_id,*_gen,scope,welcome,last_error}
+    external fun remoteScopeCtl(verb: String, value: String) // drive the DESKTOP scope (mode/theme/ui/gain)
     external fun remoteSetStreams(audio: Boolean, geometry: Boolean)
     external fun remoteSetMuted(muted: Boolean)
     external fun remoteSeekMs(ms: Long)

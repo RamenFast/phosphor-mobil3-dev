@@ -23,6 +23,7 @@ pub const Q: u8 = 0x51; // query sources        client→server
 pub const C: u8 = 0x43; // choose source        client→server
 pub const B: u8 = 0x42; // browse library       client→server
 pub const P: u8 = 0x50; // play file / stop     client→server
+pub const V: u8 = 0x56; // scope control (ctl)  client→server
 
 // ── Size caps ────────────────────────────────────────────────────────────────
 pub const MAX_C2S: usize = 64 * 1024; // client→server payload cap
@@ -185,6 +186,18 @@ pub struct Stats {
     pub tx_a: u64,
     pub tx_g: u64,
     pub dropped_a: u64,
+    /// Live desktop scope state (probe reply subset) while geometry streams —
+    /// the phone's honesty source for mode/gain/auto (`auto · pc`). Absent when
+    /// desktop phosphor isn't running. Old phones skip unknown JSON keys.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub scope: Option<serde_json::Value>,
+}
+
+#[derive(serde::Deserialize)]
+pub struct ScopeCtl {
+    pub verb: String,
+    #[serde(default)]
+    pub value: String,
 }
 
 // ── Client→server payloads ───────────────────────────────────────────────────

@@ -234,13 +234,27 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.positionMs = c.currentPosition.coerceAtLeast(0L)
             }
             ui.noSignal = PhosphorNative.scopeSilent()
+            val rs = if (ui.remote) runCatching {
+                org.json.JSONObject(PhosphorNative.remoteStatus())
+            }.getOrNull() else null
+            // Band honesty (Ben's ask): while the desktop renders the beam, the
+            // band shows ITS mode + live gain — `auto · pc` under autogain.
+            ui.remoteScopeLine = if (ui.remote && ui.remoteGeometry) {
+                rs?.optJSONObject("scope")?.let { sc ->
+                    val mode = sc.optString("mode", "—")
+                    val g = sc.optJSONObject("gain")
+                    when {
+                        g == null -> "$mode · pc"
+                        g.optBoolean("auto") ->
+                            "%s · auto ×%.2f · pc".format(mode, g.optDouble("effective", 0.0))
+                        else -> "%s · ×%.2f · pc".format(mode, g.optDouble("effective", 0.0))
+                    }
+                }
+            } else null
             if (ui.nerdHud) {
                 val stats = runCatching {
                     org.json.JSONObject(PhosphorNative.scopeStats())
                 }.getOrNull()
-                val rs = if (ui.remote) runCatching {
-                    org.json.JSONObject(PhosphorNative.remoteStatus())
-                }.getOrNull() else null
                 val rx = rs?.optLong("rx_bytes") ?: 0L
                 val mbps = if (lastRxBytes in 1 until rx) {
                     (rx - lastRxBytes) * 8f * 2f / 1_000_000f // 500 ms tick → per-second
@@ -465,8 +479,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
 
-    override fun setMode(index: Int) { PhosphorNative.setMode(index); ui.modeIndex = index }
-    override fun setBeam(index: Int) { PhosphorNative.setBeamColor(index); ui.beamIndex = index }
+    override fun setMode(index: Int) {
+        PhosphorNative.setMode(index); ui.modeIndex = index
+        // Remote-render control (Ben's ask): while the DESKTOP renders the beam,
+        // the mode tap drives the desktop scope over the bridge. ModeTags are the
+        // desktop's own mode names, verbatim.
+        if (ui.remote && ui.remoteGeometry) {
+            PhosphorNative.remoteScopeCtl("mode", dev.phosphor.mobil3.ui.ModeTags[index])
+        }
+    }
+    override fun setBeam(index: Int) {
+        PhosphorNative.setBeamColor(index); ui.beamIndex = index
+        // LIGHT presets are the desktop's theme names, verbatim (theme = beam).
+        if (ui.remote && ui.remoteGeometry) {
+            PhosphorNative.remoteScopeCtl("theme", dev.phosphor.mobil3.ui.BeamColors[index].label)
+        }
+    }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
@@ -476,7 +504,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
         gainValue = g.coerceIn(0.1f, 6f)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
+        // Pinch drives the DESKTOP's gain while it renders the beam (throttled —
+        // the gesture fires per-frame; the scope only needs ~10 Hz).
+        if (ui.remote && ui.remoteGeometry) {
+            val now = android.os.SystemClock.uptimeMillis()
+            if (now - lastRemoteGainMs > 100) {
+                lastRemoteGainMs = now
+                PhosphorNative.remoteScopeCtl("gain", String.format(java.util.Locale.US, "%.2f", gainValue))
+            }
+        }
     }
+    private var lastRemoteGainMs = 0L
 
     override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
     override fun dollyBy(delta: Float) = PhosphorNative.dollyBy(delta)

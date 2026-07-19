@@ -42,6 +42,9 @@ class ScopeUiState {
     var hudLine2 by mutableStateOf("") // bridge health (remote sessions only)
     var bandMode by mutableStateOf(0)  // status band: 0 on · 1 auto (console timer) · 2 off
     var calDate by mutableStateOf("")  // last saveTuning date — the bench's CAL stamp
+    // Desktop-truth band line while VISUALIZER feeds the beam (`swirl · auto · pc`);
+    // null = local rendering, show the local mode/gain as always.
+    var remoteScopeLine by mutableStateOf<String?>(null)
     var pip by mutableStateOf(false)
 
     // Custom light (LIGHT sheet): 0 slots = presets active.

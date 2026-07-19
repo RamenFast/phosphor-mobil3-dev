@@ -107,6 +107,9 @@ struct SessionState {
     jobs: Vec<thread::JoinHandle<()>>,
     browse_token: u64,
     fetch_token: u64,
+    /// Desktop scope state (ctl-socket probe), refreshed per tick while
+    /// geometry streams — rides every K frame for the phone's honesty lane.
+    scope_state: Option<serde_json::Value>,
 }
 
 /// RAII (finding 8): a panic unwinding through serve_client still tears the
@@ -223,15 +226,28 @@ impl SessionState {
         true
     }
 
-    fn tick_stats(&self, ctx: &Ctx) -> bool {
+    fn tick_stats(&mut self, ctx: &Ctx) -> bool {
+        // While the desktop scope feeds the beam, its live state (mode / gain /
+        // auto) rides every K — the phone renders `auto · pc` from truth, not
+        // a stale local multiplier (the autogain honesty ask).
+        self.scope_state = if self.geometry { crate::scope::status() } else { None };
         let body = serde_json::to_vec(&proto::Stats {
             ts_ms: util::now_ms(),
             tx_a: ctx.counters.tx_a.load(Ordering::Relaxed),
             tx_g: ctx.counters.tx_g.load(Ordering::Relaxed),
             dropped_a: ctx.counters.dropped_a.load(Ordering::Relaxed),
+            scope: self.scope_state.clone(),
         })
         .unwrap_or_default();
         ctx.wtx.send(proto::encode_frame(proto::K, &body)).is_ok()
+    }
+
+    /// V frame: the phone drives the desktop scope (mode/theme/ui/gain).
+    fn on_scope_ctl(&mut self, ctx: &Ctx, payload: &[u8]) {
+        let Ok(req) = serde_json::from_slice::<proto::ScopeCtl>(payload) else { return };
+        if let Err((e, fix)) = crate::scope::ctl(&req.verb, &req.value, &self.cancel_ops) {
+            ctx.error(&e, &fix, serde_json::json!({ "verb": req.verb, "value": req.value }));
+        }
     }
 
     // ── client frames ────────────────────────────────────────────────────────
@@ -688,6 +704,7 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
         jobs: Vec::new(),
         browse_token: 0,
         fetch_token: 0,
+        scope_state: None,
     };
 
     let mut reason = "client-disconnect";
@@ -701,6 +718,7 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
                 proto::B => st.on_browse(&ctx, &payload),
                 proto::P => st.on_play(&ctx, &payload),
                 proto::R => st.on_art(&ctx, &payload),
+                proto::V => st.on_scope_ctl(&ctx, &payload),
                 proto::K => {} // ping: liveness already refreshed in the reader
                 _ => {}        // unknown: read-and-skip, never error
             },

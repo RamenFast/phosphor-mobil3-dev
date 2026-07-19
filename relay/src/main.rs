@@ -18,6 +18,7 @@ mod geometry;
 mod library;
 mod player;
 mod proto;
+mod scope;
 mod session;
 mod util;
 

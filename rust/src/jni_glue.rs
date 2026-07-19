@@ -488,6 +488,18 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteStatus(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteScopeCtl(
+    mut env: JNIEnv,
+    _class: JClass,
+    verb: jni::objects::JString,
+    value: jni::objects::JString,
+) {
+    let verb: String = env.get_string(&verb).map(|s| s.into()).unwrap_or_default();
+    let value: String = env.get_string(&value).map(|s| s.into()).unwrap_or_default();
+    crate::remote::scope_ctl(&verb, &value);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSetStreams(
     _env: JNIEnv,
     _class: JClass,

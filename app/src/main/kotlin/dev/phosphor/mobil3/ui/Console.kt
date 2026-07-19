@@ -88,8 +88,15 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean) {
                 Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
             }
         }
-        val gainTag = "×" + String.format("%.2f", state.gain) + if (state.autoGain) "·a" else ""
-        Mono("${state.modeTag} · $gainTag", p.ink2.copy(alpha = 0.70f), Type.dataSm)
+        // Honesty law (Ben's ask): while the DESKTOP renders the beam
+        // (VISUALIZER), the band shows the desktop's truth — its mode and its
+        // live breathing gain, `auto · pc` under autogain — never a stale
+        // local multiplier that isn't changing the view.
+        val right = state.remoteScopeLine ?: run {
+            val gainTag = "×" + String.format("%.2f", state.gain) + if (state.autoGain) "·a" else ""
+            "${state.modeTag} · $gainTag"
+        }
+        Mono(right, p.ink2.copy(alpha = 0.70f), Type.dataSm)
     }
 }
 

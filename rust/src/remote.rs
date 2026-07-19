@@ -50,6 +50,9 @@ struct Slots {
     error: Mutex<String>, // last E frame json (or link error {error,fix})
     art: Mutex<Option<Vec<u8>>>,
     art_id: Mutex<String>,
+    /// Desktop scope truth off the K stats (mode/theme/gain/auto) — the band's
+    /// honesty source while VISUALIZER feeds the beam.
+    scope: Mutex<String>,
 }
 
 struct Link {
@@ -539,6 +542,16 @@ pub fn request_art(id: &str) {
     enqueue(b'R', format!(r#"{{"id":{}}}"#, json_str(id)).as_bytes());
 }
 
+/// Drive the DESKTOP scope over the bridge (mode/theme/ui/gain — Ben's
+/// remote-render ask). The relay executes via phosphor's typed ctl grammar;
+/// failures come back as fix-bearing E frames.
+pub fn scope_ctl(verb: &str, value: &str) {
+    enqueue(
+        b'V',
+        format!(r#"{{"verb":{},"value":{}}}"#, json_str(verb), json_str(value)).as_bytes(),
+    );
+}
+
 pub fn metadata_json() -> String {
     let m = link().slots.meta.lock().unwrap().clone();
     if m.is_empty() { "{}".into() } else { m }
@@ -573,8 +586,9 @@ pub fn status_json() -> String {
     let l = link();
     let welcome = l.slots.welcome.lock().unwrap().clone();
     let error = l.slots.error.lock().unwrap().clone();
+    let scope = plock(&l.slots.scope).clone();
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -591,6 +605,7 @@ pub fn status_json() -> String {
         l.audio_skips.load(Ordering::Relaxed),
         l.audio_skip_ms.load(Ordering::Relaxed),
         l.a_drops.load(Ordering::Relaxed),
+        if scope.is_empty() { "null".to_string() } else { scope },
         if welcome.is_empty() { "null".into() } else { welcome },
         if error.is_empty() { "null".into() } else { error },
     )
@@ -1181,7 +1196,16 @@ fn reader(
                     *l.slots.error.lock().unwrap() = txt;
                 }
             }
-            b'K' => {} // heartbeat — last_rx already updated
+            b'K' => {
+                // Heartbeat; while geometry streams it carries the desktop
+                // scope's live truth (mode/gain/auto) for the honesty band.
+                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
+                    *plock(&l.slots.scope) = v
+                        .get("scope")
+                        .map(|s| s.to_string())
+                        .unwrap_or_default();
+                }
+            }
             _ => {}    // unknown: skipped (forward compatibility)
         }
     }
