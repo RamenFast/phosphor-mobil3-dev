@@ -2,10 +2,12 @@
 //! timestamps (ISO-8601 with the machine's real UTC offset), a pure-Rust
 //! SHA-256 (art ids — no crate for it, deps are serde-only), and a PATH probe.
 
+use std::io::Read;
 use std::path::PathBuf;
 use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, Ordering};
+use std::thread::JoinHandle;
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub fn home() -> PathBuf {
@@ -46,8 +48,10 @@ pub fn mono_ms() -> u64 {
 /// Run an external command with a HARD deadline and a cancellation flag
 /// (audit finding 4: no child may ever hold the session hostage). Polls
 /// `try_wait` every 25 ms; on deadline OR `cancel` it kills + reaps the child
-/// and reports which tripped. All the relay's rclone/ffmpeg/ffprobe/playerctl/
-/// curl/pw-dump/pactl invocations go through here.
+/// and reports which tripped. Stdout drains concurrently so a large pw-dump
+/// cannot fill its pipe and deadlock before exit (finding 14's real-graph
+/// corner). All the relay's rclone/ffmpeg/ffprobe/playerctl/curl/pw-dump/wpctl/
+/// pactl invocations go through here.
 pub fn run_cancellable(
     cmd: &mut Command,
     deadline: Duration,
@@ -59,33 +63,49 @@ pub fn run_cancellable(
         .stderr(Stdio::null())
         .spawn()
         .map_err(|e| format!("spawn: {e}"))?;
+    let mut stdout = child.stdout.take().ok_or_else(|| "stdout pipe missing".to_string())?;
+    let mut reader = Some(std::thread::spawn(move || {
+        let mut bytes = Vec::new();
+        stdout.read_to_end(&mut bytes).map(|_| bytes)
+    }));
     let t0 = Instant::now();
     loop {
         match child.try_wait() {
-            Ok(Some(_status)) => {
-                return child
-                    .wait_with_output()
-                    .map_err(|e| format!("collect output: {e}"));
+            Ok(Some(status)) => {
+                let stdout = join_stdout(&mut reader)?;
+                return Ok(Output { status, stdout, stderr: Vec::new() });
             }
             Ok(None) => {}
             Err(e) => {
                 let _ = child.kill();
                 let _ = child.wait();
+                let _ = join_stdout(&mut reader);
                 return Err(format!("wait: {e}"));
             }
         }
         if cancel.load(Ordering::Relaxed) {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = join_stdout(&mut reader);
             return Err("cancelled (session ending)".into());
         }
         if t0.elapsed() >= deadline {
             let _ = child.kill();
             let _ = child.wait();
+            let _ = join_stdout(&mut reader);
             return Err(format!("deadline {deadline:?} exceeded — child killed"));
         }
         std::thread::sleep(Duration::from_millis(25));
     }
+}
+
+fn join_stdout(reader: &mut Option<JoinHandle<std::io::Result<Vec<u8>>>>) -> Result<Vec<u8>, String> {
+    reader
+        .take()
+        .ok_or_else(|| "stdout reader already joined".to_string())?
+        .join()
+        .map_err(|_| "stdout reader panicked".to_string())?
+        .map_err(|e| format!("collect output: {e}"))
 }
 
 /// Local UTC offset in seconds, read once via `date +%:z` (one spawn/process).
@@ -273,5 +293,14 @@ mod tests {
         let cancel = AtomicBool::new(false);
         let out = run_cancellable(&mut cmd, Duration::from_secs(5), &cancel).unwrap();
         assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
+    }
+
+    #[test]
+    fn run_cancellable_drains_more_than_a_pipe_buffer() {
+        let mut cmd = Command::new("head");
+        cmd.args(["-c", "262144", "/dev/zero"]);
+        let cancel = AtomicBool::new(false);
+        let out = run_cancellable(&mut cmd, Duration::from_secs(5), &cancel).unwrap();
+        assert_eq!(out.stdout.len(), 262144);
     }
 }

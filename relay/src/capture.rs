@@ -3,11 +3,12 @@
 //! desktop phosphor's targets.rs: `device:<node>.monitor` for sinks, `app:<name>`
 //! (`+`-suffixed on collision, announce order) for app streams.
 
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::mpsc::{Sender, SyncSender};
 use std::sync::{Arc, Mutex};
 use std::thread::{self, JoinHandle};
+use std::time::Duration;
 
 use crate::proto::{self, A_FRAME};
 use crate::session::{Counters, Ev};
@@ -16,7 +17,7 @@ use crate::util;
 /// How to actually connect a capture stream.
 #[derive(Clone, Debug, PartialEq, Eq)]
 pub enum ConnectSpec {
-    SinkMonitor { node_name: String },
+    SinkMonitor { node_name: String, object_id: u64 },
     AppStream { serial: u64 },
 }
 
@@ -53,13 +54,20 @@ static NO_CANCEL: AtomicBool = AtomicBool::new(false);
 pub fn enumerate() -> Vec<Source> {
     let out = match util::run_cancellable(
         &mut Command::new("pw-dump"),
-        std::time::Duration::from_secs(5),
+        Duration::from_secs(5),
         &NO_CANCEL,
     ) {
         Ok(o) => o.stdout,
         Err(_) => return Vec::new(),
     };
-    let dump: serde_json::Value = match serde_json::from_slice(&out) {
+    parse_dump(&out)
+}
+
+/// The parser is split from the probe so source-choice tests never need a live
+/// PipeWire graph. Sink object ids ride the same pw-dump pass as node names:
+/// output switching must not re-dump a graph that can change between probes.
+fn parse_dump(out: &[u8]) -> Vec<Source> {
+    let dump: serde_json::Value = match serde_json::from_slice(out) {
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
@@ -108,12 +116,16 @@ pub fn enumerate() -> Vec<Source> {
             }
             Some("Audio/Sink") => {
                 let Some(node_name) = str_prop(props, "node.name") else { continue };
+                let object_id = o
+                    .get("id")
+                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+                let Some(object_id) = object_id else { continue };
                 let desc = str_prop(props, "node.description").unwrap_or(node_name);
                 monitors.push(Source {
                     id: format!("device:{node_name}.monitor"),
                     kind: "monitor".into(),
                     label: format!("OUT · {desc}"),
-                    spec: ConnectSpec::SinkMonitor { node_name: node_name.to_string() },
+                    spec: ConnectSpec::SinkMonitor { node_name: node_name.to_string(), object_id },
                 });
             }
             _ => {}
@@ -132,16 +144,103 @@ pub fn resolve(id: &str) -> Option<ConnectSpec> {
 pub fn default_monitor_id() -> Option<String> {
     let mut cmd = Command::new("pactl");
     cmd.arg("get-default-sink");
-    let out = util::run_cancellable(&mut cmd, std::time::Duration::from_secs(5), &NO_CANCEL).ok()?;
+    let out = util::run_cancellable(&mut cmd, Duration::from_secs(5), &NO_CANCEL).ok()?;
     let sink = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (!sink.is_empty()).then(|| format!("device:{sink}.monitor"))
+}
+
+/// A monitor-choice failure is a user-visible protocol error, so retain the
+/// machine-actionable fix separately from the low-level command receipt.
+pub struct OutputSwitchError {
+    pub error: String,
+    pub fix: String,
+    pub detail: String,
+}
+
+fn checked_command(
+    cmd: &mut Command,
+    deadline: Duration,
+    cancel: &AtomicBool,
+) -> Result<Output, String> {
+    let out = util::run_cancellable(cmd, deadline, cancel)?;
+    if out.status.success() {
+        Ok(out)
+    } else {
+        Err(format!("process exited with {}", out.status))
+    }
+}
+
+fn sink_input_indices(stdout: &[u8]) -> Result<Vec<u32>, String> {
+    String::from_utf8_lossy(stdout)
+        .lines()
+        .filter(|line| !line.trim().is_empty())
+        .map(|line| {
+            line.split_whitespace()
+                .next()
+                .ok_or_else(|| format!("missing sink-input index in {line:?}"))?
+                .parse::<u32>()
+                .map_err(|_| format!("invalid sink-input index in {line:?}"))
+        })
+        .collect()
+}
+
+/// Finding 14: choosing an output is an output switch, not merely a monitor
+/// retarget. Make it the PipeWire default, then move every existing PulseAudio
+/// sink-input because pinned/live streams do not follow a default change.
+/// Every child uses the session's deadline+cancellation path (finding 4).
+pub fn switch_output(spec: &ConnectSpec, cancel: &AtomicBool) -> Result<(), OutputSwitchError> {
+    let ConnectSpec::SinkMonitor { node_name, object_id } = spec else {
+        return Ok(()); // app-stream choices retain their capture-only behavior
+    };
+
+    let mut set_default = Command::new("wpctl");
+    set_default.args(["set-default", &object_id.to_string()]);
+    if let Err(detail) = checked_command(&mut set_default, Duration::from_secs(5), cancel) {
+        return Err(OutputSwitchError {
+            error: "could not make the chosen output the desktop default".into(),
+            fix: "check that wpctl can control PipeWire, then reselect the output".into(),
+            detail: format!("wpctl set-default {object_id}: {detail}"),
+        });
+    }
+
+    let mut list = Command::new("pactl");
+    list.args(["list", "short", "sink-inputs"]);
+    let listed = checked_command(&mut list, Duration::from_secs(5), cancel).map_err(|detail| {
+        OutputSwitchError {
+            error: "could not enumerate currently playing desktop streams".into(),
+            fix: "check that pactl can reach PipeWire, then reselect the output".into(),
+            detail: format!("pactl list short sink-inputs: {detail}"),
+        }
+    })?;
+    let inputs = sink_input_indices(&listed.stdout).map_err(|detail| OutputSwitchError {
+        error: "could not read the currently playing desktop streams".into(),
+        fix: "check pactl list short sink-inputs, then reselect the output".into(),
+        detail,
+    })?;
+
+    let mut failed = Vec::new();
+    for index in inputs {
+        let mut move_input = Command::new("pactl");
+        move_input.args(["move-sink-input", &index.to_string(), node_name]);
+        if let Err(detail) = checked_command(&mut move_input, Duration::from_secs(5), cancel) {
+            failed.push(format!("{index}: {detail}"));
+        }
+    }
+    if !failed.is_empty() {
+        return Err(OutputSwitchError {
+            error: "could not move every playing desktop stream to the chosen output".into(),
+            fix: "check that the sink is still available and pactl can move streams, then reselect the output".into(),
+            detail: format!("pactl move-sink-input -> {node_name}: {}", failed.join("; ")),
+        });
+    }
+    Ok(())
 }
 
 fn spawn_child(spec: &ConnectSpec) -> std::io::Result<Child> {
     if util::tool_exists("pw-record") {
         let mut cmd = Command::new("pw-record");
         match spec {
-            ConnectSpec::SinkMonitor { node_name } => {
+            ConnectSpec::SinkMonitor { node_name, .. } => {
                 cmd.args(["--target", node_name, "-P", "{ stream.capture.sink = true }"]);
             }
             ConnectSpec::AppStream { serial } => {
@@ -153,7 +252,7 @@ fn spawn_child(spec: &ConnectSpec) -> std::io::Result<Child> {
     } else {
         // Fallback: parec on a sink monitor only (no per-app path).
         let monitor = match spec {
-            ConnectSpec::SinkMonitor { node_name } => format!("{node_name}.monitor"),
+            ConnectSpec::SinkMonitor { node_name, .. } => format!("{node_name}.monitor"),
             ConnectSpec::AppStream { .. } => {
                 return Err(std::io::Error::new(
                     std::io::ErrorKind::Unsupported,
@@ -256,4 +355,38 @@ pub fn start(
     });
 
     Ok(CapturePump { id, child, stopping, handle: Some(handle) })
+}
+
+#[cfg(test)]
+mod tests {
+    use super::*;
+
+    #[test]
+    fn pw_dump_sink_keeps_object_id_for_wpctl_without_a_second_dump() {
+        let sources = parse_dump(
+            br#"[
+              {"id": 91, "type":"PipeWire:Interface:Node", "info":{"props":{
+                "media.class":"Audio/Sink", "node.name":"alsa_output.usb",
+                "node.description":"USB DAC"
+              }}},
+              {"id": 92, "type":"PipeWire:Interface:Node", "info":{"props":{
+                "media.class":"Stream/Output/Audio", "object.serial":"404",
+                "application.name":"Player", "media.name":"Music"
+              }}}
+            ]"#,
+        );
+        assert_eq!(sources.len(), 2);
+        assert_eq!(sources[0].id, "app:Player");
+        assert_eq!(
+            sources[1].spec,
+            ConnectSpec::SinkMonitor { node_name: "alsa_output.usb".into(), object_id: 91 }
+        );
+    }
+
+    #[test]
+    fn pactl_short_list_extracts_every_live_input_index() {
+        let rows = b"42\tPipeWire\t-\t77\t12\ts16le 2ch 48000Hz\n73\tPipeWire\t-\t88\t13\n";
+        assert_eq!(sink_input_indices(rows).unwrap(), vec![42, 73]);
+        assert!(sink_input_indices(b"not-an-index PipeWire\n").is_err());
+    }
 }

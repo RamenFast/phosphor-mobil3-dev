@@ -1,6 +1,6 @@
 [package]
 name = "phosphor-relay"
-version = "2.1.0"
+version = "2.2.0"
 edition = "2024"
 license = "GPL-3.0-or-later"
 description = "Desktop-side half of the phosphor-mobil3 bridge: streams per-app/output audio, now-playing metadata, and phosphor beam geometry to the phone over one framed TCP connection, and drives the desktop player + a browsable music library back."

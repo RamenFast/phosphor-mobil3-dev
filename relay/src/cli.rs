@@ -192,6 +192,8 @@ pub fn doctor(args: &[String]) -> ! {
     let mut checks = vec![
         tool_check("pw-record", "install pipewire-utils (per-app + monitor capture)"),
         tool_check("pw-dump", "install pipewire-utils (source enumeration)"),
+        tool_check("wpctl", "install wireplumber (desktop output switching)"),
+        tool_check("pactl", "install pulseaudio-utils (move live streams between outputs)"),
         tool_check("parec", "install pulseaudio-utils (monitor-only capture fallback)"),
         tool_check("playerctl", "install playerctl (now-playing metadata + transport)"),
         tool_check("ffmpeg", "install ffmpeg (library file playback)"),

@@ -112,6 +112,13 @@ struct SessionState {
     scope_state: Option<serde_json::Value>,
 }
 
+/// Finding 14's picker-honesty rule: a requested id becomes authoritative only
+/// after its capture transition succeeds. Failure keeps the last working id,
+/// which is exactly what the next S frame must checkmark.
+fn selected_after_choose(previous: &str, requested: &str, succeeded: bool) -> String {
+    if succeeded { requested } else { previous }.to_string()
+}
+
 /// RAII (finding 8): a panic unwinding through serve_client still tears the
 /// session graph down — pumps by their own Drops, jobs by cancel+join here.
 impl Drop for SessionState {
@@ -126,8 +133,12 @@ impl SessionState {
     }
 
     // ── capture lifecycle ────────────────────────────────────────────────────
+    fn spawn_capture(&self, ctx: &Ctx, spec: &capture::ConnectSpec) -> std::io::Result<CapturePump> {
+        let id = self.pump_ids.fetch_add(1, Ordering::Relaxed) + 1;
+        capture::start(spec, id, ctx.wtx.clone(), ctx.counters.clone(), ctx.ctl.clone())
+    }
+
     fn start_capture(&mut self, ctx: &Ctx) {
-        self.stop_capture();
         let Some(spec) = capture::resolve(&self.selected) else {
             ctx.error(
                 "selected source is not available",
@@ -136,9 +147,10 @@ impl SessionState {
             );
             return;
         };
-        let id = self.pump_ids.fetch_add(1, Ordering::Relaxed) + 1;
-        match capture::start(&spec, id, ctx.wtx.clone(), ctx.counters.clone(), ctx.ctl.clone()) {
+        match self.spawn_capture(ctx, &spec) {
             Ok(pump) => {
+                // Spawn first, then replace: a failed child spawn cannot destroy
+                // the last working pump (finding 14's transactional handoff).
                 self.capture = Some(pump);
                 serve_event("capture-started", serde_json::json!({ "source": self.selected }));
             }
@@ -192,7 +204,12 @@ impl SessionState {
 
     // ── frames out ───────────────────────────────────────────────────────────
     fn push_sources(&self, ctx: &Ctx) {
-        let sources = capture::enumerate().iter().map(|s| s.entry()).collect();
+        let inventory = capture::enumerate();
+        self.push_source_inventory(ctx, &inventory);
+    }
+
+    fn push_source_inventory(&self, ctx: &Ctx, inventory: &[capture::Source]) {
+        let sources = inventory.iter().map(|s| s.entry()).collect();
         let body = serde_json::to_vec(&proto::Sources { sources, selected: self.selected.clone() })
             .unwrap_or_default();
         let _ = ctx.send(proto::S, &body);
@@ -324,13 +341,146 @@ impl SessionState {
     }
 
     fn on_choose(&mut self, ctx: &Ctx, payload: &[u8]) {
-        let Ok(c) = serde_json::from_slice::<proto::Choose>(payload) else { return };
+        let c = match serde_json::from_slice::<proto::Choose>(payload) {
+            Ok(c) => c,
+            Err(e) => {
+                ctx.error(
+                    "invalid source choice",
+                    "send C as JSON with one source id from the latest S frame",
+                    serde_json::json!({ "detail": e.to_string() }),
+                );
+                self.push_sources(ctx);
+                return;
+            }
+        };
         self.file = None; // choosing a live source exits file mode (RAII stop)
         self.fetch_token += 1; // supersede any in-flight Drive fetch
-        self.selected = c.id;
         self.last_meta = None;
-        if self.audio {
-            self.start_capture(ctx);
+
+        // One pw-dump owns resolve + sink object id + the S echo. Re-dumping at
+        // each phase could resolve one graph and announce another (finding 14).
+        let inventory = capture::enumerate();
+        let previous = self.selected.clone();
+        let previous_spec = inventory.iter().find(|s| s.id == previous).map(|s| s.spec.clone());
+        let Some(chosen) = inventory.iter().find(|s| s.id == c.id).cloned() else {
+            ctx.error(
+                "chosen source is not available",
+                "pick a source from the refreshed list",
+                serde_json::json!({ "requested": c.id, "selected": previous }),
+            );
+            self.recover_previous_capture(ctx, previous_spec.as_ref());
+            self.push_source_inventory(ctx, &inventory);
+            return;
+        };
+
+        let switched_sink = match &chosen.spec {
+            capture::ConnectSpec::SinkMonitor { node_name, .. } => {
+                if let Err(e) = capture::switch_output(&chosen.spec, &self.cancel_ops) {
+                    ctx.error(
+                        &e.error,
+                        &e.fix,
+                        serde_json::json!({ "sink": node_name, "detail": e.detail }),
+                    );
+                    self.restore_previous_output(ctx, previous_spec.as_ref(), node_name);
+                    self.recover_previous_capture(ctx, previous_spec.as_ref());
+                    self.push_source_inventory(ctx, &inventory);
+                    return;
+                }
+                serve_event("output-switched", serde_json::json!({ "sink": node_name }));
+                Some(node_name.clone())
+            }
+            capture::ConnectSpec::AppStream { .. } => None,
+        };
+
+        let replacement = if self.audio {
+            self.spawn_capture(ctx, &chosen.spec).map(Some)
+        } else {
+            Ok(None)
+        };
+        match replacement {
+            Ok(pump) => {
+                self.selected = selected_after_choose(&previous, &chosen.id, true);
+                if let Some(pump) = pump {
+                    self.capture = Some(pump); // Drop old pump only after replacement exists.
+                    serve_event("capture-started", serde_json::json!({ "source": self.selected }));
+                }
+            }
+            Err(e) => {
+                self.selected = selected_after_choose(&previous, &chosen.id, false);
+                if let Some(sink) = switched_sink.as_deref() {
+                    self.restore_previous_output(ctx, previous_spec.as_ref(), sink);
+                }
+                ctx.error(
+                    "could not start capture for the chosen source",
+                    "the previous source remains selected; check pw-record / the source, then reselect",
+                    serde_json::json!({
+                        "requested": chosen.id,
+                        "selected": self.selected,
+                        "detail": e.to_string(),
+                    }),
+                );
+
+                self.recover_previous_capture(ctx, previous_spec.as_ref());
+            }
+        }
+        // C always terminates in an S echo — success and every failure path —
+        // because the phone caches S for both rows and the selected checkmark.
+        self.push_source_inventory(ctx, &inventory);
+    }
+
+    fn restore_previous_output(
+        &self,
+        ctx: &Ctx,
+        previous_spec: Option<&capture::ConnectSpec>,
+        attempted_sink: &str,
+    ) {
+        let Some(spec @ capture::ConnectSpec::SinkMonitor { node_name, .. }) = previous_spec else {
+            return; // an app capture remains valid independent of desktop output
+        };
+        if node_name == attempted_sink {
+            return; // reselecting the current output has nothing to roll back
+        }
+        match capture::switch_output(spec, &self.cancel_ops) {
+            Ok(()) => serve_event(
+                "output-switch-rolled-back",
+                serde_json::json!({ "sink": node_name, "attempted_sink": attempted_sink }),
+            ),
+            Err(e) => ctx.error(
+                "could not restore the previous desktop output",
+                &e.fix,
+                serde_json::json!({
+                    "sink": node_name,
+                    "attempted_sink": attempted_sink,
+                    "detail": e.detail,
+                }),
+            ),
+        }
+    }
+
+    fn recover_previous_capture(&mut self, ctx: &Ctx, previous_spec: Option<&capture::ConnectSpec>) {
+        // File mode owns audio with capture=None. If choosing a live source
+        // fails after file teardown, rebuild the previous live pump so the
+        // reverted S checkmark still names an actually running capture.
+        if !self.audio || self.capture.is_some() {
+            return;
+        }
+        let Some(spec) = previous_spec else { return };
+        match self.spawn_capture(ctx, spec) {
+            Ok(pump) => {
+                self.capture = Some(pump);
+                serve_event(
+                    "capture-started",
+                    serde_json::json!({ "source": self.selected, "recovered": true }),
+                );
+            }
+            Err(recovery) => ctx.error(
+                "could not restore the previous capture source",
+                "pick another available source from the refreshed list",
+                serde_json::json!({
+                    "selected": self.selected,
+                    "detail": recovery.to_string(),
+                }),
+            ),
         }
     }
 
@@ -754,4 +904,21 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
     let _ = watchdog.join();
     let _ = poller.join();
     serve_event("client-ended", serde_json::json!({ "peer": peer, "reason": reason }));
+}
+
+#[cfg(test)]
+mod tests {
+    use super::selected_after_choose;
+
+    #[test]
+    fn failed_choose_keeps_the_last_working_source_for_the_s_echo() {
+        assert_eq!(
+            selected_after_choose("device:old.monitor", "device:new.monitor", false),
+            "device:old.monitor"
+        );
+        assert_eq!(
+            selected_after_choose("device:old.monitor", "device:new.monitor", true),
+            "device:new.monitor"
+        );
+    }
 }

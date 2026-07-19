@@ -8,8 +8,8 @@
 //! Design law: one connection, one **single writer thread** (no mid-frame
 //! interleave), every error carries a `fix`, and 8 s of client silence tears the
 //! session and every child process down. Shells out to pw-record / pw-dump /
-//! parec / playerctl / busctl / ffmpeg / ffprobe / curl / rclone / phosphor —
-//! the binary stays small and auditable. Deps: serde + serde_json only.
+//! wpctl / pactl / parec / playerctl / busctl / ffmpeg / ffprobe / curl / rclone /
+//! phosphor — the binary stays small and auditable. Deps: serde + serde_json only.
 
 mod capture;
 mod cli;
