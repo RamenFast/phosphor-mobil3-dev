@@ -15,12 +15,18 @@ val ModeTags = listOf(
     "xy", "xy45", "swirl", "dots", "3d", "helix", "wave", "ring", "spec", "radial", "tunnel",
 )
 
-// A RANDOM roll is always a real engine mode and never repeats the face already on glass.
-fun rollModeExcluding(currentMode: Int): Int {
+// A RANDOM roll is always a real engine mode, never the face already on glass, and never
+// a banned face. If bans ever starve the pool (belt-and-braces; the sheet guard keeps ≥2
+// faces in play), they are ignored rather than freezing the die.
+fun rollModeExcluding(currentMode: Int, banned: Set<Int> = emptySet()): Int {
     val current = currentMode.takeIf { it in ModeLabels.indices } ?: ModeLabels.indices.first
-    val roll = Random.nextInt(ModeLabels.size - 1)
-    return if (roll >= current) roll + 1 else roll
+    val pool = ModeLabels.indices.filter { it != current && it !in banned }
+        .ifEmpty { ModeLabels.indices.filter { it != current } }
+    return pool.random()
 }
+
+// Geometry FX stage (rides every mode; phone-local, never mirrored to the desktop).
+val GeomFxLabels = listOf("off", "kaleido", "spin", "tunnel", "pulse")
 
 data class BeamSwatch(val label: String, val color: Color)
 

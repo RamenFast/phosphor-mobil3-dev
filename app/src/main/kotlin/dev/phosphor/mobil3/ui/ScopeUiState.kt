@@ -10,6 +10,7 @@ class ScopeUiState {
     var room by mutableStateOf(BlossomDark)
     var modeIndex by mutableStateOf(0)
     var randomModeArmed by mutableStateOf(false)
+    var randomBanModes by mutableStateOf(setOf<Int>()) // faces ⚄ must never land on
     var beamIndex by mutableStateOf(0)
     var fpsValue by mutableStateOf(0) // engine convention: 0 = panel vsync
     var oversample by mutableStateOf(1) // beam integration multiplier
@@ -37,6 +38,16 @@ class ScopeUiState {
     var beamEnergy by mutableStateOf(8.0f)
     var glow by mutableStateOf(0.7f)
     var grid by mutableStateOf(true)
+    // BEAM/GLOW dice: armed re-rolls inside the kept sub-range on every track change.
+    var beamRandomArmed by mutableStateOf(false)
+    var beamRandomLo by mutableStateOf(6.0f)   // sub-range of 1..30
+    var beamRandomHi by mutableStateOf(20.0f)
+    var glowRandomArmed by mutableStateOf(false)
+    var glowRandomLo by mutableStateOf(0.30f)  // sub-range of 0..0.98
+    var glowRandomHi by mutableStateOf(0.90f)
+    // Geometry FX (MODE sheet): 0 off · 1 kaleido · 2 spin · 3 tunnel · 4 pulse.
+    var geomFx by mutableStateOf(0)
+    var geomAmount by mutableStateOf(0.6f)
     // The active source's AUTO-GAIN truth. Local truth comes from Rust; remote
     // truth is reconciled from the desktop K/status frame rather than invented here.
     var autoGain by mutableStateOf(false)

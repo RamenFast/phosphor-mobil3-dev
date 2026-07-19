@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersion = "0.1.0"
+val appVersion = "1.0.0"
 val (vMajor, vMinor, vPatch) = appVersion.split(".").map { it.toInt() }
 
 val localProps = Properties().apply {
@@ -32,6 +32,13 @@ android {
         versionCode = vMajor * 10000 + vMinor * 100 + vPatch
         versionName = appVersion
         ndk { abiFilters += "arm64-v8a" }
+
+        // Relay hosts are a build-machine fact, never source: local.properties
+        // `phosphor.remoteHosts=label:host:port,label:host:port` (or env). Empty is a
+        // fine default — the REMOTE sheet just shows no seeded hosts.
+        val remoteHosts = localProps.getProperty("phosphor.remoteHosts")
+            ?: System.getenv("PHOSPHOR_REMOTE_HOSTS") ?: ""
+        buildConfigField("String", "REMOTE_HOSTS", "\"$remoteHosts\"")
     }
 
     signingConfigs {

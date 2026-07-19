@@ -63,6 +63,12 @@ interface ScopeActions {
     fun setBeamCycle(seconds: Float, perTrack: Boolean)
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
+    fun tapBeamRandom()
+    fun setBeamRandomRange(lo: Float, hi: Float)
+    fun tapGlowRandom()
+    fun setGlowRandomRange(lo: Float, hi: Float)
+    fun setGeomFx(kind: Int)
+    fun setGeomAmount(v: Float)
     fun setGrid(on: Boolean)
     fun setGainAuto(on: Boolean)
     fun setViewLock(on: Boolean)
@@ -223,6 +229,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setViewLock(on: Boolean) = actions.setViewLock(on)
             override fun setBeamEnergy(e: Float) = actions.setBeamEnergy(e)
             override fun setGlow(g: Float) = actions.setGlow(g)
+            override fun tapBeamRandom() = actions.tapBeamRandom()
+            override fun setBeamRandomRange(lo: Float, hi: Float) =
+                actions.setBeamRandomRange(lo, hi)
+            override fun tapGlowRandom() = actions.tapGlowRandom()
+            override fun setGlowRandomRange(lo: Float, hi: Float) =
+                actions.setGlowRandomRange(lo, hi)
             override fun setGrid(on: Boolean) = actions.setGrid(on)
             override fun setHudMode(mode: Int) = actions.setHudMode(mode)
             override fun setFullscreen(on: Boolean) = actions.setFullscreen(on)
@@ -554,7 +566,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             // Layer 2: sheets.
             when (sheet) {
                 Sheet.SOURCE -> SourceSheet(state, p, reduced, sheetActions) { sheet = Sheet.NONE }
-                Sheet.MODE -> ModeSheet(state, p, reduced, onPick = { actions.setMode(it) }) {
+                Sheet.MODE -> ModeSheet(
+                    state, p, reduced,
+                    onPick = { actions.setMode(it) },
+                    onGeomFx = { actions.setGeomFx(it) },
+                    onGeomAmount = { actions.setGeomAmount(it) },
+                ) {
                     sheet = Sheet.NONE
                 }
                 Sheet.LIGHT -> LightSheetV2(

@@ -445,14 +445,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (!ui.remote) controller?.seekTo(ms)
     }
 
-    override fun startRemote() = startRemoteHost("thinkcenter", "100.66.109.56", 45777)
+    override fun startRemote() {
+        val first = remoteHosts().firstOrNull() ?: return
+        startRemoteHost(first.first, first.second.first, first.second.second)
+    }
 
-    // The tailnet hosts the phone knows. Seeded with Ben's two machines; add/edit UI
-    // rides the full settings port (Act V). thinkcenter = laptop, interserve-linux = PC.
-    override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> = listOf(
-        "thinkcenter" to ("100.66.109.56" to 45777),
-        "interserve-linux" to ("100.114.165.77" to 45777),
-    )
+    // The relay hosts the phone knows come from BuildConfig (local.properties
+    // `phosphor.remoteHosts=label:host:port,label:host:port`) — a build-machine fact,
+    // never source. Add/edit UI rides the full settings port.
+    override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> =
+        BuildConfig.REMOTE_HOSTS.split(",").mapNotNull { entry ->
+            val parts = entry.trim().split(":")
+            if (parts.size != 3) return@mapNotNull null
+            val port = parts[2].toIntOrNull() ?: return@mapNotNull null
+            parts[0] to (parts[1] to port)
+        }
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
         mic.stop()
@@ -528,6 +535,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putInt("mode", ui.modeIndex)
             .putBoolean("random_mode_armed", ui.randomModeArmed)
             .putString("random_track_title", lastRandomTrackTitle)
+            .putString("random_ban_modes", ui.randomBanModes.sorted().joinToString(","))
             .putInt("beam", ui.beamIndex)
             .putInt("fps", ui.fpsValue)
             .putInt("oversample", ui.oversample)
@@ -535,6 +543,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putFloat("gain", gainValue)
             .putFloat("beam_energy", ui.beamEnergy)
             .putFloat("glow", ui.glow)
+            .putBoolean("beam_random_armed", ui.beamRandomArmed)
+            .putString("beam_random_range", "${ui.beamRandomLo},${ui.beamRandomHi}")
+            .putBoolean("glow_random_armed", ui.glowRandomArmed)
+            .putString("glow_random_range", "${ui.glowRandomLo},${ui.glowRandomHi}")
+            .putInt("geom_fx", ui.geomFx)
+            .putFloat("geom_amount", ui.geomAmount)
             .putBoolean("grid", ui.grid)
             .putFloat("focus", focusPref)
             .putString("room", ui.room.id)
@@ -568,6 +582,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
         lastRandomTrackTitle = p.getString("random_track_title", null)
+        ui.randomBanModes = (p.getString("random_ban_modes", "") ?: "")
+            .split(",").mapNotNull { it.toIntOrNull() }
+            .filter { it in dev.phosphor.mobil3.ui.ModeLabels.indices }.toSet()
+            .let { if (dev.phosphor.mobil3.ui.ModeLabels.size - it.size < 2) emptySet() else it }
         ui.beamIndex = p.getInt("beam", 0).also { PhosphorNative.setBeamColor(it) }
         ui.fpsValue = p.getInt("fps", 0).also { PhosphorNative.setTargetFps(it) }
         ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
@@ -580,6 +598,25 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.localAutoGain = autoGain
         ui.beamEnergy = p.getFloat("beam_energy", 8f).also { PhosphorNative.setBeamEnergy(it) }
         ui.glow = p.getFloat("glow", 0.7f).also { PhosphorNative.setGlow(it) }
+        // The dice: restore range + armed state; never roll on restore — the last landed
+        // BEAM/GLOW values above are the truth until the next track boundary.
+        fun range(key: String, min: Float, max: Float, dLo: Float, dHi: Float): Pair<Float, Float> {
+            val parts = (p.getString(key, "") ?: "").split(",").mapNotNull { it.toFloatOrNull() }
+            if (parts.size != 2) return dLo to dHi
+            val lo = parts[0].coerceIn(min, max)
+            return lo to parts[1].coerceIn(lo, max)
+        }
+        range("beam_random_range", 1f, 30f, 6f, 20f).let { (lo, hi) ->
+            ui.beamRandomLo = lo; ui.beamRandomHi = hi
+        }
+        range("glow_random_range", 0f, 0.98f, 0.30f, 0.90f).let { (lo, hi) ->
+            ui.glowRandomLo = lo; ui.glowRandomHi = hi
+        }
+        ui.beamRandomArmed = p.getBoolean("beam_random_armed", false)
+        ui.glowRandomArmed = p.getBoolean("glow_random_armed", false)
+        ui.geomFx = p.getInt("geom_fx", 0).coerceIn(0, 4).also { PhosphorNative.setGeomFx(it) }
+        ui.geomAmount = p.getFloat("geom_amount", 0.6f).coerceIn(0f, 1f)
+            .also { PhosphorNative.setGeomAmount(it) }
         ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
         focusPref = p.getFloat("focus", 0.3f)
         ui.hudMode = if (p.contains("hud_mode")) {
@@ -669,6 +706,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (title != null && title != lastRandomTrackTitle) {
             lastRandomTrackTitle = title
             if (ui.randomModeArmed) rollRandomMode()
+            if (ui.beamRandomArmed) applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi))
+            if (ui.glowRandomArmed) applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi))
         }
     }
 
@@ -677,7 +716,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         rollRandomMode()
     }
 
-    private fun rollRandomMode() = applyMode(rollModeExcluding(ui.modeIndex))
+    private fun rollRandomMode() = applyMode(rollModeExcluding(ui.modeIndex, ui.randomBanModes))
 
     private fun applyMode(index: Int) {
         PhosphorNative.setMode(index); ui.modeIndex = index
@@ -967,8 +1006,27 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun ackEpilepsy() { prefs().edit().putBoolean("epilepsy_ack", true).apply() }
 
     // Desktop-parity tuning verbs (Ben's audit ask): same fields, same clamps.
-    override fun setBeamEnergy(e: Float) { PhosphorNative.setBeamEnergy(e); ui.beamEnergy = e.coerceIn(1f, 30f) }
-    override fun setGlow(g: Float) { PhosphorNative.setGlow(g); ui.glow = g.coerceIn(0f, 0.98f) }
+    private fun applyBeamEnergy(e: Float) { PhosphorNative.setBeamEnergy(e); ui.beamEnergy = e.coerceIn(1f, 30f) }
+    private fun applyGlow(g: Float) { PhosphorNative.setGlow(g); ui.glow = g.coerceIn(0f, 0.98f) }
+    private fun rollIn(lo: Float, hi: Float) = lo + kotlin.random.Random.nextFloat() * (hi - lo)
+
+    // Manual drag of a rule is a takeover: it disarms that die, exactly like picking a
+    // mode disarms the mode-⚄.
+    override fun setBeamEnergy(e: Float) { ui.beamRandomArmed = false; applyBeamEnergy(e) }
+    override fun setGlow(g: Float) { ui.glowRandomArmed = false; applyGlow(g) }
+
+    override fun tapBeamRandom() { ui.beamRandomArmed = true; applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi)) }
+    override fun tapGlowRandom() { ui.glowRandomArmed = true; applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi)) }
+    override fun setBeamRandomRange(lo: Float, hi: Float) {
+        ui.beamRandomLo = lo.coerceIn(1f, 30f)
+        ui.beamRandomHi = hi.coerceIn(ui.beamRandomLo, 30f)
+    }
+    override fun setGlowRandomRange(lo: Float, hi: Float) {
+        ui.glowRandomLo = lo.coerceIn(0f, 0.98f)
+        ui.glowRandomHi = hi.coerceIn(ui.glowRandomLo, 0.98f)
+    }
+    override fun setGeomFx(kind: Int) { ui.geomFx = kind.coerceIn(0, 4); PhosphorNative.setGeomFx(ui.geomFx) }
+    override fun setGeomAmount(v: Float) { ui.geomAmount = v.coerceIn(0f, 1f); PhosphorNative.setGeomAmount(ui.geomAmount) }
     override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
 
     // ── Deck sheet verbs ──

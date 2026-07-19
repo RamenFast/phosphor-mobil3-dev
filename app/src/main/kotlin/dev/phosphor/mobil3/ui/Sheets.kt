@@ -434,6 +434,84 @@ fun DragRule(
     }
 }
 
+// Two-thumb sibling of DragRule: drag scrubs the NEAREST square handle, the accent
+// hairline spans the kept [lo, hi] sub-range. The label cell is the ⚄ arming surface —
+// tappable, accent-lit while armed.
+@Composable
+fun RangeDragRule(
+    label: String,
+    lo: Float,
+    hi: Float,
+    min: Float,
+    max: Float,
+    p: Palette,
+    armed: Boolean = false,
+    onLabelTap: (() -> Unit)? = null,
+    format: (Float) -> String = { "%.2f".format(it) },
+    onChange: (Float, Float) -> Unit,
+) {
+    val grab = remember { androidx.compose.runtime.mutableIntStateOf(-1) }
+    Row(
+        Modifier.fillMaxWidth().padding(vertical = 6.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Mono(
+            label,
+            if (armed) p.accent else p.ink2,
+            Type.data,
+            Modifier.width(96.dp).then(
+                if (onLabelTap != null) Modifier.clickable { onLabelTap() } else Modifier
+            ),
+        )
+        Box(
+            Modifier
+                .weight(1f)
+                .height(28.dp)
+                .pointerInput(min, max) {
+                    detectHorizontalDragGestures(
+                        onDragStart = { down ->
+                            val span = (max - min).takeIf { it > 0f } ?: 1f
+                            val xLo = ((lo - min) / span).coerceIn(0f, 1f) * size.width
+                            val xHi = ((hi - min) / span).coerceIn(0f, 1f) * size.width
+                            grab.intValue =
+                                if (kotlin.math.abs(down.x - xLo) <= kotlin.math.abs(down.x - xHi)) 0 else 1
+                        },
+                        onDragEnd = { grab.intValue = -1 },
+                        onDragCancel = { grab.intValue = -1 },
+                    ) { change, _ ->
+                        change.consume()
+                        val frac = (change.position.x / size.width).coerceIn(0f, 1f)
+                        val v = min + frac * (max - min)
+                        if (grab.intValue == 0) onChange(v.coerceIn(min, hi), hi)
+                        else onChange(lo, v.coerceIn(lo, max))
+                    }
+                }
+                .drawBehind {
+                    val midY = size.height / 2f
+                    drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
+                    val span = (max - min).takeIf { it > 0f } ?: 1f
+                    val xLo = ((lo - min) / span).coerceIn(0f, 1f) * size.width
+                    val xHi = ((hi - min) / span).coerceIn(0f, 1f) * size.width
+                    drawLine(p.accent, Offset(xLo, midY), Offset(xHi, midY), 1.dp.toPx())
+                    val half = 4.dp.toPx()
+                    for (x in floatArrayOf(xLo, xHi)) {
+                        drawRect(
+                            p.ink,
+                            topLeft = Offset(x - half, midY - half),
+                            size = androidx.compose.ui.geometry.Size(half * 2, half * 2),
+                        )
+                    }
+                },
+        )
+        Mono(
+            "${format(lo)}–${format(hi)}",
+            p.ink,
+            Type.dataXs,
+            Modifier.padding(start = 10.dp).width(72.dp),
+        )
+    }
+}
+
 // ── SOURCE (spec §2.3): hierarchy headings, the LIVE stone, the consent moment. ──
 @Composable
 fun SourceSheet(
@@ -532,6 +610,8 @@ fun ModeSheet(
     p: Palette,
     reduced: Boolean,
     onPick: (Int) -> Unit,
+    onGeomFx: (Int) -> Unit,
+    onGeomAmount: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
@@ -565,6 +645,42 @@ fun ModeSheet(
                 Mono(if (randomActive) state.modeTag else "new face", p.muted, Type.dataXs)
             }
             Spacer(Modifier.height(6.dp))
+            // Ban editor: faces struck here never come up on ⚄. At least two must stay
+            // in play — the guard simply refuses the tap that would starve the die.
+            var banEditing by remember { mutableStateOf(false) }
+            val banned = state.randomBanModes
+            ChipCell(
+                "BAN FACES · " + if (banned.isEmpty()) "none" else "${banned.size}",
+                banned.isNotEmpty(), p, small = true,
+            ) { banEditing = !banEditing }
+            if (banEditing) {
+                Spacer(Modifier.height(6.dp))
+                ModeTags.indices.chunked(4).forEach { rowIdx ->
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        rowIdx.forEach { i ->
+                            Box(Modifier.weight(1f)) {
+                                ChipCell(ModeTags[i], i in banned, p, small = true) {
+                                    state.randomBanModes = when {
+                                        i in banned -> banned - i
+                                        ModeLabels.size - banned.size > 2 -> banned + i
+                                        else -> banned
+                                    }
+                                }
+                            }
+                        }
+                        repeat(4 - rowIdx.size) { Spacer(Modifier.weight(1f)) }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                }
+                Prose(
+                    "banned faces never come up on ⚄ — at least two must stay in play",
+                    p.muted, modifier = Modifier.padding(bottom = 4.dp),
+                )
+            }
+            Spacer(Modifier.height(6.dp))
             groups.forEach { (heading, indices) ->
                 SectionHeading(heading, p)
                 indices.forEach { i ->
@@ -586,6 +702,30 @@ fun ModeSheet(
                     Spacer(Modifier.height(6.dp))
                 }
             }
+            SectionHeading("GEOMETRY", p)
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                GeomFxLabels.forEachIndexed { i, label ->
+                    Box(Modifier.weight(1f)) {
+                        ChipCell(label, state.geomFx == i, p, small = true) {
+                            Haptics.medium(view)
+                            onGeomFx(i)
+                        }
+                    }
+                }
+            }
+            if (state.geomFx != 0) {
+                DragRule("AMOUNT", state.geomAmount, 0f, 1f, p, { "%.0f %%".format(it * 100) }) {
+                    onGeomAmount(it)
+                }
+            }
+            Prose(
+                "geometry bends the beam after the mode draws it — it rides every face, " +
+                    "⚄ included. phone-local: a remote desktop beam is untouched",
+                p.muted, modifier = Modifier.padding(top = 4.dp),
+            )
             Prose(
                 "the sheet stays open — tap modes to try them live behind the glass",
                 p.muted, modifier = Modifier.padding(top = 4.dp),
@@ -873,9 +1013,24 @@ fun SettingsSheet(
             DragRule(
                 "BEAM", state.beamEnergy, 1.0f, 30.0f, p, { "×%.0f".format(it) },
             ) { actions.setBeamEnergy(it) }
+            RangeDragRule(
+                "⚄ RANGE", state.beamRandomLo, state.beamRandomHi, 1.0f, 30.0f, p,
+                armed = state.beamRandomArmed, onLabelTap = { actions.tapBeamRandom() },
+                format = { "×%.0f".format(it) },
+            ) { lo, hi -> actions.setBeamRandomRange(lo, hi) }
             DragRule(
                 "GLOW", state.glow, 0.0f, 0.98f, p, { "%.0f %%".format(it * 100) },
             ) { actions.setGlow(it) }
+            RangeDragRule(
+                "⚄ RANGE", state.glowRandomLo, state.glowRandomHi, 0.0f, 0.98f, p,
+                armed = state.glowRandomArmed, onLabelTap = { actions.tapGlowRandom() },
+                format = { "%.0f %%".format(it * 100) },
+            ) { lo, hi -> actions.setGlowRandomRange(lo, hi) }
+            Prose(
+                "⚄ rolls a new value inside the kept range — armed, it re-rolls on every " +
+                    "track, like the mode die. Dragging the rule above takes over and disarms.",
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
         }
         val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
@@ -1112,6 +1267,10 @@ interface SheetActions {
     fun setGainAuto(on: Boolean)
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
+    fun tapBeamRandom()
+    fun setBeamRandomRange(lo: Float, hi: Float)
+    fun tapGlowRandom()
+    fun setGlowRandomRange(lo: Float, hi: Float)
     fun setGrid(on: Boolean)
     fun setHudMode(mode: Int)
     fun setRemoteLatencyMode(mode: Int)

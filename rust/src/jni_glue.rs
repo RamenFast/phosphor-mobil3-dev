@@ -495,6 +495,24 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setViewRotation(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGeomFx(
+    _env: JNIEnv,
+    _class: JClass,
+    kind: jni::sys::jint,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetGeomFx(kind.clamp(0, 4) as u8));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGeomAmount(
+    _env: JNIEnv,
+    _class: JClass,
+    amount: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetGeomAmount(amount));
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBloomPull(
     _env: JNIEnv,
     _class: JClass,

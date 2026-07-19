@@ -45,6 +45,10 @@ object PhosphorNative {
     external fun setBloomPull(pull: Float)
     /** Beam-to-gravity quadrant (0..3) — UI-locked mode rotates the figure, not the chrome. */
     external fun setViewRotation(quadrant: Int)
+    /** Geometry FX stage: 0 off · 1 kaleido · 2 spin · 3 tunnel · 4 pulse (phone-local). */
+    external fun setGeomFx(kind: Int)
+    /** Geometry FX depth 0..1. */
+    external fun setGeomAmount(amount: Float)
     /** Graticule on/off (desktop grid_enabled). */
     external fun setGrid(on: Boolean)
     external fun setGlow(persistence: Float)

@@ -61,6 +61,12 @@ pub enum Cmd {
     /// mode pins the Activity and rotates the BEAM to gravity instead — the chrome
     /// physically cannot move. DSP path only; remote geometry keeps its own frame.
     SetViewRotation(u8),
+    /// Geometry FX stage (0 off · 1 kaleido · 2 spin · 3 tunnel · 4 pulse). Applies to
+    /// locally computed beams only, BEFORE SetViewRotation's quarter-turn remap. NEVER
+    /// mirrored to the desktop — these are phone-local tags the protocol doesn't know.
+    SetGeomFx(u8),
+    /// Geometry FX depth 0..1.
+    SetGeomAmount(f32),
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
     /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
@@ -221,6 +227,14 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut target_fps: i32 = 0; // 0 = panel vsync
     let mut oversample: u32 = 1; // DSP reconstruction multiplier (48/96/192 kHz)
     let mut view_rotation: u32 = 0; // quadrants; beam-to-gravity in UI-locked mode
+    // Geometry FX state is loop-local (like view_rotation/oversample): the idle loop
+    // drains commands before the first surface, so pre-surface restoreTuning is safe
+    // without joining the renderer-creation mirror block below.
+    let mut geom_fx: u8 = 0;
+    let mut geom_amount: f32 = 0.6;
+    let mut geom_phase: f32 = 0.0;
+    let mut geom_env: f32 = 0.0;
+    let mut geom_last = std::time::Instant::now();
     // Settings can arrive BEFORE the first surface (restoreTuning at app boot) — mirror
     // them so renderer creation applies the persisted truth, not defaults (Ben's field
     // receipt: grid pref needed a manual re-toggle after every install).
@@ -383,6 +397,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     oversample = crate::engine::set_reconstruction_rate(&mut computer, n as u32);
                     log::info!("beam oversample: {oversample}x");
                 }
+                Cmd::SetGeomFx(k) => {
+                    geom_fx = k.min(4);
+                    log::info!("geom fx: {geom_fx}");
+                }
+                Cmd::SetGeomAmount(v) => geom_amount = v.clamp(0.0, 1.0),
                 Cmd::SetViewRotation(q) => {
                     view_rotation = (q % 4) as u32;
                     log::info!("view rotation: {}°", view_rotation * 90);
@@ -508,12 +527,16 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             Vec::new()
         };
 
+        // One unconditional frame-peak fold feeds both autogain and the geometry FX
+        // envelope (instant attack, ~100 ms release at 120 fps).
+        let frame_peak = samples.iter().fold(0.0_f32, |p, s| p.max(s.abs()));
+        geom_env = frame_peak.max(geom_env * 0.92);
+
         // Ported verbatim from desktop shell.rs: measure the raw source peak before
         // compute, then glide Computer.gain. Empty active frames still release the
         // peak slowly; remote geometry bypasses the local computer altogether.
         if source_active && !geometry_active && auto_gain.enabled() {
-            let peak = samples.iter().fold(0.0_f32, |p, s| p.max(s.abs()));
-            if let Some(gain) = auto_gain.update(peak) {
+            if let Some(gain) = auto_gain.update(frame_peak) {
                 computer.gain = gain;
                 GAIN_MILLI.store((gain * 1000.0) as u32, Ordering::Relaxed);
             }
@@ -691,7 +714,20 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             // Beam-to-gravity: odd quadrants compute in the swapped space so the figure
             // keeps true aspect, then endpoints map by pure quarter-turns — no scaling.
             let (cw, ch) = if view_rotation % 2 == 1 { (h, w) } else { (w, h) };
-            let segments = crate::engine::compute_scope_frame(&mut computer, &samples, cw, ch);
+            let mut segments = crate::engine::compute_scope_frame(&mut computer, &samples, cw, ch);
+            // Geometry FX bends the freshly computed beam BEFORE the quarter-turn remap,
+            // so it composes with every mode and every rotation lock. Local beams only —
+            // remote geometry frames and the resting dot never reach this branch.
+            if geom_fx != 0 && geom_amount > 0.0 {
+                let dt = geom_last.elapsed().as_secs_f32().clamp(0.0, 0.05);
+                geom_phase += dt * match geom_fx {
+                    2 => geom_amount * (0.5 + 5.0 * geom_env.min(1.2)), // audio-whipped spin
+                    _ => 0.6,                                          // tunnel breathing clock
+                };
+                segments =
+                    crate::engine::apply_geom_fx(&segments, cw, ch, geom_fx, geom_amount, geom_phase, geom_env);
+            }
+            geom_last = std::time::Instant::now();
             if view_rotation == 0 {
                 advance(r, &segments, &mut seg_count);
             } else {
