@@ -46,6 +46,11 @@ enum class SettingsGlyph {
     Folder,
     Capture,
     Mic,
+    Spotify,
+    SoundCloud,
+    AppleMusic,
+    Vlc,
+    Mpv,
 }
 
 object SettingsGlyphs {
@@ -451,6 +456,96 @@ object SettingsGlyphs {
         }.build()
     }
 
+    // Compatibility marks for the OTHER APPS strip — nominative, house-styled: each brand
+    // reduced to its one recognizable gesture in the same 24-unit hairline.
+    val SpotifyGlyph: ImageVector by lazy {
+        builder("Spotify").apply {
+            hairline {
+                moveTo(12f, 3f)
+                arcTo(9f, 9f, 0f, true, true, 12f, 21f)
+                arcTo(9f, 9f, 0f, true, true, 12f, 3f)
+                moveTo(7f, 9.6f)
+                curveTo(10.5f, 8.6f, 14.5f, 9f, 17.2f, 10.6f)
+                moveTo(7.5f, 12.8f)
+                curveTo(10.5f, 12f, 13.8f, 12.4f, 16.2f, 13.8f)
+                moveTo(8.2f, 15.8f)
+                curveTo(10.5f, 15.2f, 13f, 15.5f, 14.9f, 16.6f)
+            }
+        }.build()
+    }
+
+    val SoundCloudGlyph: ImageVector by lazy {
+        builder("SoundCloud").apply {
+            hairline {
+                // The bars walk up into the cloud.
+                moveTo(4f, 13f); lineTo(4f, 17f)
+                moveTo(6.4f, 12f); lineTo(6.4f, 17f)
+                moveTo(8.8f, 10.5f); lineTo(8.8f, 17f)
+                moveTo(11.2f, 9.5f); lineTo(11.2f, 17f)
+                moveTo(13.2f, 17f)
+                lineTo(18.2f, 17f)
+                arcTo(2.8f, 2.8f, 0f, false, false, 18.2f, 11.4f)
+                curveTo(17.6f, 9.2f, 15.5f, 8f, 13.2f, 8.8f)
+                lineTo(13.2f, 17f)
+            }
+        }.build()
+    }
+
+    val AppleMusicGlyph: ImageVector by lazy {
+        builder("AppleMusic").apply {
+            hairline {
+                // The apple, the leaf, and an eighth note resting inside.
+                moveTo(12f, 7f)
+                arcTo(6.5f, 6.5f, 0f, true, true, 12f, 20f)
+                arcTo(6.5f, 6.5f, 0f, true, true, 12f, 7f)
+                moveTo(12f, 6.5f)
+                curveTo(12f, 4.8f, 13.2f, 3.6f, 15f, 3.4f)
+                curveTo(15f, 5.1f, 13.8f, 6.3f, 12f, 6.5f)
+                moveTo(13.6f, 10.5f)
+                lineTo(13.6f, 15.2f)
+                arcTo(1.3f, 1.3f, 0f, true, true, 11f, 15.2f)
+                moveTo(13.6f, 10.5f)
+                lineTo(15.6f, 11.3f)
+            }
+        }.build()
+    }
+
+    val VlcGlyph: ImageVector by lazy {
+        builder("Vlc").apply {
+            hairline {
+                // The cone, striped, on its base.
+                moveTo(10.4f, 4f)
+                lineTo(13.6f, 4f)
+                lineTo(16.8f, 18f)
+                lineTo(7.2f, 18f)
+                close()
+                moveTo(9.4f, 9.5f)
+                lineTo(14.6f, 9.5f)
+                moveTo(8.4f, 14f)
+                lineTo(15.6f, 14f)
+                moveTo(5f, 20f)
+                lineTo(19f, 20f)
+            }
+        }.build()
+    }
+
+    val MpvGlyph: ImageVector by lazy {
+        builder("Mpv").apply {
+            hairline {
+                // The player window and its play wedge.
+                moveTo(5f, 4.5f)
+                lineTo(19f, 4.5f)
+                lineTo(19f, 19.5f)
+                lineTo(5f, 19.5f)
+                close()
+                moveTo(10f, 8.8f)
+                lineTo(15.8f, 12f)
+                lineTo(10f, 15.2f)
+                close()
+            }
+        }.build()
+    }
+
     fun vector(glyph: SettingsGlyph): ImageVector = when (glyph) {
         SettingsGlyph.Deck -> Deck
         SettingsGlyph.Knob -> Knob
@@ -469,6 +564,11 @@ object SettingsGlyphs {
         SettingsGlyph.Folder -> FolderGlyph
         SettingsGlyph.Capture -> CaptureGlyph
         SettingsGlyph.Mic -> MicGlyph
+        SettingsGlyph.Spotify -> SpotifyGlyph
+        SettingsGlyph.SoundCloud -> SoundCloudGlyph
+        SettingsGlyph.AppleMusic -> AppleMusicGlyph
+        SettingsGlyph.Vlc -> VlcGlyph
+        SettingsGlyph.Mpv -> MpvGlyph
     }
 }
 

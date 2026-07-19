@@ -577,7 +577,22 @@ fun SourceSheet(
             checked = state.sourceLabel == "deck" && state.queueTitles.size > 1,
             glyph = SettingsGlyph.Folder,
         ) { actions.openFolder(); onDismiss() }
-        SectionHeading("OTHER APPS", p)
+        Row(
+            Modifier.fillMaxWidth(),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            SectionHeading("OTHER APPS · LOCAL MUSIC PLAYBACK", p)
+            Spacer(Modifier.weight(1f))
+            // Compatibility marks, not buttons: the apps known to feed the beam.
+            listOf(
+                SettingsGlyph.Spotify, SettingsGlyph.SoundCloud, SettingsGlyph.AppleMusic,
+                SettingsGlyph.Vlc, SettingsGlyph.Mpv,
+            ).forEach { mark ->
+                SettingsGlyphIcon(mark, p, 14.dp)
+                Spacer(Modifier.width(5.dp))
+            }
+            Mono("…", p.muted, Type.dataXs)
+        }
         SheetRow(
             "everything playing", p,
             checked = state.live && state.sourceLabel == "capture",
@@ -1248,7 +1263,9 @@ fun SettingsSheet(
             // saved (Annotated rooms only — a calibration sticker, typeset).
             if (LocalRoomStyle.current.designators && state.calDate.isNotBlank()) {
                 Mono(
-                    "CAL · ${state.calDate}   S/N 003", p.muted, Type.dataXs,
+                    "CAL · ${state.calDate}   S/N 003" +
+                        if (state.bestiaryFound) "   ☂ holding" else "",
+                    p.muted, Type.dataXs,
                     Modifier.padding(bottom = Dim.gap), letterSpacing = 1.2.sp,
                 )
             }

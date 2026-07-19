@@ -5,7 +5,7 @@ plugins {
     alias(libs.plugins.kotlin.compose)
 }
 
-val appVersion = "1.0.4"
+val appVersion = "1.0.5"
 val (vMajor, vMinor, vPatch) = appVersion.split(".").map { it.toInt() }
 
 val localProps = Properties().apply {

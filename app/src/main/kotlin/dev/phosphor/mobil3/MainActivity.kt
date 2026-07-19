@@ -614,6 +614,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         ui.beamRandomArmed = p.getBoolean("beam_random_armed", false)
         ui.glowRandomArmed = p.getBoolean("glow_random_armed", false)
+        ui.bestiaryFound = p.getBoolean("bestiary_found", false)
         ui.geomFx = p.getInt("geom_fx", 0).coerceIn(0, 4).also { PhosphorNative.setGeomFx(it) }
         ui.geomAmount = p.getFloat("geom_amount", 0.6f).coerceIn(0f, 1f)
             .also { PhosphorNative.setGeomAmount(it) }
@@ -693,6 +694,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
         runCatching { startActivity(detail) }.onFailure {
             startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
         }
+    }
+
+    override fun markBestiaryFound() {
+        ui.bestiaryFound = true
+        prefs().edit().putBoolean("bestiary_found", true).apply() // found is forever
     }
 
     override fun openLink(url: String) {

@@ -69,6 +69,7 @@ class ScopeUiState {
     var remoteScopeLine by mutableStateOf<String?>(null)
     var styleOverride by mutableStateOf(StyleOverride()) // user style knobs (ROOM sheet)
     var amoledCaptionSeen by mutableStateOf(false)       // one-time Void caption
+    var bestiaryFound by mutableStateOf(false)           // the tube's secret, once kept
     var pip by mutableStateOf(false)
 
     // Custom light (LIGHT sheet): 0 slots = presets active.

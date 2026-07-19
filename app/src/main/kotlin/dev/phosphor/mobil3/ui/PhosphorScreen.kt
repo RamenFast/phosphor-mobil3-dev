@@ -76,6 +76,7 @@ interface ScopeActions {
     fun setFullscreen(on: Boolean)
     fun openCaptureMetadataSettings()
     fun openLink(url: String)
+    fun markBestiaryFound()
     fun isScopeRotationLocked(): Boolean
     fun setScopeRotationLocked(locked: Boolean)
     fun isUiPlacementLocked(): Boolean
@@ -621,6 +622,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 }
                 Sheet.MANUAL -> ManualSheet(
                     p, reduced,
+                    bestiaryFound = state.bestiaryFound,
+                    onBestiaryFound = { actions.markBestiaryFound() },
                     onOpenLink = { actions.openLink(it) },
                 ) { sheet = manualFrom }
                 Sheet.NONE -> {}
