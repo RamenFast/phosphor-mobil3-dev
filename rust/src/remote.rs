@@ -211,12 +211,17 @@ fn json_str(s: &str) -> String {
 // catch-up policy as pure index math. Deliberately no trait: a vtable has no
 // place on the RT path.
 
-/// ~100 ms of buffered audio at 48 kHz (doc §1 playback sizing → 16384 samples).
-const RING_FRAMES: usize = (RATE as usize) / 10;
-/// Catch-up thresholds (Ben's "lagging behind" killer): above HIGH, the
-/// callback skips down to TARGET — one audible glitch, then live again.
-const CATCHUP_HIGH_FRAMES: usize = (RATE as usize) * 3 / 20; // 150 ms
-const CATCHUP_TARGET_FRAMES: usize = (RATE as usize) * 3 / 50; // 60 ms
+/// ~400 ms of elastic buffer (field-tuned 2026-07-18: 100 ms + a 150 ms trigger
+/// sat INSIDE normal wifi/Tailscale jitter — the catch-up fired during ordinary
+/// playback 3-4×/song, audibly slicing it. The buffer must absorb jitter;
+/// the skip must fire only on genuine runaway lag).
+const RING_FRAMES: usize = (RATE as usize) * 2 / 5;
+/// Catch-up: only when buffered stays above HIGH for SUSTAIN_FRAMES worth of
+/// callbacks (~250 ms of continuous excess) does the callback skip down to
+/// TARGET. A transient burst soaks into the buffer; accumulated lag still dies.
+const CATCHUP_HIGH_FRAMES: usize = (RATE as usize) * 35 / 100; // 350 ms
+const CATCHUP_TARGET_FRAMES: usize = (RATE as usize) / 4; // 250 ms
+const CATCHUP_SUSTAIN_FRAMES: usize = (RATE as usize) / 4; // ~250 ms of high
 
 #[derive(Clone)]
 struct AudioPath {
@@ -268,11 +273,19 @@ impl AudioTap {
     fn pop_into(&mut self, out: &mut [f32]) -> usize {
         self.0.pop_into(out)
     }
-    /// RT-safe: index math only. Fires only when the network genuinely raced
-    /// ahead of playback (>150 ms buffered) — drops to 60 ms, newest wins.
-    fn catch_up(&mut self) {
+    /// RT-safe sustained catch-up: `streak` accumulates frames-worth of
+    /// consecutive over-HIGH callbacks; only ~250 ms of CONTINUOUS excess
+    /// triggers one skip to TARGET. Jitter bursts soak into the buffer
+    /// silently; genuine runaway lag still dies in one cut.
+    fn catch_up(&mut self, streak: &mut usize, frames_this_cb: usize) {
         if self.0.buffered_frames() > CATCHUP_HIGH_FRAMES {
-            self.0.skip_to_latest(CATCHUP_TARGET_FRAMES);
+            *streak += frames_this_cb;
+            if *streak >= CATCHUP_SUSTAIN_FRAMES {
+                self.0.skip_to_latest(CATCHUP_TARGET_FRAMES);
+                *streak = 0;
+            }
+        } else {
+            *streak = 0;
         }
     }
 }
@@ -281,6 +294,8 @@ impl AudioTap {
 struct RemoteOutput {
     tap: AudioTap,
     scratch: Vec<f32>,
+    /// Frames-worth of consecutive over-threshold callbacks (catch-up gate).
+    high_streak: usize,
     muted: Arc<AtomicBool>,
     restart_tx: std::sync::mpsc::Sender<()>,
 }
@@ -296,7 +311,9 @@ impl AudioOutputCallback for RemoteOutput {
         // log. Scratch is preallocated at open; a burst beyond it (absurd)
         // plays silence for the tail rather than allocating.
         let need = (frames.len() * 2).min(self.scratch.len());
-        self.tap.catch_up(); // index math only — the anti-lag policy
+        let mut streak = self.high_streak;
+        self.tap.catch_up(&mut streak, frames.len()); // index math only
+        self.high_streak = streak;
         let got = self.tap.pop_into(&mut self.scratch[..need]);
         self.scratch[got..need].fill(0.0);
         // Instant local mute: keep draining (no stale-buffer buildup), emit silence.
@@ -343,6 +360,7 @@ fn open_output(
             // Preallocated far above any real AAudio burst (8192 frames) — the
             // callback never resizes it (finding 10's alloc half).
             scratch: vec![0.0; 16384],
+            high_streak: 0,
             muted,
             restart_tx,
         })
@@ -871,9 +889,10 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 
     // Audio worker: bounded, drop-if-behind — audio can glitch, the scope never
     // stalls. Exits on cancel, on a closed ring (finding 5's waker), or when the
-    // reader drops the sender. Depth 12 ≈ 120 ms: half the old buffering (the
-    // ring's callback-side catch-up owns the rest of the anti-lag policy).
-    let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(12);
+    // reader drops the sender. Depth 32 ≈ 320 ms: burst headroom so a TCP
+    // batch never drops mid-burst frames (gaps!) — total latency is governed
+    // by the ring's sustained catch-up, not this queue.
+    let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(32);
     session.parts.audio = {
         let mut sink = path.sink();
         let shared_a = shared.clone();
