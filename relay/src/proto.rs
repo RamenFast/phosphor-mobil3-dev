@@ -30,7 +30,7 @@ pub const MAX_S2C: usize = 8 * 1024 * 1024; // server→client payload cap
 pub const A_FRAME: usize = 1920; // 10 ms s16le stereo @ 48 kHz
 
 pub const PROTO: u32 = 2;
-pub const VERSION: &str = "2.0.0";
+pub const VERSION: &str = env!("CARGO_PKG_VERSION"); // single source: Cargo.toml
 pub const TOOL: &str = "phosphor-relay";
 
 /// Read error distinguishes an oversize declaration (→ E + close) from a plain

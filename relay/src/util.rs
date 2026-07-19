@@ -3,8 +3,10 @@
 //! SHA-256 (art ids — no crate for it, deps are serde-only), and a PATH probe.
 
 use std::path::PathBuf;
+use std::process::{Child, Command, Output, Stdio};
 use std::sync::OnceLock;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
 pub fn home() -> PathBuf {
     std::env::var_os("HOME").map(PathBuf::from).unwrap_or_else(|| PathBuf::from("/"))
@@ -29,8 +31,61 @@ pub fn hostname() -> String {
     std::env::var("HOSTNAME").ok().filter(|s| !s.is_empty()).unwrap_or_else(|| "localhost".into())
 }
 
+/// Wall clock — K payloads, logs, art ids. Liveness math uses mono_ms()
+/// (audit finding 13: a clock step must never kill or immortalize a session).
 pub fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// Process-epoch monotonic milliseconds (immune to wall-clock steps).
+pub fn mono_ms() -> u64 {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
+}
+
+/// Run an external command with a HARD deadline and a cancellation flag
+/// (audit finding 4: no child may ever hold the session hostage). Polls
+/// `try_wait` every 25 ms; on deadline OR `cancel` it kills + reaps the child
+/// and reports which tripped. All the relay's rclone/ffmpeg/ffprobe/playerctl/
+/// curl/pw-dump/pactl invocations go through here.
+pub fn run_cancellable(
+    cmd: &mut Command,
+    deadline: Duration,
+    cancel: &AtomicBool,
+) -> Result<Output, String> {
+    cmd.stdin(Stdio::null());
+    let mut child: Child = cmd
+        .stdout(Stdio::piped())
+        .stderr(Stdio::null())
+        .spawn()
+        .map_err(|e| format!("spawn: {e}"))?;
+    let t0 = Instant::now();
+    loop {
+        match child.try_wait() {
+            Ok(Some(_status)) => {
+                return child
+                    .wait_with_output()
+                    .map_err(|e| format!("collect output: {e}"));
+            }
+            Ok(None) => {}
+            Err(e) => {
+                let _ = child.kill();
+                let _ = child.wait();
+                return Err(format!("wait: {e}"));
+            }
+        }
+        if cancel.load(Ordering::Relaxed) {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err("cancelled (session ending)".into());
+        }
+        if t0.elapsed() >= deadline {
+            let _ = child.kill();
+            let _ = child.wait();
+            return Err(format!("deadline {deadline:?} exceeded — child killed"));
+        }
+        std::thread::sleep(Duration::from_millis(25));
+    }
 }
 
 /// Local UTC offset in seconds, read once via `date +%:z` (one spawn/process).
@@ -180,5 +235,43 @@ mod tests {
         assert_eq!(civil(0), (1970, 1, 1, 0, 0, 0));
         // 1_600_000_000 → 2020-09-13T12:26:40Z
         assert_eq!(civil(1_600_000_000), (2020, 9, 13, 12, 26, 40));
+    }
+
+    #[test]
+    fn mono_ms_is_monotonic() {
+        let a = mono_ms();
+        std::thread::sleep(Duration::from_millis(5));
+        assert!(mono_ms() >= a + 4);
+    }
+
+    #[test]
+    fn run_cancellable_deadline_kills() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("5");
+        let cancel = AtomicBool::new(false);
+        let t0 = Instant::now();
+        let res = run_cancellable(&mut cmd, Duration::from_millis(120), &cancel);
+        assert!(res.is_err() && res.unwrap_err().contains("deadline"));
+        assert!(t0.elapsed() < Duration::from_secs(2), "killed promptly, not waited out");
+    }
+
+    #[test]
+    fn run_cancellable_cancel_kills_early() {
+        let mut cmd = Command::new("sleep");
+        cmd.arg("5");
+        let cancel = AtomicBool::new(true); // pre-cancelled
+        let t0 = Instant::now();
+        let res = run_cancellable(&mut cmd, Duration::from_secs(30), &cancel);
+        assert!(res.is_err() && res.unwrap_err().contains("cancelled"));
+        assert!(t0.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn run_cancellable_collects_output() {
+        let mut cmd = Command::new("echo");
+        cmd.arg("hi");
+        let cancel = AtomicBool::new(false);
+        let out = run_cancellable(&mut cmd, Duration::from_secs(5), &cancel).unwrap();
+        assert_eq!(String::from_utf8_lossy(&out.stdout).trim(), "hi");
     }
 }

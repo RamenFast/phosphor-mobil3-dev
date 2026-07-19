@@ -36,8 +36,15 @@ pub struct ArtEntry {
 /// extraction both fill it; the session's R handler reads it.
 pub type ArtCache = Arc<Mutex<HashMap<String, ArtEntry>>>;
 
+/// Deadline-only guard for local tools (playerctl/curl): a hung MPRIS target
+/// or stalled art fetch dies on its deadline instead of wedging the poller —
+/// which serve_client joins at teardown (audit finding 4's poller tail).
+static NO_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
+
 fn run(args: &[&str]) -> Option<String> {
-    let out = Command::new(args[0]).args(&args[1..]).output().ok()?;
+    let mut cmd = Command::new(args[0]);
+    cmd.args(&args[1..]);
+    let out = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(5), &NO_CANCEL).ok()?;
     if !out.status.success() {
         return None;
     }
@@ -113,11 +120,10 @@ pub fn cache_art(url: &str, cache: &ArtCache) -> Option<String> {
             let bytes = std::fs::read(&decoded).ok()?;
             std::fs::write(&path, &bytes).ok()?;
         } else if url.starts_with("http://") || url.starts_with("https://") {
-            let status = Command::new("curl")
-                .args(["-sL", "-o", &path.to_string_lossy(), url])
-                .status()
-                .ok()?;
-            if !status.success() || std::fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true) {
+            let mut cmd = Command::new("curl");
+            cmd.args(["-sL", "-o", &path.to_string_lossy(), url]);
+            let out = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(10), &NO_CANCEL).ok()?;
+            if !out.status.success() || std::fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true) {
                 let _ = std::fs::remove_file(&path);
                 return None;
             }
@@ -237,12 +243,14 @@ pub fn transport(player: &str, cmd: &str, ms: Option<u64>) {
         "prev" => "previous",
         "seek" => {
             let sec = ms.unwrap_or(0) as f64 / 1000.0;
-            let _ = Command::new("playerctl")
-                .args(["-p", player, "position", &format!("{sec:.3}")])
-                .status();
+            let mut cmd = Command::new("playerctl");
+            cmd.args(["-p", player, "position", &format!("{sec:.3}")]);
+            let _ = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(2), &NO_CANCEL);
             return;
         }
         _ => return,
     };
-    let _ = Command::new("playerctl").args(["-p", player, verb]).status();
+    let mut cmd = Command::new("playerctl");
+    cmd.args(["-p", player, verb]);
+    let _ = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(2), &NO_CANCEL);
 }

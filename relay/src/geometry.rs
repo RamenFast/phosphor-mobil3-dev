@@ -21,8 +21,10 @@ pub struct Geometry {
     supervisor: Option<JoinHandle<()>>,
 }
 
-impl Geometry {
-    pub fn stop(mut self) {
+/// RAII (audit finding 8): any drop path — including a panic unwind — kills
+/// phosphor-tap and joins the supervisor.
+impl Drop for Geometry {
+    fn drop(&mut self) {
         self.on.store(false, Ordering::SeqCst);
         if let Some(mut c) = self.child.lock().unwrap().take() {
             let _ = c.kill();

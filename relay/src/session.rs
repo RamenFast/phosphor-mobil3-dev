@@ -31,14 +31,29 @@ pub struct Counters {
 }
 
 /// Internal control-loop events. Everything that mutates session state funnels
-/// through this one channel, so `SessionState` needs no locking.
+/// through this one channel, so `SessionState` needs no locking. EOF events
+/// carry their pump's id (audit finding 6: a stale pump's death must never
+/// kill or advance its replacement); browse/fetch results carry a token so a
+/// superseded job's answer is dropped, never applied.
 pub enum Ev {
     Client(u8, Vec<u8>),
-    CaptureEof,
-    FileEof,
+    CaptureEof(u64),
+    FileEof(u64),
+    Browsed { token: u64, result: Result<proto::Listing, crate::library::LibErr> },
+    DriveFetched { token: u64, root_id: String, path: String, result: Result<(), crate::library::LibErr> },
     Tick,
     Watchdog,
     Disconnect,
+}
+
+/// Drop guard: `running=false` fires on EVERY serve_client exit — including a
+/// panic unwind — so the ticker/watchdog/poller can never outlive the session
+/// (audit finding 8's detached-graph corner).
+struct RunningGuard(Arc<AtomicBool>);
+impl Drop for RunningGuard {
+    fn drop(&mut self) {
+        self.0.store(false, Ordering::Relaxed);
+    }
 }
 
 /// A serve-stream NDJSON event line (stdout is the machine surface; println
@@ -82,6 +97,24 @@ struct SessionState {
     file: Option<FileSession>,
     geo: Option<Geometry>,
     last_meta: Option<String>,
+    /// Pump-id fountain (finding 6) shared with FileSession's internal spawns.
+    pump_ids: Arc<AtomicU64>,
+    /// Ops-cancel: set by watchdog/disconnect/teardown; every external command
+    /// (rclone/ffmpeg/ffprobe/playerctl/curl) dies ≤25 ms after it flips
+    /// (finding 4 — the control loop can no longer be held hostage).
+    cancel_ops: Arc<AtomicBool>,
+    /// In-flight async jobs (browse / Drive prefetch) + their newest tokens.
+    jobs: Vec<thread::JoinHandle<()>>,
+    browse_token: u64,
+    fetch_token: u64,
+}
+
+/// RAII (finding 8): a panic unwinding through serve_client still tears the
+/// session graph down — pumps by their own Drops, jobs by cancel+join here.
+impl Drop for SessionState {
+    fn drop(&mut self) {
+        self.teardown();
+    }
 }
 
 impl SessionState {
@@ -100,7 +133,8 @@ impl SessionState {
             );
             return;
         };
-        match capture::start(&spec, ctx.wtx.clone(), ctx.counters.clone(), ctx.ctl.clone()) {
+        let id = self.pump_ids.fetch_add(1, Ordering::Relaxed) + 1;
+        match capture::start(&spec, id, ctx.wtx.clone(), ctx.counters.clone(), ctx.ctl.clone()) {
             Ok(pump) => {
                 self.capture = Some(pump);
                 serve_event("capture-started", serde_json::json!({ "source": self.selected }));
@@ -114,14 +148,16 @@ impl SessionState {
     }
 
     fn stop_capture(&mut self) {
-        if let Some(p) = self.capture.take() {
-            p.stop();
-        }
+        self.capture = None; // Drop kills + joins (RAII)
     }
 
     /// pw-record died (app closed): warn, fall back to the default monitor, and
     /// push a fresh source list so the phone re-syncs its picker.
-    fn on_capture_eof(&mut self, ctx: &Ctx) {
+    fn on_capture_eof(&mut self, ctx: &Ctx, id: u64) {
+        // Stale-pump guard (finding 6): only the LIVE pump's death matters.
+        if self.capture.as_ref().map(|p| p.id) != Some(id) {
+            return;
+        }
         if self.in_file() {
             return; // file mode owns audio; a stale capture EOF is moot
         }
@@ -148,9 +184,7 @@ impl SessionState {
     }
 
     fn stop_geometry(&mut self) {
-        if let Some(g) = self.geo.take() {
-            g.stop();
-        }
+        self.geo = None; // Drop kills + joins (RAII)
     }
 
     // ── frames out ───────────────────────────────────────────────────────────
@@ -275,9 +309,8 @@ impl SessionState {
 
     fn on_choose(&mut self, ctx: &Ctx, payload: &[u8]) {
         let Ok(c) = serde_json::from_slice::<proto::Choose>(payload) else { return };
-        if let Some(fs) = self.file.take() {
-            fs.stop(); // choosing a live source exits file mode
-        }
+        self.file = None; // choosing a live source exits file mode (RAII stop)
+        self.fetch_token += 1; // supersede any in-flight Drive fetch
         self.selected = c.id;
         self.last_meta = None;
         if self.audio {
@@ -285,27 +318,59 @@ impl SessionState {
         }
     }
 
-    fn on_browse(&self, ctx: &Ctx, payload: &[u8]) {
+    /// Browse runs as a JOB (finding 4): a slow Drive listing can no longer
+    /// freeze the control loop (which must keep serving K/M within the phone's
+    /// 3 s stall window). The token drops superseded answers.
+    fn on_browse(&mut self, ctx: &Ctx, payload: &[u8]) {
         let Ok(b) = serde_json::from_slice::<proto::Browse>(payload) else { return };
         let Some(root) = ctx.cfg.find_root(&b.root) else {
             ctx.error("no such library root", "browse a configured root (see W.libraries)",
                 serde_json::json!({ "root": b.root }));
             return;
         };
-        match crate::library::list(root, &b.path) {
+        self.browse_token += 1;
+        let token = self.browse_token;
+        let root = root.clone();
+        let path = b.path.clone();
+        let (ctl, cancel) = (ctx.ctl.clone(), self.cancel_ops.clone());
+        self.jobs.push(thread::spawn(move || {
+            let result = crate::library::list(&root, &path, &cancel);
+            let _ = ctl.send(Ev::Browsed { token, result });
+        }));
+        self.reap_jobs();
+    }
+
+    fn on_browsed(&mut self, ctx: &Ctx, token: u64, result: Result<proto::Listing, crate::library::LibErr>) {
+        if token != self.browse_token {
+            return; // superseded — a newer browse owns the screen
+        }
+        match result {
             Ok(listing) => {
                 let _ = ctx.send(proto::L, &serde_json::to_vec(&listing).unwrap_or_default());
             }
-            Err((e, fix)) => ctx.error(&e, &fix, serde_json::json!({ "root": b.root, "path": b.path })),
+            Err((e, fix)) => ctx.error(&e, &fix, serde_json::json!({})),
         }
+    }
+
+    /// Join any jobs that already finished (their sends are in the queue) so
+    /// the vec can't grow unboundedly across a long session.
+    fn reap_jobs(&mut self) {
+        let mut live = Vec::new();
+        for j in self.jobs.drain(..) {
+            if j.is_finished() {
+                let _ = j.join();
+            } else {
+                live.push(j);
+            }
+        }
+        self.jobs = live;
     }
 
     fn on_play(&mut self, ctx: &Ctx, payload: &[u8]) {
         let Ok(p) = serde_json::from_slice::<proto::Play>(payload) else { return };
         if p.action == "stop" {
-            if let Some(fs) = self.file.take() {
-                fs.stop();
-            }
+            self.file = None; // RAII stop
+            self.fetch_token += 1; // supersede any in-flight fetch
             self.last_meta = None;
             if self.audio {
                 self.start_capture(ctx); // resume the previously selected capture
@@ -317,19 +382,59 @@ impl SessionState {
                 serde_json::json!({ "root": p.root }));
             return;
         };
+        if root.is_rclone() {
+            // Drive: the download runs as a JOB (finding 4's biggest offender —
+            // a stalled fetch froze the loop for minutes). Live capture keeps
+            // playing until the file is actually ready; the phone shows the
+            // downloading M immediately.
+            self.fetch_token += 1;
+            let token = self.fetch_token;
+            let downloading = proto::Meta {
+                title: p.path.rsplit('/').next().unwrap_or(&p.path).to_string(),
+                playing: false,
+                source: "file".into(),
+                path: Some(p.path.clone()),
+                can_seek: true,
+                ..Default::default()
+            };
+            if let Ok(body) = serde_json::to_vec(&downloading) {
+                let _ = ctx.wtx.try_send(proto::encode_frame(proto::M, &body));
+            }
+            let (ctl, cancel) = (ctx.ctl.clone(), self.cancel_ops.clone());
+            let (root_id, path) = (p.root.clone(), p.path.clone());
+            let root_c = root.clone();
+            self.jobs.push(thread::spawn(move || {
+                let result = crate::library::prefetch(&root_c, &path, &cancel);
+                let _ = ctl.send(Ev::DriveFetched { token, root_id, path, result });
+            }));
+            self.reap_jobs();
+            return;
+        }
+        self.open_file(ctx, root, &p.root, &p.path);
+    }
+
+    /// Shared open path (local play + post-fetch Drive play — cache-hit fast).
+    fn open_file(&mut self, ctx: &Ctx, root: crate::config::LibraryRoot, root_id: &str, path: &str) {
         // Entering file mode: the live capture stops; the file pump is the audio.
         self.stop_capture();
-        if let Some(fs) = self.file.take() {
-            fs.stop();
-        }
-        match FileSession::open(root, &p.path, ctx.wtx.clone(), ctx.counters.clone(), ctx.ctl.clone(), ctx.art.clone()) {
+        self.file = None;
+        match FileSession::open(
+            root,
+            path,
+            ctx.wtx.clone(),
+            ctx.counters.clone(),
+            ctx.ctl.clone(),
+            ctx.art.clone(),
+            self.pump_ids.clone(),
+            self.cancel_ops.clone(),
+        ) {
             Ok(fs) => {
                 self.file = Some(fs);
                 self.last_meta = None;
-                serve_event("file-started", serde_json::json!({ "root": p.root, "path": p.path }));
+                serve_event("file-started", serde_json::json!({ "root": root_id, "path": path }));
             }
             Err((e, fix)) => {
-                ctx.error(&e, &fix, serde_json::json!({ "root": p.root, "path": p.path }));
+                ctx.error(&e, &fix, serde_json::json!({ "root": root_id, "path": path }));
                 if self.audio {
                     self.start_capture(ctx); // recover to live audio
                 }
@@ -337,7 +442,37 @@ impl SessionState {
         }
     }
 
-    fn on_file_eof(&mut self, ctx: &Ctx) {
+    fn on_drive_fetched(
+        &mut self,
+        ctx: &Ctx,
+        token: u64,
+        root_id: String,
+        path: String,
+        result: Result<(), crate::library::LibErr>,
+    ) {
+        if token != self.fetch_token {
+            return; // superseded (newer play/stop/choose) — cache write is harmless
+        }
+        match result {
+            Ok(()) => {
+                let Some(root) = ctx.cfg.find_root(&root_id).cloned() else { return };
+                self.open_file(ctx, root, &root_id, &path);
+            }
+            Err((e, fix)) => {
+                ctx.error(&e, &fix, serde_json::json!({ "root": root_id, "path": path }));
+                if self.audio && self.capture.is_none() && !self.in_file() {
+                    self.start_capture(ctx);
+                }
+            }
+        }
+    }
+
+    fn on_file_eof(&mut self, ctx: &Ctx, id: u64) {
+        // Stale-pump guard (finding 6): a pre-seek/pre-next pump's EOF must
+        // not advance the replacement it already lost its seat to.
+        if self.file.as_ref().and_then(|f| f.current_pump_id()) != Some(id) {
+            return;
+        }
         if let Some(fs) = &mut self.file {
             match fs.advance(1) {
                 Ok(true) => self.last_meta = None,     // playing the next track
@@ -374,10 +509,14 @@ impl SessionState {
     }
 
     fn teardown(&mut self) {
+        // Cancel FIRST: any in-flight external command dies ≤25 ms, so the job
+        // joins below are bounded (finding 4).
+        self.cancel_ops.store(true, Ordering::SeqCst);
         self.stop_capture();
         self.stop_geometry();
-        if let Some(fs) = self.file.take() {
-            fs.stop();
+        self.file = None;
+        for j in self.jobs.drain(..) {
+            let _ = j.join();
         }
     }
 }
@@ -418,29 +557,45 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
     let wd_stream = stream.try_clone().ok();
 
     // ── single writer thread ────────────────────────────────────────────────
-    let (wtx, wrx) = mpsc::sync_channel::<Vec<u8>>(256);
-    let writer = thread::spawn(move || {
-        let mut w = write_half;
-        // A write timeout is load-bearing: if the client stops reading, the
-        // socket send buffer fills and a plain write_all would block forever —
-        // shutdown() can't discard a full buffer. The timeout guarantees the
-        // writer can always error out and exit, which drops the channel receiver
-        // and unblocks every producer's send, so teardown can never wedge.
-        let _ = w.set_write_timeout(Some(Duration::from_secs(5)));
-        for frame in wrx {
-            if w.write_all(&frame).is_err() {
-                break;
+    // Depth 32 ≈ 320 ms of audio (audit finding 12 + the lag ask): a slow
+    // client now drops frames instead of accumulating multi-second stale
+    // audio. The phone's callback-side catch-up absorbs what remains.
+    let (wtx, wrx) = mpsc::sync_channel::<Vec<u8>>(32);
+    let w_counters = Arc::new(Counters::default());
+    let writer = {
+        let counters = w_counters.clone();
+        thread::spawn(move || {
+            let mut w = write_half;
+            // A write timeout is load-bearing: if the client stops reading, the
+            // socket send buffer fills and a plain write_all would block forever —
+            // shutdown() can't discard a full buffer. The timeout guarantees the
+            // writer can always error out and exit, which drops the channel receiver
+            // and unblocks every producer's send, so teardown can never wedge.
+            let _ = w.set_write_timeout(Some(Duration::from_secs(5)));
+            for frame in wrx {
+                if w.write_all(&frame).is_err() {
+                    break;
+                }
+                // tx_a counts WIRE writes (audit finding 12) — a queued-then-
+                // dropped frame no longer inflates the sent metric.
+                if frame.first() == Some(&proto::A) {
+                    counters.tx_a.fetch_add(1, Ordering::Relaxed);
+                }
             }
-        }
-    });
+        })
+    };
 
     // ── control channel + shared state ──────────────────────────────────────
     let (ctl, crx) = mpsc::channel::<Ev>();
-    let counters = Arc::new(Counters::default());
+    let counters = w_counters;
     let snap = Arc::new(Mutex::new(PlayerSnapshot::default()));
     let art: ArtCache = Arc::new(Mutex::new(std::collections::HashMap::new()));
     let running = Arc::new(AtomicBool::new(true));
-    let last_seen = Arc::new(AtomicU64::new(util::now_ms()));
+    let _running_guard = RunningGuard(running.clone()); // fires even on unwind
+    let cancel_ops = Arc::new(AtomicBool::new(false));
+    // Liveness rides the MONOTONIC clock (audit finding 13): an NTP step can
+    // no longer false-kill a live session or immortalize a dead one.
+    let last_seen = Arc::new(AtomicU64::new(util::mono_ms()));
 
     let selected = capture::default_monitor_id()
         .or_else(|| capture::enumerate().into_iter().find(|s| s.kind == "monitor").map(|s| s.id))
@@ -452,13 +607,13 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
     let _ = ctx.wtx.send(proto::encode_frame(proto::W, &build_welcome(&cfg, caps, &selected)));
 
     // ── reader thread ────────────────────────────────────────────────────────
-    let (r_ctl, r_wtx, r_seen) = (ctl.clone(), wtx.clone(), last_seen.clone());
+    let (r_ctl, r_wtx, r_seen, r_cancel) = (ctl.clone(), wtx.clone(), last_seen.clone(), cancel_ops.clone());
     let reader = thread::spawn(move || {
         let mut r = read_half;
         loop {
             match proto::read_frame(&mut r, proto::MAX_C2S) {
                 Ok((tag, payload)) => {
-                    r_seen.store(util::now_ms(), Ordering::Relaxed);
+                    r_seen.store(util::mono_ms(), Ordering::Relaxed);
                     if r_ctl.send(Ev::Client(tag, payload)).is_err() {
                         break;
                     }
@@ -470,10 +625,14 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
                         serde_json::json!({ "declared_len": n }),
                     );
                     let _ = r_wtx.send(proto::encode_frame(proto::E, &body));
+                    r_cancel.store(true, Ordering::SeqCst); // kill in-flight externals
                     let _ = r_ctl.send(Ev::Disconnect);
                     break;
                 }
                 Err(ReadErr::Io) => {
+                    // Client gone: cancel in-flight externals so a mid-download
+                    // control loop drains within 25 ms (finding 4).
+                    r_cancel.store(true, Ordering::SeqCst);
                     let _ = r_ctl.send(Ev::Disconnect);
                     break;
                 }
@@ -493,11 +652,15 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
     });
 
     // ── liveness watchdog: 8 s of client silence → tear everything down ───────
-    let (w_ctl, w_run, w_seen) = (ctl.clone(), running.clone(), last_seen.clone());
+    let (w_ctl, w_run, w_seen, w_cancel) = (ctl.clone(), running.clone(), last_seen.clone(), cancel_ops.clone());
     let watchdog = thread::spawn(move || {
         while w_run.load(Ordering::Relaxed) {
             thread::sleep(Duration::from_millis(1000));
-            if util::now_ms().saturating_sub(w_seen.load(Ordering::Relaxed)) > 8000 {
+            if util::mono_ms().saturating_sub(w_seen.load(Ordering::Relaxed)) > 8000 {
+                // Cancel BEFORE queueing the event (finding 4): a control loop
+                // stuck inside an external command drains it ≤25 ms later and
+                // then processes this teardown — starvation is impossible.
+                w_cancel.store(true, Ordering::SeqCst);
                 if let Some(s) = &wd_stream {
                     let _ = s.shutdown(Shutdown::Both); // unblock the reader
                 }
@@ -520,6 +683,11 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
         file: None,
         geo: None,
         last_meta: None,
+        pump_ids: Arc::new(AtomicU64::new(0)),
+        cancel_ops: cancel_ops.clone(),
+        jobs: Vec::new(),
+        browse_token: 0,
+        fetch_token: 0,
     };
 
     let mut reason = "client-disconnect";
@@ -541,8 +709,12 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
                     break;
                 }
             }
-            Ev::CaptureEof => st.on_capture_eof(&ctx),
-            Ev::FileEof => st.on_file_eof(&ctx),
+            Ev::CaptureEof(id) => st.on_capture_eof(&ctx, id),
+            Ev::FileEof(id) => st.on_file_eof(&ctx, id),
+            Ev::Browsed { token, result } => st.on_browsed(&ctx, token, result),
+            Ev::DriveFetched { token, root_id, path, result } => {
+                st.on_drive_fetched(&ctx, token, root_id, path, result)
+            }
             Ev::Watchdog => {
                 reason = "client-timeout";
                 break;

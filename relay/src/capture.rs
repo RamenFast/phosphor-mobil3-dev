@@ -43,10 +43,19 @@ fn str_prop<'a>(props: &'a serde_json::Value, key: &str) -> Option<&'a str> {
     props.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
 }
 
+/// Deadline-only guard for local, fast tools (pw-dump/pactl): a hung PipeWire
+/// daemon gets its probe killed at 5 s instead of freezing the control loop
+/// forever (audit finding 4's local-tool corner).
+static NO_CANCEL: AtomicBool = AtomicBool::new(false);
+
 /// Parse `pw-dump` once into the ordered source list (apps first in announce
 /// order, then monitors sorted by label) — the same order the phone shows.
 pub fn enumerate() -> Vec<Source> {
-    let out = match Command::new("pw-dump").output() {
+    let out = match util::run_cancellable(
+        &mut Command::new("pw-dump"),
+        std::time::Duration::from_secs(5),
+        &NO_CANCEL,
+    ) {
         Ok(o) => o.stdout,
         Err(_) => return Vec::new(),
     };
@@ -121,7 +130,9 @@ pub fn resolve(id: &str) -> Option<ConnectSpec> {
 
 /// `device:<default-sink>.monitor` — the connect-time default.
 pub fn default_monitor_id() -> Option<String> {
-    let out = Command::new("pactl").arg("get-default-sink").output().ok()?;
+    let mut cmd = Command::new("pactl");
+    cmd.arg("get-default-sink");
+    let out = util::run_cancellable(&mut cmd, std::time::Duration::from_secs(5), &NO_CANCEL).ok()?;
     let sink = String::from_utf8_lossy(&out.stdout).trim().to_string();
     (!sink.is_empty()).then(|| format!("device:{sink}.monitor"))
 }
@@ -166,21 +177,23 @@ fn spawn_child(spec: &ConnectSpec) -> std::io::Result<Child> {
     }
 }
 
-/// A running capture pump. Dropping/`stop()`-ing kills its child so no zombie
-/// pw-record survives a source switch or a session teardown.
+/// A running capture pump. RAII (audit finding 8): DROPPING it — by any path,
+/// including a panic unwind — kills its child and joins its thread, so no
+/// zombie pw-record survives a source switch, a teardown, or a crash.
 pub struct CapturePump {
+    /// Session-scoped pump identity; EOF events carry it so a stale pump's
+    /// death can never kill its replacement (audit finding 6).
+    pub id: u64,
     child: Arc<Mutex<Option<Child>>>,
     stopping: Arc<AtomicBool>,
     handle: Option<JoinHandle<()>>,
 }
 
-impl CapturePump {
-    /// We asked it to stop (source switch / teardown) — kill quietly (no EOF
-    /// event) and let the pump thread reap the child on its way out.
-    pub fn stop(mut self) {
+impl Drop for CapturePump {
+    fn drop(&mut self) {
         self.stopping.store(true, Ordering::SeqCst);
         if let Some(c) = self.child.lock().unwrap().as_mut() {
-            let _ = c.kill(); // unblock the read; the thread wait()s it
+            let _ = c.kill(); // unblock the read; the pump thread wait()s it
         }
         if let Some(h) = self.handle.take() {
             let _ = h.join();
@@ -193,6 +206,7 @@ impl CapturePump {
 /// fall back to the default monitor and push a fresh source list.
 pub fn start(
     spec: &ConnectSpec,
+    id: u64,
     writer: SyncSender<Vec<u8>>,
     counters: Arc<Counters>,
     ctl: Sender<Ev>,
@@ -205,25 +219,31 @@ pub fn start(
     let (stopping_t, child_t) = (stopping.clone(), child.clone());
     let handle = thread::spawn(move || {
         use std::io::Read;
+        use std::sync::mpsc::TrySendError;
         let mut buf = [0u8; A_FRAME];
         loop {
             match stdout.read_exact(&mut buf) {
                 Ok(()) => {
                     let frame = proto::encode_frame(proto::A, &buf);
+                    // Full vs Disconnected split (audit finding 12): a slow
+                    // client drops ONE frame; a gone writer ends the pump —
+                    // it must not spin counting drops against a corpse.
+                    // tx_a is counted at the wire by the writer, not here.
                     match writer.try_send(frame) {
-                        Ok(()) => {
-                            counters.tx_a.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Err(_) => {
+                        Ok(()) => {}
+                        Err(TrySendError::Full(_)) => {
                             counters.dropped_a.fetch_add(1, Ordering::Relaxed);
                         }
+                        Err(TrySendError::Disconnected(_)) => break,
                     }
                 }
                 Err(_) => {
                     // EOF or read error: if we asked to stop, exit silently;
-                    // otherwise the source vanished — signal a fallback.
+                    // otherwise the source vanished — signal a fallback,
+                    // tagged with OUR id so a stale EOF can't kill a
+                    // replacement pump (audit finding 6).
                     if !stopping_t.load(Ordering::SeqCst) {
-                        let _ = ctl.send(Ev::CaptureEof);
+                        let _ = ctl.send(Ev::CaptureEof(id));
                     }
                     break;
                 }
@@ -235,5 +255,5 @@ pub fn start(
         }
     });
 
-    Ok(CapturePump { child, stopping, handle: Some(handle) })
+    Ok(CapturePump { id, child, stopping, handle: Some(handle) })
 }

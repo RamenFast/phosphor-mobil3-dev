@@ -45,9 +45,9 @@ fn split_rel(rel: &str) -> (String, String) {
 
 // ── Browsing ─────────────────────────────────────────────────────────────────
 
-pub fn list(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
+pub fn list(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<proto::Listing, LibErr> {
     if root.is_rclone() {
-        list_rclone(root, rel)
+        list_rclone(root, rel, cancel)
     } else {
         list_local(root, rel)
     }
@@ -85,7 +85,7 @@ fn list_local(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
     Ok(proto::Listing { root: root.id.clone(), path: rel_clean, dirs, files })
 }
 
-fn list_rclone(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
+fn list_rclone(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<proto::Listing, LibErr> {
     if !util::tool_exists("rclone") {
         return Err((
             "rclone is not installed".into(),
@@ -99,10 +99,12 @@ fn list_rclone(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> 
     } else {
         format!("{remote}/{rel_clean}")
     };
-    let out = Command::new("rclone")
-        .args(["lsjson", &full])
-        .output()
-        .map_err(|e| ("rclone failed".into(), format!("{e}")))?;
+    let mut cmd = Command::new("rclone");
+    cmd.args(["lsjson", &full]);
+    // Deadline + cancel (audit finding 4): a stalled Drive listing dies in 20 s
+    // or the moment the session ends — never holds the relay hostage.
+    let out = util::run_cancellable(&mut cmd, Duration::from_secs(20), cancel)
+        .map_err(|e| ("rclone failed".into(), format!("{e} — check connectivity, retry")))?;
     if !out.status.success() {
         return Err((
             "rclone could not list that remote path".into(),
@@ -131,11 +133,18 @@ fn list_rclone(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> 
     Ok(proto::Listing { root: root.id.clone(), path: rel_clean, dirs, files })
 }
 
+/// Warm the cache for a file WITHOUT opening a session — the relay's Drive
+/// fetch job runs this off the control loop; on success the follow-up open()
+/// is a cache hit. Local roots validate the path (instant).
+pub fn prefetch(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<(), LibErr> {
+    resolve_abs(root, rel, cancel).map(|_| ())
+}
+
 /// Resolve the on-disk absolute path for a file to decode. Local roots return
 /// the jailed real path; rclone roots cache-then-play (download once, ≤256 MB).
-fn resolve_abs(root: &LibraryRoot, rel: &str) -> Result<PathBuf, LibErr> {
+fn resolve_abs(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<PathBuf, LibErr> {
     if root.is_rclone() {
-        resolve_rclone_file(root, rel)
+        resolve_rclone_file(root, rel, cancel)
     } else {
         let base = std::fs::canonicalize(root.path.as_deref().unwrap_or_default())
             .map_err(|_| ("library root is unreadable".into(), "check the path".into()))?;
@@ -148,7 +157,7 @@ fn resolve_abs(root: &LibraryRoot, rel: &str) -> Result<PathBuf, LibErr> {
     }
 }
 
-fn resolve_rclone_file(root: &LibraryRoot, rel: &str) -> Result<PathBuf, LibErr> {
+fn resolve_rclone_file(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<PathBuf, LibErr> {
     if !util::tool_exists("rclone") {
         return Err(("rclone is not installed".into(), "install rclone + run: rclone config".into()));
     }
@@ -163,8 +172,10 @@ fn resolve_rclone_file(root: &LibraryRoot, rel: &str) -> Result<PathBuf, LibErr>
     if cache.exists() {
         return Ok(cache);
     }
-    // size guard via lsjson of the single object
-    if let Ok(o) = Command::new("rclone").args(["lsjson", &full]).output() {
+    // size guard via lsjson of the single object (deadline + cancel)
+    let mut ls = Command::new("rclone");
+    ls.args(["lsjson", &full]);
+    if let Ok(o) = util::run_cancellable(&mut ls, Duration::from_secs(20), cancel) {
         if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&o.stdout) {
             if let Some(sz) = v.as_array().and_then(|a| a.first()).and_then(|f| f.get("Size")).and_then(|s| s.as_u64()) {
                 if sz > RCLONE_MAX_BYTES {
@@ -173,11 +184,13 @@ fn resolve_rclone_file(root: &LibraryRoot, rel: &str) -> Result<PathBuf, LibErr>
             }
         }
     }
-    let status = Command::new("rclone")
-        .args(["copyto", &full, &cache.to_string_lossy()])
-        .status()
+    // The download: generous deadline (Drive can be slow), but ALWAYS killable —
+    // teardown/cancel reaps it within 25 ms (audit finding 4's biggest offender).
+    let mut cp = Command::new("rclone");
+    cp.args(["copyto", &full, &cache.to_string_lossy()]);
+    let out = util::run_cancellable(&mut cp, Duration::from_secs(180), cancel)
         .map_err(|e| ("rclone copy failed".into(), format!("{e}")))?;
-    if !status.success() {
+    if !out.status.success() {
         return Err(("rclone could not fetch that file".into(), "check the remote + connectivity".into()));
     }
     Ok(cache)
@@ -185,19 +198,19 @@ fn resolve_rclone_file(root: &LibraryRoot, rel: &str) -> Result<PathBuf, LibErr>
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
-fn probe_meta(abs: &Path, fallback_name: &str) -> (String, String, String, Option<u64>) {
+fn probe_meta(abs: &Path, fallback_name: &str, cancel: &AtomicBool) -> (String, String, String, Option<u64>) {
     let stem = Path::new(fallback_name)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| fallback_name.to_string());
-    let out = Command::new("ffprobe")
-        .args([
-            "-v", "error",
-            "-show_entries", "format=duration:format_tags=title,artist,album",
-            "-of", "json",
-            &abs.to_string_lossy(),
-        ])
-        .output();
+    let mut cmd = Command::new("ffprobe");
+    cmd.args([
+        "-v", "error",
+        "-show_entries", "format=duration:format_tags=title,artist,album",
+        "-of", "json",
+        &abs.to_string_lossy(),
+    ]);
+    let out = util::run_cancellable(&mut cmd, Duration::from_secs(10), cancel);
     let Ok(out) = out else { return (stem, String::new(), String::new(), None) };
     let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
     let fmt = v.get("format");
@@ -216,12 +229,10 @@ fn probe_meta(abs: &Path, fallback_name: &str) -> (String, String, String, Optio
 }
 
 /// Best-effort embedded cover → art cache. Returns the art id if a frame came out.
-fn extract_art(abs: &Path, art: &ArtCache) -> Option<String> {
-    let out = Command::new("ffmpeg")
-        .args(["-nostdin", "-v", "error", "-i", &abs.to_string_lossy(), "-an", "-c:v", "copy", "-f", "image2pipe", "-"])
-        .stderr(Stdio::null())
-        .output()
-        .ok()?;
+fn extract_art(abs: &Path, art: &ArtCache, cancel: &AtomicBool) -> Option<String> {
+    let mut cmd = Command::new("ffmpeg");
+    cmd.args(["-nostdin", "-v", "error", "-i", &abs.to_string_lossy(), "-an", "-c:v", "copy", "-f", "image2pipe", "-"]);
+    let out = util::run_cancellable(&mut cmd, Duration::from_secs(10), cancel).ok()?;
     if !out.status.success() || out.stdout.is_empty() {
         return None;
     }
@@ -237,6 +248,9 @@ fn extract_art(abs: &Path, art: &ArtCache) -> Option<String> {
 // ── The ffmpeg pump ──────────────────────────────────────────────────────────
 
 struct FilePump {
+    /// Session-scoped identity: FileEof carries it so a pre-seek/pre-next
+    /// pump's death can never advance its replacement (audit finding 6).
+    id: u64,
     child: Arc<Mutex<Option<Child>>>,
     stopping: Arc<AtomicBool>,
     paused: Arc<AtomicBool>,
@@ -245,8 +259,10 @@ struct FilePump {
     handle: Option<JoinHandle<()>>,
 }
 
-impl FilePump {
-    fn stop(mut self) {
+/// RAII (audit finding 8): any drop path — including a panic unwind — kills
+/// ffmpeg and joins the pump thread.
+impl Drop for FilePump {
+    fn drop(&mut self) {
         self.stopping.store(true, Ordering::SeqCst);
         if let Some(c) = self.child.lock().unwrap().as_mut() {
             let _ = c.kill(); // unblock the read; the thread wait()s it
@@ -259,6 +275,7 @@ impl FilePump {
 
 fn start_pump(
     abs: &Path,
+    id: u64,
     base_ms: u64,
     paused_initial: bool,
     writer: SyncSender<Vec<u8>>,
@@ -305,13 +322,14 @@ fn start_pump(
             match stdout.read_exact(&mut buf) {
                 Ok(()) => {
                     let frame = proto::encode_frame(proto::A, &buf);
+                    // Full vs Disconnected split (audit finding 12); tx_a is
+                    // counted at the wire by the writer.
                     match writer.try_send(frame) {
-                        Ok(()) => {
-                            counters.tx_a.fetch_add(1, Ordering::Relaxed);
-                        }
-                        Err(_) => {
+                        Ok(()) => {}
+                        Err(std::sync::mpsc::TrySendError::Full(_)) => {
                             counters.dropped_a.fetch_add(1, Ordering::Relaxed);
                         }
+                        Err(std::sync::mpsc::TrySendError::Disconnected(_)) => break,
                     }
                     by.fetch_add(A_FRAME as u64, Ordering::Relaxed);
                     let now = Instant::now();
@@ -325,7 +343,7 @@ fn start_pump(
                 }
                 Err(_) => {
                     if !st.load(Ordering::SeqCst) {
-                        let _ = ctl.send(Ev::FileEof);
+                        let _ = ctl.send(Ev::FileEof(id)); // tagged (finding 6)
                     }
                     break;
                 }
@@ -337,7 +355,7 @@ fn start_pump(
         }
     });
 
-    Ok(FilePump { child, stopping, paused, bytes, base_ms, handle: Some(handle) })
+    Ok(FilePump { id, child, stopping, paused, bytes, base_ms, handle: Some(handle) })
 }
 
 // ── The file session ─────────────────────────────────────────────────────────
@@ -351,6 +369,10 @@ pub struct FileSession {
     counters: Arc<Counters>,
     ctl: Sender<Ev>,
     art: ArtCache,
+    /// Session-wide pump-id fountain (shared with capture) + the session's
+    /// ops-cancel flag (watchdog/disconnect kill in-flight externals ≤25 ms).
+    pump_ids: Arc<AtomicU64>,
+    cancel: Arc<AtomicBool>,
     // current file:
     title: String,
     artist: String,
@@ -369,12 +391,14 @@ impl FileSession {
         counters: Arc<Counters>,
         ctl: Sender<Ev>,
         art: ArtCache,
+        pump_ids: Arc<AtomicU64>,
+        cancel: Arc<AtomicBool>,
     ) -> Result<FileSession, LibErr> {
         let (dir_rel, filename) = split_rel(rel);
         if !is_audio(&filename) {
             return Err(("not an audio file".into(), "pick a file with a supported audio extension".into()));
         }
-        let listing = list(&root, &dir_rel)?;
+        let listing = list(&root, &dir_rel, &cancel)?;
         let entries: Vec<String> = listing.files.iter().map(|f| f.name.clone()).collect();
         let index = entries.iter().position(|n| n == &filename).ok_or_else(|| {
             ("file is not in its directory listing".into(), "refresh the folder and pick again".into())
@@ -388,6 +412,8 @@ impl FileSession {
             counters,
             ctl,
             art,
+            pump_ids,
+            cancel,
             title: String::new(),
             artist: String::new(),
             album: String::new(),
@@ -401,9 +427,12 @@ impl FileSession {
     }
 
     fn stop_pump(&mut self) {
-        if let Some(p) = self.pump.take() {
-            p.stop();
-        }
+        self.pump = None; // Drop kills + joins (RAII)
+    }
+
+    /// The live pump's id — the session's stale-EOF guard reads this.
+    pub fn current_pump_id(&self) -> Option<u64> {
+        self.pump.as_ref().map(|p| p.id)
     }
 
     /// Load `entries[index]` and start decoding. `base_ms` seeds a seek offset;
@@ -429,16 +458,17 @@ impl FileSession {
             }
         }
 
-        let abs = resolve_abs(&self.root, &rel)?;
-        let (title, artist, album, duration_ms) = probe_meta(&abs, &name);
+        let abs = resolve_abs(&self.root, &rel, &self.cancel)?;
+        let (title, artist, album, duration_ms) = probe_meta(&abs, &name, &self.cancel);
         self.title = title;
         self.artist = artist;
         self.album = album;
         self.duration_ms = duration_ms;
-        self.art_id = extract_art(&abs, &self.art);
+        self.art_id = extract_art(&abs, &self.art, &self.cancel);
 
         let pump = start_pump(
             &abs,
+            self.pump_ids.fetch_add(1, Ordering::Relaxed) + 1,
             base_ms,
             paused,
             self.writer.clone(),
@@ -505,7 +535,12 @@ impl FileSession {
         }
     }
 
-    pub fn stop(mut self) {
+}
+
+/// RAII (audit finding 8): dropping the session stops its pump; explicit
+/// `.take()` at call sites is the whole stop API now.
+impl Drop for FileSession {
+    fn drop(&mut self) {
         self.stop_pump();
     }
 }

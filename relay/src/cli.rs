@@ -134,7 +134,21 @@ pub fn serve(args: &[String]) -> ! {
             Ok(stream) => {
                 let peer = stream.peer_addr().map(|a| a.to_string()).unwrap_or_default();
                 let cfg = cfg.clone();
-                thread::spawn(move || session::serve_client(stream, cfg, caps, peer));
+                thread::spawn(move || {
+                    // catch_unwind is for the LOG LINE only (audit finding 8):
+                    // cleanup is RAII — SessionState/pump Drops + the running
+                    // guard fire during the unwind itself.
+                    let p2 = peer.clone();
+                    let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
+                        session::serve_client(stream, cfg, caps, peer)
+                    }));
+                    if res.is_err() {
+                        session::serve_event(
+                            "client-panicked",
+                            json!({ "peer": p2, "fix": "session cleaned up by RAII; report this — a handler panicked" }),
+                        );
+                    }
+                });
             }
             Err(e) => session::serve_event("error", json!({ "error": format!("accept: {e}"), "fix": "transient; the listener keeps running" })),
         }
