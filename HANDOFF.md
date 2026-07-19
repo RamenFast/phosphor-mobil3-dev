@@ -198,3 +198,8 @@ beam/glow ⚄ randomizers w/ range · ban faces from mode-⚄ · "MANIPULATE GEO
 - **Desktop sync**: 4.7.2 deb built; interserve = deb 4.7.2 ✓; thinkcenter = ~/.local/bin/phosphor now the true 4.7.2 deb payload (session PATH puts ~/.local/bin first — verified via systemd user env). /usr/bin trued up to 4.7.2 (Ben authorized live) and the overlay retired — deb is the single source of truth on both machines. v4.7.2 GitHub release cut w/ deb. Relay 2.2.0 active both machines.
 
 **Ben-verify list**: geometry FX by eye (tunnel breathes ~17s — stills undersell), dice feel, ban-roll behavior across tracks, the public repo front page reads right. Old gated lanes #11/#12 still parked.
+
+**Ben's verdict on the 1.0.6 batch: "Wonderful update. Truly."** — view-lock takeover and
+beam-tinted chrome move to shipped on his word. Rotation flatness-gate stays on his
+physical-verify list (tilt can't be faked over adb). Session tally: v1.0.0 → v1.0.6,
+seven public releases in one night, the bestiary sleeps in the manual.
