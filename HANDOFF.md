@@ -140,3 +140,16 @@ Ben stayed on the line and fed two more batches; ALL shipped (commits 7142242, 4
   flick, swipe-down dismiss, rotation matrix (the report's on-device matrix in
   report-rotation.md), capture metadata flow, art after the thinkcenter restart,
   grid-zoom feel, ×7 headroom.
+
+## Pass 3 (appended ~22:25) — storage, quick settings, beam-to-gravity
+Commit e0c76e2, installed. Storage leak (staged audio, 441MB) fixed + LIVE-verified
+(431MB→347KB on Ben's app open; sweeps on service create/destroy/track-open, ≤2 staged
+tracks ever). Popout drags closed + carries FPS/HUD/GRID quick toggles (3 new glyphs).
+Auto-gain now LOCKS the viewport (ribbon "auto · view locked"; SETTINGS GAIN rule =
+manual takeover). grant… deep-links to the notification-ACCESS toggle (≠ "allow
+notifications"). UI PLACEMENT locked = Activity PINNED + OrientationEventListener
+rotates the BEAM to gravity (Cmd::SetViewRotation, quarter-turn maps, DSP path only —
+remote geometry keeps its frame) + FlatKey labels/quick toggles counter-rotate
+(LocalUiUpright). ⚠ VERIFY WITH BEN: rotation quadrant SIGNS (flip = one line in
+MainActivity's sensor or rust rot()); popout drag-close feel; quick-toggle icons in
+amber/void; capture metadata after granting access.
