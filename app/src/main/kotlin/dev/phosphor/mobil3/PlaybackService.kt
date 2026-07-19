@@ -138,8 +138,18 @@ class PlaybackService : MediaSessionService() {
         remotePlayer = RemotePlayer(mainLooper)
         capturePlayer = CaptureMirrorPlayer(mainLooper).apply {
             playPauseRouter = ::routeCapturePlayPause
-            nextRouter = { externalCaptureController?.transportControls?.skipToNext() }
-            previousRouter = { externalCaptureController?.transportControls?.skipToPrevious() }
+            // Without notification access there is no controller — but media KEYS need
+            // no permission and the system routes them to the active app (Ben's next/
+            // back-dead-on-capture repro, 07-18). Precise controller when we have one,
+            // system-wide key otherwise.
+            nextRouter = {
+                externalCaptureController?.transportControls?.skipToNext()
+                    ?: dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+            }
+            previousRouter = {
+                externalCaptureController?.transportControls?.skipToPrevious()
+                    ?: dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
+            }
             seekRouter = { externalCaptureController?.transportControls?.seekTo(it) }
         }
         localPlayer.onSwitchTrack = ::stageAndOpen
@@ -426,9 +436,17 @@ class PlaybackService : MediaSessionService() {
 
     private fun publishCapturePlayback(state: PlatformPlaybackState?) {
         if (!captureActive) return
+        // Transport is ALWAYS offered while capturing: with a controller we route
+        // precisely; without one the routers fall back to system media keys — so the
+        // console and notification never show a dead face (Ben's repro, 07-18).
+        val guaranteed = PlatformPlaybackState.ACTION_PLAY or
+            PlatformPlaybackState.ACTION_PAUSE or
+            PlatformPlaybackState.ACTION_PLAY_PAUSE or
+            PlatformPlaybackState.ACTION_SKIP_TO_NEXT or
+            PlatformPlaybackState.ACTION_SKIP_TO_PREVIOUS
         capturePlayer.updatePlayback(
             state = state?.state ?: PlatformPlaybackState.STATE_NONE,
-            actions = state?.actions ?: 0L,
+            actions = (state?.actions ?: 0L) or guaranteed,
             positionMs = state?.position ?: C.TIME_UNSET,
             positionUpdateElapsedMs = state?.lastPositionUpdateTime ?: SystemClock.elapsedRealtime(),
         )
@@ -491,8 +509,17 @@ class PlaybackService : MediaSessionService() {
         }
     }.getOrNull()
 
+    /** System-wide media key: routes to the active app, no permission needed. */
+    private fun dispatchSystemMediaKey(code: Int) {
+        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
+        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
+    }
+
     private fun routeCapturePlayPause(play: Boolean) {
-        val controller = externalCaptureController ?: return
+        val controller = externalCaptureController ?: run {
+            dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
+            return
+        }
         val actions = controller.playbackState?.actions ?: 0L
         val directAction = if (play) PlatformPlaybackState.ACTION_PLAY else PlatformPlaybackState.ACTION_PAUSE
         if (actions and directAction != 0L) {
