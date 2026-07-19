@@ -572,8 +572,19 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 }
             }
 
-            // Layer 2: sheets.
-            when (sheet) {
+            // Layer 2: sheets. Under UI PLACEMENT lock a sideways-held phone presents
+            // the WHOLE sheet rotated to the viewer on a swapped-dimension canvas —
+            // which is exactly the landscape layout (Ben: "portrait view again instead
+            // of the side view"). The upright primitive re-measures with swapped
+            // constraints, so SettingsSheet's two-column profile engages naturally.
+            val sheetQuadrant = if (uiLocked) state.uprightQuadrant else 0
+            val sheetLandscape = chromeLandscape != (sheetQuadrant % 2 != 0)
+            CompositionLocalProvider(
+                LocalChromeLandscape provides sheetLandscape,
+                LocalUiUpright provides 0, // content is already facing the viewer
+            ) {
+                Box(Modifier.uprightRotate(sheetQuadrant)) {
+                    when (sheet) {
                 Sheet.SOURCE -> SourceSheet(
                     state, p, reduced,
                     sheetActions.withSheetRouting(
@@ -631,6 +642,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onOpenLink = { actions.openLink(it) },
                 ) { sheet = manualFrom }
                 Sheet.NONE -> {}
+                    }
+                }
             }
             } // inner chrome box (rootHeightPx / chrome-space layout)
           } // chrome container — rotates as a unit in the NEW mode
