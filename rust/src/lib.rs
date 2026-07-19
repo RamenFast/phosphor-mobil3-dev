@@ -2,6 +2,7 @@
 //! deck, and sources as the milestones land. Host-testable logic stays cfg-free;
 //! everything JNI lives behind `cfg(target_os = "android")` in `jni_glue`.
 
+pub mod bridge_core;
 pub mod engine;
 pub mod selftest;
 

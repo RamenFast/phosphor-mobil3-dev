@@ -8,7 +8,7 @@
 //! the oboe route-change restart. The Android SERVICE owns policy — when to connect,
 //! when to give up, and every surface the OS sees.
 
-use std::io::{Read, Write};
+use std::io::Read;
 use std::net::{TcpStream, ToSocketAddrs};
 use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
@@ -21,6 +21,7 @@ use oboe::{
 };
 use phosphor_audio::playback::AudibleRing;
 
+use crate::bridge_core::{self, WriterCmd};
 use crate::deck::{RATE, scope_ring};
 
 // ── Link state (JNI-visible via status_json) ─────────────────────────────────
@@ -62,10 +63,12 @@ struct Link {
     state: AtomicU8,
     quit: AtomicBool,
     generation: AtomicU64,
-    /// Generation-tagged: publish/teardown only touch the socket when the tag
-    /// matches, so a stale session can never stomp its successor's link
-    /// (audit finding 1). disconnect() takes it unconditionally (user intent).
-    writer: Mutex<Option<(u64, TcpStream)>>,
+    /// The live session's shared handle. POINTER-SWAP-ONLY MUTEX (the law): no
+    /// syscall, no I/O, nothing blocking ever runs while this is held — lock,
+    /// clone the Arc, unlock, then act. Violating this recreates finding 2.
+    current: Mutex<Option<Arc<SessionShared>>>,
+    /// Threads that outlived their bounded join (each one is a bug receipt).
+    leaked_threads: AtomicU32,
     slots: Slots,
     meta_gen: AtomicU32,
     sources_gen: AtomicU32,
@@ -88,7 +91,8 @@ fn link() -> &'static Link {
         state: AtomicU8::new(ST_IDLE),
         quit: AtomicBool::new(true),
         generation: AtomicU64::new(0),
-        writer: Mutex::new(None),
+        current: Mutex::new(None),
+        leaked_threads: AtomicU32::new(0),
         slots: Slots::default(),
         meta_gen: AtomicU32::new(0),
         sources_gen: AtomicU32::new(0),
@@ -114,9 +118,41 @@ fn monotonic_ms() -> u64 {
     EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
+/// Poison-tolerant lock: panic="abort" is release-only and Ben daily-drives the
+/// debug APK — a panicked session thread must not cascade lock panics onto the
+/// main thread through these mutexes.
+fn plock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
+    m.lock().unwrap_or_else(|p| p.into_inner())
+}
+
 fn set_link_error(err: &str, fix: &str) {
-    *link().slots.error.lock().unwrap() =
+    *plock(&link().slots.error) =
         format!(r#"{{"error":{},"fix":{}}}"#, json_str(err), json_str(fix));
+}
+
+/// Per-session shared handle: the lock-free reachable state JNI threads and
+/// session threads use to cancel and wake each other. `trip()` is idempotent,
+/// callable from any thread, and never blocks — cancellation + the socket FIN
+/// are the wakers every blocking point in the session observes.
+struct SessionShared {
+    #[allow(dead_code)]
+    session_gen: u64,
+    cancel: AtomicBool,
+    /// Dedicated shutdown clone — dropping other clones never FINs; an explicit
+    /// shutdown(Both) is the only reliable waker for blocked reads/writes.
+    sock: TcpStream,
+    writer_tx: std::sync::mpsc::SyncSender<WriterCmd>,
+    hello_dirty: AtomicBool,
+}
+
+impl SessionShared {
+    fn cancelled(&self) -> bool {
+        self.cancel.load(Ordering::Relaxed)
+    }
+    fn trip(&self) {
+        self.cancel.store(true, Ordering::SeqCst);
+        let _ = self.sock.shutdown(std::net::Shutdown::Both);
+    }
 }
 
 fn json_str(s: &str) -> String {
@@ -194,31 +230,38 @@ fn open_output(
 }
 
 // ── Wire helpers ─────────────────────────────────────────────────────────────
-fn send_frame(tag: u8, payload: &[u8]) -> bool {
-    let mut w = link().writer.lock().unwrap();
-    if let Some((_, s)) = w.as_mut() {
-        let len = (payload.len() as u32).to_be_bytes();
-        let ok = s.write_all(&[tag]).is_ok()
-            && s.write_all(&len).is_ok()
-            && s.write_all(payload).is_ok()
-            && s.flush().is_ok();
-        if !ok {
-            log::warn!("remote send tag {} failed", tag as char);
+
+/// Fail-fast enqueue onto the current session's writer thread (audit finding 2:
+/// JNI callers NEVER touch a socket). Full queue or no session = drop + log —
+/// transport is optimistic (the next M frame reconciles), and a full queue only
+/// happens while the writer is already dying inside a bounded write.
+fn enqueue(tag: u8, payload: &[u8]) -> bool {
+    let cur = plock(&link().current).clone();
+    match cur {
+        Some(s) if !s.cancelled() => match s
+            .writer_tx
+            .try_send(WriterCmd::Frame(bridge_core::encode_frame(tag, payload)))
+        {
+            Ok(()) => true,
+            Err(_) => {
+                log::warn!("remote enqueue {} dropped (writer queue full/gone)", tag as char);
+                false
+            }
+        },
+        _ => {
+            log::debug!("remote enqueue {} dropped (link down)", tag as char);
+            false
         }
-        ok
-    } else {
-        false
     }
 }
 
-fn send_hello() {
+fn hello_json() -> String {
     let l = link();
-    let h = format!(
+    format!(
         r#"{{"proto":2,"client":"phosphor-mobil3/0.2.0","audio":{},"geometry":{},"geometry_fps":60}}"#,
         l.cfg_audio.load(Ordering::Relaxed),
         l.cfg_geometry.load(Ordering::Relaxed),
-    );
-    send_frame(b'H', h.as_bytes());
+    )
 }
 
 // ── Public API (JNI-facing) ──────────────────────────────────────────────────
@@ -246,8 +289,11 @@ pub fn disconnect() {
     let l = link();
     l.quit.store(true, Ordering::Relaxed);
     l.generation.fetch_add(1, Ordering::SeqCst); // invalidates all session threads
-    if let Some((_, s)) = l.writer.lock().unwrap().take() {
-        let _ = s.shutdown(std::net::Shutdown::Both);
+    // Clone under the pointer lock, trip OUTSIDE it (the no-I/O-under-lock law);
+    // trip never blocks, so disconnect from the player looper can never ANR.
+    let cur = plock(&l.current).clone();
+    if let Some(s) = cur {
+        s.trip();
     }
     l.state.store(ST_IDLE, Ordering::Relaxed);
     *l.slots.meta.lock().unwrap() = String::new();
@@ -261,7 +307,13 @@ pub fn set_streams(audio: bool, geometry: bool) {
     let l = link();
     l.cfg_audio.store(audio, Ordering::Relaxed);
     l.cfg_geometry.store(geometry, Ordering::Relaxed);
-    send_hello();
+    // Coalesced H: the dirty flag is unlosable even if the wake marker drops on
+    // a full queue — the writer re-checks it every tick and rebuilds from the
+    // cfg atomics, so the LATEST toggles always win.
+    if let Some(s) = plock(&l.current).clone() {
+        s.hello_dirty.store(true, Ordering::Relaxed);
+        let _ = s.writer_tx.try_send(WriterCmd::Hello);
+    }
     let _ = crate::render::sender().send(crate::render::Cmd::GeometryActive(geometry));
 }
 
@@ -278,42 +330,42 @@ pub fn transport(cmd: &str) {
     } else {
         format!(r#"{{"cmd":{}}}"#, json_str(cmd))
     };
-    send_frame(b'T', payload.as_bytes());
+    enqueue(b'T', payload.as_bytes());
     log::info!("remote transport: {payload}");
 }
 
 pub fn seek_ms(ms: u64) {
-    send_frame(b'T', format!(r#"{{"cmd":"seek","ms":{ms}}}"#).as_bytes());
+    enqueue(b'T', format!(r#"{{"cmd":"seek","ms":{ms}}}"#).as_bytes());
 }
 
 pub fn request_sources() {
-    send_frame(b'Q', b"");
+    enqueue(b'Q', b"");
 }
 
 pub fn choose_source(id: &str) {
-    send_frame(b'C', format!(r#"{{"id":{}}}"#, json_str(id)).as_bytes());
+    enqueue(b'C', format!(r#"{{"id":{}}}"#, json_str(id)).as_bytes());
 }
 
 pub fn browse(root: &str, path: &str) {
-    send_frame(
+    enqueue(
         b'B',
         format!(r#"{{"root":{},"path":{}}}"#, json_str(root), json_str(path)).as_bytes(),
     );
 }
 
 pub fn play_file(root: &str, path: &str) {
-    send_frame(
+    enqueue(
         b'P',
         format!(r#"{{"root":{},"path":{}}}"#, json_str(root), json_str(path)).as_bytes(),
     );
 }
 
 pub fn stop_file() {
-    send_frame(b'P', br#"{"action":"stop"}"#);
+    enqueue(b'P', br#"{"action":"stop"}"#);
 }
 
 pub fn request_art(id: &str) {
-    send_frame(b'R', format!(r#"{{"id":{}}}"#, json_str(id)).as_bytes());
+    enqueue(b'R', format!(r#"{{"id":{}}}"#, json_str(id)).as_bytes());
 }
 
 pub fn metadata_json() -> String {
@@ -351,7 +403,7 @@ pub fn status_json() -> String {
     let welcome = l.slots.welcome.lock().unwrap().clone();
     let error = l.slots.error.lock().unwrap().clone();
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -363,6 +415,7 @@ pub fn status_json() -> String {
         l.sources_gen.load(Ordering::Relaxed),
         l.listing_gen.load(Ordering::Relaxed),
         l.art_gen.load(Ordering::Relaxed),
+        l.leaked_threads.load(Ordering::Relaxed),
         if welcome.is_empty() { "null".into() } else { welcome },
         if error.is_empty() { "null".into() } else { error },
     )
@@ -437,9 +490,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         Err(e) => return SessionEnd::Failed(format!("connect {host}:{port}: {e}")),
     };
     stream.set_nodelay(true).ok();
-    // Interim finding-2 cap: a blackholed peer can stall a write at most 2 s per
-    // syscall instead of forever. C2 (writer thread) removes socket I/O from
-    // callers entirely; this bound just shrinks the window until then.
+    // SO_SNDTIMEO 2 s: bounds every write the writer thread makes — a blackholed
+    // peer turns into a writer-fatal within one frame, never an infinite park
+    // (finding 2's other half; the writer thread is the first).
     stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
     let read_stream = match stream.try_clone() {
         Ok(s) => s,
@@ -460,24 +513,74 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let out_slot: Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>> =
         Arc::new(Mutex::new(Some(out)));
 
-    // Publish under the generation tag (audit finding 1). A session that lost the
-    // race while blocked in connect_timeout retires itself here instead of
-    // stomping its successor's live socket.
+    // The session's shared handle + its dedicated writer thread (audit finding
+    // 2): from here on, the writer is the ONLY thread that touches the socket's
+    // write half. JNI callers enqueue fail-fast; K self-generates in the writer
+    // on its own 2 s cadence (a full queue can never starve liveness) and H is
+    // coalesced through the dirty flag (unlosable).
+    let shutdown_clone = match stream.try_clone() {
+        Ok(s) => s,
+        Err(e) => return SessionEnd::Failed(format!("clone shutdown handle: {e}")),
+    };
+    let (writer_tx, writer_rx) = std::sync::mpsc::sync_channel::<WriterCmd>(32);
+    let shared = Arc::new(SessionShared {
+        session_gen: my_gen,
+        cancel: AtomicBool::new(false),
+        sock: shutdown_clone,
+        writer_tx,
+        hello_dirty: AtomicBool::new(false),
+    });
+
+    // Publish under the generation gate (audit finding 1). A session that lost
+    // the race while blocked in connect_timeout retires itself here instead of
+    // stomping its successor's live link.
     {
-        let mut w = l.writer.lock().unwrap();
+        let mut cur = plock(&l.current);
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
-            drop(w);
+            drop(cur);
             let _ = stream.shutdown(std::net::Shutdown::Both);
             *out_slot.lock().unwrap() = None;
             return SessionEnd::Quit;
         }
-        if let Some((_, old)) = w.take() {
-            // Never silently overwrite — shut the prior generation's stream down.
-            let _ = old.shutdown(std::net::Shutdown::Both);
+        if let Some(old) = cur.take() {
+            old.trip(); // never silently orphan a predecessor's socket
         }
-        *w = Some((my_gen, stream));
+        *cur = Some(shared.clone());
     }
-    send_hello();
+
+    let mut writer_handle = {
+        let shared_w = shared.clone();
+        let shared_f = shared.clone();
+        std::thread::Builder::new()
+            .name("phosphor-remote-writer".into())
+            .spawn(move || {
+                bridge_core::run_writer(
+                    stream,
+                    writer_rx,
+                    &shared_w.cancel,
+                    &shared_w.hello_dirty,
+                    || bridge_core::encode_frame(b'H', hello_json().as_bytes()),
+                    Duration::from_secs(2),
+                    || {
+                        bridge_core::encode_frame(
+                            b'K',
+                            format!(r#"{{"ts_ms":{}}}"#, now_ms()).as_bytes(),
+                        )
+                    },
+                    move |e| {
+                        // A dead write IS a dead session: trip FINs the socket,
+                        // the reader wakes with EOF, the watchdog ends the run.
+                        log::warn!("remote writer fatal: {e}");
+                        shared_f.trip();
+                    },
+                )
+            })
+            .ok()
+    };
+    if writer_handle.is_none() {
+        teardown_session(&shared, &mut writer_handle, &out_slot);
+        return SessionEnd::Failed("spawn writer thread".into());
+    }
 
     // Route-change supervisor: reopen the stream when AAudio disconnects it.
     {
@@ -555,20 +658,20 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     l.last_rx_ms.store(monotonic_ms(), Ordering::Relaxed);
     log::info!("remote session up: {host}:{port} (gen {my_gen})");
 
-    // Watchdog: K pings every 2 s; 3 s quiet = stalled; 10 s = dead.
-    let mut last_ping = Instant::now();
+    // Watchdog: K lives in the writer now; this loop only observes. Thresholds
+    // are bridge_core's tested tables (3 s stalled / 10 s dead, monotonic).
     let mut was_streaming = false;
     loop {
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
-            teardown_session(my_gen, &out_slot);
+            teardown_session(&shared, &mut writer_handle, &out_slot);
             return SessionEnd::Quit;
         }
         if saw_v1.load(Ordering::Relaxed) {
-            teardown_session(my_gen, &out_slot);
+            teardown_session(&shared, &mut writer_handle, &out_slot);
             return SessionEnd::V1Relay;
         }
         if reader_done.load(Ordering::Relaxed) {
-            teardown_session(my_gen, &out_slot);
+            teardown_session(&shared, &mut writer_handle, &out_slot);
             // Audit finding 11: a run that reached streaming resets the backoff ladder
             // (report Healthy; the manager still reconnects, just without punishment).
             return if was_streaming {
@@ -577,26 +680,27 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                 SessionEnd::Failed("link closed by peer".into())
             };
         }
-        if last_ping.elapsed() >= Duration::from_secs(2) {
-            send_frame(b'K', format!(r#"{{"ts_ms":{}}}"#, now_ms()).as_bytes());
-            last_ping = Instant::now();
-        }
         let quiet_ms = monotonic_ms().saturating_sub(l.last_rx_ms.load(Ordering::Relaxed));
         let st = l.state.load(Ordering::Relaxed);
         if st == ST_STREAMING {
             was_streaming = true;
         }
-        if quiet_ms > 10_000 {
-            teardown_session(my_gen, &out_slot);
-            return if was_streaming {
-                SessionEnd::Failed("10 s of silence — link presumed dead".into())
-            } else {
-                SessionEnd::Failed("no welcome from the relay".into())
-            };
-        } else if quiet_ms > 3_000 && st == ST_STREAMING {
-            l.state.store(ST_STALLED, Ordering::Relaxed);
-        } else if quiet_ms <= 3_000 && st == ST_STALLED {
-            l.state.store(ST_STREAMING, Ordering::Relaxed);
+        match bridge_core::watchdog_action(quiet_ms, st == ST_STREAMING, st == ST_STALLED) {
+            bridge_core::WatchdogAction::Dead => {
+                teardown_session(&shared, &mut writer_handle, &out_slot);
+                return if was_streaming {
+                    SessionEnd::Failed("10 s of silence — link presumed dead".into())
+                } else {
+                    SessionEnd::Failed("no welcome from the relay".into())
+                };
+            }
+            bridge_core::WatchdogAction::MarkStalled => {
+                l.state.store(ST_STALLED, Ordering::Relaxed);
+            }
+            bridge_core::WatchdogAction::MarkStreaming => {
+                l.state.store(ST_STREAMING, Ordering::Relaxed);
+            }
+            bridge_core::WatchdogAction::Ok => {}
         }
         // Mirror the global mute onto this session's flag (JNI writes the global).
         muted.store(l.muted.load(Ordering::Relaxed), Ordering::Relaxed);
@@ -605,19 +709,28 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 }
 
 fn teardown_session(
-    my_gen: u64,
+    shared: &Arc<SessionShared>,
+    writer_handle: &mut Option<std::thread::JoinHandle<()>>,
     out_slot: &Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>>,
 ) {
     let l = link();
+    // Idempotent, ordered: cancel + FIN first (wakes writer/reader), unpublish
+    // ONLY our own handle (Arc identity — a stale teardown can never unpublish a
+    // successor), then the bounded writer join, then the oboe stream.
+    shared.trip();
     {
-        // Take the socket only if it is still OURS (audit finding 1): a stale
-        // teardown must never shut down a successor session's live link.
-        let mut w = l.writer.lock().unwrap();
-        if matches!(w.as_ref(), Some((g, _)) if *g == my_gen) {
-            if let Some((_, s)) = w.take() {
-                let _ = s.shutdown(std::net::Shutdown::Both);
-            }
+        let mut cur = plock(&l.current);
+        if matches!(cur.as_ref(), Some(c) if Arc::ptr_eq(c, shared)) {
+            *cur = None;
         }
+    }
+    if let Some(h) = writer_handle.take() {
+        bridge_core::bounded_join(
+            h,
+            "phosphor-remote-writer",
+            Duration::from_secs(3),
+            &l.leaked_threads,
+        );
     }
     *out_slot.lock().unwrap() = None; // drops + stops the oboe stream
 }
