@@ -42,6 +42,10 @@ enum class SettingsGlyph {
     Grid,
     Deck,
     Knob,
+    File,
+    Folder,
+    Capture,
+    Mic,
 }
 
 object SettingsGlyphs {
@@ -356,6 +360,97 @@ object SettingsGlyphs {
         }.build()
     }
 
+    // SOURCE picker legends: what the beam can listen to. Same 24-unit hairline law —
+    // enclosures closed, waves and radio arcs open because the run-off is the meaning.
+    val FileGlyph: ImageVector by lazy {
+        builder("File").apply {
+            hairline {
+                // A page with a dog-ear, carrying its own little trace.
+                moveTo(6f, 3f)
+                lineTo(14f, 3f)
+                lineTo(18f, 7f)
+                lineTo(18f, 21f)
+                lineTo(6f, 21f)
+                close()
+                moveTo(14f, 3f)
+                lineTo(14f, 7f)
+                lineTo(18f, 7f)
+                moveTo(8.5f, 14.5f)
+                lineTo(10f, 11.5f)
+                lineTo(12f, 16f)
+                lineTo(14f, 12f)
+                lineTo(15.5f, 14.5f)
+            }
+        }.build()
+    }
+
+    val FolderGlyph: ImageVector by lazy {
+        builder("Folder").apply {
+            hairline {
+                // The queue folder: a tab, a mouth, and the wave waiting inside.
+                moveTo(3f, 6f)
+                lineTo(9f, 6f)
+                lineTo(11f, 8.5f)
+                lineTo(21f, 8.5f)
+                lineTo(21f, 19f)
+                lineTo(3f, 19f)
+                close()
+                moveTo(6.5f, 15f)
+                lineTo(8.5f, 11.5f)
+                lineTo(11f, 16f)
+                lineTo(13.5f, 11.5f)
+                lineTo(15.5f, 15f)
+                lineTo(17.5f, 13f)
+            }
+        }.build()
+    }
+
+    val CaptureGlyph: ImageVector by lazy {
+        builder("Capture").apply {
+            hairline {
+                // Another app's window, radiating what it plays — the arcs stay open.
+                moveTo(4f, 7f)
+                lineTo(13f, 7f)
+                lineTo(13f, 17f)
+                lineTo(4f, 17f)
+                close()
+                moveTo(6f, 14f)
+                lineTo(7.5f, 10.5f)
+                lineTo(9.5f, 14.5f)
+                lineTo(11f, 11.5f)
+                moveTo(15.5f, 10f)
+                lineTo(17f, 12f)
+                lineTo(15.5f, 14f)
+                moveTo(18f, 8f)
+                lineTo(20.5f, 12f)
+                lineTo(18f, 16f)
+            }
+        }.build()
+    }
+
+    val MicGlyph: ImageVector by lazy {
+        builder("Mic").apply {
+            hairline {
+                // The room mic: capsule closed, cage open at the throat, feet planted.
+                moveTo(10f, 4.5f)
+                lineTo(14f, 4.5f)
+                lineTo(14f, 12.5f)
+                lineTo(10f, 12.5f)
+                close()
+                moveTo(7.5f, 10.5f)
+                lineTo(7.5f, 13f)
+                lineTo(9f, 15.5f)
+                lineTo(15f, 15.5f)
+                lineTo(16.5f, 13f)
+                lineTo(16.5f, 10.5f)
+                moveTo(12f, 15.5f)
+                lineTo(12f, 19f)
+                moveTo(9f, 19.5f)
+                lineTo(15f, 19.5f)
+            }
+        }.build()
+    }
+
     fun vector(glyph: SettingsGlyph): ImageVector = when (glyph) {
         SettingsGlyph.Deck -> Deck
         SettingsGlyph.Knob -> Knob
@@ -370,6 +465,10 @@ object SettingsGlyphs {
         SettingsGlyph.About -> About
         SettingsGlyph.Room -> Room
         SettingsGlyph.BeamColor -> BeamColor
+        SettingsGlyph.File -> FileGlyph
+        SettingsGlyph.Folder -> FolderGlyph
+        SettingsGlyph.Capture -> CaptureGlyph
+        SettingsGlyph.Mic -> MicGlyph
     }
 }
 

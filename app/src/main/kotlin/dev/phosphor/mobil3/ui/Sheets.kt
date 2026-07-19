@@ -567,20 +567,37 @@ fun SourceSheet(
             }
         } else {
         SectionHeading("MY LIBRARY", p, Modifier.padding(top = 0.dp))
-        SheetRow("open file…", p, checked = state.sourceLabel == "deck" && state.queueTitles.size <= 1) {
-            actions.openFile(); onDismiss()
-        }
+        SheetRow(
+            "open file…", p,
+            checked = state.sourceLabel == "deck" && state.queueTitles.size <= 1,
+            glyph = SettingsGlyph.File,
+        ) { actions.openFile(); onDismiss() }
         SheetRow(
             "open folder → queue", p,
             checked = state.sourceLabel == "deck" && state.queueTitles.size > 1,
+            glyph = SettingsGlyph.Folder,
         ) { actions.openFolder(); onDismiss() }
         SectionHeading("OTHER APPS", p)
         SheetRow(
             "everything playing", p,
             checked = state.live && state.sourceLabel == "capture",
+            glyph = SettingsGlyph.Capture,
         ) {
             if (actions.captureConsentNeeded()) consentCard = true
             else { actions.startCapture(); onDismiss() }
+        }
+        Row(
+            Modifier.fillMaxWidth().padding(bottom = Dim.gap),
+            horizontalArrangement = Arrangement.spacedBy(Dim.gap),
+            verticalAlignment = Alignment.CenterVertically,
+        ) {
+            Prose(
+                "Android calls this “share your screen” — it means sharing AUDIO with " +
+                    "this app. Nothing recorded, nothing leaves the phone.",
+                p.muted,
+                modifier = Modifier.weight(1f),
+            )
+            FlatKey("manual…", p) { actions.openManual() }
         }
         if (!state.captureMetadataAccess) {
             Row(
@@ -599,9 +616,11 @@ fun SourceSheet(
             }
         }
         SectionHeading("MICROPHONE", p)
-        SheetRow("built-in mic", p, checked = state.sourceLabel == "mic") {
-            actions.startMic(); onDismiss()
-        }
+        SheetRow(
+            "built-in mic", p,
+            checked = state.sourceLabel == "mic",
+            glyph = SettingsGlyph.Mic,
+        ) { actions.startMic(); onDismiss() }
         SectionHeading("REMOTE", p)
         RemoteFlow(state, p, actions, onDismiss)
         Prose(
@@ -1339,7 +1358,7 @@ fun RemoteFlow(
 
     actions.remoteHosts().forEach { (label, hostPort) ->
         val connected = state.remote && state.sourceLabel.contains(label)
-        SheetRow("$label (Tailscale)", p, checked = connected) {
+        SheetRow("$label (Tailscale)", p, checked = connected, glyph = SettingsGlyph.Remote) {
             if (!connected) {
                 actions.startRemoteHost(label, hostPort.first, hostPort.second)
             }

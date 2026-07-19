@@ -145,6 +145,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     }
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
+    var manualFrom by remember { mutableStateOf(Sheet.SETTINGS) } // where MANUAL returns to
     var overflowComposed by remember { mutableStateOf(false) }
     var overflowTargetOpen by remember { mutableStateOf(false) }
     var overflowPendingSheet by remember { mutableStateOf(Sheet.NONE) }
@@ -568,7 +569,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 2: sheets.
             when (sheet) {
-                Sheet.SOURCE -> SourceSheet(state, p, reduced, sheetActions) { sheet = Sheet.NONE }
+                Sheet.SOURCE -> SourceSheet(
+                    state, p, reduced,
+                    sheetActions.withSheetRouting(
+                        openManual = { manualFrom = Sheet.SOURCE; sheet = Sheet.MANUAL },
+                    ),
+                ) { sheet = Sheet.NONE }
                 Sheet.MODE -> ModeSheet(
                     state, p, reduced,
                     onPick = { actions.setMode(it) },
@@ -604,7 +610,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     sheetActions.withSheetRouting(
                         openRoom = { sheet = Sheet.ROOM },
                         openLight = { sheet = Sheet.LIGHT },
-                        openManual = { sheet = Sheet.MANUAL },
+                        openManual = { manualFrom = Sheet.SETTINGS; sheet = Sheet.MANUAL },
                     ),
                     focusValue = focusValue,
                     onFocus = { focusValue = it; actions.setFocus(it) },
@@ -616,7 +622,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.MANUAL -> ManualSheet(
                     p, reduced,
                     onOpenLink = { actions.openLink(it) },
-                ) { sheet = Sheet.SETTINGS }
+                ) { sheet = manualFrom }
                 Sheet.NONE -> {}
             }
             } // inner chrome box (rootHeightPx / chrome-space layout)
@@ -627,8 +633,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
 // Route the settings sheet's room/light/manual links back into the sheet state machine.
 private fun SheetActions.withSheetRouting(
-    openRoom: () -> Unit,
-    openLight: () -> Unit,
+    openRoom: () -> Unit = {},
+    openLight: () -> Unit = {},
     openManual: () -> Unit = {},
 ): SheetActions {
     val base = this

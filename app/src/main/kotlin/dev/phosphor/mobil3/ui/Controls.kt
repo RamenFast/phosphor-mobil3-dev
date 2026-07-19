@@ -286,6 +286,7 @@ fun SheetRow(
     modifier: Modifier = Modifier,
     checked: Boolean = false,
     trailing: String? = null,
+    glyph: SettingsGlyph? = null,
     onClick: () -> Unit,
 ) {
     Box(
@@ -295,11 +296,17 @@ fun SheetRow(
             .border(Dim.hairline, if (checked) p.accent else p.line)
             .padding(Dim.rowPad),
     ) {
-        Mono(
-            (if (checked) "✓ " else "") + label,
-            if (checked) p.accent else p.ink,
-            Type.dataLg,
-        )
+        Row(verticalAlignment = Alignment.CenterVertically) {
+            glyph?.let {
+                SettingsGlyphIcon(it, p, 20.dp)
+                Spacer(Modifier.width(Dim.gap))
+            }
+            Mono(
+                (if (checked) "✓ " else "") + label,
+                if (checked) p.accent else p.ink,
+                Type.dataLg,
+            )
+        }
         trailing?.let {
             Mono(it, p.muted, Type.data, Modifier.align(Alignment.CenterEnd))
         }
