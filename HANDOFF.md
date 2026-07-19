@@ -109,3 +109,34 @@ stopped). His live pinches mid-session are HIS — stop "fixing" his gain.
   streaming) still draws decimated midpoints as a trace — known, mapped, unfixed.
 - Auto-gain constants are desktop-verbatim (0.999 release / 0.92 headroom / 0.05 glide);
   any retune is desktop-first (engine source-of-truth law).
+
+## Later that night — Ben's live batches 1+2 (appended 2026-07-18 ~22:00)
+
+Ben stayed on the line and fed two more batches; ALL shipped (commits 7142242, 4e28d25,
+0e4fdde; installed on the S25; desktop 4.7.2 both machines):
+- **Card chrome approved** → extended: animated centered popout above the play card,
+  swipe-down closes sheets (nested-scroll at top), finger-tracked + flick-aware sheet
+  opening (40% settle / 920dp·s⁻¹), S9 tap/pull dual-affordance menu + new glyph.
+- **Landscape + portrait** with SCOPE ROTATION and UI PLACEMENT locks (honest
+  one-Activity limit in the sheet prose); four-corner inset model.
+- **Bottom-edge arbitration**: bottom-band swipe-up only summons controls — never
+  gain/seek (Ben's live bug).
+- **Grid zooms with gain; gain to ×7** everywhere incl. desktop 4.7.2 remote (auto-gain
+  target stays 6, desktop-verbatim).
+- **Art mystery SOLVED — ops not code**: thinkcenter's relay SERVICE was never restarted
+  onto 2.2.0 (ran the stalled pw-dump loop since 16:18; audio thread fine, M/art
+  starved). LAW: relay-install does NOT restart the local service — always
+  `systemctl --user restart phosphor-relay` and verify the RUNNING version, both
+  machines. Ben's eyes still owe the final art receipt.
+- **LOCAL ANDROID CAPTURE WORKS (Spotify allows capture now — Ben's discovery)** → built
+  capture-source metadata: active-MediaSession title/art/transport while capturing, via
+  a notification-listener gate + honest grant… affordance. VERIFY ON DEVICE: grant flow,
+  metadata display, transport routing, no-permission path.
+- **Persistence audit**: only gap was custom light (colors/cycle) — now persisted.
+- **CODEX IS OUT until Jul 24** (usage limit, died mid-task; Fable finished by hand).
+  Until then: subagent work is Fable/Opus or by hand — plan fleet size accordingly.
+- Icon supports grew + amber band crosses the hero (receipt = launcher eyeball).
+- NEW Ben-verify queue on top of the earlier one: popout/S9 feel per room, finger-track +
+  flick, swipe-down dismiss, rotation matrix (the report's on-device matrix in
+  report-rotation.md), capture metadata flow, art after the thinkcenter restart,
+  grid-zoom feel, ×7 headroom.
