@@ -153,3 +153,18 @@ remote geometry keeps its frame) + FlatKey labels/quick toggles counter-rotate
 (LocalUiUpright). ⚠ VERIFY WITH BEN: rotation quadrant SIGNS (flip = one line in
 MainActivity's sensor or rust rot()); popout drag-close feel; quick-toggle icons in
 amber/void; capture metadata after granting access.
+
+## Pass 5 — the finish (appended ~23:10)
+Rotation matrix COMPLETE (Opus subagent through Claude Code — codex still walled):
+one rotate-layout primitive (Modifier.uprightRotate/UprightCell: swapped-constraint
+measure + bbox-sized cell + centered placeWithLayer — nothing clips, hit-testing intact),
+four-mode routing (free+follow rotates activity · free+UIlocked pins + beam-to-gravity ·
+locked+follow pins + CHROME-to-gravity container · both-locked pins + elements-upright),
+mutually-exclusive quadrants, ±30° cardinal hysteresis. TOP lockstep toggle in quick
+settings (band+HUD as one switch) — RECEIPT toptext-off-receipt.png: pure scope, the ×2
+bug closed. Popout receipt: icons on all rows + quick toggles live + upright rendering.
+Notification access granted (adb allow_listener) + capture transport verified E2E
+(MEDIA_NEXT advanced SoundCloud, mirror followed). BEN VERIFIES BY HAND: the four
+rotation modes physically, chrome-to-gravity hit-testing, insets in rotated chrome
+(honest approximation — top inset not permuted), sensor feel. His HUD was auto — one
+tap on the SETTINGS HUD chip restores the fade (TOP toggle left both on).

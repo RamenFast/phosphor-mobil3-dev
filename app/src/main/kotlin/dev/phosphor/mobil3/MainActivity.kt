@@ -56,10 +56,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var lockedUiLandscape by mutableStateOf(false)
     private var lockedScopeOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lockedUiOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    // Beam-to-gravity (UI PLACEMENT locked): the Activity is pinned; this sensor
-    // rotates the FIGURE and counter-rotates key glyphs to the viewing edge.
+    // Orientation sensor (Ben's asks #2–4): the Activity is pinned in three of the
+    // four lock modes; this sensor publishes the gravity quadrant and ROUTES it —
+    // beam-to-gravity (scope free + UI locked), element-upright (any UI locked), or
+    // whole-chrome-to-gravity (scope locked + UI follow). See routeOrientation.
     private var orientationSensor: OrientationEventListener? = null
-    private var lastUprightQ = 0
+    private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
+    private var lastRoutedQ = -1
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
         prefs().edit().putFloat("gain", gainValue).apply()
@@ -593,7 +596,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         lockedUiOrientation = p.getInt(
             "ui_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
         )
-        if (uiPlacementLockState) ensureOrientationSensor()
+        updateOrientationSensor()
         lockedUiLandscape = p.getBoolean(
             "ui_locked_landscape",
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
@@ -798,6 +801,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putInt("scope_locked_orientation", lockedScopeOrientation)
             .apply()
         applyScopeRotationPreference()
+        // The sensor must run for scope-locked + UI-follow (chrome-to-gravity) too.
+        updateOrientationSensor()
     }
 
     override fun isUiPlacementLocked(): Boolean = uiPlacementLockState
@@ -811,8 +816,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             lockedUiOrientation = exactCurrentOrientation()
         }
         uiPlacementLockState = locked
-        if (locked) ensureOrientationSensor() else dropOrientationSensor()
         applyScopeRotationPreference()
+        updateOrientationSensor()
         prefs().edit()
             .putBoolean("ui_placement_locked", locked)
             .putBoolean("ui_locked_landscape", lockedUiLandscape)
@@ -842,31 +847,66 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    private fun ensureOrientationSensor() {
-        if (orientationSensor != null) return
-        orientationSensor = object : OrientationEventListener(this) {
-            override fun onOrientationChanged(degrees: Int) {
-                if (degrees == ORIENTATION_UNKNOWN || !uiPlacementLockState) return
-                val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
-                val displayQ = display?.rotation ?: Surface.ROTATION_0
-                // CCW quadrants the content still needs beyond the pinned display
-                // rotation to read upright from the current viewing edge.
-                val q = (((4 - deviceQ) % 4) - displayQ + 4) % 4
-                if (q != lastUprightQ) {
-                    lastUprightQ = q
-                    ui.uprightQuadrant = q
-                    if (!scopeRotationLockState) PhosphorNative.setViewRotation(q)
-                }
+    // Runs whenever (scopeRotationLocked || uiPlacementLocked). A single sensor; the
+    // per-mode routing lives in routeOrientation.
+    private fun updateOrientationSensor() {
+        val needed = scopeRotationLockState || uiPlacementLockState
+        if (needed) {
+            if (orientationSensor == null) {
+                orientationSensor = object : OrientationEventListener(this) {
+                    override fun onOrientationChanged(degrees: Int) {
+                        if (degrees == ORIENTATION_UNKNOWN) return
+                        // Hysteresis: only accept readings solidly within a cardinal
+                        // window (±30°) — a near-flat or diagonal phone keeps the last
+                        // orientation instead of flickering quadrants on the desk.
+                        val toCardinal = ((degrees + 45) / 90) % 4 * 90
+                        val delta = ((degrees - toCardinal + 540) % 360) - 180
+                        if (delta !in -30..30) return
+                        lastSensorDeg = degrees
+                        routeOrientation()
+                    }
+                }.also { if (it.canDetectOrientation()) it.enable() }
             }
-        }.also { if (it.canDetectOrientation()) it.enable() }
+            // A mode toggle re-routes the last known gravity now: the sensor only fires
+            // on CHANGE, so a stationary phone would otherwise keep the prior mode's fields.
+            routeOrientation(force = true)
+        } else {
+            orientationSensor?.disable()
+            orientationSensor = null
+            lastRoutedQ = -1
+            ui.uprightQuadrant = 0
+            ui.chromeQuadrant = 0
+            PhosphorNative.setViewRotation(0)
+        }
     }
 
-    private fun dropOrientationSensor() {
-        orientationSensor?.disable()
-        orientationSensor = null
-        lastUprightQ = 0
-        ui.uprightQuadrant = 0
-        PhosphorNative.setViewRotation(0)
+    // The single routing point — the asks-#4 matrix. q = CCW quadrants from the
+    // pinned display to gravity-up (same figure the beam-rotation verb consumes).
+    private fun routeOrientation(force: Boolean = false) {
+        if (!(scopeRotationLockState || uiPlacementLockState)) return
+        val degrees = lastSensorDeg
+        if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN) return
+        val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
+        val displayQ = display?.rotation ?: Surface.ROTATION_0
+        val q = (((4 - deviceQ) % 4) - displayQ + 4) % 4
+        if (q == lastRoutedQ && !force) return
+        lastRoutedQ = q
+        when {
+            uiPlacementLockState -> {
+                // Element-upright in BOTH UI-locked modes. Beam-to-gravity only when
+                // the scope is free; when the scope is also locked the beam stays put.
+                ui.uprightQuadrant = q
+                ui.chromeQuadrant = 0
+                PhosphorNative.setViewRotation(if (scopeRotationLockState) 0 else q)
+            }
+            scopeRotationLockState -> {
+                // Scope locked + UI follow: the whole chrome rotates to gravity; the
+                // scope stays pinned and upright (no beam rotation to gravity here).
+                ui.chromeQuadrant = q
+                ui.uprightQuadrant = 0
+                PhosphorNative.setViewRotation(0)
+            }
+        }
     }
 
     private fun exactCurrentOrientation(): Int {

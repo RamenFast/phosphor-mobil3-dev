@@ -300,7 +300,7 @@ private fun OverflowHandleKey(
             .padding(horizontal = 10.dp),
         contentAlignment = Alignment.Center,
     ) {
-        OverflowHandleGlyph(p, active || pressed)
+        UprightCell { OverflowHandleGlyph(p, active || pressed) }
         if (style.designators) {
             Mono(
                 "S9", p.muted, Type.dataXs,
@@ -405,9 +405,14 @@ fun OverflowPopout(
                     .padding(horizontal = 10.dp, vertical = 11.dp),
                 verticalAlignment = Alignment.CenterVertically,
             ) {
-                SettingsGlyphIcon(glyph, p, 16.dp)
-                Spacer(Modifier.width(10.dp))
-                Mono(label, p.ink, Type.data)
+                // The icon+label pair uprights as one unit to the viewing edge.
+                UprightCell {
+                    Row(verticalAlignment = Alignment.CenterVertically) {
+                        SettingsGlyphIcon(glyph, p, 16.dp)
+                        Spacer(Modifier.width(10.dp))
+                        Mono(label, p.ink, Type.data)
+                    }
+                }
             }
         }
         // Quick settings (Ben's ask): the three live toggles, wearing the same
@@ -422,10 +427,12 @@ fun OverflowPopout(
                 when (state.fpsValue) { 0 -> "120"; -1 -> "unc"; else -> "${state.fpsValue}" },
                 active = true, p = p, onTap = onFps,
             )
+            // ONE switch for the whole top block (Ben ×2: "not all of it turns off") —
+            // drives BAND and HUD in lockstep; SETTINGS keeps the fine-grained pair.
             QuickToggle(
                 SettingsGlyph.Hud,
-                when (state.hudMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
-                active = state.hudMode != 2, p = p, onTap = onHud,
+                when (state.bandMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
+                active = state.bandMode != 2, p = p, onTap = onHud,
             )
             QuickToggle(
                 SettingsGlyph.Grid,
@@ -451,14 +458,13 @@ private fun QuickToggle(
             .padding(horizontal = 10.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
-        val upright = LocalUiUpright.current
-        Column(
-            Modifier.graphicsLayer { rotationZ = upright * -90f },
-            horizontalAlignment = Alignment.CenterHorizontally,
-        ) {
-            SettingsGlyphIcon(glyph, p, 18.dp)
-            Spacer(Modifier.height(3.dp))
-            Mono(value, if (active) p.accent else p.muted, Type.dataXs)
+        // The whole glyph+state cell rotates as a unit through the correct primitive.
+        UprightCell {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                SettingsGlyphIcon(glyph, p, 18.dp)
+                Spacer(Modifier.height(3.dp))
+                Mono(value, if (active) p.accent else p.muted, Type.dataXs)
+            }
         }
     }
 }

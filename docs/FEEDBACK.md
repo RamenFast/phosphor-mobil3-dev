@@ -18,12 +18,12 @@ Maintained per the `mobile-feedback` repo skill; update IN THE SAME PASS as the 
 | 07-18 | 1 | Popout: animate + center above play card; can't slide it down (→ fixed); "looks good though~!" | shipped | animated/centered/measured anchor + drag-down close (pass 3) |
 | 07-18 | 1 | Quick settings in popout: FPS/nerd/GRID with matching icons | verify | shipped pass 3 (3 new glyphs); Ben eyeball pending |
 | 07-18 | 1 | Dedicated SET key on console | retracted | Ben: "nvm, not enough room when media keys show" |
-| 07-18 | 1 | Rotation: landscape+portrait, lock scope rotation, lock UI placement, icons face the viewer | verify | v1 profile lock "reflows anyway" (Ben) → v2 pinned Activity + beam-to-gravity + counter-rotated key glyphs; quadrant signs await receipt |
+| 07-18 | 2 | Rotation: locks + icons face the viewer (×2: quick-settings mis-rotation, UI-locked position + upright elements, scope-locked+UI-follow missing) | verify | v3 (Opus agent): proper rotate-layout primitive (bbox swap, no clipping — receipt in popout screenshot), full 4-mode matrix incl. chrome-to-gravity for scope-locked+follow, sensor hysteresis ±30°. Physical-rotation receipts = Ben |
 | 07-18 | 1 | Storage: 514MB — keep settings, auto-clean the rest, check leaks | shipped | staged-audio leak (441MB) found; self-cleaning staging; verified live 431MB→347KB |
 | 07-18 | 2 | Notifications allowed but capture metadata dark | shipped | ×1 two-switch confusion, deep-link added · ×2 access was still ungranted (repro proved it); granted via adb 22:36; VERIFIED: mirror carries the captured app's live track name |
 | 07-18 | 1 | Auto-gain should lock the viewport w/ finger message | shipped | "auto · view locked" ribbon; settings GAIN rule = manual takeover |
 | 07-18 | 1 | Lock a particular zoom level | verify | VIEW LOCK chip (SIGNAL section), persists, "view locked" ribbon (pass 4) |
-| 07-18 | 1 | Not all top text disappears when set to auto | open | code gating reads correct (band auto hides all); needs empirical repro — which chip was auto? band vs HUD split may be the confusion; candidate: unify or clarify |
+| 07-18 | 2 | Not all top text disappears when set to auto/off | shipped | repro'd on Ben's phone: HUD·auto + BAND·on — two chips, one mental model. Quick-settings toggle is now TOP (drives band+HUD lockstep); receipt toptext-off-receipt.png = pure scope. Fine-grained pair stays in SETTINGS |
 | 07-18 | 1 | LOCAL CAPTURE works (Spotify)! — wants track name/art there | shipped | VERIFIED live on SoundCloud: session face mirrors the captured track (still→growing followed a skip) |
 | 07-18 | 1 | Nerd toggle + fade "back" | shipped | never missing — HUD on/auto/off chip in PERFORMANCE (auto = fade); also now in quick settings |
 | 07-18 | 1 | Save user settings between test cycles | shipped | snapshot/restore protocol + memory; custom-light persistence gap also closed |

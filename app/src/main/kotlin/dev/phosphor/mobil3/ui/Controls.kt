@@ -25,7 +25,6 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
-import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -139,7 +138,8 @@ fun StoneKey(
         contentAlignment = Alignment.Center,
     ) {
         Box(Modifier.offset(x = sink, y = sink)) {
-            Mono(label, if (void && pressed) p.accent else p.ink, Type.dataXl)
+            // The transport glyph (▶ / ❚❚) uprights to the viewing edge.
+            UprightCell { Mono(label, if (void && pressed) p.accent else p.ink, Type.dataXl) }
         }
         // Silk-screened part number (`S1` — the main switch), bench rooms only.
         if (style.designators && designator != null) {
@@ -262,12 +262,11 @@ fun FlatKey(
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        // UI-locked mode: the label stays upright toward the viewing edge.
-        val upright = LocalUiUpright.current
-        Mono(
-            label, if (active || pressed) p.accent else p.ink2, Type.data,
-            Modifier.graphicsLayer { rotationZ = upright * -90f },
-        )
+        // UI-locked mode: the label stays upright toward the viewing edge, through
+        // the one correct primitive (re-measures, never clips) — not a naive spin.
+        UprightCell {
+            Mono(label, if (active || pressed) p.accent else p.ink2, Type.data)
+        }
         // Service-bench designator (`V2` for the tube, `J1` for the input jack):
         // a silk-screened part number in the corner, Annotated rooms only.
         if (style.designators && designator != null) {

@@ -48,6 +48,7 @@ class ScopeUiState {
     var bandMode by mutableStateOf(0)  // status band: 0 on · 1 auto (console timer) · 2 off
     var fullscreen by mutableStateOf(true) // immersive (bars hidden); off shows system bars
     var uprightQuadrant by mutableStateOf(0) // UI-locked: counter-rotate icons to gravity
+    var chromeQuadrant by mutableStateOf(0)  // scope-locked + UI-follow: whole chrome rotates to gravity
     var viewLock by mutableStateOf(false) // pin the current zoom: gain gestures inform only
     var latencyMode by mutableStateOf(2) // remote audio: 0 tight · 1 balanced · 2 safe
     var networkMode by mutableStateOf(0) // remote route: 0 auto · 1 Wi-Fi · 2 mobile

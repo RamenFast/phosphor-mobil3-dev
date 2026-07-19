@@ -121,8 +121,21 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val density = LocalDensity.current
     val actualLandscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val chromeLandscape =
-        if (actions.isUiPlacementLocked()) actions.lockedUiLandscape() else actualLandscape
+    val scopeLocked = actions.isScopeRotationLocked()
+    val uiLocked = actions.isUiPlacementLocked()
+    // Ben's ask #3 — NEW mode (scope locked + UI follow): the Activity is pinned
+    // (scope must not rotate) but the WHOLE chrome overlay rotates to gravity via a
+    // container-scale uprightRotate. In every other mode the chrome does not rotate.
+    val chromeQuadrant = if (scopeLocked && !uiLocked) state.chromeQuadrant else 0
+    // The chrome's layout profile follows the EFFECTIVE chrome orientation: activity
+    // orientation ⊕ container quadrant. An odd chrome rotation flips portrait↔landscape,
+    // so a landscape-held (but portrait-pinned) phone gets the landscape chrome inside
+    // the rotated container. UI-locked freezes the profile at its captured orientation.
+    val chromeLandscape = when {
+        uiLocked -> actions.lockedUiLandscape()
+        chromeQuadrant % 2 != 0 -> !actualLandscape
+        else -> actualLandscape
+    }
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     var overflowComposed by remember { mutableStateOf(false) }
@@ -333,17 +346,25 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         LocalChromeLandscape provides chromeLandscape,
         LocalUiUpright provides state.uprightQuadrant,
     ) {
-        Box(
-            Modifier
-                .fillMaxSize()
-                .onSizeChanged { rootHeightPx = it.height }
-        ) {
-            // Layer 0: the scope, full-bleed under everything.
+        Box(Modifier.fillMaxSize()) {
+            // Layer 0: the scope, full-bleed under everything. NEVER rotated by the
+            // chrome container — the SurfaceView owns its own beam-rotation verb.
             AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
 
             // PiP is pure scope — zero chrome (spec §3).
             if (state.pip) return@Box
 
+          // The chrome overlay — band, console, popout, sheets, ribbon, stage — as one
+          // unit. In the NEW mode it rotates to gravity around the pinned scope; the
+          // custom layout swaps constraints on odd quadrants so the chrome lays out in
+          // the transposed frame and pointer input stays correctly transformed. rootHeightPx
+          // is measured INSIDE the container, so the settings pull travels in chrome space.
+          Box(Modifier.fillMaxSize().uprightRotate(chromeQuadrant)) {
+            Box(
+                Modifier
+                    .fillMaxSize()
+                    .onSizeChanged { rootHeightPx = it.height }
+            ) {
             // Layer 0.5: the stage — gesture arbiter (drags/pinches) + tap layer.
             // Sits BELOW the console so console controls win hit-testing in their bounds.
             if (sheet == Sheet.NONE || bottomEdgePullActive) {
@@ -518,7 +539,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                             val next = order[(order.indexOf(state.fpsValue) + 1) % order.size]
                             sheetActions.setFps(next)
                         },
-                        onHud = { sheetActions.setHudMode((state.hudMode + 1) % 3) },
+                        onHud = {
+                            // TOP lockstep: band + HUD move together from the quick toggle.
+                            val next = (state.bandMode + 1) % 3
+                            state.bandMode = next
+                            sheetActions.setHudMode(next)
+                        },
                         onGrid = { sheetActions.setGrid(!state.grid) },
                         onRequestClose = { closeOverflow(Sheet.NONE) },
                     )
@@ -568,7 +594,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 }
                 Sheet.NONE -> {}
             }
-        }
+            } // inner chrome box (rootHeightPx / chrome-space layout)
+          } // chrome container — rotates as a unit in the NEW mode
+        } // outer box — holds the never-rotated scope SurfaceView
     }
 }
 

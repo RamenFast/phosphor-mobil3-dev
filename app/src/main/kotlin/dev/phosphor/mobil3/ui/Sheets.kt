@@ -358,12 +358,15 @@ fun SheetHost(
                             },
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Row(verticalAlignment = Alignment.CenterVertically) {
-                            glyph?.let {
-                                SettingsGlyphIcon(it, p, 15.dp)
-                                Spacer(Modifier.width(8.dp))
+                        // Header glyph+title upright to the viewing edge (UI-locked).
+                        UprightCell {
+                            Row(verticalAlignment = Alignment.CenterVertically) {
+                                glyph?.let {
+                                    SettingsGlyphIcon(it, p, 15.dp)
+                                    Spacer(Modifier.width(8.dp))
+                                }
+                                Mono(title, p.ink2, Type.data)
                             }
-                            Mono(title, p.ink2, Type.data)
                         }
                         Mono(
                             "✕", p.ink2, Type.dataXl,
