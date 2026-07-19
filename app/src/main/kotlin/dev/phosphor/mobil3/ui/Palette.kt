@@ -42,6 +42,35 @@ data class Palette(
             )
         )
     }
+
+    // The 240 ms whole-chrome crossfade (port of theme.rs lerp_to): every color
+    // slot lerps — compose's Color lerp is RGBA-aware, so the alpha-bearing
+    // line/lineStrong tokens interpolate correctly — while identity fields come
+    // from the DESTINATION room.
+    fun lerpTo(other: Palette, t: Float): Palette {
+        fun l(a: Color, b: Color) = androidx.compose.ui.graphics.lerp(a, b, t)
+        return other.copy(
+            plane = l(plane, other.plane),
+            surface = l(surface, other.surface),
+            surface2 = l(surface2, other.surface2),
+            ink = l(ink, other.ink),
+            ink2 = l(ink2, other.ink2),
+            muted = l(muted, other.muted),
+            line = l(line, other.line),
+            lineStrong = l(lineStrong, other.lineStrong),
+            accent = l(accent, other.accent),
+            onAccent = l(onAccent, other.onAccent),
+            stone = l(stone, other.stone),
+            stoneHi = l(stoneHi, other.stoneHi),
+            stoneLo = l(stoneLo, other.stoneLo),
+        )
+    }
+}
+
+/** theme.rs smoothstep — the crossfade's ease. */
+fun smoothstep(t: Float): Float {
+    val x = t.coerceIn(0f, 1f)
+    return x * x * (3f - 2f * x)
 }
 
 private fun c(hex: Long) = Color(0xFF000000 or hex)

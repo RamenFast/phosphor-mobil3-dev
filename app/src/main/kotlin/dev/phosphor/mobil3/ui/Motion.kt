@@ -20,6 +20,29 @@ object Motion {
 
     val decelerate: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
+
+    /** Departure curve — a dismissed sheet ACCELERATES away (motion shows intent). */
+    val accelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+}
+
+/** Quantized step easing — the bench's rotary-switch feel. Ends exactly at 1. */
+fun stepEasing(steps: Int = 5): Easing = Easing { t ->
+    (kotlin.math.floor(t * steps) / (steps - 1f)).coerceIn(0f, 1f)
+}
+
+/** motionSpec that also honors the room's MotionFeel (duration scale + curve family). */
+fun <T> styleSpec(
+    reduced: Boolean,
+    style: RoomStyle,
+    durationMs: Int,
+    easing: Easing = Motion.standard,
+): FiniteAnimationSpec<T> {
+    if (reduced) return snap()
+    val ms = (durationMs * style.durationScale).toInt().coerceAtLeast(1)
+    return when (style.motion) {
+        MotionFeel.Detented -> tween(ms, easing = stepEasing())
+        else -> tween(ms, easing = easing)
+    }
 }
 
 // True when Android's remove-animations accessibility setting is on.

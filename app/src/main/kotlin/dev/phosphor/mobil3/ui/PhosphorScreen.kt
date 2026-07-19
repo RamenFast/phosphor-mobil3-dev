@@ -3,6 +3,8 @@ package dev.phosphor.mobil3.ui
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -14,6 +16,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.LaunchedEffect
+import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
@@ -68,7 +71,29 @@ interface ScopeActions {
 
 @Composable
 fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean) {
-    val p = state.room
+    // ── The 240 ms whole-chrome crossfade (spec §2.6): switching rooms lerps
+    // every palette slot from what was ON SCREEN to the destination; the
+    // discrete RoomStyle flips at the midpoint. Beam-breathing updates (same
+    // room id) pass straight through un-animated.
+    val target = state.room
+    var fromRoom by remember { mutableStateOf(target) }
+    var lastShown by remember { mutableStateOf(target) }
+    val fade = remember { Animatable(1f) }
+    LaunchedEffect(target.id) {
+        if (lastShown.id != target.id) {
+            fromRoom = lastShown
+            if (reduced) {
+                fade.snapTo(1f)
+            } else {
+                fade.snapTo(0f)
+                fade.animateTo(1f, tween(Motion.room, easing = LinearEasing))
+            }
+        }
+    }
+    val t = fade.value
+    val p = if (t >= 1f) target else fromRoom.lerpTo(target, smoothstep(t))
+    SideEffect { lastShown = p }
+    val style = (if (t >= 0.5f) target else fromRoom).style
     val view = LocalView.current
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
@@ -117,7 +142,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         }
     }
 
-    CompositionLocalProvider(LocalReducedMotion provides reduced) {
+    CompositionLocalProvider(
+        LocalReducedMotion provides reduced,
+        LocalRoomStyle provides style,
+    ) {
         Box(Modifier.fillMaxSize()) {
             // Layer 0: the scope, full-bleed under everything.
             AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
@@ -165,7 +193,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             GestureRibbon(ribbon, p)
 
             // Layer 1a: read-only status band.
-            StatusBand(state, p, reduced)
+            // Band visibility (Ben's ask): on = always · auto = rides the
+            // console's timer · off = pure scope. Default on.
+            if (state.bandMode == 0 || (state.bandMode == 1 && consoleVisible)) {
+                StatusBand(state, p, reduced)
+            }
 
             // Layer 1b: console strip, auto-hiding, with the settle-down exit.
             AnimatedVisibility(

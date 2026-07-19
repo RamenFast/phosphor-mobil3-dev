@@ -80,6 +80,9 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean) {
             if (state.nerdHud && state.hudLine.isNotBlank()) {
                 Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
             }
+            if (state.nerdHud && state.hudLine2.isNotBlank()) {
+                Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
+            }
         }
         val gainTag = "×" + String.format("%.2f", state.gain) + if (state.autoGain) "·a" else ""
         Mono("${state.modeTag} · $gainTag", p.ink2.copy(alpha = 0.70f), Type.dataSm)

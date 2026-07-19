@@ -50,19 +50,22 @@ fun StoneKey(
 ) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
-    // The Void soul (AMOLED): no stone exists on a panel that is pure light — importance
-    // is an engraved double-hairline instead of depth, and presses invert to accent.
-    val void = p.id == "amoled"
+    // Character comes from the room's RoomStyle (the framework absorbed the old
+    // id check). Engraved (the Void): no stone exists on a panel that is pure
+    // light — importance is an engraved double-hairline, presses invert to
+    // accent. Annotated/Glass refine atop the carved base in their own souls.
+    val style = LocalRoomStyle.current
+    val void = style.character == ChromeCharacter.Engraved
     val face by animateColorAsState(
         when {
             void -> if (pressed) p.accent.copy(alpha = 0.18f) else Color.Transparent
             pressed -> p.stoneLo
             else -> p.stone
         },
-        motionSpec(reduced, if (void) Motion.press / 2 else Motion.press), label = "face",
+        styleSpec(reduced, style, Motion.press), label = "face",
     )
     val sink by animateDpAsState(
-        if (pressed && !void) 1.dp else 0.dp, motionSpec(reduced, Motion.press), label = "sink"
+        if (pressed && !void) 1.dp else 0.dp, styleSpec(reduced, style, Motion.press), label = "sink"
     )
     val hi = if (pressed) p.stoneLo else p.stoneHi
     val lo = if (pressed) p.stoneHi else p.stoneLo
@@ -126,14 +129,15 @@ fun StoneToggle(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val down = pressed || engaged
-    val void = p.id == "amoled"
+    val style = LocalRoomStyle.current
+    val void = style.character == ChromeCharacter.Engraved
     val face by animateColorAsState(
         when {
             void -> if (down) p.accent.copy(alpha = 0.14f) else Color.Transparent
             down -> p.stoneLo
             else -> p.stone
         },
-        motionSpec(reduced, Motion.press), label = "face",
+        styleSpec(reduced, style, Motion.press), label = "face",
     )
     val hi = if (down) p.stoneLo else p.stoneHi
     val lo = if (down) p.stoneHi else p.stoneLo
@@ -186,14 +190,19 @@ fun FlatKey(
     active: Boolean = false,
     onClick: () -> Unit,
 ) {
+    // Instant press feedback (the responsiveness pass): tint + accent rim on
+    // finger-down, zero animation delay — flat keys answer immediately.
+    val interaction = remember { MutableInteractionSource() }
+    val pressed by interaction.collectIsPressedAsState()
     Box(
         modifier
             .height(Dim.flatKey)
-            .border(Dim.hairline, if (active) p.accent else p.line)
-            .clickable(onClick = onClick)
+            .background(if (pressed) p.accent.copy(alpha = 0.10f) else Color.Transparent)
+            .border(Dim.hairline, if (active || pressed) p.accent else p.line)
+            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
-    ) { Mono(label, if (active) p.accent else p.ink2, Type.data) }
+    ) { Mono(label, if (active || pressed) p.accent else p.ink2, Type.data) }
 }
 
 @Composable

@@ -39,6 +39,8 @@ class ScopeUiState {
     var noSignal by mutableStateOf(false) // resting beam is up on an active source
     var nerdHud by mutableStateOf(false)
     var hudLine by mutableStateOf("")
+    var hudLine2 by mutableStateOf("") // bridge health (remote sessions only)
+    var bandMode by mutableStateOf(0)  // status band: 0 on · 1 auto (console timer) · 2 off
     var pip by mutableStateOf(false)
 
     // Custom light (LIGHT sheet): 0 slots = presets active.

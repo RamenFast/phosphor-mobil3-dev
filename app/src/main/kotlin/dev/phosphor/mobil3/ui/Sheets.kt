@@ -1,6 +1,8 @@
 package dev.phosphor.mobil3.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
+import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideInVertically
@@ -61,19 +63,35 @@ fun SheetHost(
     body: @Composable () -> Unit,
 ) {
     var dragPx by remember { mutableFloatStateOf(0f) }
+    val style = LocalRoomStyle.current
+    // Expressive dismiss (Ben's ask): the old `visible = true` meant the exit
+    // could NEVER play — dismissal was an instant removal. Now the sheet owns a
+    // real open/close state: ✕/scrim/drag/Back play the departure (accelerating
+    // slide DOWN + fade — the motion says where it went) and the composition
+    // leaves only after the choreography finishes.
+    val openState = remember { MutableTransitionState(false).apply { targetState = true } }
+    val dismiss = {
+        if (openState.targetState) openState.targetState = false
+    }
+    LaunchedEffect(openState.targetState, openState.isIdle) {
+        if (!openState.targetState && openState.isIdle) onDismiss()
+    }
+    BackHandler { dismiss() }
     Box(
         Modifier
             .fillMaxSize()
             .background(Color.Black.copy(alpha = Dim.scrimAlpha))
-            .pointerInput(Unit) { detectTapGestures(onTap = { onDismiss() }) },
+            .pointerInput(Unit) { detectTapGestures(onTap = { dismiss() }) },
         contentAlignment = Alignment.BottomCenter,
     ) {
         AnimatedVisibility(
-            visible = true,
+            visibleState = openState,
             enter = if (reduced) fadeIn() else
-                slideInVertically(motionSpec(false, Motion.sheet, Motion.decelerate)) { it / 3 } +
-                    fadeIn(motionSpec(false, Motion.sheet)),
-            exit = fadeOut(),
+                slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
+                    fadeIn(styleSpec(false, style, Motion.sheet)),
+            exit = if (reduced) fadeOut() else
+                slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
+                    fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate)),
         ) {
             Column(
                 Modifier
@@ -88,7 +106,7 @@ fun SheetHost(
                     .pointerInput(Unit) {
                         detectVerticalDragGestures(
                             onDragEnd = {
-                                if (dragPx > 140f) onDismiss()
+                                if (dragPx > 140f) dismiss()
                                 dragPx = 0f
                             },
                             onDragCancel = { dragPx = 0f },
@@ -102,7 +120,7 @@ fun SheetHost(
                     Mono(title, p.ink2, Type.data)
                     Mono(
                         "✕", p.ink2, Type.dataXl,
-                        Modifier.clickable(onClick = onDismiss).padding(horizontal = 6.dp),
+                        Modifier.clickable(onClick = dismiss).padding(horizontal = 6.dp),
                     )
                 }
                 Spacer(Modifier.height(Dim.gapLg))
@@ -400,7 +418,16 @@ fun SettingsSheet(
                         active = state.nerdHud, p = p, small = true,
                     ) { state.nerdHud = !state.nerdHud }
                 }
-                Spacer(Modifier.weight(2f))
+                Box(Modifier.weight(1f)) {
+                    // Status band (Ben's ask): always · rides the console timer · off.
+                    ChipCell(
+                        "BAND · " + when (state.bandMode) {
+                            1 -> "auto"; 2 -> "off"; else -> "on"
+                        },
+                        active = state.bandMode == 0, p = p, small = true,
+                    ) { state.bandMode = (state.bandMode + 1) % 3 }
+                }
+                Spacer(Modifier.weight(1f))
             }
 
             SectionHeading("ROOM & LIGHT", p)

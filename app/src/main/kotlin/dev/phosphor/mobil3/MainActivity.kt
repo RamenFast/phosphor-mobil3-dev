@@ -18,6 +18,7 @@ import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
 import androidx.core.content.ContextCompat
+import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
@@ -121,7 +122,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
-        WindowInsetsControllerCompat(window, window.decorView).isAppearanceLightStatusBars = false
+        // Fullscreen by default (Ben's ask): the scope owns the whole panel;
+        // system bars return transiently on an edge swipe.
+        WindowInsetsControllerCompat(window, window.decorView).apply {
+            isAppearanceLightStatusBars = false
+            hide(WindowInsetsCompat.Type.systemBars())
+            systemBarsBehavior =
+                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+        }
 
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
@@ -230,9 +238,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 val stats = runCatching {
                     org.json.JSONObject(PhosphorNative.scopeStats())
                 }.getOrNull()
-                val rx = if (ui.remote) runCatching {
-                    org.json.JSONObject(PhosphorNative.remoteStatus()).optLong("rx_bytes")
-                }.getOrNull() ?: 0L else 0L
+                val rs = if (ui.remote) runCatching {
+                    org.json.JSONObject(PhosphorNative.remoteStatus())
+                }.getOrNull() else null
+                val rx = rs?.optLong("rx_bytes") ?: 0L
                 val mbps = if (lastRxBytes in 1 until rx) {
                     (rx - lastRxBytes) * 8f * 2f / 1_000_000f // 500 ms tick → per-second
                 } else 0f
@@ -242,6 +251,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     append(" · ${stats?.optInt("segs") ?: 0} segs")
                     if (ui.remote) append(" · %.1f Mb/s".format(mbps))
                 }
+                // Bridge health (the hardening made visible): live buffer depth,
+                // catch-up skips, channel drops, and the leak counter that must
+                // stay zero. All real numbers from the session's atomics.
+                ui.hudLine2 = if (rs != null) buildString {
+                    append("bridge · buf ${rs.optInt("audio_buf_ms")} ms")
+                    append(" · skip ${rs.optInt("audio_skips")}")
+                    val skipMs = rs.optInt("audio_skip_ms")
+                    if (skipMs > 0) append(" (${skipMs} ms)")
+                    append(" · drop ${rs.optInt("a_drops")}")
+                    val leaked = rs.optInt("leaked_threads")
+                    if (leaked > 0) append(" · LEAK $leaked")
+                } else ""
             }
             // accent_follows_beam rooms breathe with the live beam (desktop law: 82%
             // toward the beam hue). Recomputed at 2 Hz — gentle, not flickery.
@@ -413,6 +434,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putFloat("focus", focusPref)
             .putString("room", ui.room.id)
             .putBoolean("nerd_hud", ui.nerdHud)
+            .putInt("band_mode", ui.bandMode)
             .apply()
     }
 
@@ -430,6 +452,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
         focusPref = p.getFloat("focus", 0.3f)
         ui.nerdHud = p.getBoolean("nerd_hud", false)
+        ui.bandMode = p.getInt("band_mode", 0)
         dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
             .let { baseRoom = it; ui.room = it }
     }
