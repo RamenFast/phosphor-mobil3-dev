@@ -8,6 +8,10 @@ import android.content.IntentFilter
 import android.media.AudioAttributes
 import android.media.AudioFocusRequest
 import android.media.AudioManager
+import android.net.ConnectivityManager
+import android.net.Network
+import android.net.NetworkCapabilities
+import android.net.NetworkRequest
 import android.os.Handler
 import androidx.media3.common.Player
 import androidx.media3.session.MediaSession
@@ -28,7 +32,13 @@ class PlaybackService : MediaSessionService() {
     private var focusRequest: AudioFocusRequest? = null
     private var resumeOnFocusGain = false
     private lateinit var main: Handler
+    private lateinit var connectivityManager: ConnectivityManager
     private var remotePolling = false
+    private data class RemoteEndpoint(val host: String, val port: Int, val label: String)
+    private var remoteEndpoint: RemoteEndpoint? = null
+    private var remoteNetworkCallback: ConnectivityManager.NetworkCallback? = null
+    private var boundNetwork: Network? = null
+    private var remoteGainApplied = false
 
     private val activePlayer: Player get() = session?.player ?: localPlayer
 
@@ -70,8 +80,11 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         main = Handler(mainLooper)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
+        connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
         localPlayer = PhosphorPlayer(mainLooper)
         remotePlayer = RemotePlayer(mainLooper)
+        localPlayer.onSwitchTrack = ::stageAndOpen
+        remotePlayer.onStopRequested = ::stopRemote
         localPlayer.addListener(focusOnPlay)
         remotePlayer.addListener(focusOnPlay)
         val sessionActivity = PendingIntent.getActivity(
@@ -117,19 +130,23 @@ class PlaybackService : MediaSessionService() {
                 stopRemote()
                 return START_NOT_STICKY
             }
+            ACTION_REMOTE_POLICY_CHANGED -> {
+                remoteEndpoint?.let { configureRemoteNetwork(it) }
+                return START_NOT_STICKY
+            }
         }
         intent?.getStringExtra(EXTRA_OPEN)?.let { path ->
-            // Loading a local file takes the deck back (stops remote first, the law).
-            if (session?.player === remotePlayer) stopRemote()
+            // Clear the local face before taking the session back; otherwise its previous
+            // track can flash between the remote reset and this new file opening.
             localPlayer.setQueue(
                 listOf(PhosphorPlayer.QueueEntry(path, path.substringAfterLast('/'))), 0
             )
             queuePaths = mutableListOf(path)
             queueUris = mutableListOf(null)
+            if (session?.player === remotePlayer) stopRemote()
             stageAndOpen(0)
         }
         if (intent?.action == ACTION_OPEN_QUEUE) {
-            if (session?.player === remotePlayer) stopRemote()
             val uris = intent.getStringArrayListExtra(EXTRA_QUEUE_URIS) ?: arrayListOf()
             val titles = intent.getStringArrayListExtra(EXTRA_QUEUE_TITLES) ?: arrayListOf()
             val start = intent.getIntExtra(EXTRA_QUEUE_START, 0)
@@ -141,6 +158,7 @@ class PlaybackService : MediaSessionService() {
                 },
                 start,
             )
+            if (session?.player === remotePlayer) stopRemote()
             stageAndOpen(start)
         }
         return super.onStartCommand(intent, flags, startId)
@@ -212,32 +230,137 @@ class PlaybackService : MediaSessionService() {
         switchTo(remotePlayer)
         remotePlayer.onConnecting(label)
         requestFocus()
-        // v2 connect is non-blocking: rust owns link mechanics (timeout, watchdog,
-        // reconnect backoff); this service owns policy via the status pump below.
-        if (!PhosphorNative.remoteConnect(host, port, true, false)) {
+        val endpoint = RemoteEndpoint(host, port, label)
+        remoteEndpoint = endpoint
+        configureRemoteNetwork(endpoint)
+    }
+
+    private fun stopRemote() {
+        remotePolling = false
+        remoteEndpoint = null
+        PhosphorNative.remoteDisconnect()
+        clearRemoteNetwork()
+        remotePlayer.reset()
+        switchTo(localPlayer)
+    }
+
+    private fun prefs() = getSharedPreferences("phosphor.prefs", MODE_PRIVATE)
+
+    /**
+     * Rust owns the bridge TcpStream, so Android cannot bind that socket directly.
+     * The honest fallback is a process default bind established before remoteConnect.
+     * It is cleared on every loss/stop/failure so unrelated future sockets never inherit
+     * a dead route. Auto removes the bind and returns routing to Android.
+     */
+    private fun configureRemoteNetwork(endpoint: RemoteEndpoint) {
+        PhosphorNative.remoteDisconnect()
+        clearRemoteNetwork()
+        remotePlayer.onConnecting(endpoint.label)
+        val mode = prefs().getInt("remote_network_mode", 0).coerceIn(0, 2)
+        if (mode == 0) {
+            connectRemoteNow(endpoint)
+            return
+        }
+        val canRequest = checkSelfPermission(android.Manifest.permission.ACCESS_NETWORK_STATE) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED &&
+            checkSelfPermission(android.Manifest.permission.CHANGE_NETWORK_STATE) ==
+            android.content.pm.PackageManager.PERMISSION_GRANTED
+        if (!canRequest) {
+            remotePlayer.onConnectFailed(
+                "network route permission missing — add ACCESS_NETWORK_STATE and CHANGE_NETWORK_STATE"
+            )
+            return
+        }
+        val transport = if (mode == 1) {
+            NetworkCapabilities.TRANSPORT_WIFI
+        } else {
+            NetworkCapabilities.TRANSPORT_CELLULAR
+        }
+        val callback = object : ConnectivityManager.NetworkCallback() {
+            override fun onAvailable(network: Network) {
+                if (remoteNetworkCallback !== this || remoteEndpoint != endpoint) return
+                if (boundNetwork == network) return
+                PhosphorNative.remoteDisconnect()
+                if (boundNetwork != null) connectivityManager.bindProcessToNetwork(null)
+                val didBind = runCatching {
+                    connectivityManager.bindProcessToNetwork(network)
+                }.getOrDefault(false)
+                if (!didBind) {
+                    boundNetwork = null
+                    remotePlayer.onConnectionLost()
+                    return
+                }
+                boundNetwork = network
+                remotePlayer.onConnecting(endpoint.label)
+                connectRemoteNow(endpoint)
+            }
+
+            override fun onLost(network: Network) {
+                if (remoteNetworkCallback !== this || boundNetwork != network) return
+                PhosphorNative.remoteDisconnect()
+                if (boundNetwork != null) connectivityManager.bindProcessToNetwork(null)
+                boundNetwork = null
+                remoteGainApplied = false
+                remotePlayer.onConnectionLost()
+                // This request stays registered. Its next onAvailable owns reconnect.
+            }
+
+            override fun onUnavailable() {
+                if (remoteNetworkCallback !== this) return
+                PhosphorNative.remoteDisconnect()
+                if (boundNetwork != null) connectivityManager.bindProcessToNetwork(null)
+                boundNetwork = null
+                remotePlayer.onConnectFailed("requested network unavailable — choose auto or another route")
+            }
+        }
+        remoteNetworkCallback = callback
+        val request = NetworkRequest.Builder()
+            .addCapability(NetworkCapabilities.NET_CAPABILITY_INTERNET)
+            .addTransportType(transport)
+            .build()
+        runCatching { connectivityManager.requestNetwork(request, callback, main) }
+            .onFailure {
+                remoteNetworkCallback = null
+                if (boundNetwork != null) connectivityManager.bindProcessToNetwork(null)
+                remotePlayer.onConnectFailed("network request failed — ${it.message ?: "check route permission"}")
+            }
+    }
+
+    private fun connectRemoteNow(endpoint: RemoteEndpoint) {
+        // Latency is policy, not session state: apply before every fresh link.
+        PhosphorNative.remoteSetLatencyMode(
+            prefs().getInt("remote_latency_mode", 2).coerceIn(0, 2)
+        )
+        remoteGainApplied = false
+        // v2 connect is non-blocking: rust owns timeout/watchdog/backoff; the
+        // service owns route selection and the status pump.
+        if (!PhosphorNative.remoteConnect(endpoint.host, endpoint.port, true, false)) {
+            remoteEndpoint = null
+            clearRemoteNetwork()
             remotePlayer.onConnectFailed("couldn't start the bridge link")
             return
         }
         startRemotePoll()
     }
 
-    private fun stopRemote() {
-        remotePolling = false
-        PhosphorNative.remoteDisconnect()
-        remotePlayer.reset()
-        switchTo(localPlayer)
+    private fun clearRemoteNetwork() {
+        remoteNetworkCallback?.let { callback ->
+            runCatching { connectivityManager.unregisterNetworkCallback(callback) }
+        }
+        remoteNetworkCallback = null
+        if (boundNetwork != null) connectivityManager.bindProcessToNetwork(null)
+        boundNetwork = null
     }
 
     // 1 Hz status+metadata pump. Rust exposes generation counters so quiet ticks cost
     // one JNI read; state transitions drive the player face; art rides art_id changes.
     private var lastMetaGen = -1
     private var lastArtGen = -1
-    private var lastArtId = ""
     private var failingSinceMs = 0L
     private fun startRemotePoll() {
         if (remotePolling) return
         remotePolling = true
-        lastMetaGen = -1; lastArtGen = -1; lastArtId = ""
+        lastMetaGen = -1; lastArtGen = -1
         failingSinceMs = 0L
         main.post(object : Runnable {
             override fun run() {
@@ -251,6 +374,17 @@ class PlaybackService : MediaSessionService() {
                         "streaming" -> {
                             failingSinceMs = 0L
                             remotePlayer.onConnected()
+                            if (!remoteGainApplied) {
+                                val p = prefs()
+                                PhosphorNative.remoteScopeCtl(
+                                    "gain",
+                                    if (p.getBoolean("auto_gain", false)) "auto"
+                                    else String.format(
+                                        java.util.Locale.US, "%.2f", p.getFloat("gain", 1f)
+                                    ),
+                                )
+                                remoteGainApplied = true
+                            }
                         }
                         "stalled", "reconnecting", "connecting" -> {
                             // Give-up policy: 60 s of not-streaming → surface failure.
@@ -259,6 +393,8 @@ class PlaybackService : MediaSessionService() {
                             if (now - failingSinceMs > 60_000) {
                                 remotePolling = false
                                 PhosphorNative.remoteDisconnect()
+                                remoteEndpoint = null
+                                clearRemoteNetwork()
                                 remotePlayer.onConnectFailed(
                                     status.optJSONObject("last_error")?.optString("error")
                                         ?: "bridge unreachable"
@@ -269,6 +405,8 @@ class PlaybackService : MediaSessionService() {
                         }
                         "failed" -> {
                             remotePolling = false
+                            remoteEndpoint = null
+                            clearRemoteNetwork()
                             remotePlayer.onConnectFailed(
                                 status.optJSONObject("last_error")?.let {
                                     it.optString("error") + " — " + it.optString("fix")
@@ -281,18 +419,20 @@ class PlaybackService : MediaSessionService() {
                     if (mg != lastMetaGen) {
                         lastMetaGen = mg
                         runCatching { JSONObject(PhosphorNative.remoteMetadata()) }
-                            .getOrNull()?.let { remotePlayer.onMeta(it) }
-                    }
-                    // Art: ask when the id changes; consume when the bytes land.
-                    val artId = status.optString("art_id")
-                    if (artId.isNotBlank() && artId != lastArtId) {
-                        lastArtId = artId
-                        PhosphorNative.remoteRequestArt(artId)
+                            .getOrNull()?.let { metadata ->
+                                // The desired id lives on M. RemotePlayer clears the old
+                                // bytes before returning the new content-addressed request.
+                                remotePlayer.onMeta(metadata)?.let {
+                                    PhosphorNative.remoteRequestArt(it)
+                                }
+                            }
                     }
                     val ag = status.optInt("art_gen")
                     if (ag != lastArtGen) {
                         lastArtGen = ag
-                        remotePlayer.onArt(PhosphorNative.remoteArt())
+                        // status.art_id identifies the R reply, not the desired M art.
+                        // RemotePlayer rejects it if a newer track already owns the session.
+                        remotePlayer.onArt(status.optString("art_id"), PhosphorNative.remoteArt())
                     }
                 }
                 main.postDelayed(this, 1000)
@@ -320,6 +460,8 @@ class PlaybackService : MediaSessionService() {
 
     override fun onDestroy() {
         remotePolling = false
+        remoteEndpoint = null
+        clearRemoteNetwork()
         unregisterReceiver(noisyReceiver)
         focusRequest?.let { audioManager.abandonAudioFocusRequest(it) }
         session?.release()
@@ -339,6 +481,7 @@ class PlaybackService : MediaSessionService() {
         const val EXTRA_QUEUE_START = "queue_start"
         const val ACTION_REMOTE_CONNECT = "dev.phosphor.mobil3.REMOTE_CONNECT"
         const val ACTION_REMOTE_DISCONNECT = "dev.phosphor.mobil3.REMOTE_DISCONNECT"
+        const val ACTION_REMOTE_POLICY_CHANGED = "dev.phosphor.mobil3.REMOTE_POLICY_CHANGED"
         const val EXTRA_HOST = "host"
         const val EXTRA_PORT = "port"
         const val EXTRA_LABEL = "label"

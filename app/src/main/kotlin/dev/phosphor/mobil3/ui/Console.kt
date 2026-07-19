@@ -16,12 +16,10 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
@@ -65,11 +63,11 @@ fun Modifier.burnInWalk(reduced: Boolean): Modifier {
 
 // ── Status band — read-only, mono, flanking the punch-hole. Never a tap target. ──
 @Composable
-fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean) {
+fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean) {
     Row(
         Modifier
             .fillMaxWidth()
-            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .burnInWalk(reduced),
         horizontalArrangement = Arrangement.SpaceBetween,
@@ -81,10 +79,10 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean) {
         }
         androidx.compose.foundation.layout.Column {
             Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
-            if (state.nerdHud && state.hudLine.isNotBlank()) {
+            if (hudVisible && state.hudLine.isNotBlank()) {
                 Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
             }
-            if (state.nerdHud && state.hudLine2.isNotBlank()) {
+            if (hudVisible && state.hudLine2.isNotBlank()) {
                 Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
             }
         }
@@ -92,9 +90,14 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean) {
         // (VISUALIZER), the band shows the desktop's truth — its mode and its
         // live breathing gain, `auto · pc` under autogain — never a stale
         // local multiplier that isn't changing the view.
-        val right = state.remoteScopeLine ?: run {
-            val gainTag = "×" + String.format("%.2f", state.gain) + if (state.autoGain) "·a" else ""
-            "${state.modeTag} · $gainTag"
+        val rolledMark = if (state.randomModeArmed) " ⚄" else ""
+        val right = state.remoteScopeLine?.let { remoteTruth ->
+            if (rolledMark.isEmpty()) remoteTruth
+            else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
+        } ?: run {
+            val gainTag = "×" + String.format("%.2f", state.gain) +
+                if (state.localAutoGain) "·a" else ""
+            "${state.modeTag}$rolledMark · $gainTag"
         }
         Mono(right, p.ink2.copy(alpha = 0.70f), Type.dataSm)
     }
@@ -165,6 +168,7 @@ fun Console(
     onNext: () -> Unit,
     onPrev: () -> Unit,
     onSeek: (Long) -> Unit,
+    onSettingsSwipe: () -> Unit,
 ) {
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
@@ -173,8 +177,11 @@ fun Console(
             .fillMaxWidth()
             .background(p.surface.copy(alpha = Dim.consoleAlpha))
             .border(Dim.hairline, p.line)
-            .windowInsetsPadding(WindowInsets.safeDrawing)
+            .windowInsetsPadding(chromeSafeDrawingInsets(Dim.consolePadH, Dim.consolePadV))
             .padding(horizontal = Dim.consolePadH, vertical = Dim.consolePadV)
+            // The play bar owns this deliberate upward reveal. Stage drags remain
+            // gain/orbit gestures, and horizontal seek scrubs keep their lane.
+            .playBarSwipeUp(onSettingsSwipe)
             .burnInWalk(reduced),
     ) {
         state.trackTitle?.let { title ->
@@ -209,7 +216,10 @@ fun Console(
             Spacer(Modifier.width(Dim.gapLg))
             // Reference-designator conventions, honestly applied: V = the tube
             // (the mode IS the displayed figure), J = input jack, S = switch.
-            FlatKey("MODE", p, designator = "V2", onClick = onMode)
+            FlatKey("MODE", p, designator = "V2") {
+                if (state.randomModeArmed) state.requestRandomMode()
+                onMode()
+            }
             Spacer(Modifier.width(Dim.gap))
             FlatKey("SRC", p, designator = "J1", onClick = onSrc)
             Spacer(Modifier.weight(1f))

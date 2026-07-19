@@ -27,6 +27,33 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
+// The console's one vertical gesture: a deliberate upward pull opens SETTINGS.
+// It observes without consuming until vertical travel clearly wins, so child taps
+// and the seek rule's horizontal scrub keep their existing ownership.
+fun Modifier.playBarSwipeUp(onSwipeUp: () -> Unit): Modifier = pointerInput(onSwipeUp) {
+    val threshold = maxOf(48.dp.toPx(), viewConfiguration.touchSlop * 3f)
+    awaitEachGesture {
+        val first = awaitFirstDown(requireUnconsumed = false)
+        val origin = first.position
+        var fired = false
+        while (true) {
+            val event = awaitPointerEvent()
+            val pressed = event.changes.filter { it.pressed }
+            if (pressed.isEmpty()) break
+            if (!fired) {
+                val travel = pressed.first().position - origin
+                if (travel.y < -threshold && abs(travel.y) > abs(travel.x) * 1.35f) {
+                    fired = true
+                    pressed.forEach { it.consume() }
+                    onSwipeUp()
+                }
+            } else {
+                pressed.forEach { it.consume() }
+            }
+        }
+    }
+}
+
 // The gesture arbiter (UX-SPEC §1.2/§1.3, core map): each pointer sequence is classified
 // ONCE and owned by exactly one verb. This layer owns drags and pinches on the stage;
 // taps fall through to the tap layer beneath it (which never sees moved sequences).

@@ -30,6 +30,7 @@ import dev.phosphor.mobil3.ui.PhosphorScreen
 import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
 import dev.phosphor.mobil3.ui.readReducedMotion
+import dev.phosphor.mobil3.ui.rollModeExcluding
 import java.io.File
 
 // M5: the app. Compose chrome over the scope SurfaceView; the loaded deck owns the transport
@@ -41,7 +42,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var controller: MediaController? = null
     private var reduced = false
     private var gainValue = 1.0f
+    private var lastRandomTrackTitle: String? = null
     private val tick = Handler(Looper.getMainLooper())
+    private val persistGain = Runnable {
+        prefs().edit().putFloat("gain", gainValue).apply()
+    }
 
     private val surfaceCallback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {
@@ -101,6 +106,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private val captureConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             result.data?.let { data ->
+                applyLocalGainPolicy()
                 startForegroundService(
                     Intent(this, CaptureService::class.java)
                         .putExtra(CaptureService.EXTRA_RESULT, data)
@@ -112,7 +118,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) { mic.start(); ui.sourceLabel = "mic"; ui.live = true }
+            if (granted) {
+                applyLocalGainPolicy()
+                mic.start(); ui.sourceLabel = "mic"; ui.live = true
+            }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
@@ -128,6 +137,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
+        ui.bindRandomModeRequest(::armAndRollRandomMode)
         restoreTuning()
         // PiP (spec §3): Home while the beam is live → the scope becomes the floating
         // window. Pure scope, no chrome (ui.pip gates the whole chrome tree).
@@ -165,7 +175,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         item: androidx.media3.common.MediaItem?, reason: Int,
                     ) = syncQueue(c)
                     override fun onMediaMetadataChanged(m: MediaMetadata) {
-                        ui.trackTitle = m.title?.toString()
+                        acceptTrackTitle(m.title?.toString())
                         ui.trackArtist = m.artist?.toString()
                         ui.artwork = m.artworkData
                         // The session's metadata extras are the remote deck's mirror
@@ -192,7 +202,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 // not just on the next change event.
                 ui.playing = c.isPlaying
                 c.mediaMetadata.let { m ->
-                    m.title?.toString()?.let { ui.trackTitle = it }
+                    acceptTrackTitle(m.title?.toString())
                     ui.trackArtist = m.artist?.toString()
                     val src = m.extras?.getString("source")
                     ui.remote = src == "remote"
@@ -232,10 +242,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
             val rs = if (ui.remote) runCatching {
                 org.json.JSONObject(PhosphorNative.remoteStatus())
             }.getOrNull() else null
+            val remoteScope = rs?.optJSONObject("scope")
+            val remoteGain = remoteScope?.optJSONObject("gain")
+            // Gain readouts are receipts, not preference echoes. Local follows the
+            // render-thread glide; remote follows the desktop K/status truth.
+            ui.localAutoGain = PhosphorNative.gainAutoNow()
+            if (!ui.remoteGeometry) ui.gain = PhosphorNative.gainNow()
+            if (ui.remote) {
+                remoteGain?.let { ui.autoGain = it.optBoolean("auto", false) }
+            } else {
+                ui.autoGain = ui.localAutoGain
+            }
             // Band honesty (Ben's ask): while the desktop renders the beam, the
             // band shows ITS mode + live gain — `auto · pc` under autogain.
             ui.remoteScopeLine = if (ui.remote && ui.remoteGeometry) {
-                rs?.optJSONObject("scope")?.let { sc ->
+                remoteScope?.let { sc ->
                     val mode = sc.optString("mode", "—")
                     val g = sc.optJSONObject("gain")
                     when {
@@ -246,7 +267,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     }
                 }
             } else null
-            if (ui.nerdHud) {
+            if (ui.hudMode != 2) {
                 val stats = runCatching {
                     org.json.JSONObject(PhosphorNative.scopeStats())
                 }.getOrNull()
@@ -265,6 +286,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 // stay zero. All real numbers from the session's atomics.
                 ui.hudLine2 = if (rs != null) buildString {
                     append("bridge · buf ${rs.optInt("audio_buf_ms")} ms")
+                    append(" · tgt ${rs.optInt("audio_target_ms")} ms")
+                    append(" · und ${rs.optInt("audio_underruns")}")
                     append(" · skip ${rs.optInt("audio_skips")}")
                     val skipMs = rs.optInt("audio_skip_ms")
                     if (skipMs > 0) append(" (${skipMs} ms)")
@@ -338,6 +361,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun openDeck(path: String, label: String) {
         mic.stop()
+        applyLocalGainPolicy()
         startService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
         ui.sourceLabel = label
     }
@@ -374,6 +398,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
         mic.stop()
+        prefs().edit().putFloat("gain", gainValue).apply()
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
         ui.remote = true
         startService(
@@ -398,6 +423,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         )
         ui.remote = false
         ui.sourceLabel = "no source"
+        applyLocalGainPolicy()
     }
 
     override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))
@@ -405,7 +431,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun startMic() {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
-        ) { mic.start(); ui.sourceLabel = "mic"; ui.live = true }
+        ) { applyLocalGainPolicy(); mic.start(); ui.sourceLabel = "mic"; ui.live = true }
         else micPermission.launch(Manifest.permission.RECORD_AUDIO)
     }
 
@@ -433,17 +459,23 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun saveTuning() {
         prefs().edit()
             .putInt("mode", ui.modeIndex)
+            .putBoolean("random_mode_armed", ui.randomModeArmed)
+            .putString("random_track_title", lastRandomTrackTitle)
             .putInt("beam", ui.beamIndex)
             .putInt("fps", ui.fpsValue)
             .putInt("oversample", ui.oversample)
-            .putFloat("gain", ui.gain)
+            // AUTO-GAIN breathes ui.gain; the manual landing remains the saved knob.
+            .putFloat("gain", gainValue)
             .putFloat("beam_energy", ui.beamEnergy)
             .putFloat("glow", ui.glow)
             .putBoolean("grid", ui.grid)
             .putFloat("focus", focusPref)
             .putString("room", ui.room.id)
-            .putBoolean("nerd_hud", ui.nerdHud)
+            .putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
+            .putInt("hud_mode", ui.hudMode)
             .putInt("band_mode", ui.bandMode)
+            .putInt("remote_latency_mode", ui.latencyMode)
+            .putInt("remote_network_mode", ui.networkMode)
             .putBoolean("amoled_seen", ui.amoledCaptionSeen)
             .putInt("ov_char", ui.styleOverride.character?.ordinal ?: -1)
             .putInt("ov_motion", ui.styleOverride.motion?.ordinal ?: -1)
@@ -462,18 +494,29 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun restoreTuning() {
         val p = prefs()
         ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
+        ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
+        lastRandomTrackTitle = p.getString("random_track_title", null)
         ui.beamIndex = p.getInt("beam", 0).also { PhosphorNative.setBeamColor(it) }
         ui.fpsValue = p.getInt("fps", 0).also { PhosphorNative.setTargetFps(it) }
         ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
         gainValue = p.getFloat("gain", 1f)
         ui.gain = gainValue
         PhosphorNative.setGain(gainValue)
+        val autoGain = p.getBoolean("auto_gain", false)
+        PhosphorNative.setGainAuto(autoGain)
+        ui.autoGain = autoGain
+        ui.localAutoGain = autoGain
         ui.beamEnergy = p.getFloat("beam_energy", 8f).also { PhosphorNative.setBeamEnergy(it) }
         ui.glow = p.getFloat("glow", 0.7f).also { PhosphorNative.setGlow(it) }
         ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
         focusPref = p.getFloat("focus", 0.3f)
-        ui.nerdHud = p.getBoolean("nerd_hud", false)
+        ui.hudMode = if (p.contains("hud_mode")) {
+            p.getInt("hud_mode", 2).coerceIn(0, 2)
+        } else if (p.getBoolean("nerd_hud", false)) 0 else 2
         ui.bandMode = p.getInt("band_mode", 0)
+        ui.latencyMode = p.getInt("remote_latency_mode", 2).coerceIn(0, 2)
+            .also { PhosphorNative.remoteSetLatencyMode(it) }
+        ui.networkMode = p.getInt("remote_network_mode", 0).coerceIn(0, 2)
         ui.calDate = p.getString("cal_date", "") ?: ""
         ui.amoledCaptionSeen = p.getBoolean("amoled_seen", false)
         ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride(
@@ -492,7 +535,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
 
-    override fun setMode(index: Int) {
+    private fun acceptTrackTitle(title: String?) {
+        ui.trackTitle = title
+        if (title != null && title != lastRandomTrackTitle) {
+            lastRandomTrackTitle = title
+            if (ui.randomModeArmed) rollRandomMode()
+        }
+    }
+
+    private fun armAndRollRandomMode() {
+        ui.randomModeArmed = true
+        rollRandomMode()
+    }
+
+    private fun rollRandomMode() = applyMode(rollModeExcluding(ui.modeIndex))
+
+    private fun applyMode(index: Int) {
         PhosphorNative.setMode(index); ui.modeIndex = index
         // Remote-render control (Ben's ask): while the DESKTOP renders the beam,
         // the mode tap drives the desktop scope over the bridge. ModeTags are the
@@ -500,6 +558,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (ui.remote && ui.remoteGeometry) {
             PhosphorNative.remoteScopeCtl("mode", dev.phosphor.mobil3.ui.ModeTags[index])
         }
+    }
+    override fun setMode(index: Int) {
+        ui.randomModeArmed = false
+        applyMode(index)
     }
     override fun setBeam(index: Int) {
         PhosphorNative.setBeamColor(index); ui.beamIndex = index
@@ -517,9 +579,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         gainValue = g.coerceIn(0.1f, 6f)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
+        ui.autoGain = false
+        ui.localAutoGain = false
+        prefs().edit().putBoolean("auto_gain", false).apply()
+        tick.removeCallbacks(persistGain)
+        tick.postDelayed(persistGain, 250)
         // Pinch drives the DESKTOP's gain while it renders the beam (throttled —
         // the gesture fires per-frame; the scope only needs ~10 Hz).
-        if (ui.remote && ui.remoteGeometry) {
+        if (ui.remote) {
             val now = android.os.SystemClock.uptimeMillis()
             if (now - lastRemoteGainMs > 100) {
                 lastRemoteGainMs = now
@@ -528,6 +595,52 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
     private var lastRemoteGainMs = 0L
+
+    override fun setGainAuto(on: Boolean) {
+        prefs().edit().putBoolean("auto_gain", on).apply()
+        // Keep the local renderer ready for local/captured remote audio, while a
+        // remote source also receives the desktop's existing typed gain verb.
+        PhosphorNative.setGainAuto(on)
+        ui.localAutoGain = on
+        ui.autoGain = on
+        if (ui.remote) {
+            PhosphorNative.remoteScopeCtl(
+                "gain",
+                if (on) "auto" else String.format(java.util.Locale.US, "%.2f", gainValue),
+            )
+        }
+    }
+
+    override fun setHudMode(mode: Int) {
+        ui.hudMode = mode.coerceIn(0, 2)
+        prefs().edit().putInt("hud_mode", ui.hudMode).apply()
+    }
+
+    override fun setRemoteLatencyMode(mode: Int) {
+        ui.latencyMode = mode.coerceIn(0, 2)
+        prefs().edit().putInt("remote_latency_mode", ui.latencyMode).apply()
+        PhosphorNative.remoteSetLatencyMode(ui.latencyMode)
+    }
+
+    override fun setRemoteNetworkMode(mode: Int) {
+        ui.networkMode = mode.coerceIn(0, 2)
+        prefs().edit().putInt("remote_network_mode", ui.networkMode).apply()
+        if (ui.remote) {
+            startService(
+                Intent(this, PlaybackService::class.java)
+                    .setAction(PlaybackService.ACTION_REMOTE_POLICY_CHANGED)
+            )
+        }
+    }
+
+    private fun applyLocalGainPolicy() {
+        val on = prefs().getBoolean("auto_gain", false)
+        PhosphorNative.setGain(gainValue) // restores the remembered manual landing
+        PhosphorNative.setGainAuto(on)
+        ui.gain = gainValue
+        ui.autoGain = on
+        ui.localAutoGain = on
+    }
 
     private fun applyImmersive() {
         WindowInsetsControllerCompat(window, window.decorView).apply {

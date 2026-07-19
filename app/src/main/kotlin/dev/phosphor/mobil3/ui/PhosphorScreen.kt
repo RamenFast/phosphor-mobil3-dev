@@ -53,6 +53,10 @@ interface ScopeActions {
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
     fun setGrid(on: Boolean)
+    fun setGainAuto(on: Boolean)
+    fun setHudMode(mode: Int)
+    fun setRemoteLatencyMode(mode: Int)
+    fun setRemoteNetworkMode(mode: Int)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
     fun startRemoteHost(label: String, host: String, port: Int)
     fun setRemoteStreams(audio: Boolean, geometry: Boolean)
@@ -127,9 +131,13 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setFps(value: Int) = actions.setFps(value)
             override fun setOversample(n: Int) = actions.setOversample(n)
             override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
+            override fun setGainAuto(on: Boolean) = actions.setGainAuto(on)
             override fun setBeamEnergy(e: Float) = actions.setBeamEnergy(e)
             override fun setGlow(g: Float) = actions.setGlow(g)
             override fun setGrid(on: Boolean) = actions.setGrid(on)
+            override fun setHudMode(mode: Int) = actions.setHudMode(mode)
+            override fun setRemoteLatencyMode(mode: Int) = actions.setRemoteLatencyMode(mode)
+            override fun setRemoteNetworkMode(mode: Int) = actions.setRemoteNetworkMode(mode)
             override fun openRoom() { }
             override fun openLight() { }
             override fun remoteHosts() = actions.remoteHosts()
@@ -196,7 +204,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             // Band visibility (Ben's ask): on = always · auto = rides the
             // console's timer · off = pure scope. Default on.
             if (state.bandMode == 0 || (state.bandMode == 1 && consoleVisible)) {
-                StatusBand(state, p, reduced)
+                StatusBand(
+                    state, p, reduced,
+                    hudVisible = state.hudMode == 0 ||
+                        (state.hudMode == 1 && consoleVisible),
+                )
             }
 
             // The service-bench POST rides the warm-up (Annotated rooms only).
@@ -224,6 +236,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onNext = { actions.next() },
                     onPrev = { actions.prev() },
                     onSeek = { actions.seekTo(it) },
+                    onSettingsSwipe = {
+                        overflow = false
+                        sheet = Sheet.SETTINGS
+                    },
                 )
             }
 
@@ -299,4 +315,3 @@ private fun SheetActions.withSheetRouting(
         override fun openLight() = openLight()
     }
 }
-

@@ -1,8 +1,8 @@
 //! All JNI entry points. Nothing here contains logic — it converts, delegates, and logs.
 
-use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::jstring;
+use jni::JNIEnv;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
@@ -76,7 +76,10 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceDestroyed(
         .is_ok()
     {
         // 2 s guard: never wedge the UI thread forever if the render thread died.
-        if ack_rx.recv_timeout(std::time::Duration::from_secs(2)).is_err() {
+        if ack_rx
+            .recv_timeout(std::time::Duration::from_secs(2))
+            .is_err()
+        {
             log::error!("surfaceDestroyed ack timeout — render thread unhealthy");
         }
     }
@@ -340,6 +343,15 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGain(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGainAuto(
+    _env: JNIEnv,
+    _class: JClass,
+    on: jni::sys::jboolean,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetGainAuto(on != 0));
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGlow(
     _env: JNIEnv,
     _class: JClass,
@@ -382,6 +394,14 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_gainNow(
     _class: JClass,
 ) -> jni::sys::jfloat {
     crate::render::GAIN_MILLI.load(std::sync::atomic::Ordering::Relaxed) as f32 / 1000.0
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_gainAutoNow(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jboolean {
+    crate::render::GAIN_AUTO.load(std::sync::atomic::Ordering::Relaxed) as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]
@@ -476,7 +496,9 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGrid(
 // ── Bridge v2 surface ────────────────────────────────────────────────────────
 
 fn jstr(env: &JNIEnv, s: String) -> jstring {
-    env.new_string(s).map(|x| x.into_raw()).unwrap_or(std::ptr::null_mut())
+    env.new_string(s)
+        .map(|x| x.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
@@ -516,6 +538,22 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSetMuted(
     muted: jni::sys::jboolean,
 ) {
     crate::remote::set_muted(muted != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_remoteSetLatencyMode(
+    _env: JNIEnv,
+    _class: JClass,
+    mode: jni::sys::jint,
+) {
+    // Invalid Kotlin values choose the ear-verified safe policy; do not let an
+    // integer narrowing wrap (for example 256 -> tight).
+    let mode = match mode {
+        0 => 0,
+        1 => 1,
+        _ => 2,
+    };
+    crate::remote::set_latency_mode(mode);
 }
 
 #[unsafe(no_mangle)]

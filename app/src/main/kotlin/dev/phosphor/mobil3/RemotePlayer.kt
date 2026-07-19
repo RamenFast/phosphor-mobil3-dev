@@ -25,6 +25,10 @@ import org.json.JSONObject
 // snaps back to index 1 on the next invalidate.
 class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
+    // The service owns process-network binding; STOP must return through it so a
+    // remote transport stop cannot strand a process-wide route.
+    var onStopRequested: (() -> Unit)? = null
+
     enum class Conn { IDLE, CONNECTING, STREAMING, FAILED, LOST }
 
     private var conn = Conn.IDLE
@@ -35,6 +39,8 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     private var artist: String? = null
     private var album: String? = null
     private var art: ByteArray? = null
+    private var artId: String? = null
+    private var trackKey: String? = null
     // v2 relay fields; absent on v1 → seek/progress degrade away cleanly.
     private var positionMs: Long = C.TIME_UNSET
     private var positionAtMs: Long = 0
@@ -127,6 +133,10 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         this.host = host
         conn = Conn.CONNECTING
         playing = true // intent to play; Media3 promotes FGS on BUFFERING+playWhenReady
+        error = null
+        title = null; artist = null; album = null; art = null
+        artId = null; trackKey = null
+        positionMs = C.TIME_UNSET; durationMs = C.TIME_UNSET; canSeek = false
         invalidateState()
     }
 
@@ -158,15 +168,34 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         playing = false
         error = null
         title = null; artist = null; album = null; art = null
+        artId = null; trackKey = null
         positionMs = C.TIME_UNSET; durationMs = C.TIME_UNSET; canSeek = false
         invalidateState()
     }
 
-    /** Feed an M-frame JSON (v1: title/artist/album/playing; v2 adds position/seek). */
-    fun onMeta(m: JSONObject) {
-        title = m.optString("title").ifBlank { null }
-        artist = m.optString("artist").ifBlank { null }
-        album = m.optString("album").ifBlank { null }
+    /** Feed an M frame; returns the content-addressed art id when fresh bytes are needed. */
+    fun onMeta(m: JSONObject): String? {
+        val nextTitle = if (m.isNull("title")) null else m.optString("title").ifBlank { null }
+        val nextArtist = if (m.isNull("artist")) null else m.optString("artist").ifBlank { null }
+        val nextAlbum = if (m.isNull("album")) null else m.optString("album").ifBlank { null }
+        val nextArtId = if (m.isNull("art_id")) null else m.optString("art_id").ifBlank { null }
+        // Playing/position change every tick; these stable fields identify the track. Drive
+        // files use path, while MPRIS sources fall back to their resolved metadata + art id.
+        val nextTrackKey = listOf(
+            m.optString("source"),
+            if (m.isNull("path")) "" else m.optString("path"),
+            nextTitle.orEmpty(),
+            nextArtist.orEmpty(),
+            nextAlbum.orEmpty(),
+            nextArtId.orEmpty(),
+        ).joinToString("\u0000")
+        val trackChanged = nextTrackKey != trackKey
+        if (trackChanged) art = null
+        title = nextTitle
+        artist = nextArtist
+        album = nextAlbum
+        artId = nextArtId
+        trackKey = nextTrackKey
         if (m.has("playing")) playing = m.optBoolean("playing")
         if (m.has("position_ms")) {
             positionMs = m.optLong("position_ms")
@@ -178,11 +207,16 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         canSeek = m.optBoolean("can_seek", false)
         if (conn == Conn.CONNECTING || conn == Conn.LOST) conn = Conn.STREAMING
         invalidateState()
+        return if (trackChanged) nextArtId else null
     }
 
-    fun onArt(bytes: ByteArray?) {
-        art = bytes
-        invalidateState()
+    fun onArt(id: String, bytes: ByteArray?) {
+        // R replies may overtake a newer M frame. Only the current track's content id may
+        // populate its MediaMetadata; a missing/empty reply clears rather than resurrects.
+        if (id.isNotBlank() && id == artId) {
+            art = bytes?.takeIf { it.isNotEmpty() }
+            invalidateState()
+        }
     }
 
     fun lastKnownPlaying(): Boolean = playing
@@ -222,8 +256,10 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleStop(): ListenableFuture<*> {
-        PhosphorNative.remoteDisconnect()
-        reset()
+        onStopRequested?.invoke() ?: run {
+            PhosphorNative.remoteDisconnect()
+            reset()
+        }
         return Futures.immediateVoidFuture()
     }
 

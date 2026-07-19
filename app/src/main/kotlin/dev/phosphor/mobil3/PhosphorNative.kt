@@ -31,11 +31,12 @@ object PhosphorNative {
     external fun setBeamColor(index: Int)
     /** -1 unlimited · 0 panel vsync · N cap to N fps (N above the panel tears, honored). */
     external fun setTargetFps(fps: Int)
-    /** Beam integration rate: 1×=120, 2×=240, 4×=480 sub-steps per displayed frame. */
+    /** DSP reconstruction: 1×=48 kHz, 2×=96 kHz, 4×=192 kHz; one display deposit/frame. */
     external fun setOversample(n: Int)
 
     // The instrument feel (Act I): gain/glow/camera verbs + envelope control.
     external fun setGain(gain: Float)
+    external fun setGainAuto(on: Boolean)
     /** Beam focus px (0.3..3.0, desktop slider) — smaller = sharper. */
     external fun setFocus(focus: Float)
     /** Beam brightness budget (1.0..30.0, desktop "Beam" slider). */
@@ -47,6 +48,7 @@ object PhosphorNative {
     external fun dollyBy(delta: Float)
     external fun setReducedMotion(reduced: Boolean)
     external fun gainNow(): Float
+    external fun gainAutoNow(): Boolean
     /** True when an active source has been silent past the sleep window (resting beam up). */
     external fun scopeSilent(): Boolean
 
@@ -65,10 +67,13 @@ object PhosphorNative {
     external fun remoteTransport(cmd: String) // bare verb or JSON {cmd,ms}
     external fun remoteMetadata(): String
     external fun remoteDisconnect()
-    external fun remoteStatus(): String // {state,host,port,rx_*,art_id,*_gen,scope,welcome,last_error}
+    // Includes audio_latency_mode/audio_target_ms/audio_underruns for the Nerd HUD.
+    external fun remoteStatus(): String // {state,host,port,rx_*,art_id,*_gen,scope,welcome,last_error,...}
     external fun remoteScopeCtl(verb: String, value: String) // drive the DESKTOP scope (mode/theme/ui/gain)
     external fun remoteSetStreams(audio: Boolean, geometry: Boolean)
     external fun remoteSetMuted(muted: Boolean)
+    /** 0=tight (~80 ms), 1=balanced (~150 ms), 2=safe; applies during a live stream. */
+    external fun remoteSetLatencyMode(mode: Int)
     external fun remoteSeekMs(ms: Long)
     external fun remoteRequestSources()
     external fun remoteSources(): String

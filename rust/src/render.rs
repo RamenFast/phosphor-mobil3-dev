@@ -6,18 +6,28 @@
 //! Android invalidates the window the moment the callback returns. The GpuRenderer and
 //! its decay textures survive across surface loss (the beam remembers backgrounding).
 
-use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
+use std::sync::OnceLock;
 
 use ndk::native_window::NativeWindow;
 use phosphor_dsp::{Computer, Mode};
 use phosphor_proto::settings::Settings;
 
 pub enum Cmd {
-    SurfaceCreated { window: SendWindow, width: u32, height: u32, density: f32 },
-    SurfaceChanged { width: u32, height: u32 },
-    SurfaceDestroyed { ack: mpsc::SyncSender<()> },
+    SurfaceCreated {
+        window: SendWindow,
+        width: u32,
+        height: u32,
+        density: f32,
+    },
+    SurfaceChanged {
+        width: u32,
+        height: u32,
+    },
+    SurfaceDestroyed {
+        ack: mpsc::SyncSender<()>,
+    },
     Paused(bool),
     SetMode(u8),
     SetBeamColor(u8),
@@ -25,11 +35,13 @@ pub enum Cmd {
     /// N > 0 = cap to N fps (Immediate present + frame limiter; N above the panel rate is
     /// honored — it just tears past the display's refresh).
     SetTargetFps(i32),
-    /// Beam-rate multiplier: sub-steps of DSP+advance per displayed frame with dt-correct
-    /// decay (1 = 120, 2 = 240, 4 = 480 effective integration rate).
+    /// DSP reconstruction multiplier. Input stays 48 kHz; 1/2/4 reconstruct at
+    /// 48/96/192 kHz while preserving one decay/deposit per displayed frame.
     SetOversample(u8),
-    /// Deflection gain (the figure swelling under a thumb). Clamped 0.05..16.
+    /// Deflection gain (the figure swelling under a thumb). Clamped 0.1..6.
     SetGain(f32),
+    /// Desktop-parity autosize. Manual SetGain always disarms it.
+    SetGainAuto(bool),
     /// Phosphor persistence 0..0.98 (glow / trail length).
     SetGlow(f32),
     /// Orbit the 3D camera by deltas (radians). 2D modes ignore it silently.
@@ -45,9 +57,16 @@ pub enum Cmd {
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
     /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
-    SetCustomBeam { colors: [[f32; 3]; 3], count: u8, grid: [f32; 3] },
+    SetCustomBeam {
+        colors: [[f32; 3]; 3],
+        count: u8,
+        grid: [f32; 3],
+    },
     /// Cycle timing: seconds per color→color leg; per_track advances only on CycleAdvance.
-    SetBeamCycle { seconds: f32, per_track: bool },
+    SetBeamCycle {
+        seconds: f32,
+        per_track: bool,
+    },
     /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
     CycleAdvance,
     /// Remote geometry mode: draw the desktop's decimated beam, bypassing the DSP.
@@ -84,6 +103,8 @@ fn mode_from_index(i: u8) -> Mode {
 pub static CURRENT_MODE: std::sync::atomic::AtomicU8 = std::sync::atomic::AtomicU8::new(0);
 /// Live gain ×1000 (readable for the band readout / gesture ribbon).
 pub static GAIN_MILLI: AtomicU32 = AtomicU32::new(1000);
+/// Local renderer AUTO-GAIN truth for the settings chip and honesty band.
+pub static GAIN_AUTO: AtomicBool = AtomicBool::new(false);
 /// True when an active source has been silent past the sleep window (resting beam is up).
 pub static NO_SIGNAL: AtomicBool = AtomicBool::new(false);
 /// Live beam color, packed 0xRRGGBB (for accent_follows_beam chrome breathing).
@@ -175,14 +196,16 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
 
     let defaults = Settings::default();
     let mut computer = Computer::new();
-    computer.set_sample_rate(48_000, 1);
+    crate::engine::set_reconstruction_rate(&mut computer, 1);
     computer.mode = Mode::Xy;
+    let mut manual_gain = defaults.gain.clamp(0.1, 6.0);
+    computer.gain = manual_gain;
+    let mut auto_gain = crate::engine::AutoGain::new(manual_gain);
     let mut fps_frames: u32 = 0;
     let mut fps_t0 = std::time::Instant::now();
     let mut beam_color: usize = 0;
     let mut target_fps: i32 = 0; // 0 = panel vsync
-    let mut oversample: u32 = 1; // beam-rate multiplier (1× = 120, 2× = 240, 4× = 480)
-    let mut base_persistence = defaults.persistence;
+    let mut oversample: u32 = 1; // DSP reconstruction multiplier (48/96/192 kHz)
     let mut last_present = std::time::Instant::now();
 
     // Camera mirror (Computer's camera is crate-private; set_camera takes absolutes).
@@ -231,7 +254,12 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         let had_cmds = !cmds.is_empty();
         for cmd in cmds.drain(..) {
             match cmd {
-                Cmd::SurfaceCreated { window, width, height, density } => {
+                Cmd::SurfaceCreated {
+                    window,
+                    width,
+                    height,
+                    density,
+                } => {
                     // Drop any previous surface first — two swapchains on one
                     // ANativeWindow is a Vulkan conflict.
                     active = None;
@@ -326,13 +354,21 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     }
                 }
                 Cmd::SetOversample(n) => {
-                    oversample = (n as u32).clamp(1, 8);
+                    oversample = crate::engine::set_reconstruction_rate(&mut computer, n as u32);
                     log::info!("beam oversample: {oversample}x");
                 }
                 Cmd::SetGain(g) => {
                     // Desktop parity: shell.rs clamps gain to 0.1..6.0.
-                    computer.gain = g.clamp(0.1, 6.0);
+                    manual_gain = g.clamp(0.1, 6.0);
+                    computer.gain = auto_gain.set_manual(manual_gain);
+                    GAIN_AUTO.store(false, Ordering::Relaxed);
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
+                }
+                Cmd::SetGainAuto(on) => {
+                    computer.gain = auto_gain.set_auto(on, manual_gain);
+                    GAIN_AUTO.store(on, Ordering::Relaxed);
+                    GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
+                    log::info!("auto gain: {on}");
                 }
                 Cmd::SetBeamEnergy(e) => {
                     // Desktop parity: the "Beam" slider, 1.0..30.0.
@@ -344,9 +380,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     }
                 }
                 Cmd::SetGlow(p) => {
-                    base_persistence = p.clamp(0.0, 0.98);
                     if let Some(r) = renderer.as_mut() {
-                        r.persistence = base_persistence;
+                        r.persistence = p.clamp(0.0, 0.98);
                     }
                 }
                 Cmd::OrbitBy(dy, dp) => {
@@ -364,7 +399,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                         log::info!("beam focus: {:.2}", r.beam_focus);
                     }
                 }
-                Cmd::SetCustomBeam { colors, count, grid } => {
+                Cmd::SetCustomBeam {
+                    colors,
+                    count,
+                    grid,
+                } => {
                     custom_colors = colors;
                     custom_count = count.min(3);
                     custom_grid = grid;
@@ -418,17 +457,30 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         }
 
         // Draw one frame (FIFO present blocks to vsync — this IS the pacing).
-        let (Some(a), Some(g), Some(r)) = (active.as_mut(), gpu.as_ref(), renderer.as_mut())
-        else {
+        let (Some(a), Some(g), Some(r)) = (active.as_mut(), gpu.as_ref(), renderer.as_mut()) else {
             continue;
         };
 
         let source_active = crate::deck::DECK_ACTIVE.load(Ordering::Relaxed);
         let samples = if source_active {
-            crate::deck::scope_ring().lock().unwrap().take_stereo_samples()
+            crate::deck::scope_ring()
+                .lock()
+                .unwrap()
+                .take_stereo_samples()
         } else {
             Vec::new()
         };
+
+        // Ported verbatim from desktop shell.rs: measure the raw source peak before
+        // compute, then glide Computer.gain. Empty active frames still release the
+        // peak slowly; remote geometry bypasses the local computer altogether.
+        if source_active && !geometry_active && auto_gain.enabled() {
+            let peak = samples.iter().fold(0.0_f32, |p, s| p.max(s.abs()));
+            if let Some(gain) = auto_gain.update(peak) {
+                computer.gain = gain;
+                GAIN_MILLI.store((gain * 1000.0) as u32, Ordering::Relaxed);
+            }
+        }
 
         // Resting-beam bookkeeping: an idle stage (no source) rests immediately; an
         // active-but-silent source rests after the sleep window. Geometry mode IS the
@@ -492,26 +544,28 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // Custom light: static color, or the cycle lerping slot→slot. Timer mode loops
         // continuously; per-track mode fades one leg per CycleAdvance then holds.
         if custom_count >= 1 {
-            let cur = if custom_count == 1 {
-                custom_colors[0]
-            } else {
-                let t = (cycle_t0.elapsed().as_secs_f32() / cycle_secs).min(if cycle_per_track { 1.0 } else { f32::MAX });
-                let (leg, frac) = if cycle_per_track {
-                    (cycle_leg, t.min(1.0))
+            let cur =
+                if custom_count == 1 {
+                    custom_colors[0]
                 } else {
-                    let total = t + cycle_leg as f32;
-                    let leg = (total as usize) % custom_count as usize;
-                    (leg, total.fract())
+                    let t = (cycle_t0.elapsed().as_secs_f32() / cycle_secs)
+                        .min(if cycle_per_track { 1.0 } else { f32::MAX });
+                    let (leg, frac) = if cycle_per_track {
+                        (cycle_leg, t.min(1.0))
+                    } else {
+                        let total = t + cycle_leg as f32;
+                        let leg = (total as usize) % custom_count as usize;
+                        (leg, total.fract())
+                    };
+                    let a = custom_colors[leg % custom_count as usize];
+                    let b = custom_colors[(leg + 1) % custom_count as usize];
+                    let s = smoothstep(frac);
+                    [
+                        a[0] + (b[0] - a[0]) * s,
+                        a[1] + (b[1] - a[1]) * s,
+                        a[2] + (b[2] - a[2]) * s,
+                    ]
                 };
-                let a = custom_colors[leg % custom_count as usize];
-                let b = custom_colors[(leg + 1) % custom_count as usize];
-                let s = smoothstep(frac);
-                [
-                    a[0] + (b[0] - a[0]) * s,
-                    a[1] + (b[1] - a[1]) * s,
-                    a[2] + (b[2] - a[2]) * s,
-                ]
-            };
             r.theme = phosphor_beam::Theme::custom(cur, custom_grid);
             BEAM_RGB.store(pack_rgb(cur), Ordering::Relaxed);
         } else {
@@ -521,11 +575,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             );
         }
 
-        // Beam-rate oversampling: integrate the trace over N sub-steps per displayed frame
-        // (dt-correct decay so brightness is unchanged). The panel still shows 120 Hz, but
-        // the beam is computed at 120·N — a smoother, more-recent trace ("beyond 120").
+        // The DSP reconstructs the contiguous 48 kHz tap at the selected factor. One display
+        // frame means one compute + one decay/deposit, matching desktop cadence — splitting
+        // the drained window into N separately decayed deposits was the "2-3 circles out of
+        // sync" defect (accuracy hunt, 2026-07-18), and freezing decay on empty ticks made
+        // 120 Hz read as chunk-rate judder.
         let mut seg_count = 0usize;
-        let mut advance =
+        let advance =
             |r: &mut phosphor_render_gpu::GpuRenderer, segs: &[[f32; 5]], count: &mut usize| {
                 *count += segs.len();
                 if transform_active {
@@ -582,31 +638,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             let cx = w * 0.5;
             let cy = h * 0.5;
             let d = 1.6_f32 * r.display_scale.max(1.0);
-            let dot: [[f32; 5]; 2] = [
-                [cx - d, cy, cx + d, cy, i],
-                [cx, cy - d, cx, cy + d, i],
-            ];
+            let dot: [[f32; 5]; 2] = [[cx - d, cy, cx + d, cy, i], [cx, cy - d, cx, cy + d, i]];
             advance(r, &dot, &mut seg_count);
-        } else if oversample <= 1 {
-            let segments = computer.compute(&samples, w, h);
-            let segments = segments.to_vec();
-            advance(r, &segments, &mut seg_count);
         } else {
-            let n = oversample as usize;
-            r.persistence = base_persistence.powf(1.0 / n as f32);
-            let frames = samples.len() / 2;
-            let per = frames.div_ceil(n);
-            for k in 0..n {
-                let start = (k * per * 2).min(samples.len());
-                let end = ((k + 1) * per * 2).min(samples.len());
-                if start >= end {
-                    break;
-                }
-                let segments = computer.compute(&samples[start..end], w, h);
-                let segments = segments.to_vec();
-                advance(r, &segments, &mut seg_count);
-            }
-            r.persistence = base_persistence;
+            let segments = crate::engine::compute_scope_frame(&mut computer, &samples, w, h);
+            advance(r, &segments, &mut seg_count);
         }
 
         let frame = match a.surface.get_current_texture() {
@@ -624,10 +660,17 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         let view = frame
             .texture
             .create_view(&wgpu::TextureViewDescriptor::default());
-        let mut encoder = g.device.create_command_encoder(&wgpu::CommandEncoderDescriptor {
-            label: Some("phosphor-frame"),
-        });
-        r.composite_into(&mut encoder, &view, (0.0, 0.0, w, h), Some(wgpu::Color::BLACK));
+        let mut encoder = g
+            .device
+            .create_command_encoder(&wgpu::CommandEncoderDescriptor {
+                label: Some("phosphor-frame"),
+            });
+        r.composite_into(
+            &mut encoder,
+            &view,
+            (0.0, 0.0, w, h),
+            Some(wgpu::Color::BLACK),
+        );
         g.queue.submit([encoder.finish()]);
         frame.present();
 
@@ -646,7 +689,10 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         fps_frames += 1;
         let elapsed = fps_t0.elapsed().as_secs_f64();
         if elapsed >= 1.0 {
-            FPS_X10.store((fps_frames as f64 / elapsed * 10.0) as u32, Ordering::Relaxed);
+            FPS_X10.store(
+                (fps_frames as f64 / elapsed * 10.0) as u32,
+                Ordering::Relaxed,
+            );
             log::info!(
                 "fps {:.1} ({} frames, {} segs last frame, {}x beam)",
                 fps_frames as f64 / elapsed,
@@ -667,8 +713,7 @@ fn create_surface(
     use wgpu::rwh::{
         AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle,
     };
-    let ptr = std::ptr::NonNull::new(window.0.ptr().as_ptr().cast())
-        .ok_or("null ANativeWindow")?;
+    let ptr = std::ptr::NonNull::new(window.0.ptr().as_ptr().cast()).ok_or("null ANativeWindow")?;
     let raw_window_handle = RawWindowHandle::AndroidNdk(AndroidNdkWindowHandle::new(ptr));
     let raw_display_handle = RawDisplayHandle::Android(AndroidDisplayHandle::new());
     unsafe {
@@ -728,14 +773,29 @@ fn bring_up(
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
                 .map_err(|e| format!("no device: {e}"))?;
         log::info!("adapter: {:?}", adapter.get_info());
-        let g = Gpu { instance, adapter, device, queue };
+        let g = Gpu {
+            instance,
+            adapter,
+            device,
+            queue,
+        };
         let (config, present_caps) = configure(&g, &surface, width, height, target_fps);
         log::info!("present modes: {present_caps:?}");
         *gpu = Some(g);
-        return Ok(Active { surface, config, present_caps, _window: window });
+        return Ok(Active {
+            surface,
+            config,
+            present_caps,
+            _window: window,
+        });
     }
     let g = gpu.as_ref().unwrap();
     let surface = create_surface(&g.instance, &window)?;
     let (config, present_caps) = configure(g, &surface, width, height, target_fps);
-    Ok(Active { surface, config, present_caps, _window: window })
+    Ok(Active {
+        surface,
+        config,
+        present_caps,
+        _window: window,
+    })
 }

@@ -1,6 +1,7 @@
 package dev.phosphor.mobil3.ui
 
 import androidx.compose.ui.graphics.Color
+import kotlin.random.Random
 
 // Mirrors the engine's mode order (phosphor-dsp Mode) and beam presets (phosphor-beam).
 val ModeLabels = listOf(
@@ -13,6 +14,13 @@ val ModeLabels = listOf(
 val ModeTags = listOf(
     "xy", "xy45", "swirl", "dots", "3d", "helix", "wave", "ring", "spec", "radial", "tunnel",
 )
+
+// A RANDOM roll is always a real engine mode and never repeats the face already on glass.
+fun rollModeExcluding(currentMode: Int): Int {
+    val current = currentMode.takeIf { it in ModeLabels.indices } ?: ModeLabels.indices.first
+    val roll = Random.nextInt(ModeLabels.size - 1)
+    return if (roll >= current) roll + 1 else roll
+}
 
 data class BeamSwatch(val label: String, val color: Color)
 
@@ -44,17 +52,15 @@ val FpsOptions = listOf(
 const val FpsNote = "The S25 panel presents at 120 Hz max (Android composites at vsync). " +
     "Uncapped renders flat out but still shows at 120."
 
-// Beam integration rate — the genuine "beyond 120" lever. Each displayed frame integrates N
-// sub-steps of the beam (dt-correct decay), so the trace is smoother and more recent even
-// though the panel shows 120. Values are the effective integration rate.
+// Beam reconstruction quality. The panel still presents at 120 Hz; the desktop DSP's
+// streaming polyphase stage reconstructs the contiguous 48 kHz tap before one beam deposit.
 data class RateOption(val label: String, val oversample: Int)
 
 val BeamRates = listOf(
-    RateOption("120", 1),
-    RateOption("240", 2),
-    RateOption("480", 4),
+    RateOption("120 · 48 kHz", 1),
+    RateOption("240 · 96 kHz", 2),
+    RateOption("480 · 192 kHz", 4),
 )
 
-const val BeamRateNote = "Integrates the beam at this rate per 120 Hz frame — a denser, " +
-    "more-recent trace (the real 'beyond 120'). Higher costs battery."
-
+const val BeamRateNote = "Reconstructs more points inside each contiguous audio window; " +
+    "the panel remains 120 Hz. Higher costs battery."

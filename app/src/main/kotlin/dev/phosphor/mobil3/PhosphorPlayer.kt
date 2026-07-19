@@ -128,6 +128,11 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     fun advanceIfPossible(): Boolean {
         if (index >= queue.size - 1) return false
         index++
+        // Publish the new queue item without the old item's resolved metadata while the
+        // service stages it. In particular, its artwork must not cross this boundary.
+        loadedMeta = null
+        loadedDurationMs = C.TIME_UNSET
+        invalidateState()
         onSwitchTrack?.invoke(index)
         return true
     }

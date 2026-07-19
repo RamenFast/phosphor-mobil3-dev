@@ -9,6 +9,7 @@ import androidx.compose.runtime.setValue
 class ScopeUiState {
     var room by mutableStateOf(BlossomDark)
     var modeIndex by mutableStateOf(0)
+    var randomModeArmed by mutableStateOf(false)
     var beamIndex by mutableStateOf(0)
     var fpsValue by mutableStateOf(0) // engine convention: 0 = panel vsync
     var oversample by mutableStateOf(1) // beam integration multiplier
@@ -35,12 +36,17 @@ class ScopeUiState {
     var beamEnergy by mutableStateOf(8.0f)
     var glow by mutableStateOf(0.7f)
     var grid by mutableStateOf(true)
+    // The active source's AUTO-GAIN truth. Local truth comes from Rust; remote
+    // truth is reconciled from the desktop K/status frame rather than invented here.
     var autoGain by mutableStateOf(false)
+    var localAutoGain by mutableStateOf(false)
     var noSignal by mutableStateOf(false) // resting beam is up on an active source
-    var nerdHud by mutableStateOf(false)
+    var hudMode by mutableStateOf(2) // nerd HUD: 0 on · 1 auto (console timer) · 2 off
     var hudLine by mutableStateOf("")
     var hudLine2 by mutableStateOf("") // bridge health (remote sessions only)
     var bandMode by mutableStateOf(0)  // status band: 0 on · 1 auto (console timer) · 2 off
+    var latencyMode by mutableStateOf(2) // remote audio: 0 tight · 1 balanced · 2 safe
+    var networkMode by mutableStateOf(0) // remote route: 0 auto · 1 Wi-Fi · 2 mobile
     var calDate by mutableStateOf("")  // last saveTuning date — the bench's CAL stamp
     // Desktop-truth band line while VISUALIZER feeds the beam (`swirl · auto · pc`);
     // null = local rendering, show the local mode/gain as always.
@@ -60,6 +66,12 @@ class ScopeUiState {
     var customCount by mutableStateOf(0)
     var cycleSeconds by mutableStateOf(3.0f)
     var cyclePerTrack by mutableStateOf(false)
+
+    // The picker and console share this one host-owned request path. The host rolls and
+    // applies a real mode, so remote VISUALIZER control stays identical to a manual pick.
+    private var randomModeRequest: (() -> Unit)? = null
+    fun bindRandomModeRequest(request: () -> Unit) { randomModeRequest = request }
+    fun requestRandomMode() { randomModeRequest?.invoke() }
 
     val modeLabel: String get() = ModeLabels.getOrElse(modeIndex) { "?" }
     val modeTag: String get() = ModeTags.getOrElse(modeIndex) { "?" }

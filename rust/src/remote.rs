@@ -13,14 +13,15 @@ use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU32, AtomicU64, Ordering};
 use std::sync::{Arc, Mutex, OnceLock};
 use std::time::{Duration, Instant, SystemTime, UNIX_EPOCH};
 
-use oboe::{
-    AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync,
-    AudioStreamBuilder, DataCallbackResult, Error as OboeError, Output, PerformanceMode,
-    SharingMode, Stereo, Usage,
-};
 use crate::bridge_core::{self, WriterCmd};
 use crate::deck::{RATE, scope_ring};
-use crate::spsc::BlockRing;
+use crate::spsc::{
+    AdaptiveJitter, BlockRing, LATENCY_MODE_BALANCED, LATENCY_MODE_SAFE, LATENCY_MODE_TIGHT,
+};
+use oboe::{
+    AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync, AudioStreamBuilder,
+    DataCallbackResult, Error as OboeError, Output, PerformanceMode, SharingMode, Stereo, Usage,
+};
 
 // ── Link state (JNI-visible via status_json) ─────────────────────────────────
 pub const ST_IDLE: u8 = 0;
@@ -60,6 +61,9 @@ struct Link {
     port: AtomicU32,
     cfg_audio: AtomicBool,
     cfg_geometry: AtomicBool,
+    /// User latency policy, last-wins from JNI. The RT callback samples it on
+    /// every burst, so a mode change needs no stream teardown.
+    latency_mode: AtomicU8,
     muted: AtomicBool,
     state: AtomicU8,
     quit: AtomicBool,
@@ -89,6 +93,11 @@ struct Link {
     audio_skips: AtomicU64,
     audio_skip_ms: AtomicU64,
     a_drops: AtomicU64,
+    /// Adaptive target is stored in frames (the controller's native unit) and
+    /// converted only on status reads. Underruns are process-lifetime events,
+    /// not session-local, so reconnects cannot erase a bad-path receipt.
+    audio_target_frames: AtomicU32,
+    audio_underruns: AtomicU64,
 }
 
 fn link() -> &'static Link {
@@ -98,6 +107,7 @@ fn link() -> &'static Link {
         port: AtomicU32::new(45777),
         cfg_audio: AtomicBool::new(true),
         cfg_geometry: AtomicBool::new(false),
+        latency_mode: AtomicU8::new(LATENCY_MODE_SAFE),
         muted: AtomicBool::new(false),
         state: AtomicU8::new(ST_IDLE),
         quit: AtomicBool::new(true),
@@ -118,6 +128,8 @@ fn link() -> &'static Link {
         audio_skips: AtomicU64::new(0),
         audio_skip_ms: AtomicU64::new(0),
         a_drops: AtomicU64::new(0),
+        audio_target_frames: AtomicU32::new(RATE / 4),
+        audio_underruns: AtomicU64::new(0),
     })
 }
 
@@ -125,7 +137,10 @@ fn link() -> &'static Link {
 /// a wall-clock step must never kill a live link or immortalize a dead one
 /// (audit finding 13).
 fn now_ms() -> u64 {
-    SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+    SystemTime::now()
+        .duration_since(UNIX_EPOCH)
+        .map(|d| d.as_millis() as u64)
+        .unwrap_or(0)
 }
 
 /// Process-epoch monotonic milliseconds (CLOCK_MONOTONIC — immune to clock steps).
@@ -214,17 +229,19 @@ fn json_str(s: &str) -> String {
 // catch-up policy as pure index math. Deliberately no trait: a vtable has no
 // place on the RT path.
 
-/// ~400 ms of elastic buffer (field-tuned 2026-07-18: 100 ms + a 150 ms trigger
-/// sat INSIDE normal wifi/Tailscale jitter — the catch-up fired during ordinary
-/// playback 3-4×/song, audibly slicing it. The buffer must absorb jitter;
-/// the skip must fire only on genuine runaway lag).
+/// ~400 ms of elastic storage. Safe preserves the field-tuned 2026-07-18 policy
+/// EXACTLY: 350 ms high-water, 250 ms continuously high, then cut to 250 ms.
+/// The earlier 100 ms + 150 ms trigger sat inside normal wifi/Tailscale jitter
+/// and audibly sliced ordinary playback 3-4×/song; sustained hysteresis is law.
+///
+/// Tight (80 ms) and balanced (150 ms) keep that hysteresis but scale the high
+/// water to target + 100 ms. A zero-filled callback widens by 40 ms up to safe;
+/// two clean minutes earn 20 ms back toward the selected floor. All time in the
+/// controller is callback frames, never a callback-side clock. Honest limit:
+/// this is reactive, not a network-delay estimator — startup silence is ignored
+/// until the first audio arrives, and a genuinely starved path can still glitch
+/// before the next wider target has buffer to spend.
 const RING_FRAMES: usize = (RATE as usize) * 2 / 5;
-/// Catch-up: only when buffered stays above HIGH for SUSTAIN_FRAMES worth of
-/// callbacks (~250 ms of continuous excess) does the callback skip down to
-/// TARGET. A transient burst soaks into the buffer; accumulated lag still dies.
-const CATCHUP_HIGH_FRAMES: usize = (RATE as usize) * 35 / 100; // 350 ms
-const CATCHUP_TARGET_FRAMES: usize = (RATE as usize) / 4; // 250 ms
-const CATCHUP_SUSTAIN_FRAMES: usize = (RATE as usize) / 4; // ~250 ms of high
 
 #[derive(Clone)]
 struct AudioPath {
@@ -233,7 +250,9 @@ struct AudioPath {
 
 impl AudioPath {
     fn new(_rate: u32) -> Self {
-        Self { ring: BlockRing::new(RING_FRAMES) }
+        Self {
+            ring: BlockRing::new(RING_FRAMES),
+        }
     }
     fn sink(&self) -> AudioSink {
         AudioSink(self.ring.clone())
@@ -276,19 +295,11 @@ impl AudioTap {
     fn pop_into(&mut self, out: &mut [f32]) -> usize {
         self.0.pop_into(out)
     }
-    /// RT-safe sustained catch-up: `streak` accumulates frames-worth of
-    /// consecutive over-HIGH callbacks; only ~250 ms of CONTINUOUS excess
-    /// triggers one skip to TARGET. Jitter bursts soak into the buffer
-    /// silently; genuine runaway lag still dies in one cut.
-    fn catch_up(&mut self, streak: &mut usize, frames_this_cb: usize) {
-        if self.0.buffered_frames() > CATCHUP_HIGH_FRAMES {
-            *streak += frames_this_cb;
-            if *streak >= CATCHUP_SUSTAIN_FRAMES {
-                self.0.skip_to_latest(CATCHUP_TARGET_FRAMES);
-                *streak = 0;
-            }
-        } else {
-            *streak = 0;
+    /// RT-safe sustained catch-up. The controller supplies the current scaled
+    /// threshold and returns a keep-count only after continuous excess.
+    fn catch_up(&mut self, jitter: &mut AdaptiveJitter, frames_this_cb: usize) {
+        if let Some(keep_frames) = jitter.catch_up(self.0.buffered_frames(), frames_this_cb) {
+            self.0.skip_to_latest(keep_frames);
         }
     }
 }
@@ -297,8 +308,15 @@ impl AudioTap {
 struct RemoteOutput {
     tap: AudioTap,
     scratch: Vec<f32>,
-    /// Frames-worth of consecutive over-threshold callbacks (catch-up gate).
-    high_streak: usize,
+    jitter: AdaptiveJitter,
+    latency_mode: &'static AtomicU8,
+    effective_target_frames: &'static AtomicU32,
+    underruns: &'static AtomicU64,
+    audio_enabled: &'static AtomicBool,
+    /// The stream is opened before H/W by lifecycle law. Empty callbacks before
+    /// the first audio are startup, not network underruns, and must not teach an
+    /// adaptive mode all the way to safe before playback even exists.
+    playback_started: bool,
     muted: Arc<AtomicBool>,
     restart_tx: std::sync::mpsc::Sender<()>,
 }
@@ -314,11 +332,30 @@ impl AudioOutputCallback for RemoteOutput {
         // log. Scratch is preallocated at open; a burst beyond it (absurd)
         // plays silence for the tail rather than allocating.
         let need = (frames.len() * 2).min(self.scratch.len());
-        let mut streak = self.high_streak;
-        self.tap.catch_up(&mut streak, frames.len()); // index math only
-        self.high_streak = streak;
+        self.jitter
+            .set_mode(self.latency_mode.load(Ordering::Relaxed));
+        self.tap.catch_up(&mut self.jitter, frames.len()); // index math only
         let got = self.tap.pop_into(&mut self.scratch[..need]);
         self.scratch[got..need].fill(0.0);
+        if self.audio_enabled.load(Ordering::Relaxed) {
+            if got > 0 {
+                self.playback_started = true;
+            }
+            if self.playback_started {
+                if got < need {
+                    self.underruns.fetch_add(1, Ordering::Relaxed);
+                    self.jitter.observe_underrun();
+                } else {
+                    self.jitter.observe_clean(frames.len());
+                }
+            }
+        } else {
+            // Re-arming avoids charging deliberate remoteSetStreams(audio=false)
+            // silence as an outage when audio is enabled again.
+            self.playback_started = false;
+        }
+        self.effective_target_frames
+            .store(self.jitter.target_frames() as u32, Ordering::Relaxed);
         // Instant local mute: keep draining (no stale-buffer buildup), emit silence.
         let muted = self.muted.load(Ordering::Relaxed);
         for (i, f) in frames.iter_mut().enumerate() {
@@ -333,11 +370,7 @@ impl AudioOutputCallback for RemoteOutput {
         DataCallbackResult::Continue
     }
 
-    fn on_error_after_close(
-        &mut self,
-        _s: &mut dyn AudioOutputStreamSafe,
-        error: OboeError,
-    ) {
+    fn on_error_after_close(&mut self, _s: &mut dyn AudioOutputStreamSafe, error: OboeError) {
         // Buds connected / route died: AAudio kills the stream. Never reopen from the
         // callback — signal the supervisor.
         if matches!(error, OboeError::Disconnected) {
@@ -351,6 +384,9 @@ fn open_output(
     muted: Arc<AtomicBool>,
     restart_tx: std::sync::mpsc::Sender<()>,
 ) -> Result<AudioStreamAsync<Output, RemoteOutput>, String> {
+    let l = link();
+    let latency_mode = l.latency_mode.load(Ordering::Relaxed);
+    let resume_target = l.audio_target_frames.load(Ordering::Relaxed) as usize;
     let mut out = AudioStreamBuilder::default()
         .set_performance_mode(PerformanceMode::LowLatency)
         .set_sharing_mode(SharingMode::Shared)
@@ -363,7 +399,12 @@ fn open_output(
             // Preallocated far above any real AAudio burst (8192 frames) — the
             // callback never resizes it (finding 10's alloc half).
             scratch: vec![0.0; 16384],
-            high_streak: 0,
+            jitter: AdaptiveJitter::new(RATE as usize, latency_mode, resume_target),
+            latency_mode: &l.latency_mode,
+            effective_target_frames: &l.audio_target_frames,
+            underruns: &l.audio_underruns,
+            audio_enabled: &l.cfg_audio,
+            playback_started: false,
             muted,
             restart_tx,
         })
@@ -388,7 +429,10 @@ fn enqueue(tag: u8, payload: &[u8]) -> bool {
         {
             Ok(()) => true,
             Err(_) => {
-                log::warn!("remote enqueue {} dropped (writer queue full/gone)", tag as char);
+                log::warn!(
+                    "remote enqueue {} dropped (writer queue full/gone)",
+                    tag as char
+                );
                 false
             }
         },
@@ -495,6 +539,21 @@ pub fn set_muted(m: bool) {
     link().muted.store(m, Ordering::Relaxed);
 }
 
+/// 0=tight, 1=balanced, 2=safe. Invalid values fail closed to safe. A live
+/// callback observes the new mode on its next burst; no session restart and no
+/// JNI-thread interaction with the audio stream are required.
+pub fn set_latency_mode(mode: u8) {
+    let l = link();
+    let mode = AdaptiveJitter::normalize_mode(mode);
+    let previous = l.latency_mode.swap(mode, Ordering::Relaxed);
+    if previous != mode {
+        l.audio_target_frames.store(
+            AdaptiveJitter::floor_frames(RATE as usize, mode) as u32,
+            Ordering::Relaxed,
+        );
+    }
+}
+
 pub fn transport(cmd: &str) {
     // Bare v1 verbs ride as JSON on v2 (the relay accepts both; JSON is canonical).
     let payload = if cmd.starts_with('{') {
@@ -548,7 +607,12 @@ pub fn request_art(id: &str) {
 pub fn scope_ctl(verb: &str, value: &str) {
     enqueue(
         b'V',
-        format!(r#"{{"verb":{},"value":{}}}"#, json_str(verb), json_str(value)).as_bytes(),
+        format!(
+            r#"{{"verb":{},"value":{}}}"#,
+            json_str(verb),
+            json_str(value)
+        )
+        .as_bytes(),
     );
 }
 
@@ -587,8 +651,15 @@ pub fn status_json() -> String {
     let welcome = l.slots.welcome.lock().unwrap().clone();
     let error = l.slots.error.lock().unwrap().clone();
     let scope = plock(&l.slots.scope).clone();
+    let latency_mode = l.latency_mode.load(Ordering::Relaxed);
+    let latency_mode_name = match latency_mode {
+        LATENCY_MODE_TIGHT => "tight",
+        LATENCY_MODE_BALANCED => "balanced",
+        _ => "safe",
+    };
+    let audio_target_ms = l.audio_target_frames.load(Ordering::Relaxed) as u64 * 1000 / RATE as u64;
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"scope":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -605,9 +676,24 @@ pub fn status_json() -> String {
         l.audio_skips.load(Ordering::Relaxed),
         l.audio_skip_ms.load(Ordering::Relaxed),
         l.a_drops.load(Ordering::Relaxed),
-        if scope.is_empty() { "null".to_string() } else { scope },
-        if welcome.is_empty() { "null".into() } else { welcome },
-        if error.is_empty() { "null".into() } else { error },
+        json_str(latency_mode_name),
+        audio_target_ms,
+        l.audio_underruns.load(Ordering::Relaxed),
+        if scope.is_empty() {
+            "null".to_string()
+        } else {
+            scope
+        },
+        if welcome.is_empty() {
+            "null".into()
+        } else {
+            welcome
+        },
+        if error.is_empty() {
+            "null".into()
+        } else {
+            error
+        },
     )
 }
 
@@ -716,7 +802,11 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let l = link();
     l.state.store(ST_CONNECTING, Ordering::Relaxed);
 
-    let addr = match (host, port).to_socket_addrs().ok().and_then(|mut a| a.next()) {
+    let addr = match (host, port)
+        .to_socket_addrs()
+        .ok()
+        .and_then(|mut a| a.next())
+    {
         Some(a) => a,
         None => return SessionEnd::Failed(format!("resolve {host}: no address")),
     };
@@ -931,7 +1021,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 
     // Reader thread: SO_RCVTIMEO 1 s + partial-progress reads, so teardown's
     // cancel is observed within a second even if a FIN goes missing.
-    read_stream.set_read_timeout(Some(Duration::from_secs(1))).ok();
+    read_stream
+        .set_read_timeout(Some(Duration::from_secs(1)))
+        .ok();
     let reader_done = Arc::new(AtomicBool::new(false));
     let saw_w = Arc::new(AtomicBool::new(false));
     let saw_v1 = Arc::new(AtomicBool::new(false));
@@ -1043,18 +1135,38 @@ fn teardown_session(
         }
     }
     if let Some(h) = parts.writer.take() {
-        bridge_core::bounded_join(h, "phosphor-remote-writer", Duration::from_secs(3), &l.leaked_threads);
+        bridge_core::bounded_join(
+            h,
+            "phosphor-remote-writer",
+            Duration::from_secs(3),
+            &l.leaked_threads,
+        );
     }
     path.close();
     path.clear();
     if let Some(h) = parts.reader.take() {
-        bridge_core::bounded_join(h, "phosphor-remote", Duration::from_secs(2), &l.leaked_threads);
+        bridge_core::bounded_join(
+            h,
+            "phosphor-remote",
+            Duration::from_secs(2),
+            &l.leaked_threads,
+        );
     }
     if let Some(h) = parts.audio.take() {
-        bridge_core::bounded_join(h, "phosphor-remote-audio", Duration::from_secs(1), &l.leaked_threads);
+        bridge_core::bounded_join(
+            h,
+            "phosphor-remote-audio",
+            Duration::from_secs(1),
+            &l.leaked_threads,
+        );
     }
     if let Some(h) = parts.oboe.take() {
-        bridge_core::bounded_join(h, "phosphor-remote-oboe", Duration::from_secs(2), &l.leaked_threads);
+        bridge_core::bounded_join(
+            h,
+            "phosphor-remote-oboe",
+            Duration::from_secs(2),
+            &l.leaked_threads,
+        );
     }
     let stream = plock(out_slot).take();
     drop(stream); // outside the lock
@@ -1183,8 +1295,7 @@ fn reader(
                             .ok()
                             .and_then(|v| v["id"].as_str().map(String::from))
                             .unwrap_or_default();
-                        *l.slots.art.lock().unwrap() =
-                            Some(payload[2 + hl..].to_vec());
+                        *l.slots.art.lock().unwrap() = Some(payload[2 + hl..].to_vec());
                         *l.slots.art_id.lock().unwrap() = id;
                         l.art_gen.fetch_add(1, Ordering::Relaxed);
                     }
@@ -1200,13 +1311,11 @@ fn reader(
                 // Heartbeat; while geometry streams it carries the desktop
                 // scope's live truth (mode/gain/auto) for the honesty band.
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
-                    *plock(&l.slots.scope) = v
-                        .get("scope")
-                        .map(|s| s.to_string())
-                        .unwrap_or_default();
+                    *plock(&l.slots.scope) =
+                        v.get("scope").map(|s| s.to_string()).unwrap_or_default();
                 }
             }
-            _ => {}    // unknown: skipped (forward compatibility)
+            _ => {} // unknown: skipped (forward compatibility)
         }
     }
     log::info!("remote reader ended (gen {})", shared.session_gen);

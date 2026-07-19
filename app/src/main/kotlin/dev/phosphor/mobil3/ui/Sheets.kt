@@ -25,13 +25,11 @@ import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
-import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
-import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.heightIn
@@ -122,7 +120,7 @@ fun SheetHost(
                     .clip(sheetShape)
                     .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
                     .border(Dim.hairline, p.lineStrong, sheetShape)
-                    .windowInsetsPadding(WindowInsets.safeDrawing)
+                    .windowInsetsPadding(chromeSafeDrawingInsets(Dim.sheetPad, Dim.sheetPad))
                     .padding(Dim.sheetPad)
                     // Swallow taps; own vertical drags for the pull-down dismiss.
                     .pointerInput(Unit) { detectTapGestures(onTap = {}) }
@@ -285,8 +283,25 @@ fun ModeSheet(
     )
     SheetHost(p, "MODE", reduced, onDismiss) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
-            groups.forEachIndexed { gi, (heading, indices) ->
-                SectionHeading(heading, p, if (gi == 0) Modifier.padding(top = 0.dp) else Modifier)
+            SectionHeading("AUTOMATIC", p, Modifier.padding(top = 0.dp))
+            val randomActive = state.randomModeArmed
+            Row(
+                Modifier
+                    .fillMaxWidth()
+                    .border(Dim.hairline, if (randomActive) p.accent else p.line)
+                    .clickable { Haptics.medium(view); state.requestRandomMode() }
+                    .padding(horizontal = Dim.rowPad, vertical = 10.dp),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Mono("⚄", if (randomActive) p.accent else p.ink2, Type.dataXl, Modifier.width(22.dp))
+                Spacer(Modifier.width(Dim.gapLg))
+                Mono("random", if (randomActive) p.accent else p.ink, Type.dataLg)
+                Spacer(Modifier.weight(1f))
+                Mono(if (randomActive) state.modeTag else "new face", p.muted, Type.dataXs)
+            }
+            Spacer(Modifier.height(6.dp))
+            groups.forEach { (heading, indices) ->
+                SectionHeading(heading, p)
                 indices.forEach { i ->
                     val active = state.modeIndex == i
                     Row(
@@ -509,6 +524,20 @@ fun SettingsSheet(
             DragRule(
                 "GAIN", state.gain, 0.1f, 6.0f, p, { "×%.2f".format(it) },
             ) { actions.setGainAbsolute(it) }
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ChipCell(
+                        "AUTO-GAIN · " + if (state.autoGain) "on" else "off",
+                        active = state.autoGain, p = p, small = true,
+                    ) { actions.setGainAuto(!state.autoGain) }
+                }
+                Spacer(Modifier.weight(2f))
+            }
+            Prose(
+                "Local light glides with the desktop autosize law. Remote sends the same " +
+                    "gain command to the source machine; a manual gain gesture takes over.",
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
             DragRule(
                 "BEAM", state.beamEnergy, 1.0f, 30.0f, p, { "×%.0f".format(it) },
             ) { actions.setBeamEnergy(it) }
@@ -553,9 +582,11 @@ fun SettingsSheet(
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell(
-                        "NERD HUD · " + (if (state.nerdHud) "on" else "off"),
-                        active = state.nerdHud, p = p, small = true,
-                    ) { state.nerdHud = !state.nerdHud }
+                        "HUD · " + when (state.hudMode) {
+                            0 -> "on"; 1 -> "auto"; else -> "off"
+                        },
+                        active = state.hudMode == 0, p = p, small = true,
+                    ) { actions.setHudMode((state.hudMode + 1) % 3) }
                 }
                 Box(Modifier.weight(1f)) {
                     // Status band (Ben's ask): always · rides the console timer · off.
@@ -568,6 +599,42 @@ fun SettingsSheet(
                 }
                 Spacer(Modifier.weight(1f))
             }
+
+            SectionHeading("REMOTE", p)
+            Mono("LATENCY", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("tight" to 0, "balanced" to 1, "safe" to 2).forEach { (label, mode) ->
+                    Box(Modifier.weight(1f)) {
+                        ChipCell(
+                            label, active = state.latencyMode == mode, p = p, small = true,
+                        ) { actions.setRemoteLatencyMode(mode) }
+                    }
+                }
+            }
+            Prose(
+                "Tight is for tether or LAN. The bridge widens automatically on underruns; " +
+                    "safe is today's ear-verified behavior.",
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
+            Mono(
+                "NETWORK", p.muted, Type.dataXs,
+                Modifier.padding(top = Dim.gapLg, bottom = 4.dp),
+            )
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("auto" to 0, "wifi" to 1, "mobile" to 2).forEach { (label, mode) ->
+                    Box(Modifier.weight(1f)) {
+                        ChipCell(
+                            label, active = state.networkMode == mode, p = p, small = true,
+                        ) { actions.setRemoteNetworkMode(mode) }
+                    }
+                }
+            }
+            Prose(
+                "Auto follows Android's default route. Wi-Fi or mobile binds the remote " +
+                    "session process-wide because the bridge socket lives in Rust, not Java. " +
+                    "There is no both: one TCP stream cannot multipath.",
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
 
             SectionHeading("ROOM & LIGHT", p)
             SheetRow("room · ${state.room.label}", p) { actions.openRoom() }
@@ -602,9 +669,13 @@ interface SheetActions {
     fun setFps(value: Int)
     fun setOversample(n: Int)
     fun setGainAbsolute(g: Float)
+    fun setGainAuto(on: Boolean)
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
     fun setGrid(on: Boolean)
+    fun setHudMode(mode: Int)
+    fun setRemoteLatencyMode(mode: Int)
+    fun setRemoteNetworkMode(mode: Int)
     fun openRoom()
     fun openLight()
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
