@@ -24,3 +24,19 @@ have it (`pm3 smoke` exits 2 on a release install).
 - No authored Python anywhere, build tooling included.
 - The Android toolchain lives in-repo at `.toolchain/` (gitignored). Do not scatter it into
   the home folder — Ben's ask, 2026-07-18. `scripts/env.sh` is self-locating.
+
+## Relationship to Nexus Mobile (the superapp)
+
+This repo is the **scaffold of record** for **Nexus Mobile** (`dev.nexus.mobile`, planned
+`RamenFast/nexus-mobile`): the superapp forks this build spine (Kotlin+Compose+Rust-JNI, the
+cargo-ndk `Exec` task, the FGS/service scaffolds, the framed-TCP relay + reconnect FSM, the
+`pm3`→`nx` agent-CLI). Source-of-truth docs live in
+`~/Dev/ClaudeWorkspace/🛰️Station/mobile/` (compile-from-prompt SPEC + FEEDBACK per module);
+the lift list is `mobile/scaffold/LIFT.md`.
+
+Going forward, **phosphor is also the first inter-app client** of Nexus's agent protocol
+(`mobile/modules/ipc/SPEC.md`): phosphor → Nexus sends now-playing/files and speaks the house
+JSON-CLI envelope over a bound service; **Nexus → phosphor** (driving the scope so Nexus's voice
+draws live Lissajous shapes) is **reserved for Phase 5**, co-designed with Nexus, not built while
+this is only the scaffold. The `phosphor ctl <verb>` contract already exists for that reverse path.
+
