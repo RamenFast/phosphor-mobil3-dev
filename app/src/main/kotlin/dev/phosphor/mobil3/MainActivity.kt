@@ -13,6 +13,7 @@ import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
 import android.provider.Settings
+import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -54,6 +55,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var uiPlacementLockState by mutableStateOf(false)
     private var lockedUiLandscape by mutableStateOf(false)
     private var lockedScopeOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    private var lockedUiOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+    // Beam-to-gravity (UI PLACEMENT locked): the Activity is pinned; this sensor
+    // rotates the FIGURE and counter-rotates key glyphs to the viewing edge.
+    private var orientationSensor: OrientationEventListener? = null
+    private var lastUprightQ = 0
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
         prefs().edit().putFloat("gain", gainValue).apply()
@@ -337,13 +343,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (intent.getBooleanExtra("remote", false)) startRemote()
     }
 
-    // Copy the picked document into a cache file named after its real display name (so the
-    // deck/session title reads right), then open by path. fd-passing to skip the copy is a
-    // documented later optimization.
+    // Copy the picked document into files/staged named after its real display name (so
+    // the deck/session title reads right), then open by path. Staged copies are
+    // transient — earlier singles are deleted before the new one lands, and the service
+    // sweeps the whole staged dir on create/destroy (441 MB leak, Ben's storage audit).
+    // fd-passing to skip the copy is a documented later optimization.
     private fun loadUri(uri: Uri) {
         Thread {
             val name = queryDisplayName(uri) ?: "track.wav"
-            val dst = File(filesDir, name)
+            val staged = File(filesDir, "staged").apply { mkdirs() }
+            staged.listFiles()?.forEach { if (it.isFile && it.name != name) it.delete() }
+            val dst = File(staged, name)
             contentResolver.openInputStream(uri)?.use { input ->
                 dst.outputStream().use { input.copyTo(it) }
             }
@@ -579,6 +589,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
             "scope_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
         )
         uiPlacementLockState = p.getBoolean("ui_placement_locked", false)
+        lockedUiOrientation = p.getInt(
+            "ui_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+        )
+        if (uiPlacementLockState) ensureOrientationSensor()
         lockedUiLandscape = p.getBoolean(
             "ui_locked_landscape",
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
@@ -621,7 +635,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
 
     override fun openCaptureMetadataSettings() {
-        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        // Land on OUR toggle directly (API 30+): "notification ACCESS" is a different
+        // switch than the app-info "allow notifications" one, and the ambiguity already
+        // cost a round trip with Ben. Fall back to the full access list.
+        val component = ComponentName(this, CaptureNotificationListenerService::class.java)
+        val detail = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
+            .putExtra(
+                Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
+                component.flattenToString(),
+            )
+        runCatching { startActivity(detail) }.onFailure {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+        }
     }
 
     private fun refreshCaptureMetadataAccess() {
@@ -777,11 +802,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (locked) {
             lockedUiLandscape =
                 resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+            lockedUiOrientation = exactCurrentOrientation()
         }
         uiPlacementLockState = locked
+        if (locked) ensureOrientationSensor() else dropOrientationSensor()
+        applyScopeRotationPreference()
         prefs().edit()
             .putBoolean("ui_placement_locked", locked)
             .putBoolean("ui_locked_landscape", lockedUiLandscape)
+            .putInt("ui_locked_orientation", lockedUiOrientation)
             .apply()
     }
 
@@ -794,11 +823,44 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
                 )
             ) lockedScopeOrientation else exactCurrentOrientation()
+        } else if (uiPlacementLockState) {
+            // UI PLACEMENT locked with scope free: the Activity never rotates — the
+            // BEAM follows gravity instead (see the orientation sensor). Chrome
+            // physically cannot move; scope content stays upright.
+            if (lockedUiOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
+                lockedUiOrientation else exactCurrentOrientation()
         } else {
             // Return rotation ownership to Android. This follows the sensor when the
             // system allows rotation and respects the user's OS-level rotation lock.
             ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
+    }
+
+    private fun ensureOrientationSensor() {
+        if (orientationSensor != null) return
+        orientationSensor = object : OrientationEventListener(this) {
+            override fun onOrientationChanged(degrees: Int) {
+                if (degrees == ORIENTATION_UNKNOWN || !uiPlacementLockState) return
+                val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
+                val displayQ = display?.rotation ?: Surface.ROTATION_0
+                // CCW quadrants the content still needs beyond the pinned display
+                // rotation to read upright from the current viewing edge.
+                val q = (((4 - deviceQ) % 4) - displayQ + 4) % 4
+                if (q != lastUprightQ) {
+                    lastUprightQ = q
+                    ui.uprightQuadrant = q
+                    if (!scopeRotationLockState) PhosphorNative.setViewRotation(q)
+                }
+            }
+        }.also { if (it.canDetectOrientation()) it.enable() }
+    }
+
+    private fun dropOrientationSensor() {
+        orientationSensor?.disable()
+        orientationSensor = null
+        lastUprightQ = 0
+        ui.uprightQuadrant = 0
+        PhosphorNative.setViewRotation(0)
     }
 
     private fun exactCurrentOrientation(): Int {

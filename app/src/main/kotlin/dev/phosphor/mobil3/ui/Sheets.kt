@@ -471,7 +471,9 @@ fun SourceSheet(
                 verticalAlignment = Alignment.CenterVertically,
             ) {
                 Prose(
-                    "Track names and cover art need notification access; sound capture still works without it.",
+                    "Track names and cover art need NOTIFICATION ACCESS — a different " +
+                        "switch than “allow notifications”. grant… opens the right one. " +
+                        "Sound capture works without it.",
                     p.muted,
                     modifier = Modifier.weight(1f),
                 )
@@ -836,7 +838,8 @@ fun SettingsSheet(
             }
             Prose(
                 "Local light glides with the desktop autosize law. Remote sends the same " +
-                    "gain command to the source machine; a manual gain gesture takes over.",
+                    "gain command to the source machine. While auto is on the viewport is " +
+                    "locked — gain gestures just say so; this GAIN rule is the manual takeover.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
             DragRule(

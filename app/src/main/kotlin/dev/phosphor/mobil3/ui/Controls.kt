@@ -25,6 +25,7 @@ import androidx.compose.runtime.getValue
 import androidx.compose.runtime.remember
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
@@ -261,7 +262,12 @@ fun FlatKey(
             .padding(horizontal = 14.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Mono(label, if (active || pressed) p.accent else p.ink2, Type.data)
+        // UI-locked mode: the label stays upright toward the viewing edge.
+        val upright = LocalUiUpright.current
+        Mono(
+            label, if (active || pressed) p.accent else p.ink2, Type.data,
+            Modifier.graphicsLayer { rotationZ = upright * -90f },
+        )
         // Service-bench designator (`V2` for the tube, `J1` for the input jack):
         // a silk-screened part number in the corner, Annotated rooms only.
         if (style.designators && designator != null) {

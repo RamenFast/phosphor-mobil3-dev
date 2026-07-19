@@ -37,6 +37,9 @@ enum class SettingsGlyph {
     About,
     Room,
     BeamColor,
+    Fps,
+    Hud,
+    Grid,
 }
 
 object SettingsGlyphs {
@@ -248,7 +251,66 @@ object SettingsGlyphs {
         }.build()
     }
 
+    /** Frame cadence: a sweep line broken into four equal frame ticks. */
+    val Fps: ImageVector by lazy {
+        builder("Fps").apply {
+            hairline {
+                moveTo(3f, 17f)
+                lineTo(21f, 17f)
+                moveTo(3f, 17f)
+                lineTo(3f, 13f)
+                moveTo(9f, 17f)
+                lineTo(9f, 11f)
+                moveTo(15f, 17f)
+                lineTo(15f, 9f)
+                moveTo(21f, 17f)
+                lineTo(21f, 7f)
+            }
+        }.build()
+    }
+
+    /** The nerd HUD: a corner bracket holding three readout lines. */
+    val Hud: ImageVector by lazy {
+        builder("Hud").apply {
+            hairline {
+                moveTo(4f, 10f)
+                lineTo(4f, 4f)
+                lineTo(10f, 4f)
+                moveTo(7f, 9f)
+                lineTo(20f, 9f)
+                moveTo(7f, 13f)
+                lineTo(17f, 13f)
+                moveTo(7f, 17f)
+                lineTo(14f, 17f)
+            }
+        }.build()
+    }
+
+    /** The graticule itself: closed frame, 3x3 lattice. */
+    val Grid: ImageVector by lazy {
+        builder("Grid").apply {
+            hairline {
+                moveTo(4f, 4f)
+                lineTo(20f, 4f)
+                lineTo(20f, 20f)
+                lineTo(4f, 20f)
+                close()
+                moveTo(9.33f, 4f)
+                lineTo(9.33f, 20f)
+                moveTo(14.67f, 4f)
+                lineTo(14.67f, 20f)
+                moveTo(4f, 9.33f)
+                lineTo(20f, 9.33f)
+                moveTo(4f, 14.67f)
+                lineTo(20f, 14.67f)
+            }
+        }.build()
+    }
+
     fun vector(glyph: SettingsGlyph): ImageVector = when (glyph) {
+        SettingsGlyph.Fps -> Fps
+        SettingsGlyph.Hud -> Hud
+        SettingsGlyph.Grid -> Grid
         SettingsGlyph.Signal -> Signal
         SettingsGlyph.Display -> Display
         SettingsGlyph.Performance -> Performance

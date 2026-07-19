@@ -329,6 +329,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         LocalRoomStyle provides style,
         LocalBloomPull provides bloom,
         LocalChromeLandscape provides chromeLandscape,
+        LocalUiUpright provides state.uprightQuadrant,
     ) {
         Box(
             Modifier
@@ -355,6 +356,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
+                                    override fun gainLocked() = state.autoGain
                                     override fun orbitBy(dyaw: Float, dpitch: Float) =
                                         actions.orbitBy(dyaw, dpitch)
                                     override fun dollyBy(delta: Float) = actions.dollyBy(delta)
@@ -501,12 +503,21 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 ) {
                     OverflowPopout(
                         p,
+                        state = state,
                         reduced = reduced,
                         reveal = overflowReveal,
                         onDeck = { closeOverflow(Sheet.DECK) },
                         onLight = { closeOverflow(Sheet.LIGHT) },
                         onRoom = { closeOverflow(Sheet.ROOM) },
                         onSettings = { closeOverflow(Sheet.SETTINGS) },
+                        onFps = {
+                            val order = FpsOptions.map { it.value }
+                            val next = order[(order.indexOf(state.fpsValue) + 1) % order.size]
+                            sheetActions.setFps(next)
+                        },
+                        onHud = { sheetActions.setHudMode((state.hudMode + 1) % 3) },
+                        onGrid = { sheetActions.setGrid(!state.grid) },
+                        onRequestClose = { closeOverflow(Sheet.NONE) },
                     )
                 }
             }

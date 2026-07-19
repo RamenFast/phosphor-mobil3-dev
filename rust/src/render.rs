@@ -57,6 +57,10 @@ pub enum Cmd {
     /// Bottom-overscroll beam bloom, normalized 0..1. This scales segment deposit energy;
     /// the renderer's real P7 flash/glow textures own the visible release tail.
     SetBloomPull(f32),
+    /// View rotation in quadrants (0..3, CCW screen-relative). UI-PLACEMENT-LOCKED
+    /// mode pins the Activity and rotates the BEAM to gravity instead — the chrome
+    /// physically cannot move. DSP path only; remote geometry keeps its own frame.
+    SetViewRotation(u8),
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
     /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
@@ -216,6 +220,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut beam_color: usize = 0;
     let mut target_fps: i32 = 0; // 0 = panel vsync
     let mut oversample: u32 = 1; // DSP reconstruction multiplier (48/96/192 kHz)
+    let mut view_rotation: u32 = 0; // quadrants; beam-to-gravity in UI-locked mode
     let mut last_present = std::time::Instant::now();
 
     // Camera mirror (Computer's camera is crate-private; set_camera takes absolutes).
@@ -367,6 +372,10 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 Cmd::SetOversample(n) => {
                     oversample = crate::engine::set_reconstruction_rate(&mut computer, n as u32);
                     log::info!("beam oversample: {oversample}x");
+                }
+                Cmd::SetViewRotation(q) => {
+                    view_rotation = (q % 4) as u32;
+                    log::info!("view rotation: {}°", view_rotation * 90);
                 }
                 Cmd::SetGain(g) => {
                     // Manual range is 0.1..7 (Ben's ask — one past the desktop's 6);
@@ -666,8 +675,30 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             let dot: [[f32; 5]; 2] = [[cx - d, cy, cx + d, cy, i], [cx, cy - d, cx, cy + d, i]];
             advance(r, &dot, &mut seg_count);
         } else {
-            let segments = crate::engine::compute_scope_frame(&mut computer, &samples, w, h);
-            advance(r, &segments, &mut seg_count);
+            // Beam-to-gravity: odd quadrants compute in the swapped space so the figure
+            // keeps true aspect, then endpoints map by pure quarter-turns — no scaling.
+            let (cw, ch) = if view_rotation % 2 == 1 { (h, w) } else { (w, h) };
+            let segments = crate::engine::compute_scope_frame(&mut computer, &samples, cw, ch);
+            if view_rotation == 0 {
+                advance(r, &segments, &mut seg_count);
+            } else {
+                let rot = |x: f32, y: f32| -> (f32, f32) {
+                    match view_rotation {
+                        1 => (y, h - x),
+                        2 => (w - x, h - y),
+                        _ => (w - y, x),
+                    }
+                };
+                let mapped: Vec<[f32; 5]> = segments
+                    .iter()
+                    .map(|s| {
+                        let (ax, ay) = rot(s[0], s[1]);
+                        let (bx, by) = rot(s[2], s[3]);
+                        [ax, ay, bx, by, s[4]]
+                    })
+                    .collect();
+                advance(r, &mapped, &mut seg_count);
+            }
         }
 
         let frame = match a.surface.get_current_texture() {

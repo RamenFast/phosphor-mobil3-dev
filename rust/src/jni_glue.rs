@@ -485,6 +485,16 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBeamEnergy(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setViewRotation(
+    _env: JNIEnv,
+    _class: JClass,
+    quadrant: jni::sys::jint,
+) {
+    let _ = crate::render::sender()
+        .send(crate::render::Cmd::SetViewRotation((quadrant.rem_euclid(4)) as u8));
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBloomPull(
     _env: JNIEnv,
     _class: JClass,

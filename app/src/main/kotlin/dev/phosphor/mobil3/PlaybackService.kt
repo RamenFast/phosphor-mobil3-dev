@@ -125,6 +125,9 @@ class PlaybackService : MediaSessionService() {
 
     override fun onCreate() {
         super.onCreate()
+        // Fresh service = nothing staged is open yet: sweep every transient audio copy
+        // (settings/prefs untouched). Covers force-stop exits that skip onDestroy.
+        Thread { pruneStaged() }.start()
         main = Handler(mainLooper)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         connectivityManager = getSystemService(CONNECTIVITY_SERVICE) as ConnectivityManager
@@ -504,10 +507,35 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    // ── The queue engine: SAF URIs staged into filesDir on demand, next prefetched. ──
+    // ── The queue engine: SAF URIs staged into files/staged on demand, next prefetched.
+    //    Staged copies are TRANSIENT: pruned on service create/destroy and after every
+    //    open (441 MB of forgotten .wav copies taught this — Ben's storage audit). ──
     private var queueUris: MutableList<String?> = mutableListOf()
     private var queuePaths: MutableList<String?> = mutableListOf()
     private var stageGen = 0
+
+    private fun stagedRoot() = java.io.File(filesDir, "staged").apply { mkdirs() }
+
+    /**
+     * Delete every staged audio copy except [keep] (absolute paths). Also sweeps the
+     * legacy locations that leaked before staging was unified: audio dropped in the
+     * filesDir root (loadUri's old home, incl. current_track.*) and the old queue/ dir.
+     * Deleting a file the deck still has open is safe (unlink semantics) — the space
+     * frees when the deck closes it.
+     */
+    private fun pruneStaged(keep: Set<String> = emptySet()) {
+        runCatching {
+            stagedRoot().walkBottomUp().forEach { f ->
+                if (f.isFile && f.absolutePath !in keep) f.delete()
+                else if (f.isDirectory && f != stagedRoot()) f.delete() // empty dirs only
+            }
+            java.io.File(filesDir, "queue").deleteRecursively()
+            val rootKeep = setOf("profileInstalled", "selftest.json", "selftest.png")
+            filesDir.listFiles()?.forEach { f ->
+                if (f.isFile && f.name !in rootKeep && f.absolutePath !in keep) f.delete()
+            }
+        }
+    }
 
     private fun stagedPath(i: Int): String? {
         queuePaths.getOrNull(i)?.let { return it }
@@ -515,7 +543,7 @@ class PlaybackService : MediaSessionService() {
         val uri = android.net.Uri.parse(uriStr ?: return null)
         val name = "q$i-" + (uri.lastPathSegment ?: "track").substringAfterLast('/')
             .substringAfterLast(':').replace('/', '_')
-        val dst = java.io.File(filesDir, "queue/$name")
+        val dst = java.io.File(stagedRoot(), "queue/$name")
         dst.parentFile?.mkdirs()
         return runCatching {
             contentResolver.openInputStream(uri)?.use { input ->
@@ -537,8 +565,15 @@ class PlaybackService : MediaSessionService() {
                     localPlayer.onTrackOpened()
                     startEndWatcher()
                 }
-                // Prefetch the next entry so the gapless hand-off has a local file ready.
-                if (i + 1 < queueUris.size) stagedPath(i + 1)
+                // Prefetch the next entry so the gapless hand-off has a local file ready,
+                // then drop every other staged copy — two tracks is the whole budget.
+                val next = if (i + 1 < queueUris.size) stagedPath(i + 1) else null
+                queuePaths.indices.forEach { j ->
+                    if (j != i && queuePaths[j] != null && queuePaths[j] != next) {
+                        queuePaths[j] = null
+                    }
+                }
+                pruneStaged(setOfNotNull(path, next))
             }
         }.start()
     }
@@ -812,6 +847,7 @@ class PlaybackService : MediaSessionService() {
         session = null
         PhosphorNative.remoteDisconnect()
         PhosphorNative.deckClose()
+        pruneStaged() // exit leaves no transient audio behind
         super.onDestroy()
     }
 

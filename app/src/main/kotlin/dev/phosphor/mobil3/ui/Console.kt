@@ -3,6 +3,8 @@ package dev.phosphor.mobil3.ui
 import androidx.compose.animation.core.InfiniteRepeatableSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
+import androidx.compose.foundation.gestures.detectVerticalDragGestures
+import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -343,12 +345,17 @@ fun BenchPost(state: ScopeUiState, p: Palette) {
 @Composable
 fun OverflowPopout(
     p: Palette,
+    state: ScopeUiState,
     reduced: Boolean,
     reveal: PullRevealState,
     onDeck: () -> Unit,
     onLight: () -> Unit,
     onRoom: () -> Unit,
     onSettings: () -> Unit,
+    onFps: () -> Unit,
+    onHud: () -> Unit,
+    onGrid: () -> Unit,
+    onRequestClose: () -> Unit,
 ) {
     val style = LocalRoomStyle.current
     val shape = RoundedCornerShape(style.cornerRadius)
@@ -368,6 +375,21 @@ fun OverflowPopout(
             .clip(shape)
             .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
             .border(Dim.hairline, p.lineStrong, shape)
+            // Ben: "can slide up the right menu, but can't slide it down easy" —
+            // a downward drag anywhere on the open menu tracks the finger back out.
+            .pointerInput(reveal) {
+                detectVerticalDragGestures(
+                    onDragStart = { reveal.begin(resetClosed = false) },
+                    onDragEnd = {
+                        if (reveal.progress < 0.6f) onRequestClose()
+                        else reveal.settleTo(true, style, reduced)
+                    },
+                    onDragCancel = { reveal.settleTo(true, style, reduced) },
+                ) { change, delta ->
+                    change.consume()
+                    reveal.dragBy(-delta)
+                }
+            }
             .padding(6.dp)
     ) {
         listOf(
@@ -382,6 +404,56 @@ fun OverflowPopout(
                     .clickable { action() }
                     .padding(horizontal = 10.dp, vertical = 11.dp),
             ) { Mono(label, p.ink, Type.data) }
+        }
+        // Quick settings (Ben's ask): the three live toggles, wearing the same
+        // glyphs the SETTINGS sheet uses. State reads under the icon, mono truth.
+        Spacer(Modifier.height(4.dp))
+        Row(
+            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            QuickToggle(
+                SettingsGlyph.Fps,
+                when (state.fpsValue) { 0 -> "120"; -1 -> "unc"; else -> "${state.fpsValue}" },
+                active = true, p = p, onTap = onFps,
+            )
+            QuickToggle(
+                SettingsGlyph.Hud,
+                when (state.hudMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
+                active = state.hudMode != 2, p = p, onTap = onHud,
+            )
+            QuickToggle(
+                SettingsGlyph.Grid,
+                if (state.grid) "on" else "off",
+                active = state.grid, p = p, onTap = onGrid,
+            )
+        }
+    }
+}
+
+// One quick-settings cell: room-aware glyph over a terse mono state.
+@Composable
+private fun QuickToggle(
+    glyph: SettingsGlyph,
+    value: String,
+    active: Boolean,
+    p: Palette,
+    onTap: () -> Unit,
+) {
+    Column(
+        Modifier
+            .clickable(onClick = onTap)
+            .padding(horizontal = 10.dp, vertical = 4.dp),
+        horizontalAlignment = Alignment.CenterHorizontally,
+    ) {
+        val upright = LocalUiUpright.current
+        Column(
+            Modifier.graphicsLayer { rotationZ = upright * -90f },
+            horizontalAlignment = Alignment.CenterHorizontally,
+        ) {
+            SettingsGlyphIcon(glyph, p, 18.dp)
+            Spacer(Modifier.height(3.dp))
+            Mono(value, if (active) p.accent else p.muted, Type.dataXs)
         }
     }
 }

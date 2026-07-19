@@ -42,3 +42,7 @@ object Dim {
 // The responsive chrome profile may deliberately differ from the current display
 // orientation when UI PLACEMENT is locked. Text itself is never rotated.
 val LocalChromeLandscape = staticCompositionLocalOf { false }
+
+// Device-upright quadrant while UI PLACEMENT is locked: key labels and glyphs
+// counter-rotate so they read from the edge the user is actually viewing from.
+val LocalUiUpright = staticCompositionLocalOf { 0 }

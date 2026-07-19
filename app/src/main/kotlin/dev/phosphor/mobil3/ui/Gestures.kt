@@ -277,6 +277,8 @@ class RibbonState {
 interface StageGestureHost {
     fun currentGain(): Float
     fun setGainAbsolute(g: Float)
+    /** AUTO-GAIN armed: the viewport is locked — gain gestures inform, never move. */
+    fun gainLocked(): Boolean
     fun orbitBy(dyaw: Float, dpitch: Float)
     fun dollyBy(delta: Float)
     fun is3d(): Boolean
@@ -377,6 +379,10 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         if (abs(zoom - 1f) > 0.001f) {
                             if (host.is3d()) {
                                 host.dollyBy((1f - zoom) * 2.2f)
+                            } else if (host.gainLocked()) {
+                                // Ben's ask: auto-gain locks the viewport — the gesture
+                                // answers at the finger instead of fighting the glide.
+                                ribbon.text = "auto · view locked"
                             } else {
                                 val old = gain
                                 gain = (gain * zoom).coerceIn(0.1f, 7f)
@@ -440,6 +446,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         val d = ch.position - ch.previousPosition
                         if (host.is3d()) {
                             host.orbitBy(d.x * 0.006f, d.y * 0.006f)
+                        } else if (host.gainLocked()) {
+                            ribbon.text = "auto · view locked"
+                            ribbon.at = ch.position
+                            ribbon.visible = true
+                            ribbon.lastTouchMs = System.currentTimeMillis()
                         } else {
                             val old = gain
                             gain = (gain * exp(-d.y * 0.0042f)).coerceIn(0.1f, 7f)

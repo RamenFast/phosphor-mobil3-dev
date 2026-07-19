@@ -43,6 +43,8 @@ object PhosphorNative {
     external fun setBeamEnergy(energy: Float)
     /** Bottom pull 0..1: raises real beam deposit energy; P7 textures own its decay. */
     external fun setBloomPull(pull: Float)
+    /** Beam-to-gravity quadrant (0..3) — UI-locked mode rotates the figure, not the chrome. */
+    external fun setViewRotation(quadrant: Int)
     /** Graticule on/off (desktop grid_enabled). */
     external fun setGrid(on: Boolean)
     external fun setGlow(persistence: Float)
