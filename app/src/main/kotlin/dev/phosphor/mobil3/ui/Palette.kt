@@ -27,19 +27,28 @@ data class Palette(
     val stoneHi: Color,
     val stoneLo: Color,
     val accentFollowsBeam: Boolean,
+    // The live beam's color as a chrome ink (fed by withBeam every tick, all rooms).
+    // Value-indicating elements — seek progress, rule fills, kept ranges — draw with
+    // this so the chrome's moving parts glow the same phosphor as the trace; the
+    // room's structural accent stays its own.
+    val beamAccent: Color = Color.Unspecified,
 ) {
-    // Blend a beam color into the accent (accent_follows_beam rooms only) —
-    // port of theme.rs with_beam: gamma-lift, then 82% toward the beam hue.
+    val liveAccent: Color get() = if (beamAccent == Color.Unspecified) accent else beamAccent
+
+    // Blend a beam color into the chrome — port of theme.rs with_beam: gamma-lift,
+    // then 82% toward the beam hue. Every room gets beamAccent; only
+    // accent_follows_beam rooms let it take over the structural accent too.
     fun withBeam(beam: FloatArray): Palette {
-        if (!accentFollowsBeam) return this
         fun lift(c: Float) = (c.toDouble().pow(1.0 / 2.2).coerceIn(0.0, 1.0) * 255.0).toInt()
         fun mix(beamCh: Int, base: Int) = ((beamCh * 0.82 + base * 0.18).toInt()).coerceAtLeast(base)
+        val blended = Color(
+            mix(lift(beam[0]), 0x30),
+            mix(lift(beam[1]), 0x40),
+            mix(lift(beam[2]), 0x38),
+        )
         return copy(
-            accent = Color(
-                mix(lift(beam[0]), 0x30),
-                mix(lift(beam[1]), 0x40),
-                mix(lift(beam[2]), 0x38),
-            )
+            beamAccent = blended,
+            accent = if (accentFollowsBeam) blended else accent,
         )
     }
 

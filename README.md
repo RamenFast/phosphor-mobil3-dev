@@ -10,8 +10,11 @@ tuned on a Samsung Galaxy S25; runs on arm64 / Android 15+.
   <img src="docs/screenshots/kaleido-dense.png" width="45%" alt="dense kaleido mandala, live music">
 </p>
 <p align="center">
+  <img src="docs/screenshots/source-picker.png" width="45%" alt="SOURCE: files, app capture with honest consent, mic, remote machines">
+  <img src="docs/screenshots/settings-sheet.png" width="45%" alt="SETTINGS: focus/gain/beam/glow with randomizer dice, fills tinted by the live beam">
+</p>
+<p align="center">
   <img src="docs/screenshots/mode-sheet.png" width="45%" alt="MODE sheet: 11 scope views, random die, ban faces, geometry FX">
-  <img src="docs/screenshots/settings-sheet.png" width="45%" alt="SETTINGS: focus/gain/beam/glow with randomizer ranges">
 </p>
 
 ## What this is

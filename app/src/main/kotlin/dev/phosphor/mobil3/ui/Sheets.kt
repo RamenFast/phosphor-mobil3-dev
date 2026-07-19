@@ -367,15 +367,14 @@ fun SheetHost(
                             },
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        // Header glyph+title upright to the viewing edge (UI-locked).
-                        UprightCell {
-                            Row(verticalAlignment = Alignment.CenterVertically) {
-                                glyph?.let {
-                                    SettingsGlyphIcon(it, p, 15.dp)
-                                    Spacer(Modifier.width(8.dp))
-                                }
-                                Mono(title, p.ink2, Type.data)
+                        // A sheet is one coherent pinned document: the header stays with
+                        // the body (a lone rotated title read as "messed up" — Ben).
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            glyph?.let {
+                                SettingsGlyphIcon(it, p, 15.dp)
+                                Spacer(Modifier.width(8.dp))
                             }
+                            Mono(title, p.ink2, Type.data)
                         }
                         Mono(
                             "✕", p.ink2, Type.dataXl,
@@ -421,7 +420,7 @@ fun DragRule(
                     val midY = size.height / 2f
                     drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
                     val x = ((value - min) / (max - min)).coerceIn(0f, 1f) * size.width
-                    drawLine(p.accent, Offset(0f, midY), Offset(x, midY), 1.dp.toPx())
+                    drawLine(p.liveAccent, Offset(0f, midY), Offset(x, midY), 1.dp.toPx())
                     val half = 4.dp.toPx()
                     drawRect(
                         p.ink,
@@ -502,7 +501,7 @@ fun RangeDragRule(
                     val span = (max - min).takeIf { it > 0f } ?: 1f
                     val xLo = ((lo - min) / span).coerceIn(0f, 1f) * size.width
                     val xHi = ((hi - min) / span).coerceIn(0f, 1f) * size.width
-                    drawLine(p.accent, Offset(xLo, midY), Offset(xHi, midY), 1.dp.toPx())
+                    drawLine(p.liveAccent, Offset(xLo, midY), Offset(xHi, midY), 1.dp.toPx())
                     val half = 4.dp.toPx()
                     for (x in floatArrayOf(xLo, xHi)) {
                         drawRect(

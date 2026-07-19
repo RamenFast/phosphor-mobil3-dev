@@ -396,7 +396,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
-                                    override fun gainLocked() = state.autoGain || state.viewLock
+                                    // Only the explicit VIEW LOCK refuses gestures. A pinch
+                                    // while AUTO-GAIN is armed is a manual takeover — the
+                                    // setGainAbsolute path below disarms auto, same as the
+                                    // GAIN rule in SETTINGS (Ben's ×2: "working too well").
+                                    override fun gainLocked() = state.viewLock
                                     override fun gainAutoArmed() = state.autoGain
                                     override fun orbitBy(dyaw: Float, dpitch: Float) =
                                         actions.orbitBy(dyaw, dpitch)

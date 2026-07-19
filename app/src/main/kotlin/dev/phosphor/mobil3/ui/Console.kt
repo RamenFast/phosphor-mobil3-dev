@@ -158,7 +158,8 @@ fun SeekRule(
                     val midY = size.height / 2f
                     drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
                     val x = frac.coerceIn(0f, 1f) * size.width
-                    drawLine(p.accent, Offset(0f, midY), Offset(x, midY), 1.dp.toPx())
+                    // The played portion glows the live beam's phosphor.
+                    drawLine(p.liveAccent, Offset(0f, midY), Offset(x, midY), 1.dp.toPx())
                     val half = 4.dp.toPx()
                     drawRect(
                         p.ink,

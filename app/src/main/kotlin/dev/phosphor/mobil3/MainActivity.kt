@@ -60,7 +60,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // four lock modes; this sensor publishes the gravity quadrant and ROUTES it —
     // beam-to-gravity (scope free + UI locked), element-upright (any UI locked), or
     // whole-chrome-to-gravity (scope locked + UI follow). See routeOrientation.
-    private var orientationSensor: OrientationEventListener? = null
+    private var gravityListener: android.hardware.SensorEventListener? = null
+    private var lastSourceReopened = false
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
     private var lastRoutedQ = -1
     private val tick = Handler(Looper.getMainLooper())
@@ -171,6 +172,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun onResume() {
         super.onResume()
         refreshCaptureMetadataAccess()
+        // Reopen the last source once per process (Ben's ask): capture re-raises the
+        // system share dialog (only if the in-app consent was already given some day);
+        // mic restarts silently. Deck/remote stay manual — files and networks are
+        // deliberate acts.
+        if (!lastSourceReopened) {
+            lastSourceReopened = true
+            if (!ui.live && ui.sourceLabel == "no source") {
+                when (prefs().getString("last_source", "none")) {
+                    "capture" -> if (!captureConsentNeeded()) startCapture()
+                    "mic" -> startMic()
+                }
+            }
+        }
     }
 
     override fun onPictureInPictureModeChanged(
@@ -316,10 +330,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     if (leaked > 0) append(" · LEAK $leaked")
                 } else ""
             }
-            // accent_follows_beam rooms breathe with the live beam (desktop law: 82%
-            // toward the beam hue). Recomputed at 2 Hz — gentle, not flickery.
+            // Every room breathes with the live beam now (Ben's ask: the moving parts
+            // of the chrome — seek, rule fills — glow the trace's phosphor). Rooms with
+            // accent_follows_beam additionally let it take the structural accent
+            // (desktop law: 82% toward the beam hue). Recomputed at 2 Hz.
             val base = baseRoom ?: ui.room
-            if (base.accentFollowsBeam) {
+            run {
                 val rgb = PhosphorNative.beamColorNow()
                 val beam = floatArrayOf(
                     ((rgb shr 16) and 0xff) / 255f,
@@ -535,6 +551,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putInt("mode", ui.modeIndex)
             .putBoolean("random_mode_armed", ui.randomModeArmed)
             .putString("random_track_title", lastRandomTrackTitle)
+            // The instrument remembers what it was listening to (capture/mic only —
+            // files and networks stay deliberate acts).
+            .putString(
+                "last_source",
+                when {
+                    ui.live && ui.sourceLabel == "capture" -> "capture"
+                    ui.live && ui.sourceLabel == "mic" -> "mic"
+                    else -> "none"
+                },
+            )
             .putString("random_ban_modes", ui.randomBanModes.sorted().joinToString(","))
             .putInt("beam", ui.beamIndex)
             .putInt("fps", ui.fpsValue)
@@ -904,27 +930,50 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun updateOrientationSensor() {
         val needed = scopeRotationLockState || uiPlacementLockState
         if (needed) {
-            if (orientationSensor == null) {
-                orientationSensor = object : OrientationEventListener(this) {
-                    override fun onOrientationChanged(degrees: Int) {
-                        if (degrees == ORIENTATION_UNKNOWN) return
-                        // Hysteresis: only accept readings solidly within a cardinal
-                        // window (±30°) — a near-flat or diagonal phone keeps the last
-                        // orientation instead of flickering quadrants on the desk.
-                        val toCardinal = ((degrees + 45) / 90) % 4 * 90
-                        val delta = ((degrees - toCardinal + 540) % 360) - 180
-                        if (delta !in -30..30) return
-                        lastSensorDeg = degrees
-                        routeOrientation()
+            if (gravityListener == null) {
+                val sm = getSystemService(android.hardware.SensorManager::class.java)
+                val accel = sm?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
+                if (accel != null) {
+                    gravityListener = object : android.hardware.SensorEventListener {
+                        private var gx = 0f; private var gy = 0f; private var gz = 0f
+                        override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
+                        override fun onSensorChanged(e: android.hardware.SensorEvent) {
+                            // Low-pass to gravity, then two gates before any quadrant
+                            // moves: (1) FLATNESS — a phone within ~20° of lying flat has
+                            // no meaningful "up"; a desk phone must never rotate its
+                            // chrome (Ben: "rotations are messed up"). (2) CARDINAL ±30°
+                            // hysteresis — diagonal holds keep the last orientation.
+                            gx = 0.8f * gx + 0.2f * e.values[0]
+                            gy = 0.8f * gy + 0.2f * e.values[1]
+                            gz = 0.8f * gz + 0.2f * e.values[2]
+                            val horiz = kotlin.math.sqrt(gx * gx + gy * gy)
+                            if (horiz < 3.4f) return // flatter than ~20° tilt: hold
+                            val degrees = ((Math.toDegrees(
+                                kotlin.math.atan2(-gx.toDouble(), gy.toDouble())
+                            ) + 360.0) % 360.0).toInt()
+                            val toCardinal = ((degrees + 45) / 90) % 4 * 90
+                            val delta = ((degrees - toCardinal + 540) % 360) - 180
+                            if (delta !in -30..30) return
+                            if (degrees == lastSensorDeg) return
+                            lastSensorDeg = degrees
+                            routeOrientation()
+                        }
+                    }.also {
+                        sm.registerListener(
+                            it, accel, android.hardware.SensorManager.SENSOR_DELAY_UI
+                        )
                     }
-                }.also { if (it.canDetectOrientation()) it.enable() }
+                }
             }
             // A mode toggle re-routes the last known gravity now: the sensor only fires
             // on CHANGE, so a stationary phone would otherwise keep the prior mode's fields.
             routeOrientation(force = true)
         } else {
-            orientationSensor?.disable()
-            orientationSensor = null
+            gravityListener?.let {
+                getSystemService(android.hardware.SensorManager::class.java)
+                    ?.unregisterListener(it)
+            }
+            gravityListener = null
             lastRoutedQ = -1
             ui.uprightQuadrant = 0
             ui.chromeQuadrant = 0
