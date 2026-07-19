@@ -15,6 +15,11 @@ object Dim {
     val rowPad = 14.dp
     val gap = 8.dp
     val gapLg = 12.dp
+    val popoutGap = 8.dp         // measured from the console card's outer top edge
+    val popoutWidth = 220.dp
+    val popoutPullTravel = 184.dp
+    val sheetDismissDistance = 72.dp
+    val chromeFlickVelocity = 920.dp // dp per second; converted at the gesture boundary
 
     // A tall sheet narrows only at its top edge, like a page pinched into a
     // binding. The border follows this geometry; there is no elevation/shadow.

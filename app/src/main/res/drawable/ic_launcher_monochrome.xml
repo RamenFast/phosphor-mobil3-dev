@@ -2,26 +2,19 @@
     android:width="108dp" android:height="108dp"
     android:viewportWidth="108" android:viewportHeight="108">
     <!-- themed-icon layer: same live-scope composition; system supplies the tint -->
-    <!-- supports stay fainter/thinner so themed icons remain hero-first -->
+    <!-- supports stay fainter/thinner so themed icons remain hero-first; ice and pink stay behind -->
     <path
-        android:pathData="M16,39 C20,33 24,33 28,39 C32,45 36,45 40,39 C44,33 48,33 52,39 C56,45 60,45 64,39 C68,33 72,33 76,39 C80,45 84,45 88,39 C90,36 92,36 94,39 L16,39 Z"
+        android:pathData="M16,39 C20,31 24,31 28,39 C32,47 36,47 40,39 C44,31 48,31 52,39 C56,47 60,47 64,39 C68,31 72,31 76,39 C80,47 84,47 88,39 C90,35 92,35 94,39 L16,39 Z"
         android:strokeColor="#FFFFFF"
-        android:strokeWidth="1.15"
+        android:strokeWidth="1.35"
+        android:strokeAlpha="0.38"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <path
+        android:pathData="M14,55 C18,55 20,46 25,46 C30,46 32,64 37,64 C42,64 44,46 49,46 C54,46 56,64 61,64 C66,64 68,46 73,46 C78,46 80,64 85,64 C90,64 92,55 94,55 L14,55 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.25"
         android:strokeAlpha="0.30"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"/>
-    <path
-        android:pathData="M14,55 C18,55 20,48 25,48 C30,48 32,62 37,62 C42,62 44,48 49,48 C54,48 56,62 61,62 C66,62 68,48 73,48 C78,48 80,62 85,62 C90,62 92,55 94,55 L14,55 Z"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="1.05"
-        android:strokeAlpha="0.22"
-        android:strokeLineCap="round"
-        android:strokeLineJoin="round"/>
-    <path
-        android:pathData="M16,70 C21,63 26,63 31,70 C36,77 41,77 46,70 C51,63 56,63 61,70 C66,77 71,77 76,70 C81,63 86,63 91,70 L16,70 Z"
-        android:strokeColor="#FFFFFF"
-        android:strokeWidth="1.20"
-        android:strokeAlpha="0.28"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"/>
     <!-- hero beam -->
@@ -37,6 +30,14 @@
         android:strokeColor="#FFFFFF"
         android:strokeWidth="2.2"
         android:strokeAlpha="1.0"
+        android:strokeLineCap="round"
+        android:strokeLineJoin="round"/>
+    <!-- amber mirrors the color layer's foreground crossing order -->
+    <path
+        android:pathData="M16,69 C21,60 26,60 31,69 C36,78 41,78 46,69 C51,60 56,60 61,69 C66,78 71,78 76,69 C81,60 86,60 91,69 L16,69 Z"
+        android:strokeColor="#FFFFFF"
+        android:strokeWidth="1.40"
+        android:strokeAlpha="0.36"
         android:strokeLineCap="round"
         android:strokeLineJoin="round"/>
 </vector>

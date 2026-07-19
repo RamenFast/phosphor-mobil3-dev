@@ -23,11 +23,14 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -105,13 +108,26 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     SideEffect { lastShown = p }
     val style = (if (t >= 0.5f) target else fromRoom).style.overridden(state.styleOverride)
     val view = LocalView.current
+    val density = LocalDensity.current
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
-    var overflow by remember { mutableStateOf(false) }
+    var overflowComposed by remember { mutableStateOf(false) }
+    var overflowTargetOpen by remember { mutableStateOf(false) }
+    var overflowPendingSheet by remember { mutableStateOf(Sheet.NONE) }
+    var settingsPullActive by remember { mutableStateOf(false) }
+    var rootHeightPx by remember { mutableStateOf(0) }
+    var consoleHeightPx by remember { mutableStateOf(0) }
     var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
     val bloomScope = rememberCoroutineScope()
     val bloom = remember(bloomScope) { BloomPullState(bloomScope) }
+    val settingsReveal = remember(bloomScope) { PullRevealState(bloomScope) }
+    val overflowReveal = remember(bloomScope) { PullRevealState(bloomScope) }
+    val overflowGestureActive = remember { mutableStateOf(false) }
+    val currentStyle = rememberUpdatedState(style)
+    val currentReduced = rememberUpdatedState(reduced)
+    val flickVelocityPx = with(density) { Dim.chromeFlickVelocity.toPx() }
+    val popoutTravelPx = with(density) { Dim.popoutPullTravel.toPx() }
 
     // The Compose side continuously commands NEW beam energy. The renderer deposits that
     // energy into its real flash/glow textures, so release naturally leaves the P7 layers
@@ -125,16 +141,40 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         onDispose { PhosphorNative.setBloomPull(0f) }
     }
 
+    val finishOverflowClosed = {
+        overflowComposed = false
+        overflowTargetOpen = false
+        val next = overflowPendingSheet
+        overflowPendingSheet = Sheet.NONE
+        if (next != Sheet.NONE) sheet = next
+    }
+    val closeOverflow: (Sheet) -> Unit = { next ->
+        overflowPendingSheet = next
+        overflowTargetOpen = false
+        overflowReveal.settleTo(false, style, reduced) { open ->
+            if (!open) finishOverflowClosed()
+        }
+    }
+    val openOverflow = {
+        if (sheet == Sheet.NONE) {
+            overflowPendingSheet = Sheet.NONE
+            overflowComposed = true
+            overflowTargetOpen = true
+            overflowReveal.setTravelPx(popoutTravelPx)
+            overflowReveal.settleTo(true, style, reduced)
+        }
+    }
+
     // Predictive back peels one layer at a time: popout → sheet → console → system.
-    BackHandler(enabled = overflow) { overflow = false }
-    BackHandler(enabled = !overflow && sheet != Sheet.NONE) { sheet = Sheet.NONE }
-    BackHandler(enabled = !overflow && sheet == Sheet.NONE && consoleVisible) {
+    BackHandler(enabled = overflowComposed) { closeOverflow(Sheet.NONE) }
+    BackHandler(enabled = !overflowComposed && sheet != Sheet.NONE) { sheet = Sheet.NONE }
+    BackHandler(enabled = !overflowComposed && sheet == Sheet.NONE && consoleVisible) {
         consoleVisible = false
     }
 
     // Console auto-hides after 4 s of no interaction (burn-in + clean stage).
-    LaunchedEffect(consoleVisible, sheet, overflow) {
-        if (consoleVisible && sheet == Sheet.NONE && !overflow) {
+    LaunchedEffect(consoleVisible, sheet, overflowComposed) {
+        if (consoleVisible && sheet == Sheet.NONE && !overflowComposed) {
             delay(4000)
             consoleVisible = false
         }
@@ -171,12 +211,108 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         }
     }
 
+    // Stable gesture hosts survive the recomposition triggered by beginning a pull.
+    // Their dynamic room/reduced values come through remembered state holders.
+    val settingsPullHost = remember(settingsReveal) {
+        object : PullGestureHost {
+            private var ignored = false
+
+            override fun begin() {
+                ignored = currentReduced.value || sheet != Sheet.NONE || overflowComposed ||
+                    overflowGestureActive.value
+                if (ignored) return
+                settingsReveal.setTravelPx(
+                    if (rootHeightPx > 0) rootHeightPx * 0.82f
+                    else with(density) { 560.dp.toPx() }
+                )
+                settingsReveal.begin(resetClosed = true)
+                settingsPullActive = true
+                sheet = Sheet.SETTINGS
+            }
+
+            override fun dragBy(upwardDeltaPx: Float) {
+                if (!ignored) settingsReveal.dragBy(upwardDeltaPx)
+            }
+
+            override fun release(verticalVelocityPxPerSecond: Float) {
+                if (ignored) return
+                settingsReveal.settleFromRelease(
+                    verticalVelocityPxPerSecond,
+                    flickVelocityPx,
+                    currentStyle.value,
+                    currentReduced.value,
+                ) { open ->
+                    settingsPullActive = false
+                    if (!open) sheet = Sheet.NONE
+                }
+            }
+
+            override fun cancel() {
+                if (ignored) return
+                settingsReveal.settleTo(
+                    false, currentStyle.value, currentReduced.value,
+                ) {
+                    settingsPullActive = false
+                    sheet = Sheet.NONE
+                }
+            }
+        }
+    }
+    val overflowPullHost = remember(overflowReveal) {
+        object : PullGestureHost {
+            private var ignored = false
+
+            override fun begin() {
+                ignored = sheet != Sheet.NONE
+                if (ignored) return
+                overflowGestureActive.value = true
+                val startsClosed = !overflowComposed
+                overflowPendingSheet = Sheet.NONE
+                overflowComposed = true
+                overflowTargetOpen = true
+                overflowReveal.setTravelPx(popoutTravelPx)
+                overflowReveal.begin(resetClosed = startsClosed)
+            }
+
+            override fun dragBy(upwardDeltaPx: Float) {
+                if (!ignored) overflowReveal.dragBy(upwardDeltaPx)
+            }
+
+            override fun release(verticalVelocityPxPerSecond: Float) {
+                overflowGestureActive.value = false
+                if (ignored) return
+                overflowReveal.settleFromRelease(
+                    verticalVelocityPxPerSecond,
+                    flickVelocityPx,
+                    currentStyle.value,
+                    currentReduced.value,
+                ) { open ->
+                    overflowTargetOpen = open
+                    if (!open) finishOverflowClosed()
+                }
+            }
+
+            override fun cancel() {
+                overflowGestureActive.value = false
+                if (ignored) return
+                overflowTargetOpen = false
+                overflowReveal.settleTo(
+                    false, currentStyle.value, currentReduced.value,
+                ) { open -> if (!open) finishOverflowClosed() }
+            }
+        }
+    }
+
     CompositionLocalProvider(
         LocalReducedMotion provides reduced,
         LocalRoomStyle provides style,
         LocalBloomPull provides bloom,
     ) {
-        Box(Modifier.fillMaxSize()) {
+        Box(
+            Modifier
+                .fillMaxSize()
+                .onSizeChanged { rootHeightPx = it.height }
+        ) {
             // Layer 0: the scope, full-bleed under everything.
             AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
 
@@ -192,7 +328,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                         .stageGestures(
                             remember(
                                 actions, state, bloom, style.motion, reduced,
-                                consoleVisible, overflow,
+                                consoleVisible, overflowComposed,
                             ) {
                                 object : StageGestureHost {
                                     override fun currentGain() = state.gain
@@ -208,7 +344,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     // The console owns its upward swipe while visible. Once it
                                     // settles away, only a pull born in the physical bottom-edge
                                     // band may bloom; gain/orbit keep every other drag.
-                                    override fun bottomPullArmed() = !consoleVisible && !overflow
+                                    override fun bottomPullArmed() =
+                                        !consoleVisible && !overflowComposed
                                     override fun beginBloomPull(resistancePx: Float) =
                                         bloom.begin(resistancePx)
                                     override fun dragBloomPull(
@@ -225,7 +362,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                         .pointerInput(Unit) {
                             detectTapGestures(
                                 onTap = {
-                                    if (overflow) overflow = false
+                                    if (overflowComposed) closeOverflow(Sheet.NONE)
                                     else consoleVisible = !consoleVisible
                                 },
                                 onDoubleTap = { actions.togglePlay() },
@@ -258,7 +395,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 1b: console strip, auto-hiding, with the settle-down exit.
             AnimatedVisibility(
-                visible = consoleVisible && sheet == Sheet.NONE,
+                visible = consoleVisible && (sheet == Sheet.NONE || settingsPullActive),
                 enter = fadeIn(motionSpec(reduced, Motion.summon)),
                 exit = fadeOut(motionSpec(reduced, Motion.settle)) +
                     slideOutVertically(motionSpec(reduced, Motion.settle)) { it / 12 },
@@ -268,32 +405,42 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     state, p, reduced,
                     onMode = { sheet = Sheet.MODE },
                     onSrc = { sheet = Sheet.SOURCE },
-                    onMore = { overflow = !overflow },
+                    onMore = {
+                        if (overflowComposed && overflowTargetOpen) {
+                            closeOverflow(Sheet.NONE)
+                        } else openOverflow()
+                    },
                     onPlay = { actions.togglePlay() },
                     onNext = { actions.next() },
                     onPrev = { actions.prev() },
                     onSeek = { actions.seekTo(it) },
                     onSettingsSwipe = {
-                        overflow = false
-                        sheet = Sheet.SETTINGS
+                        if (!overflowComposed) sheet = Sheet.SETTINGS
                     },
+                    settingsPullHost = settingsPullHost,
+                    moreActive = overflowComposed,
+                    overflowPullHost = overflowPullHost,
+                    onHeightChanged = { consoleHeightPx = it },
                 )
             }
 
             // The ⋯ overflow popout (Obsidian-persistent, anchored above the console).
-            if (overflow && sheet == Sheet.NONE) {
+            if (overflowComposed && sheet == Sheet.NONE) {
                 Box(
                     Modifier
-                        .align(Alignment.BottomEnd)
-                        .padding(bottom = 132.dp),
+                        .align(Alignment.BottomCenter)
+                        .padding(
+                            bottom = with(density) { consoleHeightPx.toDp() } + Dim.popoutGap
+                        ),
                 ) {
                     OverflowPopout(
                         p,
-                        onDeck = { sheet = Sheet.DECK },
-                        onLight = { sheet = Sheet.LIGHT },
-                        onRoom = { sheet = Sheet.ROOM },
-                        onSettings = { sheet = Sheet.SETTINGS },
-                        onDismiss = { overflow = false },
+                        reduced = reduced,
+                        reveal = overflowReveal,
+                        onDeck = { closeOverflow(Sheet.DECK) },
+                        onLight = { closeOverflow(Sheet.LIGHT) },
+                        onRoom = { closeOverflow(Sheet.ROOM) },
+                        onSettings = { closeOverflow(Sheet.SETTINGS) },
                     )
                 }
             }
@@ -334,7 +481,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     ),
                     focusValue = focusValue,
                     onFocus = { focusValue = it; actions.setFocus(it) },
-                ) { sheet = Sheet.NONE }
+                    entryReveal = if (settingsPullActive) settingsReveal else null,
+                ) {
+                    settingsPullActive = false
+                    sheet = Sheet.NONE
+                }
                 Sheet.NONE -> {}
             }
         }

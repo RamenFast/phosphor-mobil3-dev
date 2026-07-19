@@ -26,12 +26,142 @@ object Motion {
     const val room = 240       // whole-chrome room crossfade
     const val bloomSettle = 260 // P7 bloom: the eased room exhales, then the raster decays
     const val bloomDetent = 170 // service-bench return through discrete switch positions
+    const val pullSettle = 200  // finger-tracked chrome completes the distance left by the hand
 
     val decelerate: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
 
     /** Departure curve — a dismissed sheet ACCELERATES away (motion shows intent). */
     val accelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
+}
+
+/**
+ * One-dimensional, finger-tracked reveal shared by the play-bar sheet door and S9 menu.
+ *
+ * Pointer-input scopes may only call the synchronous methods here. Animatable work is
+ * serialized onto the real composition scope, preserving the restricted-scope law that
+ * previously bit this project. Travel is measured in pixels so a slow pull reveals the
+ * same physical amount of chrome that the finger travelled.
+ */
+class PullRevealState(private val scope: CoroutineScope) {
+    val animation = Animatable(0f)
+
+    private var revealPx = 0f
+    private var travelPx = 1f
+    private var motionJob: Job? = null
+    private var tracking = false
+
+    val progress: Float get() = animation.value.coerceIn(0f, 1f)
+
+    fun setTravelPx(px: Float) {
+        val oldTravel = travelPx
+        travelPx = px.coerceAtLeast(1f)
+        if (tracking) {
+            revealPx = revealPx.coerceIn(0f, travelPx)
+            snapTracked()
+            return
+        }
+        // When measured geometry replaces the provisional estimate during a settle,
+        // preserve the anchored end state or the current proportional progress.
+        revealPx = when {
+            animation.value <= 0.001f -> 0f
+            animation.value >= 0.999f -> travelPx
+            else -> (animation.value * oldTravel).coerceIn(0f, travelPx)
+        }
+    }
+
+    fun begin(resetClosed: Boolean) {
+        motionJob?.cancel()
+        tracking = true
+        revealPx = if (resetClosed) 0f else progress * travelPx
+        snapTracked()
+    }
+
+    fun dragBy(upwardDeltaPx: Float) {
+        tracking = true
+        revealPx = (revealPx + upwardDeltaPx).coerceIn(0f, travelPx)
+        snapTracked()
+    }
+
+    fun settleFromRelease(
+        verticalVelocityPxPerSecond: Float,
+        flickThresholdPxPerSecond: Float,
+        style: RoomStyle,
+        reduced: Boolean,
+        onSettled: (Boolean) -> Unit,
+    ) {
+        tracking = false
+        val opens = when {
+            verticalVelocityPxPerSecond <= -flickThresholdPxPerSecond -> true
+            verticalVelocityPxPerSecond >= flickThresholdPxPerSecond -> false
+            else -> revealPx / travelPx >= 0.40f
+        }
+        settleTo(
+            open = opens,
+            initialProgressVelocity = (-verticalVelocityPxPerSecond / travelPx).coerceIn(-8f, 8f),
+            style = style,
+            reduced = reduced,
+            onSettled = onSettled,
+        )
+    }
+
+    fun settleTo(
+        open: Boolean,
+        style: RoomStyle,
+        reduced: Boolean,
+        onSettled: (Boolean) -> Unit = {},
+    ) = settleTo(open, 0f, style, reduced, onSettled)
+
+    private fun settleTo(
+        open: Boolean,
+        initialProgressVelocity: Float,
+        style: RoomStyle,
+        reduced: Boolean,
+        onSettled: (Boolean) -> Unit,
+    ) {
+        tracking = false
+        motionJob?.cancel()
+        motionJob = scope.launch {
+            animation.stop()
+            val target = if (open) 1f else 0f
+            if (reduced) {
+                // Reduced motion keeps only a brief opacity transition at call sites.
+                animation.animateTo(target, tween(Motion.press, easing = Motion.standard))
+            } else when (style.motion) {
+                MotionFeel.Cut -> animation.snapTo(target)
+                MotionFeel.Detented -> animation.animateTo(
+                    target,
+                    tween(
+                        (Motion.pullSettle * style.durationScale).toInt().coerceAtLeast(1),
+                        easing = stepEasing(5),
+                    ),
+                )
+                MotionFeel.Springy -> animation.animateTo(
+                    target,
+                    spring(dampingRatio = 0.72f, stiffness = 380f, visibilityThreshold = 0.002f),
+                    initialVelocity = initialProgressVelocity,
+                )
+                MotionFeel.Eased -> animation.animateTo(
+                    target,
+                    tween(
+                        (Motion.pullSettle * style.durationScale).toInt().coerceAtLeast(1),
+                        easing = if (open) Motion.decelerate else Motion.accelerate,
+                    ),
+                )
+            }
+            revealPx = target * travelPx
+            onSettled(open)
+        }
+    }
+
+    private fun snapTracked() {
+        val target = (revealPx / travelPx).coerceIn(0f, 1f)
+        motionJob?.cancel()
+        motionJob = scope.launch {
+            animation.stop()
+            animation.snapTo(target)
+        }
+    }
 }
 
 /**

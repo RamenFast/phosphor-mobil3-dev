@@ -35,8 +35,11 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
@@ -170,6 +173,10 @@ fun Console(
     onPrev: () -> Unit,
     onSeek: (Long) -> Unit,
     onSettingsSwipe: () -> Unit,
+    settingsPullHost: PullGestureHost,
+    moreActive: Boolean,
+    overflowPullHost: PullGestureHost,
+    onHeightChanged: (Int) -> Unit,
 ) {
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
@@ -182,6 +189,7 @@ fun Console(
                 chromeSafeDrawingInsets(Dim.cardMarginH, Dim.cardMarginBottom)
             )
             .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
+            .onSizeChanged { onHeightChanged(it.height) }
             .burnInWalk(reduced),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -196,7 +204,7 @@ fun Console(
                 .padding(horizontal = Dim.consolePadH, vertical = Dim.consolePadV)
                 // The play bar owns this deliberate upward reveal. Stage drags remain
                 // gain/orbit gestures, and horizontal seek scrubs keep their lane.
-                .playBarSwipeUp(onSettingsSwipe),
+                .playBarSwipeUp(onSettingsSwipe, settingsPullHost),
         ) {
             state.trackTitle?.let { title ->
                 Mono(
@@ -241,8 +249,47 @@ fun Console(
                 Spacer(Modifier.width(Dim.gap))
                 FlatKey("SRC", p, designator = "J1", onClick = onSrc)
                 Spacer(Modifier.weight(1f))
-                FlatKey("⋯", p, designator = "S9", onClick = onMore)
+                OverflowHandleKey(
+                    p = p,
+                    active = moreActive,
+                    pullHost = overflowPullHost,
+                    onTap = onMore,
+                )
             }
+        }
+    }
+}
+
+// S9 is deliberately its own key: tap and pull share one hit target and therefore
+// one gesture owner. Its surface remains the same flat hairline tier as MODE/SRC.
+@Composable
+private fun OverflowHandleKey(
+    p: Palette,
+    active: Boolean,
+    pullHost: PullGestureHost,
+    onTap: () -> Unit,
+) {
+    var pressed by remember { mutableStateOf(false) }
+    val style = LocalRoomStyle.current
+    Box(
+        Modifier
+            .width(52.dp)
+            .height(Dim.flatKey)
+            .background(
+                if (pressed) p.accent.copy(alpha = 0.10f) else Color.Transparent
+            )
+            .border(Dim.hairline, if (active || pressed) p.accent else p.line)
+            .overflowHandleGesture(pullHost, onTap) { pressed = it }
+            .padding(horizontal = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        OverflowHandleGlyph(p, active || pressed)
+        if (style.designators) {
+            Mono(
+                "S9", p.muted, Type.dataXs,
+                Modifier.align(Alignment.TopStart).padding(top = 1.dp),
+                letterSpacing = 1.2.sp,
+            )
         }
     }
 }
@@ -281,30 +328,32 @@ fun BenchPost(state: ScopeUiState, p: Palette) {
 @Composable
 fun OverflowPopout(
     p: Palette,
+    reduced: Boolean,
+    reveal: PullRevealState,
     onDeck: () -> Unit,
     onLight: () -> Unit,
     onRoom: () -> Unit,
     onSettings: () -> Unit,
-    onDismiss: () -> Unit,
 ) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .pointerInput(Unit) {
-                awaitPointerEventScope {
-                    while (true) {
-                        awaitPointerEvent()
-                    }
-                }
-            },
-    ) {}
+    val style = LocalRoomStyle.current
+    val shape = RoundedCornerShape(style.cornerRadius)
+    var heightPx by remember { mutableIntStateOf(0) }
+    val progress = reveal.progress
     Column(
         Modifier
-            .padding(horizontal = Dim.consolePadH)
-            .background(p.surface.copy(alpha = Dim.sheetAlpha))
-            .border(Dim.hairline, p.lineStrong)
+            .width(Dim.popoutWidth)
+            .onSizeChanged {
+                heightPx = it.height
+                reveal.setTravelPx(it.height.toFloat())
+            }
+            .graphicsLayer {
+                alpha = progress
+                translationY = if (reduced) 0f else (1f - progress) * heightPx
+            }
+            .clip(shape)
+            .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
+            .border(Dim.hairline, p.lineStrong, shape)
             .padding(6.dp)
-            .width(200.dp),
     ) {
         listOf(
             "deck" to onDeck,
@@ -315,7 +364,7 @@ fun OverflowPopout(
             Box(
                 Modifier
                     .fillMaxWidth()
-                    .clickable { action(); onDismiss() }
+                    .clickable { action() }
                     .padding(horizontal = 10.dp, vertical = 11.dp),
             ) { Mono(label, p.ink, Type.data) }
         }

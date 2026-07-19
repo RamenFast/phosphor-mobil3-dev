@@ -313,6 +313,49 @@ fun SettingsGlyphIcon(
     }
 }
 
+/**
+ * S9's dual-affordance legend: the three square points retain the familiar
+ * "more" reading, while the hairline rail and restrained upward index say that
+ * the same control can be physically pulled. No enclosing icon bubble: the key's
+ * own border is the instrument geometry.
+ */
+@Composable
+fun OverflowHandleGlyph(
+    p: Palette,
+    active: Boolean,
+    modifier: Modifier = Modifier,
+) {
+    Canvas(modifier.size(26.dp)) {
+        val ink = if (active) p.accent else p.ink2
+        val hairline = 1.dp.toPx()
+        val cx = size.width / 2f
+        val railY = size.height * 0.34f
+        drawLine(
+            ink,
+            Offset(size.width * 0.24f, railY),
+            Offset(size.width * 0.76f, railY),
+            hairline,
+            cap = StrokeCap.Butt,
+        )
+        drawLine(
+            ink.copy(alpha = 0.82f),
+            Offset(cx, railY),
+            Offset(cx, size.height * 0.17f),
+            hairline,
+            cap = StrokeCap.Butt,
+        )
+        val dot = 2.2.dp.toPx()
+        val dotY = size.height * 0.66f - dot / 2f
+        listOf(0.31f, 0.50f, 0.69f).forEach { x ->
+            drawRect(
+                ink,
+                topLeft = Offset(size.width * x - dot / 2f, dotY),
+                size = androidx.compose.ui.geometry.Size(dot, dot),
+            )
+        }
+    }
+}
+
 // Engraved mode glyphs — tiny etched vectors of each mode's characteristic figure.
 // Static, ink_2, hairline stroke: an instrument's front-panel legends, not icons.
 @Composable

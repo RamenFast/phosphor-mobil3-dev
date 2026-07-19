@@ -533,6 +533,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
         )
         dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
             .let { baseRoom = it; ui.room = it }
+        // Custom light survives relaunch (persistence-audit gap, Ben's ask).
+        val customCount = p.getInt("custom_count", 0).coerceIn(0, 3)
+        val customRgb = p.getString("custom_rgb", null)
+            ?.split(",")?.mapNotNull { it.toFloatOrNull() }
+        ui.cycleSeconds = p.getFloat("cycle_seconds", 3.0f)
+        ui.cyclePerTrack = p.getBoolean("cycle_per_track", false)
+        if (customCount >= 1 && customRgb?.size == 9) {
+            ui.customColors = (0..2).map {
+                androidx.compose.ui.graphics.Color(
+                    customRgb[it * 3], customRgb[it * 3 + 1], customRgb[it * 3 + 2],
+                )
+            }
+            ui.customCount = customCount
+            PhosphorNative.setCustomBeam(customRgb.toFloatArray(), customCount)
+            PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)
+        }
     }
     override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
@@ -679,12 +695,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         PhosphorNative.setCustomBeam(rgb, count)
         ui.customCount = count
+        // Persistence-audit gap (Ben's ask): a custom light must survive relaunch —
+        // saved immediately, like the other live-settings setters.
+        prefs().edit()
+            .putString("custom_rgb", rgb.joinToString(","))
+            .putInt("custom_count", count)
+            .apply()
     }
 
     override fun setBeamCycle(seconds: Float, perTrack: Boolean) {
         PhosphorNative.setBeamCycle(seconds, perTrack)
         ui.cycleSeconds = seconds
         ui.cyclePerTrack = perTrack
+        prefs().edit()
+            .putFloat("cycle_seconds", seconds)
+            .putBoolean("cycle_per_track", perTrack)
+            .apply()
     }
 
     // Photosensitivity acceptance persists forever, as on desktop.

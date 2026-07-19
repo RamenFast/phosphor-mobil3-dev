@@ -15,11 +15,14 @@ import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import kotlinx.coroutines.delay
@@ -27,29 +30,52 @@ import kotlin.math.abs
 import kotlin.math.exp
 import kotlin.math.roundToInt
 
+interface PullGestureHost {
+    fun begin()
+    fun dragBy(upwardDeltaPx: Float)
+    fun release(verticalVelocityPxPerSecond: Float)
+    fun cancel()
+}
+
 // The console's one vertical gesture: a deliberate upward pull opens SETTINGS.
+// In ordinary motion it becomes finger-tracked as soon as vertical intent wins; in
+// reduced motion it retains the prior threshold door and lets SheetHost fade in.
 // It observes without consuming until vertical travel clearly wins, so child taps
-// and the seek rule's horizontal scrub keep their existing ownership.
-// While the console is the lowest visible element, that same pull also drives the beam
-// bloom; the settings threshold and all existing child-control ownership stay intact.
+// and the seek rule's horizontal scrub keep their existing ownership. While the
+// console is the lowest visible element, that same pull still drives beam bloom.
 @Composable
-fun Modifier.playBarSwipeUp(onSwipeUp: () -> Unit): Modifier {
+fun Modifier.playBarSwipeUp(
+    onReducedSwipeUp: () -> Unit,
+    pullHost: PullGestureHost,
+): Modifier {
   val bloom = LocalBloomPull.current
   val style = LocalRoomStyle.current
   val reduced = LocalReducedMotion.current
-  return pointerInput(onSwipeUp, bloom, style.motion, reduced) {
+  val currentReducedSwipeUp by rememberUpdatedState(onReducedSwipeUp)
+  return pointerInput(pullHost, bloom, style.motion, reduced) {
     val threshold = maxOf(48.dp.toPx(), viewConfiguration.touchSlop * 3f)
     val resistance = 156.dp.toPx()
     awaitEachGesture {
         val first = awaitFirstDown(requireUnconsumed = false)
         val origin = first.position
+        val velocity = VelocityTracker().apply {
+            addPosition(first.uptimeMillis, first.position)
+        }
         var fired = false
+        var pullActive = false
         var bloomActive = false
+        var finishedNormally = false
         try {
             while (true) {
                 val event = awaitPointerEvent()
+                event.changes.firstOrNull()?.let {
+                    velocity.addPosition(it.uptimeMillis, it.position)
+                }
                 val pressed = event.changes.filter { it.pressed }
-                if (pressed.isEmpty()) break
+                if (pressed.isEmpty()) {
+                    finishedNormally = true
+                    break
+                }
                 if (!fired) {
                     val change = pressed.first()
                     val travel = change.position - origin
@@ -71,18 +97,94 @@ fun Modifier.playBarSwipeUp(onSwipeUp: () -> Unit): Modifier {
                             style.motion,
                         )
                     }
-                    if (travel.y < -threshold && abs(travel.y) > abs(travel.x) * 1.35f) {
-                        fired = true
+                    if (reduced) {
+                        if (travel.y < -threshold && abs(travel.y) > abs(travel.x) * 1.35f) {
+                            fired = true
+                            pressed.forEach { it.consume() }
+                            currentReducedSwipeUp()
+                        }
+                    } else if (!pullActive &&
+                        travel.y < -viewConfiguration.touchSlop &&
+                        abs(travel.y) > abs(travel.x) * 1.35f
+                    ) {
+                        pullActive = true
+                        pullHost.begin()
+                        pullHost.dragBy(
+                            (-travel.y - viewConfiguration.touchSlop).coerceAtLeast(0f)
+                        )
                         pressed.forEach { it.consume() }
-                        onSwipeUp()
+                    } else if (pullActive && change.positionChanged()) {
+                        pullHost.dragBy(-(change.position.y - change.previousPosition.y))
+                        pressed.forEach { it.consume() }
                     }
                 } else {
-                    pressed.forEach { it.consume() }
+                    if (fired || pullActive) pressed.forEach { it.consume() }
                 }
             }
         } finally {
             if (bloomActive && bloom != null) {
                 bloom.release(style.motion, reduced)
+            }
+            if (pullActive) {
+                if (finishedNormally) pullHost.release(velocity.calculateVelocity().y)
+                else pullHost.cancel()
+            }
+        }
+    }
+  }
+}
+
+/**
+ * S9 owns tap and upward pull in one detector, consuming only once the pull wins.
+ * Initial-pass consumption prevents the enclosing play-bar door from opening SETTINGS.
+ */
+@Composable
+fun Modifier.overflowHandleGesture(
+    pullHost: PullGestureHost,
+    onTap: () -> Unit,
+    onPressed: (Boolean) -> Unit,
+): Modifier {
+  val currentTap by rememberUpdatedState(onTap)
+  val currentPressed by rememberUpdatedState(onPressed)
+  return pointerInput(pullHost) {
+    val slop = viewConfiguration.touchSlop
+    awaitEachGesture {
+        val first = awaitFirstDown(requireUnconsumed = false, pass = PointerEventPass.Initial)
+        currentPressed(true)
+        val origin = first.position
+        val velocity = VelocityTracker().apply {
+            addPosition(first.uptimeMillis, first.position)
+        }
+        var pulling = false
+        var disqualifiedTap = false
+        var finishedNormally = false
+        try {
+            while (true) {
+                val event = awaitPointerEvent(pass = PointerEventPass.Initial)
+                val change = event.changes.firstOrNull() ?: break
+                velocity.addPosition(change.uptimeMillis, change.position)
+                if (!change.pressed) {
+                    finishedNormally = true
+                    break
+                }
+                val travel = change.position - origin
+                if (!pulling && travel.getDistance() > slop) disqualifiedTap = true
+                if (!pulling && travel.y < -slop && abs(travel.y) > abs(travel.x) * 1.25f) {
+                    pulling = true
+                    pullHost.begin()
+                    pullHost.dragBy((-travel.y - slop).coerceAtLeast(0f))
+                    change.consume()
+                } else if (pulling && change.positionChanged()) {
+                    pullHost.dragBy(-(change.position.y - change.previousPosition.y))
+                    change.consume()
+                }
+            }
+        } finally {
+            currentPressed(false)
+            when {
+                pulling && finishedNormally -> pullHost.release(velocity.calculateVelocity().y)
+                pulling -> pullHost.cancel()
+                finishedNormally && !disqualifiedTap -> currentTap()
             }
         }
     }

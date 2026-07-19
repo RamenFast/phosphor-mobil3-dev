@@ -3,6 +3,7 @@ package dev.phosphor.mobil3.ui
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloat
@@ -52,19 +53,26 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
 enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK }
@@ -163,12 +171,13 @@ fun SheetHost(
     title: String,
     reduced: Boolean,
     onDismiss: () -> Unit,
+    entryReveal: PullRevealState? = null,
     body: @Composable () -> Unit,
 ) {
-    var dragPx by remember { mutableFloatStateOf(0f) }
     val style = LocalRoomStyle.current
     val bloom = LocalBloomPull.current
     val density = LocalDensity.current
+    val scope = rememberCoroutineScope()
     val bloomTravelPx = with(density) { 28.dp.toPx() }
     val bloomOffsetPx = -(bloom?.visualPull ?: 0f) * bloomTravelPx
     var availableHeightPx by remember { mutableIntStateOf(0) }
@@ -185,9 +194,77 @@ fun SheetHost(
     // real open/close state: ✕/scrim/drag/Back play the departure (accelerating
     // slide DOWN + fade — the motion says where it went) and the composition
     // leaves only after the choreography finishes.
-    val openState = remember { MutableTransitionState(false).apply { targetState = true } }
+    val openState = remember {
+        MutableTransitionState(entryReveal != null).apply { targetState = true }
+    }
     val dismiss = {
         if (openState.targetState) openState.targetState = false
+    }
+    val dismissOffset = remember { Animatable(0f) }
+    var rawDismissPx by remember { mutableFloatStateOf(0f) }
+    val dismissDistancePx = with(density) { Dim.sheetDismissDistance.toPx() }
+    val dismissFlickPx = with(density) { Dim.chromeFlickVelocity.toPx() }
+    val beginDismiss = {
+        rawDismissPx = dismissOffset.value.coerceAtLeast(0f)
+        scope.launch { dismissOffset.stop() }
+    }
+    val dragDismissBy: (Float) -> Unit = { delta ->
+        rawDismissPx = (rawDismissPx + delta).coerceAtLeast(0f)
+        val target = rawDismissPx
+        scope.launch { dismissOffset.snapTo(target) }
+    }
+    val settleDismiss: (Float) -> Unit = { velocityY ->
+        if (rawDismissPx >= dismissDistancePx || velocityY >= dismissFlickPx) {
+            dismiss()
+        } else {
+            rawDismissPx = 0f
+            scope.launch {
+                dismissOffset.stop()
+                when {
+                    reduced || style.motion == MotionFeel.Cut -> dismissOffset.snapTo(0f)
+                    style.motion == MotionFeel.Springy -> dismissOffset.animateTo(
+                        0f,
+                        spring(dampingRatio = 0.72f, stiffness = 380f, visibilityThreshold = 0.5f),
+                    )
+                    else -> dismissOffset.animateTo(
+                        0f,
+                        styleSpec(false, style, Motion.settle, Motion.decelerate),
+                    )
+                }
+            }
+        }
+    }
+    // A scroll child first consumes every ordinary scroll delta. Only its unconsumed
+    // downward remainder at TOP reaches this parent, becoming the sheet pull. The
+    // opposite (upward-at-bottom) remainder is still exclusively bloom's lane.
+    val dismissNestedScroll = remember(style.motion, reduced, dismissDistancePx, dismissFlickPx) {
+        object : NestedScrollConnection {
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (rawDismissPx <= 0f || available.y >= 0f) return Offset.Zero
+                // A reversal first pushes the displaced sheet home; only the remainder
+                // scrolls content away from its top edge.
+                val consumedY = available.y.coerceAtLeast(-rawDismissPx)
+                dragDismissBy(consumedY)
+                return Offset(0f, consumedY)
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                if (available.y <= 0f) return Offset.Zero
+                if (rawDismissPx == 0f) beginDismiss()
+                dragDismissBy(available.y)
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (rawDismissPx <= 0f) return Velocity.Zero
+                settleDismiss(available.y.coerceAtLeast(0f))
+                return if (available.y > 0f) Velocity(0f, available.y) else Velocity.Zero
+            }
+        }
     }
     LaunchedEffect(openState.targetState, openState.isIdle) {
         if (!openState.targetState && openState.isIdle) onDismiss()
@@ -196,7 +273,11 @@ fun SheetHost(
     Box(
         Modifier
             .fillMaxSize()
-            .background(Color.Black.copy(alpha = Dim.scrimAlpha))
+            .background(
+                Color.Black.copy(
+                    alpha = Dim.scrimAlpha * (entryReveal?.progress ?: 1f)
+                )
+            )
             .pointerInput(Unit) { detectTapGestures(onTap = { dismiss() }) },
     ) {
         Box(
@@ -227,30 +308,48 @@ fun SheetHost(
                 Column(
                     Modifier
                         .offset {
-                            IntOffset(0, (dragPx.coerceAtLeast(0f) + bloomOffsetPx).roundToInt())
+                            IntOffset(
+                                0,
+                                (dismissOffset.value.coerceAtLeast(0f) + bloomOffsetPx).roundToInt(),
+                            )
                         }
                         .fillMaxWidth()
-                        .onSizeChanged { sheetHeightPx = it.height }
+                        .onSizeChanged {
+                            sheetHeightPx = it.height
+                            entryReveal?.setTravelPx(it.height.toFloat())
+                        }
+                        .graphicsLayer {
+                            entryReveal?.let { reveal ->
+                                val progress = reveal.progress
+                                alpha = progress
+                                translationY = (1f - progress) * sheetHeightPx
+                            }
+                        }
+                        .nestedScroll(dismissNestedScroll)
                         .clip(sheetShape)
                         .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
                         .border(Dim.hairline, p.lineStrong, sheetShape)
                         .padding(Dim.sheetPad)
-                        // Swallow taps; own vertical drags for the pull-down dismiss.
-                        .pointerInput(Unit) { detectTapGestures(onTap = {}) }
-                        .pointerInput(Unit) {
-                            detectVerticalDragGestures(
-                                onDragEnd = {
-                                    if (dragPx > 140f) dismiss()
-                                    dragPx = 0f
-                                },
-                                onDragCancel = { dragPx = 0f },
-                            ) { change, delta ->
-                                change.consume()
-                                dragPx = (dragPx + delta).coerceAtLeast(0f)
-                            }
-                        },
+                        // Swallow taps so only the surrounding scrim dismisses.
+                        .pointerInput(Unit) { detectTapGestures(onTap = {}) },
                 ) {
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                    Row(
+                        Modifier
+                            .fillMaxWidth()
+                            .pointerInput(style.motion, reduced) {
+                                detectVerticalDragGestures(
+                                    onDragStart = { beginDismiss() },
+                                    onDragEnd = { settleDismiss(0f) },
+                                    onDragCancel = { settleDismiss(0f) },
+                                ) { change, delta ->
+                                    if (delta > 0f || rawDismissPx > 0f) {
+                                        change.consume()
+                                        dragDismissBy(delta)
+                                    }
+                                }
+                            },
+                        horizontalArrangement = Arrangement.SpaceBetween,
+                    ) {
                         Mono(title, p.ink2, Type.data)
                         Mono(
                             "✕", p.ink2, Type.dataXl,
@@ -688,10 +787,11 @@ fun SettingsSheet(
     actions: SheetActions,
     focusValue: Float,
     onFocus: (Float) -> Unit,
+    entryReveal: PullRevealState? = null,
     onDismiss: () -> Unit,
 ) {
     val scroll = rememberScrollState()
-    SheetHost(p, "SETTINGS", reduced, onDismiss) {
+    SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal) {
         Column(
             Modifier
                 .bottomBloomOverscroll { !scroll.canScrollForward }
