@@ -393,17 +393,22 @@ fun OverflowPopout(
             .padding(6.dp)
     ) {
         listOf(
-            "deck" to onDeck,
-            "light" to onLight,
-            "room" to onRoom,
-            "settings" to onSettings,
-        ).forEach { (label, action) ->
-            Box(
+            Triple("deck", SettingsGlyph.Deck, onDeck),
+            Triple("light", SettingsGlyph.BeamColor, onLight),
+            Triple("room", SettingsGlyph.Room, onRoom),
+            Triple("settings", SettingsGlyph.Knob, onSettings),
+        ).forEach { (label, glyph, action) ->
+            Row(
                 Modifier
                     .fillMaxWidth()
                     .clickable { action() }
                     .padding(horizontal = 10.dp, vertical = 11.dp),
-            ) { Mono(label, p.ink, Type.data) }
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                SettingsGlyphIcon(glyph, p, 16.dp)
+                Spacer(Modifier.width(10.dp))
+                Mono(label, p.ink, Type.data)
+            }
         }
         // Quick settings (Ben's ask): the three live toggles, wearing the same
         // glyphs the SETTINGS sheet uses. State reads under the icon, mono truth.

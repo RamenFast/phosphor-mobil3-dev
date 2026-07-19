@@ -584,6 +584,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         } else if (p.getBoolean("nerd_hud", false)) 0 else 2
         ui.bandMode = p.getInt("band_mode", 0)
         ui.fullscreen = p.getBoolean("fullscreen", true)
+        ui.viewLock = p.getBoolean("view_lock", false)
         scopeRotationLockState = p.getBoolean("scope_rotation_locked", false)
         lockedScopeOrientation = p.getInt(
             "scope_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
@@ -633,6 +634,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
     override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
+
+    override fun setViewLock(on: Boolean) {
+        ui.viewLock = on
+        prefs().edit().putBoolean("view_lock", on).apply()
+    }
 
     override fun openCaptureMetadataSettings() {
         // Land on OUR toggle directly (API 30+): "notification ACCESS" is a different

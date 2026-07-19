@@ -54,7 +54,7 @@ fun LightSheetV2(
     var pendingSeconds by remember { mutableStateOf(1.0f) }
     var editSlot by remember { mutableIntStateOf(-1) }
 
-    SheetHost(p, "LIGHT", reduced, onDismiss) {
+    SheetHost(p, "LIGHT", reduced, onDismiss, glyph = SettingsGlyph.BeamColor) {
         if (guardCard) {
             // Full-attention card: serious but warm, reading face, deliberately no haptic.
             Prose(

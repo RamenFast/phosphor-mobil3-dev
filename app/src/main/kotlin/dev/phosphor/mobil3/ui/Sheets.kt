@@ -174,6 +174,7 @@ fun SheetHost(
     reduced: Boolean,
     onDismiss: () -> Unit,
     entryReveal: PullRevealState? = null,
+    glyph: SettingsGlyph? = null,
     body: @Composable () -> Unit,
 ) {
     val style = LocalRoomStyle.current
@@ -357,7 +358,13 @@ fun SheetHost(
                             },
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
-                        Mono(title, p.ink2, Type.data)
+                        Row(verticalAlignment = Alignment.CenterVertically) {
+                            glyph?.let {
+                                SettingsGlyphIcon(it, p, 15.dp)
+                                Spacer(Modifier.width(8.dp))
+                            }
+                            Mono(title, p.ink2, Type.data)
+                        }
                         Mono(
                             "✕", p.ink2, Type.dataXl,
                             Modifier.clickable(onClick = dismiss).padding(horizontal = 6.dp),
@@ -426,7 +433,7 @@ fun SourceSheet(
 ) {
     var consentCard by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
-    SheetHost(p, "SOURCE", reduced, onDismiss) {
+    SheetHost(p, "SOURCE", reduced, onDismiss, glyph = SettingsGlyph.Signal) {
       Column(
           Modifier
               .bottomBloomOverscroll { !scroll.canScrollForward }
@@ -523,7 +530,7 @@ fun ModeSheet(
         "TIME" to listOf(6, 7),
         "SPECTRUM" to listOf(8, 9, 10),
     )
-    SheetHost(p, "MODE", reduced, onDismiss) {
+    SheetHost(p, "MODE", reduced, onDismiss, glyph = SettingsGlyph.Display) {
         Column(
             Modifier
                 .bottomBloomOverscroll { !scroll.canScrollForward }
@@ -584,7 +591,7 @@ fun RoomSheet(
     onPick: (Palette) -> Unit,
     onDismiss: () -> Unit,
 ) {
-    SheetHost(p, "ROOM", reduced, onDismiss) {
+    SheetHost(p, "ROOM", reduced, onDismiss, glyph = SettingsGlyph.Room) {
         // Breathing pulse for follows-beam tiles (one clock for all).
         val breath by rememberInfiniteTransition(label = "breath").animateFloat(
             initialValue = 0.35f, targetValue = 1f,
@@ -814,7 +821,7 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
 ) {
     val scroll = rememberScrollState()
-    SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal) {
+    SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob) {
         Column(
             Modifier
                 .bottomBloomOverscroll { !scroll.canScrollForward }
@@ -834,12 +841,19 @@ fun SettingsSheet(
                         active = state.autoGain, p = p, small = true,
                     ) { actions.setGainAuto(!state.autoGain) }
                 }
-                Spacer(Modifier.weight(2f))
+                Box(Modifier.weight(1f)) {
+                    // Ben's ask: pin a chosen zoom level — gestures inform, never move.
+                    ChipCell(
+                        "VIEW LOCK · " + if (state.viewLock) "on" else "off",
+                        active = state.viewLock, p = p, small = true,
+                    ) { actions.setViewLock(!state.viewLock) }
+                }
+                Spacer(Modifier.weight(1f))
             }
             Prose(
                 "Local light glides with the desktop autosize law. Remote sends the same " +
-                    "gain command to the source machine. While auto is on the viewport is " +
-                    "locked — gain gestures just say so; this GAIN rule is the manual takeover.",
+                    "gain command to the source machine. Auto or VIEW LOCK pin the " +
+                    "viewport — gain gestures just say so; this GAIN rule is the manual takeover.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
             DragRule(
@@ -1024,6 +1038,7 @@ fun SettingsSheet(
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
     fun setFullscreen(on: Boolean)
+    fun setViewLock(on: Boolean)
     fun isScopeRotationLocked(): Boolean
     fun setScopeRotationLocked(locked: Boolean)
     fun isUiPlacementLocked(): Boolean

@@ -23,6 +23,8 @@ object Dim {
     val landscapeSheetMaxWidth = 600.dp
     val landscapeBandMaxWidth = 760.dp
     val bottomGestureBand = 88.dp
+    // Top band belongs to Android's transient-bars swipe — never gain/orbit.
+    val topGestureBand = 56.dp
     val sheetDismissDistance = 72.dp
     val chromeFlickVelocity = 920.dp // dp per second; converted at the gesture boundary
 

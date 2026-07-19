@@ -277,8 +277,9 @@ class RibbonState {
 interface StageGestureHost {
     fun currentGain(): Float
     fun setGainAbsolute(g: Float)
-    /** AUTO-GAIN armed: the viewport is locked — gain gestures inform, never move. */
+    /** AUTO-GAIN or VIEW LOCK armed: gain gestures inform, never move. */
     fun gainLocked(): Boolean
+    fun gainAutoArmed(): Boolean
     fun orbitBy(dyaw: Float, dpitch: Float)
     fun dollyBy(delta: Float)
     fun is3d(): Boolean
@@ -298,6 +299,16 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
         val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
+            // Top dead-band (Ben's bug: summoning the system bars from the top edge
+            // was dragging gain): a gesture born in the top band belongs to Android's
+            // transient-bars swipe — the stage ignores the whole sequence.
+            if (first.position.y <= Dim.topGestureBand.toPx()) {
+                while (true) {
+                    val e = awaitPointerEvent()
+                    if (e.changes.none { it.pressed }) break
+                }
+                return@awaitEachGesture
+            }
             // 0 undecided · 1 drag · 2 pinch · 4 mode-step (fired) · 5 glow swipe
             // 6 bottom chrome door. It can only win from the physical bottom edge.
             var mode = 0
@@ -382,7 +393,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             } else if (host.gainLocked()) {
                                 // Ben's ask: auto-gain locks the viewport — the gesture
                                 // answers at the finger instead of fighting the glide.
-                                ribbon.text = "auto · view locked"
+                                ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
                             } else {
                                 val old = gain
                                 gain = (gain * zoom).coerceIn(0.1f, 7f)
@@ -447,7 +458,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         if (host.is3d()) {
                             host.orbitBy(d.x * 0.006f, d.y * 0.006f)
                         } else if (host.gainLocked()) {
-                            ribbon.text = "auto · view locked"
+                            ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
                             ribbon.at = ch.position
                             ribbon.visible = true
                             ribbon.lastTouchMs = System.currentTimeMillis()

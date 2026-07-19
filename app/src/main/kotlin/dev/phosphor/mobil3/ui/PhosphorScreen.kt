@@ -65,6 +65,7 @@ interface ScopeActions {
     fun setGlow(g: Float)
     fun setGrid(on: Boolean)
     fun setGainAuto(on: Boolean)
+    fun setViewLock(on: Boolean)
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
     fun openCaptureMetadataSettings()
@@ -206,6 +207,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setOversample(n: Int) = actions.setOversample(n)
             override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
             override fun setGainAuto(on: Boolean) = actions.setGainAuto(on)
+            override fun setViewLock(on: Boolean) = actions.setViewLock(on)
             override fun setBeamEnergy(e: Float) = actions.setBeamEnergy(e)
             override fun setGlow(g: Float) = actions.setGlow(g)
             override fun setGrid(on: Boolean) = actions.setGrid(on)
@@ -356,7 +358,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
-                                    override fun gainLocked() = state.autoGain
+                                    override fun gainLocked() = state.autoGain || state.viewLock
+                                    override fun gainAutoArmed() = state.autoGain
                                     override fun orbitBy(dyaw: Float, dpitch: Float) =
                                         actions.orbitBy(dyaw, dpitch)
                                     override fun dollyBy(delta: Float) = actions.dollyBy(delta)

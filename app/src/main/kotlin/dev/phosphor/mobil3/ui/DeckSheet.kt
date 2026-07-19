@@ -42,7 +42,7 @@ fun DeckSheet(
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
-    SheetHost(p, "DECK · " + (if (state.remote) "remote" else "phosphor"), reduced, onDismiss) {
+    SheetHost(p, "DECK · " + (if (state.remote) "remote" else "phosphor"), reduced, onDismiss, glyph = SettingsGlyph.Deck) {
         // ── Half: now playing ──
         Row(verticalAlignment = Alignment.CenterVertically) {
             val art = state.artwork
