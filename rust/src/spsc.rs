@@ -24,11 +24,16 @@
 
 use std::cell::UnsafeCell;
 use std::sync::Arc;
-use std::sync::atomic::{AtomicBool, AtomicU64, AtomicUsize, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU8, AtomicU64, AtomicUsize, Ordering};
 use std::time::Duration;
 
 /// Interleaved stereo: every transfer is rounded down to whole frames.
 pub const FRAME: usize = 2;
+
+const CHUNK_FREE: u8 = 0;
+const CHUNK_WRITING: u8 = 1;
+const CHUNK_READY: u8 = 2;
+const CHUNK_READING: u8 = 3;
 
 pub const LATENCY_MODE_TIGHT: u8 = 0;
 pub const LATENCY_MODE_BALANCED: u8 = 1;
@@ -330,6 +335,220 @@ impl BlockRing {
     }
 }
 
+/// Preallocated lossy SPSC for samples finalized by the audio callback and
+/// consumed by the non-RT scope worker. Slots carry an explicit ownership
+/// state so a full producer can replace the oldest READY chunk without ever
+/// overwriting the one chunk the consumer may currently be reading.
+///
+/// The producer path is bounded scans + CAS + memcpy only: no allocation,
+/// lock, syscall, logging, or wait. Visual history is disposable, so a full
+/// ring drops the oldest unclaimed chunk rather than delaying audible audio.
+pub struct ScopeChunkRing {
+    slots: Box<[ScopeChunkSlot]>,
+    chunk_samples: usize,
+    next_seq: AtomicU64,
+    dropped_chunks: AtomicU64,
+}
+
+struct ScopeChunkSlot {
+    samples: Box<[UnsafeCell<f32>]>,
+    len: AtomicUsize,
+    seq: AtomicU64,
+    state: AtomicU8,
+}
+
+// SAFETY: WRITING and READING are mutually exclusive slot ownership states.
+// The producer publishes samples with READY/Release; the consumer claims with
+// Acquire before copying and publishes FREE/Release afterward. The producer
+// may replace READY, but can never claim READING, so the backing f32 cells are
+// never accessed concurrently.
+unsafe impl Send for ScopeChunkRing {}
+unsafe impl Sync for ScopeChunkRing {}
+
+impl ScopeChunkRing {
+    pub fn new(chunk_count: usize, chunk_samples: usize) -> Arc<Self> {
+        let chunk_count = chunk_count.max(2);
+        let chunk_samples = (chunk_samples.max(FRAME) / FRAME) * FRAME;
+        let slots = (0..chunk_count)
+            .map(|_| ScopeChunkSlot {
+                samples: (0..chunk_samples).map(|_| UnsafeCell::new(0.0)).collect(),
+                len: AtomicUsize::new(0),
+                seq: AtomicU64::new(0),
+                state: AtomicU8::new(CHUNK_FREE),
+            })
+            .collect();
+        Arc::new(Self {
+            slots,
+            chunk_samples,
+            next_seq: AtomicU64::new(1),
+            dropped_chunks: AtomicU64::new(0),
+        })
+    }
+
+    pub fn sink(self: &Arc<Self>) -> ScopeChunkSink {
+        ScopeChunkSink {
+            ring: self.clone(),
+            hint: 0,
+        }
+    }
+
+    pub fn tap(self: &Arc<Self>) -> ScopeChunkTap {
+        ScopeChunkTap { ring: self.clone() }
+    }
+
+    pub fn chunk_samples(&self) -> usize {
+        self.chunk_samples
+    }
+
+    pub fn dropped_chunks(&self) -> u64 {
+        self.dropped_chunks.load(Ordering::Relaxed)
+    }
+}
+
+/// Single producer endpoint, owned by the active oboe callback.
+pub struct ScopeChunkSink {
+    ring: Arc<ScopeChunkRing>,
+    hint: usize,
+}
+
+impl ScopeChunkSink {
+    /// RT-safe, non-blocking publish. Inputs beyond the preallocated chunk size
+    /// are truncated at whole-stereo-frame granularity.
+    pub fn push(&mut self, samples: &[f32]) {
+        let want = samples.len().min(self.ring.chunk_samples);
+        let want = want - (want % FRAME);
+        if want == 0 {
+            return;
+        }
+
+        let mut chosen = None;
+        let mut replaced = false;
+
+        // Prefer a free slot near the last publish. CAS matters because the
+        // consumer can release a slot while this bounded scan is in flight.
+        for offset in 0..self.ring.slots.len() {
+            let i = (self.hint + offset) % self.ring.slots.len();
+            if self.ring.slots[i]
+                .state
+                .compare_exchange(
+                    CHUNK_FREE,
+                    CHUNK_WRITING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_ok()
+            {
+                chosen = Some(i);
+                break;
+            }
+        }
+
+        // Full: replace the oldest READY slot. A concurrently claimed READING
+        // slot simply loses this CAS and is never touched by the producer.
+        if chosen.is_none() {
+            for _ in 0..self.ring.slots.len() {
+                let oldest = self
+                    .ring
+                    .slots
+                    .iter()
+                    .enumerate()
+                    .filter(|(_, slot)| slot.state.load(Ordering::Acquire) == CHUNK_READY)
+                    .min_by_key(|(_, slot)| slot.seq.load(Ordering::Relaxed))
+                    .map(|(i, _)| i);
+                let Some(i) = oldest else { break };
+                if self.ring.slots[i]
+                    .state
+                    .compare_exchange(
+                        CHUNK_READY,
+                        CHUNK_WRITING,
+                        Ordering::Acquire,
+                        Ordering::Relaxed,
+                    )
+                    .is_ok()
+                {
+                    chosen = Some(i);
+                    replaced = true;
+                    break;
+                }
+            }
+        }
+
+        let Some(i) = chosen else {
+            // Only possible while the consumer owns a slot and every other
+            // slot changed state under the bounded scans. Audio still wins.
+            self.ring.dropped_chunks.fetch_add(1, Ordering::Relaxed);
+            return;
+        };
+        let slot = &self.ring.slots[i];
+        // SAFETY: the successful CAS gave this producer exclusive WRITING
+        // ownership; see ScopeChunkRing's Sync proof.
+        unsafe {
+            let dst = slot.samples.as_ptr() as *mut f32;
+            std::ptr::copy_nonoverlapping(samples.as_ptr(), dst, want);
+        }
+        slot.len.store(want, Ordering::Relaxed);
+        // Sequence belongs to the ring, not one callback instance: an oboe
+        // route reopen mints a new sink after the old stream closes, and its
+        // chunks must still sort after any old visual backlog.
+        slot.seq.store(
+            self.ring.next_seq.fetch_add(1, Ordering::Relaxed),
+            Ordering::Relaxed,
+        );
+        slot.state.store(CHUNK_READY, Ordering::Release);
+        if replaced {
+            self.ring.dropped_chunks.fetch_add(1, Ordering::Relaxed);
+        }
+        self.hint = (i + 1) % self.ring.slots.len();
+    }
+}
+
+/// Single consumer endpoint, owned by the non-RT scope worker.
+pub struct ScopeChunkTap {
+    ring: Arc<ScopeChunkRing>,
+}
+
+impl ScopeChunkTap {
+    /// Non-blocking oldest-first pop. The caller supplies reusable storage;
+    /// too-small output deliberately discards the remainder of that visual
+    /// chunk rather than retaining partial history.
+    pub fn pop_into(&mut self, out: &mut [f32]) -> usize {
+        for _ in 0..self.ring.slots.len() {
+            let oldest = self
+                .ring
+                .slots
+                .iter()
+                .enumerate()
+                .filter(|(_, slot)| slot.state.load(Ordering::Acquire) == CHUNK_READY)
+                .min_by_key(|(_, slot)| slot.seq.load(Ordering::Relaxed))
+                .map(|(i, _)| i);
+            let Some(i) = oldest else { return 0 };
+            let slot = &self.ring.slots[i];
+            if slot
+                .state
+                .compare_exchange(
+                    CHUNK_READY,
+                    CHUNK_READING,
+                    Ordering::Acquire,
+                    Ordering::Relaxed,
+                )
+                .is_err()
+            {
+                continue;
+            }
+            let n = slot.len.load(Ordering::Relaxed).min(out.len());
+            // SAFETY: the successful CAS gave this consumer exclusive READING
+            // ownership; see ScopeChunkRing's Sync proof.
+            unsafe {
+                let src = slot.samples.as_ptr() as *const f32;
+                std::ptr::copy_nonoverlapping(src, out.as_mut_ptr(), n);
+            }
+            slot.state.store(CHUNK_FREE, Ordering::Release);
+            return n;
+        }
+        0
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -434,6 +653,56 @@ mod tests {
         assert_eq!(out[0], 700.0, "newest 50 frames survive");
         assert_eq!(ring.skips.load(Ordering::Relaxed), 1);
         assert_eq!(ring.skipped_frames.load(Ordering::Relaxed), 350);
+    }
+
+    #[test]
+    fn consumer_scope_tracks_post_skip_playhead_not_producer() {
+        const TARGET_FRAMES: usize = 50;
+        const CALLBACK_FRAMES: usize = 60;
+        let audible = BlockRing::new(512);
+        let produced: Vec<f32> = (0..800).map(|i| i as f32).collect(); // 400 frames
+        assert!(audible.push_blocking(&produced));
+
+        // The adaptive catch-up moves the audible consumer to frame 350 while
+        // the producer has already reached frame 400.
+        assert_eq!(audible.skip_to_latest(TARGET_FRAMES), 350);
+        let mut callback = vec![0.0; CALLBACK_FRAMES * FRAME];
+        let got = audible.pop_into(&mut callback);
+        assert_eq!(got, TARGET_FRAMES * FRAME);
+        callback[got..].fill(0.0); // the callback's actual underrun decision
+
+        // Scope publication happens only after consumer index math and uses
+        // precisely the callback's finalized samples.
+        let scope = ScopeChunkRing::new(4, callback.len());
+        let mut scope_sink = scope.sink();
+        let mut scope_tap = scope.tap();
+        scope_sink.push(&callback);
+        let mut surfaced = vec![0.0; callback.len()];
+        assert_eq!(scope_tap.pop_into(&mut surfaced), surfaced.len());
+        assert_eq!(&surfaced[..got], &produced[700..800]);
+        assert!(surfaced[got..].iter().all(|sample| *sample == 0.0));
+        assert_ne!(
+            &surfaced[..got],
+            &produced[..got],
+            "must not expose producer-side arrival"
+        );
+    }
+
+    #[test]
+    fn scope_chunk_ring_replaces_oldest_visual_chunk_when_full() {
+        let scope = ScopeChunkRing::new(2, 4);
+        let mut sink = scope.sink();
+        let mut tap = scope.tap();
+        sink.push(&[0.0, 1.0, 2.0, 3.0]);
+        sink.push(&[4.0, 5.0, 6.0, 7.0]);
+        sink.push(&[8.0, 9.0, 10.0, 11.0]);
+        assert_eq!(scope.dropped_chunks(), 1);
+
+        let mut out = [0.0; 4];
+        assert_eq!(tap.pop_into(&mut out), 4);
+        assert_eq!(out, [4.0, 5.0, 6.0, 7.0]);
+        assert_eq!(tap.pop_into(&mut out), 4);
+        assert_eq!(out, [8.0, 9.0, 10.0, 11.0]);
     }
 
     #[test]

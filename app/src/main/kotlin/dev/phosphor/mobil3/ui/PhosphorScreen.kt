@@ -15,20 +15,25 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.snapshotFlow
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
+import dev.phosphor.mobil3.PhosphorNative
 import kotlinx.coroutines.delay
+import kotlinx.coroutines.flow.distinctUntilChanged
 
 // What the chrome can ask the host to do. Keeps Compose free of Android service plumbing.
 interface ScopeActions {
@@ -55,6 +60,7 @@ interface ScopeActions {
     fun setGrid(on: Boolean)
     fun setGainAuto(on: Boolean)
     fun setHudMode(mode: Int)
+    fun setFullscreen(on: Boolean)
     fun setRemoteLatencyMode(mode: Int)
     fun setRemoteNetworkMode(mode: Int)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
@@ -104,6 +110,20 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     var overflow by remember { mutableStateOf(false) }
     var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
+    val bloomScope = rememberCoroutineScope()
+    val bloom = remember(bloomScope) { BloomPullState(bloomScope) }
+
+    // The Compose side continuously commands NEW beam energy. The renderer deposits that
+    // energy into its real flash/glow textures, so release naturally leaves the P7 layers
+    // to decay instead of fading a chrome overlay.
+    LaunchedEffect(bloom, style.motion) {
+        snapshotFlow { bloom.enginePull(style.motion) }
+            .distinctUntilChanged()
+            .collect { PhosphorNative.setBloomPull(it) }
+    }
+    DisposableEffect(bloom) {
+        onDispose { PhosphorNative.setBloomPull(0f) }
+    }
 
     // Predictive back peels one layer at a time: popout → sheet → console → system.
     BackHandler(enabled = overflow) { overflow = false }
@@ -136,6 +156,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setGlow(g: Float) = actions.setGlow(g)
             override fun setGrid(on: Boolean) = actions.setGrid(on)
             override fun setHudMode(mode: Int) = actions.setHudMode(mode)
+            override fun setFullscreen(on: Boolean) = actions.setFullscreen(on)
             override fun setRemoteLatencyMode(mode: Int) = actions.setRemoteLatencyMode(mode)
             override fun setRemoteNetworkMode(mode: Int) = actions.setRemoteNetworkMode(mode)
             override fun openRoom() { }
@@ -153,6 +174,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     CompositionLocalProvider(
         LocalReducedMotion provides reduced,
         LocalRoomStyle provides style,
+        LocalBloomPull provides bloom,
     ) {
         Box(Modifier.fillMaxSize()) {
             // Layer 0: the scope, full-bleed under everything.
@@ -168,7 +190,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     Modifier
                         .fillMaxSize()
                         .stageGestures(
-                            remember(actions, state) {
+                            remember(
+                                actions, state, bloom, style.motion, reduced,
+                                consoleVisible, overflow,
+                            ) {
                                 object : StageGestureHost {
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
@@ -180,6 +205,18 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                         actions.setMode((state.modeIndex + delta + 11) % 11)
                                     override fun currentGlow() = state.glow
                                     override fun setGlowAbsolute(g: Float) = actions.setGlow(g)
+                                    // The console owns its upward swipe while visible. Once it
+                                    // settles away, only a pull born in the physical bottom-edge
+                                    // band may bloom; gain/orbit keep every other drag.
+                                    override fun bottomPullArmed() = !consoleVisible && !overflow
+                                    override fun beginBloomPull(resistancePx: Float) =
+                                        bloom.begin(resistancePx)
+                                    override fun dragBloomPull(
+                                        upwardDeltaPx: Float,
+                                        resistancePx: Float,
+                                    ) = bloom.dragBy(upwardDeltaPx, resistancePx, style.motion)
+                                    override fun releaseBloomPull() =
+                                        bloom.release(style.motion, reduced)
                                     override fun view() = view
                                 }
                             },

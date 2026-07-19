@@ -17,6 +17,7 @@ use crate::bridge_core::{self, WriterCmd};
 use crate::deck::{RATE, scope_ring};
 use crate::spsc::{
     AdaptiveJitter, BlockRing, LATENCY_MODE_BALANCED, LATENCY_MODE_SAFE, LATENCY_MODE_TIGHT,
+    ScopeChunkRing, ScopeChunkSink, ScopeChunkTap,
 };
 use oboe::{
     AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync, AudioStreamBuilder,
@@ -93,6 +94,9 @@ struct Link {
     audio_skips: AtomicU64,
     audio_skip_ms: AtomicU64,
     a_drops: AtomicU64,
+    /// Visual-only chunks overwritten by the callback's lossy scope SPSC.
+    /// Audible audio is never delayed to preserve these frames.
+    scope_drops: AtomicU64,
     /// Adaptive target is stored in frames (the controller's native unit) and
     /// converted only on status reads. Underruns are process-lifetime events,
     /// not session-local, so reconnects cannot erase a bad-path receipt.
@@ -128,6 +132,7 @@ fn link() -> &'static Link {
         audio_skips: AtomicU64::new(0),
         audio_skip_ms: AtomicU64::new(0),
         a_drops: AtomicU64::new(0),
+        scope_drops: AtomicU64::new(0),
         audio_target_frames: AtomicU32::new(RATE / 4),
         audio_underruns: AtomicU64::new(0),
     })
@@ -192,6 +197,7 @@ struct SessionParts {
     writer: Option<std::thread::JoinHandle<()>>,
     reader: Option<std::thread::JoinHandle<()>>,
     audio: Option<std::thread::JoinHandle<()>>,
+    scope: Option<std::thread::JoinHandle<()>>,
     oboe: Option<std::thread::JoinHandle<()>>,
 }
 
@@ -242,16 +248,22 @@ fn json_str(s: &str) -> String {
 /// until the first audio arrives, and a genuinely starved path can still glitch
 /// before the next wider target has buffer to spend.
 const RING_FRAMES: usize = (RATE as usize) * 2 / 5;
+const SCOPE_CHUNKS: usize = 64;
+const SCOPE_CHUNK_SAMPLES: usize = 16_384;
 
 #[derive(Clone)]
 struct AudioPath {
     ring: Arc<BlockRing>,
+    scope: Arc<ScopeChunkRing>,
 }
 
 impl AudioPath {
     fn new(_rate: u32) -> Self {
         Self {
             ring: BlockRing::new(RING_FRAMES),
+            // 64 × 8192-frame chunks is intentionally extravagant headroom:
+            // visual loss is preferable to one callback ever waiting.
+            scope: ScopeChunkRing::new(SCOPE_CHUNKS, SCOPE_CHUNK_SAMPLES),
         }
     }
     fn sink(&self) -> AudioSink {
@@ -262,6 +274,12 @@ impl AudioPath {
     /// consumer discipline holds by usage.
     fn tap(&self) -> AudioTap {
         AudioTap(self.ring.clone())
+    }
+    fn scope_sink(&self) -> ScopeSink {
+        ScopeSink(self.scope.sink())
+    }
+    fn scope_tap(&self) -> ScopeTap {
+        ScopeTap(self.scope.tap())
     }
     fn close(&self) {
         self.ring.close();
@@ -279,6 +297,9 @@ impl AudioPath {
             self.ring.skips.load(Ordering::Relaxed),
             self.ring.skipped_frames.load(Ordering::Relaxed) * 1000 / RATE as u64,
         )
+    }
+    fn scope_drops(&self) -> u64 {
+        self.scope.dropped_chunks()
     }
 }
 
@@ -304,15 +325,32 @@ impl AudioTap {
     }
 }
 
+struct ScopeSink(ScopeChunkSink);
+impl ScopeSink {
+    /// RT-safe lossy publish of the samples finalized for this callback.
+    fn push(&mut self, samples: &[f32]) {
+        self.0.push(samples);
+    }
+}
+
+struct ScopeTap(ScopeChunkTap);
+impl ScopeTap {
+    fn pop_into(&mut self, out: &mut [f32]) -> usize {
+        self.0.pop_into(out)
+    }
+}
+
 // ── Oboe output (with mute + route-change restart) ───────────────────────────
 struct RemoteOutput {
     tap: AudioTap,
+    scope: ScopeSink,
     scratch: Vec<f32>,
     jitter: AdaptiveJitter,
     latency_mode: &'static AtomicU8,
     effective_target_frames: &'static AtomicU32,
     underruns: &'static AtomicU64,
     audio_enabled: &'static AtomicBool,
+    geometry_enabled: &'static AtomicBool,
     /// The stream is opened before H/W by lifecycle law. Empty callbacks before
     /// the first audio are startup, not network underruns, and must not teach an
     /// adaptive mode all the way to safe before playback even exists.
@@ -337,7 +375,8 @@ impl AudioOutputCallback for RemoteOutput {
         self.tap.catch_up(&mut self.jitter, frames.len()); // index math only
         let got = self.tap.pop_into(&mut self.scratch[..need]);
         self.scratch[got..need].fill(0.0);
-        if self.audio_enabled.load(Ordering::Relaxed) {
+        let audio_enabled = self.audio_enabled.load(Ordering::Relaxed);
+        if audio_enabled {
             if got > 0 {
                 self.playback_started = true;
             }
@@ -366,6 +405,16 @@ impl AudioOutputCallback for RemoteOutput {
                 f.0 = self.scratch[2 * i];
                 f.1 = self.scratch[2 * i + 1];
             }
+            if 2 * i + 1 < need {
+                // The scope publishes the exact post-mute/post-zero-fill output,
+                // not the pre-jitter receive copy.
+                self.scratch[2 * i] = f.0;
+                self.scratch[2 * i + 1] = f.1;
+            }
+        }
+        if audio_enabled && self.playback_started && !self.geometry_enabled.load(Ordering::Relaxed)
+        {
+            self.scope.push(&self.scratch[..need]);
         }
         DataCallbackResult::Continue
     }
@@ -396,6 +445,7 @@ fn open_output(
         .set_channel_count::<Stereo>()
         .set_callback(RemoteOutput {
             tap: path.tap(),
+            scope: path.scope_sink(),
             // Preallocated far above any real AAudio burst (8192 frames) — the
             // callback never resizes it (finding 10's alloc half).
             scratch: vec![0.0; 16384],
@@ -404,6 +454,7 @@ fn open_output(
             effective_target_frames: &l.audio_target_frames,
             underruns: &l.audio_underruns,
             audio_enabled: &l.cfg_audio,
+            geometry_enabled: &l.cfg_geometry,
             playback_started: false,
             muted,
             restart_tx,
@@ -659,7 +710,7 @@ pub fn status_json() -> String {
     };
     let audio_target_ms = l.audio_target_frames.load(Ordering::Relaxed) as u64 * 1000 / RATE as u64;
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"scope":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"scope":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -676,6 +727,7 @@ pub fn status_json() -> String {
         l.audio_skips.load(Ordering::Relaxed),
         l.audio_skip_ms.load(Ordering::Relaxed),
         l.a_drops.load(Ordering::Relaxed),
+        l.scope_drops.load(Ordering::Relaxed),
         json_str(latency_mode_name),
         audio_target_ms,
         l.audio_underruns.load(Ordering::Relaxed),
@@ -1019,6 +1071,37 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             .ok()
     };
 
+    // Scope worker: the oboe callback is the sole producer of finalized audio
+    // chunks; this non-RT consumer is the only place that takes SampleRing's
+    // mutex. It also drains-and-discards across stream-policy switches so a
+    // later audio re-enable cannot surface stale visual history.
+    session.parts.scope = {
+        let mut tap = path.scope_tap();
+        let mut buf = vec![0.0f32; path.scope.chunk_samples()];
+        let shared_v = shared.clone();
+        std::thread::Builder::new()
+            .name("phosphor-remote-scope".into())
+            .spawn(move || {
+                while !shared_v.cancelled() {
+                    let got = tap.pop_into(&mut buf);
+                    if got == 0 {
+                        std::thread::sleep(Duration::from_millis(1));
+                        continue;
+                    }
+                    let l = link();
+                    if l.cfg_audio.load(Ordering::Relaxed)
+                        && !l.cfg_geometry.load(Ordering::Relaxed)
+                    {
+                        scope_ring().lock().unwrap().push_interleaved(&buf[..got]);
+                    }
+                }
+            })
+            .ok()
+    };
+    if session.parts.scope.is_none() {
+        return SessionEnd::Failed("spawn remote scope worker".into());
+    }
+
     // Reader thread: SO_RCVTIMEO 1 s + partial-progress reads, so teardown's
     // cancel is observed within a second even if a FIN goes missing.
     read_stream
@@ -1101,6 +1184,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         let (skips, skip_ms) = path.skips();
         l.audio_skips.store(skips, Ordering::Relaxed);
         l.audio_skip_ms.store(skip_ms, Ordering::Relaxed);
+        l.scope_drops.store(path.scope_drops(), Ordering::Relaxed);
         std::thread::sleep(Duration::from_millis(250));
     }
 }
@@ -1113,9 +1197,10 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 ///   4 ring close+clear — unblocks a worker parked in push, purges ghost audio
 ///   5 reader join (FIN + 1 s SO_RCVTIMEO bound it)
 ///   6 audio worker join (300 ms recv + 200 ms push slice bound it)
-///   7 supervisor join BEFORE the slot clear — else a mid-open supervisor could
+///   7 scope worker join (1 ms poll bound; it never owns audible state)
+///   8 supervisor join BEFORE the slot clear — else a mid-open supervisor could
 ///     resurrect a stream into an already-cleared slot (the late-install race)
-///   8 take the stream under the lock, DROP IT OUTSIDE (oboe close can block
+///   9 take the stream under the lock, DROP IT OUTSIDE (oboe close can block
 ///     briefly while a callback drains — never under our lock)
 /// Policy (DECK_ACTIVE / GeometryActive / meta) is NOT touched here — it lives
 /// in disconnect() and terminal paths; the deck flag is shared with the local
@@ -1156,6 +1241,14 @@ fn teardown_session(
         bridge_core::bounded_join(
             h,
             "phosphor-remote-audio",
+            Duration::from_secs(1),
+            &l.leaked_threads,
+        );
+    }
+    if let Some(h) = parts.scope.take() {
+        bridge_core::bounded_join(
+            h,
+            "phosphor-remote-scope",
             Duration::from_secs(1),
             &l.leaked_threads,
         );
@@ -1230,8 +1323,10 @@ fn reader(
                 for c in payload.chunks_exact(2) {
                     f32buf.push(i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0);
                 }
-                // Geometry mode draws the desktop's beam — the scope ring rests then.
-                if !l.cfg_geometry.load(Ordering::Relaxed) {
+                // No audible consumer exists in music-off/visualizer flows, so
+                // receive-side scope feed is the explicit fallback. With audio
+                // enabled the callback owns scope truth after jitter/zero-fill.
+                if !l.cfg_audio.load(Ordering::Relaxed) && !l.cfg_geometry.load(Ordering::Relaxed) {
                     scope_ring().lock().unwrap().push_interleaved(&f32buf);
                 }
                 if audio_tx.try_send(f32buf).is_err() {

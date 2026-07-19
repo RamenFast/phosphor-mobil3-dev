@@ -30,28 +30,63 @@ import kotlin.math.roundToInt
 // The console's one vertical gesture: a deliberate upward pull opens SETTINGS.
 // It observes without consuming until vertical travel clearly wins, so child taps
 // and the seek rule's horizontal scrub keep their existing ownership.
-fun Modifier.playBarSwipeUp(onSwipeUp: () -> Unit): Modifier = pointerInput(onSwipeUp) {
+// While the console is the lowest visible element, that same pull also drives the beam
+// bloom; the settings threshold and all existing child-control ownership stay intact.
+@Composable
+fun Modifier.playBarSwipeUp(onSwipeUp: () -> Unit): Modifier {
+  val bloom = LocalBloomPull.current
+  val style = LocalRoomStyle.current
+  val reduced = LocalReducedMotion.current
+  return pointerInput(onSwipeUp, bloom, style.motion, reduced) {
     val threshold = maxOf(48.dp.toPx(), viewConfiguration.touchSlop * 3f)
+    val resistance = 156.dp.toPx()
     awaitEachGesture {
         val first = awaitFirstDown(requireUnconsumed = false)
         val origin = first.position
         var fired = false
-        while (true) {
-            val event = awaitPointerEvent()
-            val pressed = event.changes.filter { it.pressed }
-            if (pressed.isEmpty()) break
-            if (!fired) {
-                val travel = pressed.first().position - origin
-                if (travel.y < -threshold && abs(travel.y) > abs(travel.x) * 1.35f) {
-                    fired = true
+        var bloomActive = false
+        try {
+            while (true) {
+                val event = awaitPointerEvent()
+                val pressed = event.changes.filter { it.pressed }
+                if (pressed.isEmpty()) break
+                if (!fired) {
+                    val change = pressed.first()
+                    val travel = change.position - origin
+                    if (!bloomActive && bloom != null &&
+                        travel.y < -viewConfiguration.touchSlop &&
+                        abs(travel.y) > abs(travel.x) * 1.35f
+                    ) {
+                        bloomActive = true
+                        bloom.begin(resistance)
+                        bloom.dragBy(
+                            (-travel.y - viewConfiguration.touchSlop).coerceAtLeast(0f),
+                            resistance,
+                            style.motion,
+                        )
+                    } else if (bloomActive && change.positionChanged()) {
+                        bloom?.dragBy(
+                            -(change.position.y - change.previousPosition.y),
+                            resistance,
+                            style.motion,
+                        )
+                    }
+                    if (travel.y < -threshold && abs(travel.y) > abs(travel.x) * 1.35f) {
+                        fired = true
+                        pressed.forEach { it.consume() }
+                        onSwipeUp()
+                    }
+                } else {
                     pressed.forEach { it.consume() }
-                    onSwipeUp()
                 }
-            } else {
-                pressed.forEach { it.consume() }
+            }
+        } finally {
+            if (bloomActive && bloom != null) {
+                bloom.release(style.motion, reduced)
             }
         }
     }
+  }
 }
 
 // The gesture arbiter (UX-SPEC §1.2/§1.3, core map): each pointer sequence is classified
@@ -77,15 +112,20 @@ interface StageGestureHost {
     fun modeStep(delta: Int)
     fun currentGlow(): Float
     fun setGlowAbsolute(g: Float)
+    fun bottomPullArmed(): Boolean
+    fun beginBloomPull(resistancePx: Float)
+    fun dragBloomPull(upwardDeltaPx: Float, resistancePx: Float)
+    fun releaseBloomPull()
     fun view(): View
 }
 
 fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifier =
-    this.pointerInput(Unit) {
+    this.pointerInput(host, ribbon) {
         val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
             // 0 undecided · 1 drag · 2 pinch · 4 mode-step (fired) · 5 glow swipe
+            // 6 bottom-pull bloom. It can only win from the physical bottom edge.
             var mode = 0
             var gain = host.currentGain()
             var glow = host.currentGlow()
@@ -93,11 +133,20 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
             var origin = first.position
             var twoOrigin = Offset.Zero
             var twoStartDist = 0f
-            while (true) {
+            val bottomCandidate = host.bottomPullArmed() &&
+                first.position.y >= size.height - 88.dp.toPx()
+            val bloomResistance = 156.dp.toPx()
+            var bloomActive = false
+            try {
+              while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
                 if (pressed.isEmpty()) break
                 if (pressed.size >= 2) {
+                    if (bloomActive) {
+                        bloomActive = false
+                        host.releaseBloomPull()
+                    }
                     if (mode == 0 || mode == 1) {
                         mode = 2; lastDist = -1f
                         twoOrigin = Offset(
@@ -164,15 +213,31 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     pressed.forEach { it.consume() }
                 } else if (pressed.size == 1) {
                     val ch = pressed[0]
-                    if (mode >= 2) {
+                    if (mode in 2..5) {
                         // Pinch shed a finger — retire the sequence rather than re-owning it.
                         if (ch.positionChanged()) ch.consume()
                         continue
                     }
                     val delta = ch.position - origin
                     if (mode == 0 && (abs(delta.x) > slop || abs(delta.y) > slop)) {
-                        mode = 1
+                        if (bottomCandidate && delta.y < -slop &&
+                            abs(delta.y) > abs(delta.x) * 1.35f
+                        ) {
+                            mode = 6
+                            bloomActive = true
+                            host.beginBloomPull(bloomResistance)
+                            host.dragBloomPull((-delta.y - slop).coerceAtLeast(0f), bloomResistance)
+                            ch.consume()
+                        } else {
+                            mode = 1
+                        }
                         origin = ch.position
+                        continue
+                    }
+                    if (mode == 6 && ch.positionChanged()) {
+                        val d = ch.position - ch.previousPosition
+                        host.dragBloomPull(-d.y, bloomResistance)
+                        ch.consume()
                         continue
                     }
                     if (mode == 1 && ch.positionChanged()) {
@@ -194,9 +259,71 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         ch.consume()
                     }
                 }
+              }
+            } finally {
+                if (bloomActive) host.releaseBloomPull()
             }
         }
     }
+
+/**
+ * Observes a real scroll host and only takes ownership after that host reaches its bottom.
+ * Callers disable Compose's stock overscroll effect on the corresponding scroll modifier;
+ * the only end feedback is the beam-energy bloom and this resisted displacement.
+ */
+@Composable
+fun Modifier.bottomBloomOverscroll(isAtBottom: () -> Boolean): Modifier {
+    val bloom = LocalBloomPull.current ?: return this
+    val style = LocalRoomStyle.current
+    val reduced = LocalReducedMotion.current
+    return pointerInput(bloom, style.motion, reduced) {
+        val slop = viewConfiguration.touchSlop
+        val resistance = 150.dp.toPx()
+        awaitEachGesture {
+            val first = awaitFirstDown(requireUnconsumed = false)
+            var bottomOrigin: Offset? = if (isAtBottom()) first.position else null
+            var active = false
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) break
+                    if (pressed.size != 1) {
+                        if (active) break
+                        continue
+                    }
+                    val ch = pressed.first()
+                    if (!active) {
+                        if (!isAtBottom()) {
+                            bottomOrigin = null
+                            continue
+                        }
+                        val edge = bottomOrigin ?: ch.position.also { bottomOrigin = it }
+                        val overscroll = ch.position - edge
+                        if (overscroll.y < -slop &&
+                            abs(overscroll.y) > abs(overscroll.x) * 1.25f
+                        ) {
+                            active = true
+                            bloom.begin(resistance)
+                            bloom.dragBy(
+                                (-overscroll.y - slop).coerceAtLeast(0f),
+                                resistance,
+                                style.motion,
+                            )
+                            ch.consume()
+                        }
+                    } else if (active && ch.positionChanged()) {
+                        val delta = ch.position - ch.previousPosition
+                        bloom.dragBy(-delta.y, resistance, style.motion)
+                        ch.consume()
+                    }
+                }
+            } finally {
+                if (active) bloom.release(style.motion, reduced)
+            }
+        }
+    }
+}
 
 // The readout ribbon — a quiet mono etching beside the thumb; fades 600 ms after release.
 @Composable

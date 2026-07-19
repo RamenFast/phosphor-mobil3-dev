@@ -48,3 +48,33 @@ the ring, emits silence). Made worse by bench chaos: media-key toggles during te
 left the flag down. Fix: `connect()` resets `muted=false` — mute is per-playback POLICY,
 re-asserted by the service, never link state. Status: fixed (bridge C4 commit); unmute
 receipt = play resumed + Ben's ears.
+
+## #6 — 2026-07-18 · "a clean circle draws as 2-3 circles out of sync" (+ "doesn't look 120 fps")
+Reported by Ben live, phone beside the desktop scope. Root cause (codex accuracy hunt,
+receipts in the wave commit): the BEAM RATE control was renderer-side window SLICING, not
+oversampling — one drained capture batch was split into N slices, each getting its own
+compute + persistence-adjusted GPU deposit, so N differently-aged partial traversals
+coexisted on screen (the 2-3 circles). Bonus defect: a 120 Hz display tick landing between
+100 Hz capture chunks did NO advance at all — decay froze, motion stepped at chunk cadence
+(the "not 120 fps" feel). At 1× neither fired; Ben's persisted 2× ran both every frame.
+Fix: real polyphase reconstruction (desktop DSP `set_sample_rate(48k, factor)` — the
+16-tap windowed-sinc streaming upsampler with carried tail), ONE compute + ONE deposit per
+display frame, empty windows still advance decay. Regression: engine.rs
+`pure_circle_render_path_reconstructs_at_selected_rate` — 440 Hz quadrature through the
+real SampleRing at phone cadence; failed before (479 vs 1919 segs, 10/60 frozen frames),
+green after. On-device receipt: docs/dev/receipts/accuracy-circle-after.png — one
+phase-locked circle. Status: fixed, shipped in the wave commit.
+
+## #7 — 2026-07-18 · SOURCE-picker output switch: stale checkmark + silent stream (NEXUS #5)
+Ben's repro: phone SOURCE▸REMOTE picker, pick a different OUT on the ThinkCentre.
+Two root causes in relay on_choose: (1) no S-frame echo after C — the picker polls cached
+S for its checkmark, so it could never move; (2) choosing a monitor captured that sink's
+monitor while the desktop player kept playing into the OLD sink — the new monitor carries
+silence. Fix (relay 2.2.0): monitor-choose genuinely switches the desktop output (wpctl
+set-default + pactl move-sink-input, deadline+cancellable), every C ends in an honest S
+echo, capture swap transactional, failure reverts + best-effort restores routing. Found
+live during the fix: pw-dump's 247 KB overflowed the command-runner's un-drained pipe →
+empty source inventory (5 s deadline kill); runner now drains concurrently (+256 KiB
+regression test). Verified live on interserve: HDMI↔analog round trip, checkmark followed,
+spotify sink-input moved both ways, stream stayed up (receipts bug5-*.png + relay journal).
+Status: fixed, deployed both machines.

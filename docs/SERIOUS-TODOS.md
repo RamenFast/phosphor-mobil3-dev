@@ -31,3 +31,20 @@
 - [ ] Relay browse/play stayed sync-with-deadline where fast and became async jobs where
   slow (Drive fetch/browse) — if any NEW slow handler lands, it must be a job too; the
   control loop's budget is the phone's 3 s stall window.
+
+## From the 2026-07-18 accuracy audit (fidelity map, not yet fixed)
+- **Remote VISUALIZER geometry decimation drawn as trace**: desktop sends ≤64 strided
+  segment midpoints; mobile joins adjacent midpoints as if they were the trace
+  (render.rs geometry branch) — sparse rotated polygons on repeated traversals. The
+  first suspect if a clean circle ever still splits in GEOMETRY mode (audio mode is
+  fixed). Fix direction: draw decimated points as points/short dashes, or raise the
+  desktop tap budget for the bridge.
+- **s16 transport quantization**: relay captures s16le; desktop scope path is float.
+  Low-level detail loss on the bridge. Consider f32 or 24-bit A-frames (bandwidth ×2).
+- **Focus default divergence**: mobile 0.3 px vs desktop 1.6 — deliberate look choice?
+  Ask Ben which is "the" phosphor look; the setting exists on both.
+- **JNI capture ingest allocates per 10 ms chunk** (jni_glue pushCaptureSamples) —
+  cadence jitter risk under GC; preallocate/reuse.
+- **Local deck audio callback still uses mutex/Condvar AudibleRing** (deck.rs) — the
+  remote path got SPSC; the local path could inherit it (audible-glitch class, not
+  scope-tear class).

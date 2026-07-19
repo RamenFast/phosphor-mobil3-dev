@@ -2,12 +2,19 @@ package dev.phosphor.mobil3.ui
 
 import android.content.Context
 import android.provider.Settings
+import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.CubicBezierEasing
 import androidx.compose.animation.core.Easing
 import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.snap
+import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.runtime.compositionLocalOf
+import kotlinx.coroutines.CoroutineScope
+import kotlinx.coroutines.Job
+import kotlinx.coroutines.launch
+import kotlin.math.abs
+import kotlin.math.roundToInt
 
 // The house motion table: 80–200 ms, eased, purposeful; 240 ms is reserved for the one
 // deliberately longer move (a room change). Reduced-motion turns everything into cuts.
@@ -17,6 +24,8 @@ object Motion {
     const val settle = 160     // console fade-out + 8px settle-down
     const val sheet = 200      // sheet travel, decelerate, no bounce
     const val room = 240       // whole-chrome room crossfade
+    const val bloomSettle = 260 // P7 bloom: the eased room exhales, then the raster decays
+    const val bloomDetent = 170 // service-bench return through discrete switch positions
 
     val decelerate: Easing = CubicBezierEasing(0.05f, 0.7f, 0.1f, 1f)
     val standard: Easing = CubicBezierEasing(0.2f, 0f, 0f, 1f)
@@ -24,6 +33,87 @@ object Motion {
     /** Departure curve — a dismissed sheet ACCELERATES away (motion shows intent). */
     val accelerate: Easing = CubicBezierEasing(0.3f, 0f, 0.8f, 0.15f)
 }
+
+/**
+ * Shared bottom-pull state for the stage and every sheet scroll host.
+ *
+ * Positive values are the resisted pull. A Springy release may cross slightly below zero;
+ * the sheet uses that signed value for its physical rebound while [enginePull] turns the
+ * negative lobe into a much smaller secondary beam breath. The renderer still owns the
+ * actual P7 flash/glow accumulation and decay -- this state only drives new beam energy.
+ */
+class BloomPullState(private val scope: CoroutineScope) {
+    val animation = Animatable(0f)
+
+    private var rawPullPx = 0f
+    private var lastResistancePx = 160f
+    private var releaseJob: Job? = null
+
+    val visualPull: Float get() = animation.value
+
+    // begin/dragBy are called from restricted pointer-input scopes, so they cannot
+    // suspend — the raw-pull math stays synchronous and only the Animatable calls hop
+    // onto the state's (sequential, main) scope.
+    fun begin(resistancePx: Float) {
+        releaseJob?.cancel()
+        lastResistancePx = resistancePx.coerceAtLeast(1f)
+        val held = animation.value.coerceIn(0f, 0.94f)
+        rawPullPx = lastResistancePx * held / (1f - held).coerceAtLeast(0.06f)
+        scope.launch { animation.stop() }
+    }
+
+    fun dragBy(upwardDeltaPx: Float, resistancePx: Float, feel: MotionFeel) {
+        lastResistancePx = resistancePx.coerceAtLeast(1f) * when (feel) {
+            MotionFeel.Detented -> 1.42f // stiff rotary mechanism
+            MotionFeel.Springy -> 0.72f  // glass yields sooner
+            MotionFeel.Eased -> 1f
+            MotionFeel.Cut -> 1.08f
+        }
+        rawPullPx = (rawPullPx + upwardDeltaPx).coerceIn(0f, lastResistancePx * 8f)
+        val resisted = rawPullPx / (rawPullPx + lastResistancePx)
+        val roomValue = if (feel == MotionFeel.Detented) {
+            // Seven physical switch positions, continuously selected by pull distance.
+            (resisted * 7f).roundToInt() / 7f
+        } else resisted
+        scope.launch { animation.snapTo(roomValue.coerceIn(0f, 1f)) }
+    }
+
+    fun release(feel: MotionFeel, reduced: Boolean) {
+        releaseJob?.cancel()
+        releaseJob = scope.launch {
+            rawPullPx = 0f
+            if (reduced || feel == MotionFeel.Cut) {
+                animation.snapTo(0f)
+                return@launch
+            }
+            when (feel) {
+                MotionFeel.Detented -> animation.animateTo(
+                    0f,
+                    tween(Motion.bloomDetent, easing = stepEasing(7)),
+                )
+                MotionFeel.Springy -> animation.animateTo(
+                    0f,
+                    spring(dampingRatio = 0.48f, stiffness = 300f, visibilityThreshold = 0.002f),
+                )
+                MotionFeel.Eased -> animation.animateTo(
+                    0f,
+                    tween(Motion.bloomSettle, easing = Motion.decelerate),
+                )
+                MotionFeel.Cut -> Unit // handled above
+            }
+        }
+    }
+
+    /** Engine command value: direct while held; a restrained rebound only in glass. */
+    fun enginePull(feel: MotionFeel): Float {
+        val v = animation.value
+        return if (v >= 0f) v.coerceAtMost(1f)
+        else if (feel == MotionFeel.Springy) (abs(v) * 0.20f).coerceAtMost(0.14f)
+        else 0f
+    }
+}
+
+val LocalBloomPull = compositionLocalOf<BloomPullState?> { null }
 
 /** Quantized step easing — the bench's rotary-switch feel. Ends exactly at 1. */
 fun stepEasing(steps: Int = 5): Easing = Easing { t ->

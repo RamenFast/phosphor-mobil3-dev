@@ -54,6 +54,9 @@ pub enum Cmd {
     SetFocus(f32),
     /// Beam brightness budget (the desktop "Beam" slider, 1.0..30.0).
     SetBeamEnergy(f32),
+    /// Bottom-overscroll beam bloom, normalized 0..1. This scales segment deposit energy;
+    /// the renderer's real P7 flash/glow textures own the visible release tail.
+    SetBloomPull(f32),
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
     /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
@@ -174,6 +177,13 @@ fn smoothstep(t: f32) -> f32 {
     t * t * (3.0 - 2.0 * t)
 }
 
+/// A perceptual lift of NEW beam energy. Keeping this upstream of `GpuRenderer::advance`
+/// is the important part: both P7 layers receive the bloom (flash keep 0.50, glow coupled
+/// at 0.85 with persistence-dependent decay) and therefore remember the pull physically.
+fn bloom_energy_multiplier(pull: f32) -> f32 {
+    1.0 + 1.8 * pull.clamp(0.0, 1.0).powf(0.82)
+}
+
 /// Fifo for panel-vsync (target 0). Anything else wants Immediate (uncapped or
 /// higher-than-panel with a software limiter); Mailbox is the fallback, Fifo the last.
 fn present_mode_for(target_fps: i32, caps: &[wgpu::PresentMode]) -> wgpu::PresentMode {
@@ -217,6 +227,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut flip: Option<Flip> = None;
     let mut silent_since: Option<std::time::Instant> = None;
     let mut rest_phase: f32 = 0.0;
+    let mut bloom_pull: f32 = 0.0;
 
     // Remote geometry (bridge visualizer mode): latest frame wins, decay keeps ticking.
     let mut geometry_active = false;
@@ -373,6 +384,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 Cmd::SetBeamEnergy(e) => {
                     // Desktop parity: the "Beam" slider, 1.0..30.0.
                     computer.beam_energy = e.clamp(1.0, 30.0);
+                }
+                Cmd::SetBloomPull(pull) => {
+                    bloom_pull = pull.clamp(0.0, 1.0);
                 }
                 Cmd::SetGrid(on) => {
                     if let Some(r) = renderer.as_mut() {
@@ -539,7 +553,12 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 }
             }
         }
-        let transform_active = scale_xy < 1.0 || scale_y < 1.0 || brightness < 1.0;
+        // The pull does not tint or blur chrome: it raises real segment energy before
+        // deposition. When it returns to zero, energy already in the GPU textures keeps
+        // decaying through phosphor-beam's two-layer P7 law.
+        brightness *= bloom_energy_multiplier(bloom_pull);
+        let transform_active = scale_xy < 1.0 || scale_y < 1.0 ||
+            (brightness - 1.0).abs() > f32::EPSILON;
 
         // Custom light: static color, or the cycle lerping slot→slot. Timer mode loops
         // continuously; per-track mode fades one leg per CycleAdvance then holds.
@@ -702,6 +721,26 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             );
             fps_frames = 0;
             fps_t0 = std::time::Instant::now();
+        }
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::bloom_energy_multiplier;
+
+    #[test]
+    fn bloom_energy_is_clamped_continuous_and_monotonic() {
+        assert_eq!(bloom_energy_multiplier(-1.0), 1.0);
+        assert_eq!(bloom_energy_multiplier(0.0), 1.0);
+        assert!((bloom_energy_multiplier(1.0) - 2.8).abs() < 1e-6);
+        assert_eq!(bloom_energy_multiplier(2.0), bloom_energy_multiplier(1.0));
+
+        let mut previous = bloom_energy_multiplier(0.0);
+        for step in 1..=100 {
+            let current = bloom_energy_multiplier(step as f32 / 100.0);
+            assert!(current > previous);
+            previous = current;
         }
     }
 }

@@ -474,6 +474,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
             .putInt("hud_mode", ui.hudMode)
             .putInt("band_mode", ui.bandMode)
+            .putBoolean("fullscreen", ui.fullscreen)
             .putInt("remote_latency_mode", ui.latencyMode)
             .putInt("remote_network_mode", ui.networkMode)
             .putBoolean("amoled_seen", ui.amoledCaptionSeen)
@@ -514,6 +515,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             p.getInt("hud_mode", 2).coerceIn(0, 2)
         } else if (p.getBoolean("nerd_hud", false)) 0 else 2
         ui.bandMode = p.getInt("band_mode", 0)
+        ui.fullscreen = p.getBoolean("fullscreen", true)
         ui.latencyMode = p.getInt("remote_latency_mode", 2).coerceIn(0, 2)
             .also { PhosphorNative.remoteSetLatencyMode(it) }
         ui.networkMode = p.getInt("remote_network_mode", 0).coerceIn(0, 2)
@@ -645,10 +647,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun applyImmersive() {
         WindowInsetsControllerCompat(window, window.decorView).apply {
             isAppearanceLightStatusBars = false
-            hide(WindowInsetsCompat.Type.systemBars())
-            systemBarsBehavior =
-                WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            if (ui.fullscreen) {
+                hide(WindowInsetsCompat.Type.systemBars())
+                systemBarsBehavior =
+                    WindowInsetsControllerCompat.BEHAVIOR_SHOW_TRANSIENT_BARS_BY_SWIPE
+            } else {
+                show(WindowInsetsCompat.Type.systemBars())
+            }
         }
+    }
+
+    override fun setFullscreen(on: Boolean) {
+        ui.fullscreen = on
+        applyImmersive()
     }
 
     // Android can undo an onCreate-time hide when the window (re)gains focus —

@@ -274,3 +274,53 @@ to your verify-questions, so the next hands start warm:
 
 The batch's spine — "make the app honest about what it is" — is the same law this whole
 session was built on (honesty band, real POST checks, wire-counted stats). Good sync. 🐢
+
+---
+
+## Resolution — 2026-07-18 night (Fable, the completion session)
+
+The whole batch shipped, with receipts (wave commits + docs/dev/receipts/):
+
+- **#1 RANDOM ⚄** — SHIPPED. Picker row rolls a real mode (never repeats the current
+  face), band shows the TRUE landed tag + die (`radial ⚄` receipt on device), re-roll on
+  track change + armed MODE tap, persists.
+- **#2/#2b corner clip** — SHIPPED as the root fix you called: chromeSafeDrawingInsets
+  reads the Android 12+ RoundedCorner radii, solves per-callsite sagitta clearance,
+  unions with safeDrawing; Console + every sheet inherit. Glass + amber receipts clean.
+- **#3 bottom-pull bloom** — SHIPPED through the REAL brightness path (no chrome overlay):
+  pull lifts deposit energy pre-advance so both P7 layers remember it physically; release
+  decays through the true flash/glow envelopes. Your stake held: Amber = 7 detented
+  positions + stepped return, Glass = underdamped spring + secondary breath, Void = cut,
+  Blossom = eased. No Material bounce anywhere.
+- **#4 art parity** — SHIPPED. Root divergence: the desired art id was read from the
+  R-response slot, so a fresh connection could never request art. Now M metadata drives
+  requests, stale art is impossible at every boundary, R responses are id-checked.
+  Receipts: notification card + in-app deck wearing true art across track changes.
+- **#5 output-switch bug** — Ben pinned the repro (phone SOURCE picker). TWO root causes,
+  both fixed in relay 2.2.0: no S-echo after C (stale checkmark), and monitor-capture
+  without moving the desktop's audio (silent stream). Now picking an OUT genuinely
+  switches the desktop output (wpctl + pactl moves, cancellable) and echoes honest S.
+  Live round-trip receipt HDMI↔analog on interserve; deployed both machines. Bonus find:
+  pw-dump's 247 KB overflowed the runner pipe → empty source list; fixed + regression.
+- **#6 settings parity + HUD auto-hide + auto-gain** — SHIPPED. Parity diff: glow==
+  persistence (naming), real gaps were auto-gain (ported verbatim from shell.rs autosize,
+  host-tested; remote = passthrough over the V path) + beam cycle (queued for LIGHT).
+  HUD on/auto/off rides the console timer with pref migration. Plus new REMOTE rows:
+  LATENCY tight/balanced/safe (adaptive jitter buffer) + NETWORK auto/wifi/mobile with
+  the honest no-multipath prose.
+- **#7 settings icons** — in flight tonight (phosphor-language ImageVector set,
+  ChromeCharacter-aware wrapper).
+- **#8 launcher icon** — SHIPPED. Hero untouched; three quieter full-width traces behind
+  (ice/vapor/amber, closed figures, safe-zone math honored), monochrome matched, PNG
+  mipmaps regenerated at all densities.
+
+Also landed from Ben's live stream tonight: swipe-up on the play bar opens SETTINGS,
+fullscreen became a toggle, and the accuracy hunt found the real thing — the beam-rate
+control was window-slicing, drawing 2-3 differently-aged part-traversals per frame
+("2-3 circles out of sync") and freezing decay between capture chunks ("doesn't look
+120 fps"). Real polyphase reconstruction now; one deposit per frame; a pure quadrature
+circle draws as ONE circle on device (accuracy-circle-after.png). And the remote trace
+now shows what the EAR hears (consumer-side scope tap) instead of leading audio by the
+jitter buffer.
+
+Your read held up: it was all honesty work. — Fable 🐢

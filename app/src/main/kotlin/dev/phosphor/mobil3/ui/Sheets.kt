@@ -37,6 +37,7 @@ import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
+import androidx.compose.foundation.lazy.grid.rememberLazyGridState
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.unit.TextUnit
@@ -56,6 +57,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
+import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -75,6 +77,9 @@ fun SheetHost(
 ) {
     var dragPx by remember { mutableFloatStateOf(0f) }
     val style = LocalRoomStyle.current
+    val bloom = LocalBloomPull.current
+    val bloomTravelPx = with(LocalDensity.current) { 28.dp.toPx() }
+    val bloomOffsetPx = -(bloom?.visualPull ?: 0f) * bloomTravelPx
     // Expressive dismiss (Ben's ask): the old `visible = true` meant the exit
     // could NEVER play — dismissal was an instant removal. Now the sheet owns a
     // real open/close state: ✕/scrim/drag/Back play the departure (accelerating
@@ -115,7 +120,9 @@ fun SheetHost(
             )
             Column(
                 Modifier
-                    .offset { IntOffset(0, dragPx.coerceAtLeast(0f).roundToInt()) }
+                    .offset {
+                        IntOffset(0, (dragPx.coerceAtLeast(0f) + bloomOffsetPx).roundToInt())
+                    }
                     .fillMaxWidth()
                     .clip(sheetShape)
                     .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
@@ -205,8 +212,13 @@ fun SourceSheet(
     onDismiss: () -> Unit,
 ) {
     var consentCard by remember { mutableStateOf(false) }
+    val scroll = rememberScrollState()
     SheetHost(p, "SOURCE", reduced, onDismiss) {
-      Column(Modifier.verticalScroll(rememberScrollState())) {
+      Column(
+          Modifier
+              .bottomBloomOverscroll { !scroll.canScrollForward }
+              .verticalScroll(scroll, overscrollEffect = null)
+      ) {
         if (consentCard) {
             Prose(
                 "Android will ask you to let Phosphor see what's playing. Phosphor turns " +
@@ -275,6 +287,7 @@ fun ModeSheet(
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
+    val scroll = rememberScrollState()
     val groups = listOf(
         "XY" to listOf(0, 1, 2, 3),
         "3D" to listOf(4, 5),
@@ -282,7 +295,11 @@ fun ModeSheet(
         "SPECTRUM" to listOf(8, 9, 10),
     )
     SheetHost(p, "MODE", reduced, onDismiss) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
+        Column(
+            Modifier
+                .bottomBloomOverscroll { !scroll.canScrollForward }
+                .verticalScroll(scroll, overscrollEffect = null)
+        ) {
             SectionHeading("AUTOMATIC", p, Modifier.padding(top = 0.dp))
             val randomActive = state.randomModeArmed
             Row(
@@ -347,7 +364,15 @@ fun RoomSheet(
             ),
             label = "breathA",
         )
-        LazyVerticalGrid(columns = GridCells.Fixed(2), modifier = Modifier.heightIn(max = 340.dp)) {
+        val gridState = rememberLazyGridState()
+        LazyVerticalGrid(
+            columns = GridCells.Fixed(2),
+            state = gridState,
+            modifier = Modifier
+                .heightIn(max = 340.dp)
+                .bottomBloomOverscroll { !gridState.canScrollForward },
+            overscrollEffect = null,
+        ) {
             itemsIndexed(Rooms) { _, room ->
                 val active = room.id == state.room.id
                 val rs = room.style
@@ -508,6 +533,47 @@ private fun StyleSampleChip(room: Palette) {
 
 // ── SETTINGS (pass 1 structure; the full desktop port grows into these groups). ──
 @Composable
+private fun SettingsSectionHeading(
+    text: String,
+    glyph: SettingsGlyph,
+    p: Palette,
+    modifier: Modifier = Modifier,
+) {
+    val glyphSize = with(LocalDensity.current) { Type.dataSm.toDp() } + 5.dp
+    Row(
+        modifier.fillMaxWidth(),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SettingsGlyphIcon(glyph, p, glyphSize)
+        Spacer(Modifier.width(Dim.gap))
+        SectionHeading(text, p, Modifier.weight(1f))
+    }
+}
+
+@Composable
+private fun SettingsGlyphRow(
+    label: String,
+    glyph: SettingsGlyph,
+    p: Palette,
+    onClick: () -> Unit,
+) {
+    val glyphSize = with(LocalDensity.current) { Type.dataLg.toDp() } + 3.dp
+    Row(
+        Modifier
+            .fillMaxWidth()
+            .clickable(onClick = onClick)
+            .border(Dim.hairline, p.line)
+            .padding(Dim.rowPad),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        SettingsGlyphIcon(glyph, p, glyphSize)
+        Spacer(Modifier.width(Dim.gap))
+        Mono(label, p.ink, Type.dataLg)
+    }
+    Spacer(Modifier.height(Dim.gap))
+}
+
+@Composable
 fun SettingsSheet(
     state: ScopeUiState,
     p: Palette,
@@ -517,9 +583,16 @@ fun SettingsSheet(
     onFocus: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
+    val scroll = rememberScrollState()
     SheetHost(p, "SETTINGS", reduced, onDismiss) {
-        Column(Modifier.verticalScroll(rememberScrollState())) {
-            SectionHeading("SIGNAL", p, Modifier.padding(top = 0.dp))
+        Column(
+            Modifier
+                .bottomBloomOverscroll { !scroll.canScrollForward }
+                .verticalScroll(scroll, overscrollEffect = null)
+        ) {
+            SettingsSectionHeading(
+                "SIGNAL", SettingsGlyph.Signal, p, Modifier.padding(top = 0.dp),
+            )
             DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
             DragRule(
                 "GAIN", state.gain, 0.1f, 6.0f, p, { "×%.2f".format(it) },
@@ -545,14 +618,22 @@ fun SettingsSheet(
                 "GLOW", state.glow, 0.0f, 0.98f, p, { "%.0f %%".format(it * 100) },
             ) { actions.setGlow(it) }
 
-            SectionHeading("DISPLAY", p)
+            SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell("GRID · " + (if (state.grid) "on" else "off"), active = state.grid, p = p, small = true) {
                         actions.setGrid(!state.grid)
                     }
                 }
-                Spacer(Modifier.weight(2f))
+                Box(Modifier.weight(1f)) {
+                    // Ben's ask: immersive is a choice, not a law. Off shows the bars;
+                    // the corner-clearance helper reads real insets either way.
+                    ChipCell(
+                        "FULLSCREEN · " + (if (state.fullscreen) "on" else "off"),
+                        active = state.fullscreen, p = p, small = true,
+                    ) { actions.setFullscreen(!state.fullscreen) }
+                }
+                Spacer(Modifier.weight(1f))
             }
             Spacer(Modifier.height(Dim.gap))
             Mono("FRAME RATE", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
@@ -578,7 +659,7 @@ fun SettingsSheet(
             }
             Prose(BeamRateNote, p.muted, modifier = Modifier.padding(top = 6.dp))
 
-            SectionHeading("PERFORMANCE", p)
+            SettingsSectionHeading("PERFORMANCE", SettingsGlyph.Performance, p)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell(
@@ -600,7 +681,7 @@ fun SettingsSheet(
                 Spacer(Modifier.weight(1f))
             }
 
-            SectionHeading("REMOTE", p)
+            SettingsSectionHeading("REMOTE", SettingsGlyph.Remote, p)
             Mono("LATENCY", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("tight" to 0, "balanced" to 1, "safe" to 2).forEach { (label, mode) ->
@@ -636,11 +717,15 @@ fun SettingsSheet(
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
 
-            SectionHeading("ROOM & LIGHT", p)
-            SheetRow("room · ${state.room.label}", p) { actions.openRoom() }
-            SheetRow("light · beam color", p) { actions.openLight() }
+            SettingsSectionHeading("ROOM & LIGHT", SettingsGlyph.RoomLight, p)
+            SettingsGlyphRow("room · ${state.room.label}", SettingsGlyph.Room, p) {
+                actions.openRoom()
+            }
+            SettingsGlyphRow("light · beam color", SettingsGlyph.BeamColor, p) {
+                actions.openLight()
+            }
 
-            SectionHeading("ABOUT", p)
+            SettingsSectionHeading("ABOUT", SettingsGlyph.About, p)
             Prose(
                 "Phosphor draws sound as light — a CRT oscilloscope in your pocket, " +
                     "sample-locked to what you hear. GPL-3.0. The beam remembers.",
@@ -660,6 +745,7 @@ fun SettingsSheet(
 
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
+    fun setFullscreen(on: Boolean)
     fun openFile()
     fun startMic()
     fun startCapture()
