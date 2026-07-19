@@ -62,7 +62,10 @@ struct Link {
     state: AtomicU8,
     quit: AtomicBool,
     generation: AtomicU64,
-    writer: Mutex<Option<TcpStream>>,
+    /// Generation-tagged: publish/teardown only touch the socket when the tag
+    /// matches, so a stale session can never stomp its successor's link
+    /// (audit finding 1). disconnect() takes it unconditionally (user intent).
+    writer: Mutex<Option<(u64, TcpStream)>>,
     slots: Slots,
     meta_gen: AtomicU32,
     sources_gen: AtomicU32,
@@ -98,8 +101,17 @@ fn link() -> &'static Link {
     })
 }
 
+/// Wall clock — K payloads and logs ONLY. Liveness math uses monotonic_ms():
+/// a wall-clock step must never kill a live link or immortalize a dead one
+/// (audit finding 13).
 fn now_ms() -> u64 {
     SystemTime::now().duration_since(UNIX_EPOCH).map(|d| d.as_millis() as u64).unwrap_or(0)
+}
+
+/// Process-epoch monotonic milliseconds (CLOCK_MONOTONIC — immune to clock steps).
+fn monotonic_ms() -> u64 {
+    static EPOCH: OnceLock<Instant> = OnceLock::new();
+    EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
 fn set_link_error(err: &str, fix: &str) {
@@ -184,7 +196,7 @@ fn open_output(
 // ── Wire helpers ─────────────────────────────────────────────────────────────
 fn send_frame(tag: u8, payload: &[u8]) -> bool {
     let mut w = link().writer.lock().unwrap();
-    if let Some(s) = w.as_mut() {
+    if let Some((_, s)) = w.as_mut() {
         let len = (payload.len() as u32).to_be_bytes();
         let ok = s.write_all(&[tag]).is_ok()
             && s.write_all(&len).is_ok()
@@ -234,7 +246,7 @@ pub fn disconnect() {
     let l = link();
     l.quit.store(true, Ordering::Relaxed);
     l.generation.fetch_add(1, Ordering::SeqCst); // invalidates all session threads
-    if let Some(s) = l.writer.lock().unwrap().take() {
+    if let Some((_, s)) = l.writer.lock().unwrap().take() {
         let _ = s.shutdown(std::net::Shutdown::Both);
     }
     l.state.store(ST_IDLE, Ordering::Relaxed);
@@ -425,14 +437,19 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         Err(e) => return SessionEnd::Failed(format!("connect {host}:{port}: {e}")),
     };
     stream.set_nodelay(true).ok();
+    // Interim finding-2 cap: a blackholed peer can stall a write at most 2 s per
+    // syscall instead of forever. C2 (writer thread) removes socket I/O from
+    // callers entirely; this bound just shrinks the window until then.
+    stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
     let read_stream = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => return SessionEnd::Failed(format!("clone stream: {e}")),
     };
-    *l.writer.lock().unwrap() = Some(stream);
-    send_hello();
 
-    // Audio plumbing (per session): audible ring → oboe, with the restart supervisor.
+    // Audio plumbing FIRST (audit finding 9): the full local stack must stand
+    // before the relay ever hears H. An oboe failure here returns with the
+    // socket unpublished and un-greeted — it simply drops (FIN), and the relay
+    // never creates pumps for a half-session.
     let audible = AudibleRing::new(RATE);
     let muted = Arc::new(AtomicBool::new(l.muted.load(Ordering::Relaxed)));
     let (restart_tx, restart_rx) = std::sync::mpsc::channel::<()>();
@@ -442,6 +459,25 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     };
     let out_slot: Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>> =
         Arc::new(Mutex::new(Some(out)));
+
+    // Publish under the generation tag (audit finding 1). A session that lost the
+    // race while blocked in connect_timeout retires itself here instead of
+    // stomping its successor's live socket.
+    {
+        let mut w = l.writer.lock().unwrap();
+        if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
+            drop(w);
+            let _ = stream.shutdown(std::net::Shutdown::Both);
+            *out_slot.lock().unwrap() = None;
+            return SessionEnd::Quit;
+        }
+        if let Some((_, old)) = w.take() {
+            // Never silently overwrite — shut the prior generation's stream down.
+            let _ = old.shutdown(std::net::Shutdown::Both);
+        }
+        *w = Some((my_gen, stream));
+    }
+    send_hello();
 
     // Route-change supervisor: reopen the stream when AAudio disconnects it.
     {
@@ -516,7 +552,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     if l.cfg_geometry.load(Ordering::Relaxed) {
         let _ = crate::render::sender().send(crate::render::Cmd::GeometryActive(true));
     }
-    l.last_rx_ms.store(now_ms(), Ordering::Relaxed);
+    l.last_rx_ms.store(monotonic_ms(), Ordering::Relaxed);
     log::info!("remote session up: {host}:{port} (gen {my_gen})");
 
     // Watchdog: K pings every 2 s; 3 s quiet = stalled; 10 s = dead.
@@ -524,15 +560,15 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let mut was_streaming = false;
     loop {
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
-            teardown_session(&out_slot);
+            teardown_session(my_gen, &out_slot);
             return SessionEnd::Quit;
         }
         if saw_v1.load(Ordering::Relaxed) {
-            teardown_session(&out_slot);
+            teardown_session(my_gen, &out_slot);
             return SessionEnd::V1Relay;
         }
         if reader_done.load(Ordering::Relaxed) {
-            teardown_session(&out_slot);
+            teardown_session(my_gen, &out_slot);
             // Audit finding 11: a run that reached streaming resets the backoff ladder
             // (report Healthy; the manager still reconnects, just without punishment).
             return if was_streaming {
@@ -545,13 +581,13 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             send_frame(b'K', format!(r#"{{"ts_ms":{}}}"#, now_ms()).as_bytes());
             last_ping = Instant::now();
         }
-        let quiet_ms = now_ms().saturating_sub(l.last_rx_ms.load(Ordering::Relaxed));
+        let quiet_ms = monotonic_ms().saturating_sub(l.last_rx_ms.load(Ordering::Relaxed));
         let st = l.state.load(Ordering::Relaxed);
         if st == ST_STREAMING {
             was_streaming = true;
         }
         if quiet_ms > 10_000 {
-            teardown_session(&out_slot);
+            teardown_session(my_gen, &out_slot);
             return if was_streaming {
                 SessionEnd::Failed("10 s of silence — link presumed dead".into())
             } else {
@@ -569,11 +605,19 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 }
 
 fn teardown_session(
+    my_gen: u64,
     out_slot: &Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>>,
 ) {
     let l = link();
-    if let Some(s) = l.writer.lock().unwrap().take() {
-        let _ = s.shutdown(std::net::Shutdown::Both);
+    {
+        // Take the socket only if it is still OURS (audit finding 1): a stale
+        // teardown must never shut down a successor session's live link.
+        let mut w = l.writer.lock().unwrap();
+        if matches!(w.as_ref(), Some((g, _)) if *g == my_gen) {
+            if let Some((_, s)) = w.take() {
+                let _ = s.shutdown(std::net::Shutdown::Both);
+            }
+        }
     }
     *out_slot.lock().unwrap() = None; // drops + stops the oboe stream
 }
@@ -611,8 +655,14 @@ fn reader(
         if s.read_exact(&mut payload).is_err() {
             break;
         }
+        // Post-blocking-read gate (audit finding 1): a frame that arrived for a
+        // retired generation must not touch shared state — a reader that passed
+        // the loop guard, then blocked, could otherwise publish one stale frame.
+        if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
+            break;
+        }
         l.rx_bytes.fetch_add((5 + len) as u64, Ordering::Relaxed);
-        l.last_rx_ms.store(now_ms(), Ordering::Relaxed);
+        l.last_rx_ms.store(monotonic_ms(), Ordering::Relaxed);
         match tag {
             b'W' => {
                 if let Ok(txt) = String::from_utf8(payload) {
