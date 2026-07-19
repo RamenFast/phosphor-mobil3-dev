@@ -18,11 +18,11 @@
 | 2026-07-18 | **3 themes of VERY DIFFERENT UI STYLE, all mobile-friendly (not just palette swaps)** | 2 of 3 shipped (Blossom Dark carved + AMOLED Void engraved); **CRT Amber service bench lands this session** |
 | 2026-07-18 | **Google Drive music: browse + play (incl. skip/back) over the bridge** | shipped (rclone backend, cache-then-play, OAuth done) |
 | 2026-07-18 | **Pinch to zoom in/out = gain on the mobile app** | shipped (pinch=gain/dolly, drag=gain/orbit, ×ribbon) |
-| 2026-07-18 | **Remote-render control: while streaming VISUALIZER, phone settings drive the mainline desktop phosphor; patch + redeploy desktop on the laptop if needed (authorized)** | **in progress this session** (Act V — relay speaks the ctl socket; `ctl gain` 4.7.1 patch) |
-| 2026-07-18 | **Audio still glitchy / lagging behind sometimes — improve the transport through Tailscale** | **in progress this session** (Acts II–III: lock-free RT ring + drop-oldest queues + catch-up; audit findings 10+12) |
-| 2026-07-18 | **UI more dynamic/responsive + customizable UX/UI elements** | **in progress this session** (Act VI responsiveness pass; Act VIII custom style editor) |
-| 2026-07-18 | **macOS liquid-glass / iPhone iOS-6 style blended theme** | **in progress this session** (Act VIII — the Liquid Glass room, 4th soul) |
-| 2026-07-18 | **Window fades: hitting ✕ should be more expressive of what it's doing** | **in progress this session** (Act VI — expressive dismiss, motion shows where the sheet goes) |
-| 2026-07-18 | **UX honesty: desktop autogain + streaming shows a stale local multiplier — show "autogain on" truth instead** | **in progress this session** (Act V — `auto · pc` band + live effective gain from the desktop probe) |
-| 2026-07-18 | **Fullscreen by default + toggle to hide the status info (not by default) OR auto-hide like the player buttons** | **in progress this session** (Act VI — immersive default + BAND on/auto/off) |
-| 2026-07-18 | Keep the narration/meme rig alive + turn the creative dial up (session conduct) | **in progress this session** (rig live; CRT Amber POST readout, CAL stamp, bridge-health HUD, self-portrait tiles) |
+| 2026-07-18 | **Remote-render control: while streaming VISUALIZER, phone settings drive the mainline desktop phosphor; patch + redeploy desktop on the laptop if needed (authorized)** | **SHIPPED** (V frames + ctl socket + desktop 4.7.1 `ctl gain`; phone drives mode/light/gain, band shows desktop truth) |
+| 2026-07-18 | **Audio still glitchy / lagging behind sometimes — improve the transport through Tailscale** | **SHIPPED** (SPSC ring + sustained catch-up, field-retuned with Ben; relay 2.1.0 queues; full-song verdict pending) |
+| 2026-07-18 | **UI more dynamic/responsive + customizable UX/UI elements** | **SHIPPED** (press tints, springy glass, expressive dismiss; ROOM-sheet style editor persisted) |
+| 2026-07-18 | **macOS liquid-glass / iPhone iOS-6 style blended theme** | **SHIPPED** (LiquidGlass 13th room: specular slabs, sheen, springy sheets, room-scoped rounding) |
+| 2026-07-18 | **Window fades: hitting ✕ should be more expressive of what it's doing** | **SHIPPED** (exits actually animate now — accelerating departure on ✕/scrim/drag/Back) |
+| 2026-07-18 | **UX honesty: desktop autogain + streaming shows a stale local multiplier — show "autogain on" truth instead** | **SHIPPED** (band renders desktop truth: `xy45 · auto ×1.38 · pc`) |
+| 2026-07-18 | **Fullscreen by default + toggle to hide the status info (not by default) OR auto-hide like the player buttons** | **SHIPPED** (immersive + focus re-assert; BAND three-state persisted) |
+| 2026-07-18 | Keep the narration/meme rig alive + turn the creative dial up (session conduct) | **SHIPPED** (rig ran all session; POST, CAL, bridge HUD, tiles, designators all live) |
