@@ -36,3 +36,15 @@ launch. ~10 min window in the field (Ben caught it). Root process failure: that 
 install went out WITHOUT a launch verification — the only unverified install of the
 session, and the one that bit. Fix: manifest flag added; launch now verified by pid +
 120 fps log before commit. Law reaffirmed: every install gets a boot receipt.
+
+## #5 · 2026-07-18 · stale mute outlives its session — healthy stream, silent buds
+
+Field report (Ben, live): scope drawing real laptop frames, earbuds silent, A2DP route
+active and healthy. Root cause: `Link.muted` is a global the service asserts on
+pause/focus events, but nothing reset it at session boundaries — a mute set while one
+session died silently inherited into the next session's oboe stream. The watchdog's
+muted-mirror then faithfully muted a perfectly healthy stream forever (callback drains
+the ring, emits silence). Made worse by bench chaos: media-key toggles during testing
+left the flag down. Fix: `connect()` resets `muted=false` — mute is per-playback POLICY,
+re-asserted by the service, never link state. Status: fixed (bridge C4 commit); unmute
+receipt = play resumed + Ben's ears.

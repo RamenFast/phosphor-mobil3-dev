@@ -68,6 +68,10 @@ struct Link {
     current: Mutex<Option<Arc<SessionShared>>>,
     /// Threads that outlived their bounded join (each one is a bug receipt).
     leaked_threads: AtomicU32,
+    /// Mailbox to the single long-lived control thread (the sole session
+    /// owner). Guarded because std's Sender is !Sync; the lock is held for a
+    /// clone only.
+    ctrl: Mutex<Option<std::sync::mpsc::Sender<LinkCmd>>>,
     slots: Slots,
     meta_gen: AtomicU32,
     sources_gen: AtomicU32,
@@ -92,6 +96,7 @@ fn link() -> &'static Link {
         generation: AtomicU64::new(0),
         current: Mutex::new(None),
         leaked_threads: AtomicU32::new(0),
+        ctrl: Mutex::new(None),
         slots: Slots::default(),
         meta_gen: AtomicU32::new(0),
         sources_gen: AtomicU32::new(0),
@@ -154,14 +159,35 @@ impl SessionShared {
     }
 }
 
-/// The session's joinable thread handles (C4 folds this into a full Session
-/// RAII struct; until then it rides run_session's stack).
+/// The session's joinable thread handles.
 #[derive(Default)]
 struct SessionParts {
     writer: Option<std::thread::JoinHandle<()>>,
     reader: Option<std::thread::JoinHandle<()>>,
     audio: Option<std::thread::JoinHandle<()>>,
     oboe: Option<std::thread::JoinHandle<()>>,
+}
+
+/// Commands to the control thread. Parameters ride the Link atomics (last-wins
+/// by design — the mailbox is drained and only the newest intent matters).
+enum LinkCmd {
+    Connect,
+    Disconnect,
+}
+
+/// The RAII session: lives ONLY on the control thread's stack; every exit path
+/// (including a debug-build unwind) runs the ordered teardown via Drop.
+struct Session {
+    shared: Arc<SessionShared>,
+    path: AudioPath,
+    parts: SessionParts,
+    out_slot: Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>>,
+}
+
+impl Drop for Session {
+    fn drop(&mut self) {
+        teardown_session(&self.shared, &self.path, &mut self.parts, &self.out_slot);
+    }
 }
 
 fn json_str(s: &str) -> String {
@@ -323,34 +349,64 @@ fn hello_json() -> String {
 
 // ── Public API (JNI-facing) ──────────────────────────────────────────────────
 
-/// Begin (or retarget) the link. Non-blocking: spawns the manager; observe via
-/// status_json(). Returns false only if the manager thread could not spawn.
+/// Ensure the single control thread exists; return a mailbox clone. One-time
+/// spawn under the lock is the sanctioned exception to the pointer-lock law.
+fn ensure_ctrl() -> Option<std::sync::mpsc::Sender<LinkCmd>> {
+    let mut guard = plock(&link().ctrl);
+    if guard.is_none() {
+        let (tx, rx) = std::sync::mpsc::channel::<LinkCmd>();
+        let spawned = std::thread::Builder::new()
+            .name("phosphor-remote-ctl".into())
+            .spawn(move || control_loop(rx))
+            .is_ok();
+        if !spawned {
+            return None;
+        }
+        *guard = Some(tx);
+    }
+    guard.clone()
+}
+
+/// Begin (or retarget) the link. Non-blocking: desired state lands in atomics,
+/// the current session is tripped, and the control thread (sole session owner)
+/// does the rest. Observe via status_json(). Single intent bump — the audit-1
+/// double-bump gap is gone.
 pub fn connect(host: &str, port: u16, audio: bool, geometry: bool) -> bool {
     let l = link();
-    // Retire any prior session wholesale.
-    disconnect();
-    *l.host.lock().unwrap() = host.to_string();
+    *plock(&l.host) = host.to_string();
     l.port.store(port as u32, Ordering::Relaxed);
     l.cfg_audio.store(audio, Ordering::Relaxed);
     l.cfg_geometry.store(geometry, Ordering::Relaxed);
+    // A NEW session always starts audible: the mute flag is per-playback POLICY
+    // (the service re-asserts it on pause/focus events), not link state — a
+    // stale mute from a torn-down session must never silence the next one
+    // (field bug 2026-07-18: buds silent on a healthy streaming session).
+    l.muted.store(false, Ordering::Relaxed);
     l.quit.store(false, Ordering::Relaxed);
-    let my_gen = l.generation.fetch_add(1, Ordering::SeqCst) + 1;
+    l.generation.fetch_add(1, Ordering::SeqCst); // ONE bump per intent
     l.state.store(ST_CONNECTING, Ordering::Relaxed);
-    std::thread::Builder::new()
-        .name("phosphor-remote-mgr".into())
-        .spawn(move || manager(my_gen))
-        .is_ok()
+    let cur = plock(&l.current).clone();
+    if let Some(s) = cur {
+        s.trip(); // retarget: retire the live session, never overlap it
+    }
+    match ensure_ctrl() {
+        Some(tx) => tx.send(LinkCmd::Connect).is_ok(),
+        None => false,
+    }
 }
 
 pub fn disconnect() {
     let l = link();
     l.quit.store(true, Ordering::Relaxed);
-    l.generation.fetch_add(1, Ordering::SeqCst); // invalidates all session threads
+    l.generation.fetch_add(1, Ordering::SeqCst); // ONE bump per intent
     // Clone under the pointer lock, trip OUTSIDE it (the no-I/O-under-lock law);
     // trip never blocks, so disconnect from the player looper can never ANR.
     let cur = plock(&l.current).clone();
     if let Some(s) = cur {
         s.trip();
+    }
+    if let Some(tx) = plock(&l.ctrl).clone() {
+        let _ = tx.send(LinkCmd::Disconnect); // wake the control thread
     }
     l.state.store(ST_IDLE, Ordering::Relaxed);
     *l.slots.meta.lock().unwrap() = String::new();
@@ -478,50 +534,95 @@ pub fn status_json() -> String {
     )
 }
 
-// ── The manager: connect → session → watchdog → reconnect, generation-guarded ──
-fn manager(my_gen: u64) {
+// ── The control thread: ONE owner for every session, forever ─────────────────
+// Sessions are created and destroyed sequentially on this thread; overlap is
+// impossible by construction, which is what actually closes audit finding 1.
+
+/// Interruptible wait: sleeps up to `dur` in slices, returning early with the
+/// newest pending command (last-wins) or on quit.
+fn wait_or_cmd(rx: &std::sync::mpsc::Receiver<LinkCmd>, dur: Duration) -> Option<LinkCmd> {
     let l = link();
-    let mut backoff = 1u64;
+    let t0 = Instant::now();
+    let mut newest = None;
     loop {
-        if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
-            return;
+        while let Ok(c) = rx.try_recv() {
+            newest = Some(c);
         }
-        let host = l.host.lock().unwrap().clone();
-        let port = l.port.load(Ordering::Relaxed) as u16;
-        match run_session(my_gen, &host, port) {
-            SessionEnd::Quit => return,
-            SessionEnd::V1Relay => {
-                l.state.store(ST_FAILED, Ordering::Relaxed);
-                set_link_error(
-                    "relay speaks protocol v1",
-                    &format!("upgrade it: scripts/relay-install.sh --host {host}"),
-                );
-                return; // no point retrying a v1 peer
+        if newest.is_some() || l.quit.load(Ordering::Relaxed) || t0.elapsed() >= dur {
+            return newest;
+        }
+        std::thread::sleep(Duration::from_millis(120));
+    }
+}
+
+fn control_loop(rx: std::sync::mpsc::Receiver<LinkCmd>) {
+    let l = link();
+    'idle: loop {
+        let Ok(mut cmd) = rx.recv() else { return };
+        while let Ok(c) = rx.try_recv() {
+            cmd = c; // drain-coalesce: only the newest intent matters
+        }
+        if matches!(cmd, LinkCmd::Disconnect) {
+            continue 'idle;
+        }
+        let mut backoff = 1u64;
+        'sessions: loop {
+            if l.quit.load(Ordering::Relaxed) {
+                continue 'idle;
             }
-            SessionEnd::Failed(e) => {
-                if l.quit.load(Ordering::Relaxed)
-                    || l.generation.load(Ordering::SeqCst) != my_gen
-                {
-                    return;
+            let my_gen = l.generation.load(Ordering::SeqCst); // snapshot, never bump
+            let host = plock(&l.host).clone();
+            let port = l.port.load(Ordering::Relaxed) as u16;
+            let end = run_session(my_gen, &host, port);
+            // Newest intent wins before any reconnect policy runs.
+            let mut pending = None;
+            while let Ok(c) = rx.try_recv() {
+                pending = Some(c);
+            }
+            if l.quit.load(Ordering::Relaxed) || matches!(pending, Some(LinkCmd::Disconnect)) {
+                continue 'idle;
+            }
+            if matches!(pending, Some(LinkCmd::Connect)) {
+                backoff = 1; // fresh target, fresh ladder
+                continue 'sessions;
+            }
+            match end {
+                SessionEnd::Quit => continue 'idle,
+                SessionEnd::V1Relay => {
+                    l.state.store(ST_FAILED, Ordering::Relaxed);
+                    set_link_error(
+                        "relay speaks protocol v1",
+                        &format!("upgrade it: scripts/relay-install.sh --host {host}"),
+                    );
+                    continue 'idle; // no point retrying a v1 peer
                 }
-                l.state.store(ST_RECONNECTING, Ordering::Relaxed);
-                set_link_error(&e, "reconnecting with backoff — check the relay/tailnet if this persists");
-                log::warn!("remote session ended ({e}); retrying in {backoff}s");
-                let waited = Instant::now();
-                while waited.elapsed() < Duration::from_secs(backoff) {
-                    if l.quit.load(Ordering::Relaxed)
-                        || l.generation.load(Ordering::SeqCst) != my_gen
-                    {
-                        return;
+                SessionEnd::Failed(e) => {
+                    l.state.store(ST_RECONNECTING, Ordering::Relaxed);
+                    set_link_error(
+                        &e,
+                        "reconnecting with backoff — check the relay/tailnet if this persists",
+                    );
+                    log::warn!("remote session ended ({e}); retrying in {backoff}s");
+                    match wait_or_cmd(&rx, Duration::from_secs(backoff)) {
+                        Some(LinkCmd::Disconnect) => continue 'idle,
+                        Some(LinkCmd::Connect) => {
+                            backoff = 1;
+                            continue 'sessions;
+                        }
+                        None => {}
                     }
-                    std::thread::sleep(Duration::from_millis(120));
+                    backoff = bridge_core::next_backoff(backoff);
                 }
-                backoff = (backoff * 2).min(15);
-            }
-            SessionEnd::Healthy => {
-                backoff = 1; // a good run resets the ladder before the next drop
-                l.state.store(ST_RECONNECTING, Ordering::Relaxed);
-                std::thread::sleep(Duration::from_secs(1)); // never hot-loop a flapping peer
+                SessionEnd::Healthy => {
+                    backoff = 1; // a good run resets the ladder before the next drop
+                    l.state.store(ST_RECONNECTING, Ordering::Relaxed);
+                    // Never hot-loop a flapping peer.
+                    match wait_or_cmd(&rx, Duration::from_secs(1)) {
+                        Some(LinkCmd::Disconnect) => continue 'idle,
+                        Some(LinkCmd::Connect) => continue 'sessions,
+                        None => {}
+                    }
+                }
             }
         }
     }
@@ -605,7 +706,15 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         *cur = Some(shared.clone());
     }
 
-    let mut writer_handle = {
+    // RAII from here: every return path (and any debug-build unwind) runs the
+    // ordered teardown via Session::drop.
+    let mut session = Session {
+        shared: shared.clone(),
+        path: path.clone(),
+        parts: SessionParts::default(),
+        out_slot: out_slot.clone(),
+    };
+    session.parts.writer = {
         let shared_w = shared.clone();
         let shared_f = shared.clone();
         std::thread::Builder::new()
@@ -634,9 +743,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             })
             .ok()
     };
-    if writer_handle.is_none() {
-        let mut parts = SessionParts::default();
-        teardown_session(&shared, &path, &mut parts, &out_slot);
+    if session.parts.writer.is_none() {
         return SessionEnd::Failed("spawn writer thread".into());
     }
 
@@ -647,7 +754,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     // the slot lock with a post-open cancellation check, and on ladder
     // exhaustion trips the whole session — one audible reconnect, never
     // permanent silence behind a "streaming" state.
-    let oboe_handle = {
+    session.parts.oboe = {
         let path = path.clone();
         let muted_flag = muted.clone();
         let out_slot = out_slot.clone();
@@ -722,7 +829,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     // stalls. Exits on cancel, on a closed ring (finding 5's waker), or when the
     // reader drops the sender.
     let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(24);
-    let audio_handle = {
+    session.parts.audio = {
         let mut sink = path.sink();
         let shared_a = shared.clone();
         std::thread::Builder::new()
@@ -749,7 +856,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let reader_done = Arc::new(AtomicBool::new(false));
     let saw_w = Arc::new(AtomicBool::new(false));
     let saw_v1 = Arc::new(AtomicBool::new(false));
-    let reader_handle = {
+    session.parts.reader = {
         let done = reader_done.clone();
         let saw_w = saw_w.clone();
         let saw_v1 = saw_v1.clone();
@@ -763,17 +870,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             .ok()
     };
 
-    let mut parts = SessionParts {
-        writer: writer_handle.take(),
-        reader: reader_handle,
-        audio: audio_handle,
-        oboe: oboe_handle,
-    };
-
     // Policy flips gated on liveness (a disconnect that raced session setup must
     // not flip the deck on for a corpse).
     if l.quit.load(Ordering::Relaxed) || shared.cancelled() {
-        teardown_session(&shared, &path, &mut parts, &out_slot);
         return SessionEnd::Quit;
     }
     scope_ring().lock().unwrap().clear_pending();
@@ -789,15 +888,12 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let mut was_streaming = false;
     loop {
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
-            teardown_session(&shared, &path, &mut parts, &out_slot);
             return SessionEnd::Quit;
         }
         if saw_v1.load(Ordering::Relaxed) {
-            teardown_session(&shared, &path, &mut parts, &out_slot);
             return SessionEnd::V1Relay;
         }
         if reader_done.load(Ordering::Relaxed) {
-            teardown_session(&shared, &path, &mut parts, &out_slot);
             // Audit finding 11: a run that reached streaming resets the backoff ladder
             // (report Healthy; the manager still reconnects, just without punishment).
             return if was_streaming {
@@ -813,7 +909,6 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         }
         match bridge_core::watchdog_action(quiet_ms, st == ST_STREAMING, st == ST_STALLED) {
             bridge_core::WatchdogAction::Dead => {
-                teardown_session(&shared, &path, &mut parts, &out_slot);
                 return if was_streaming {
                     SessionEnd::Failed("10 s of silence — link presumed dead".into())
                 } else {
