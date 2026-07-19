@@ -1,156 +1,111 @@
 # Handoff — next session starts here
 
-## Where we are (2026-07-18 evening, after the SERVICE-BENCH session): ship-safe + four souls
+## Where we are (2026-07-18 night, after the COMPLETION session): the queue is EMPTY of buildables
 
-One Fable session (plan: `~/.claude/plans/spicy-bubbling-whale.md`) closed the ENTIRE codex
-audit — all 13 findings fixed with on-device receipts (resolution table at the foot of
-`docs/dev/codex-bridge-audit-2026-07-18.md`; per-finding invariants in docs/BRIDGE.md
-"Lifecycle & hardening" — read that before touching remote.rs/session.rs, the orderings are
-load-bearing). Phone: single control thread owns sessions (overlap impossible), writer
-thread + fail-fast JNI (zero ANRs through a blackhole probe), Session RAII with ordered
-teardown, token-cancelled oboe supervisor + reopen ladder (a real BT flap receipt), lock-free
-SPSC ring (rust/src/spsc.rs — first impl of desktop's SPSC-RING-DESIGN) with SUSTAINED
-catch-up (field-retuned after Ben's ears caught the first cut skipping in normal jitter:
-400 ms elastic, skip only after 250 ms continuously >350 ms). Relay 2.1.0 BOTH machines:
-every external deadline+cancellable, browse/Drive-fetch are supersede-tokened jobs, pump-id
-EOFs, Drop-RAII everywhere, monotonic clocks. BUGLOG #5 found live (stale mute across
-sessions — buds silent on a healthy stream) and fixed.
+One Fable session (this one) executed the entire three-lane plan with six codex
+gpt-5.6-sol workers on disjoint file sets (orchestrate → merge → build → on-device
+receipts → commit). Three commits: `5668a92` (relay 2.2.0 + icon + wave-1 receipts),
+`abc0fb2` (the big app wave), `6314211` (bloom + A/V sync + icons + fullscreen).
+**Everything below is INSTALLED on the S25 and the relay is DEPLOYED on both machines.**
 
-**Remote scope control is LIVE (Ben's ask):** the phone drives the DESKTOP scope while
-VISUALIZER streams — MODE taps / LIGHT presets / pinch-gain send V frames; relay speaks
-phosphor's ctl socket (status) + CLI (commands); K carries scope truth; the band shows
-`xy45 · auto ×1.38 · pc` honesty. Desktop phosphor grew `ctl gain <v|auto>` → **4.7.1 on
-master (its repo), deb on the PC, ~/.local/bin overlay on the laptop (running instance
-relaunched onto its display)**. The laptop /usr/bin is still the 4.6.2→4.7.0-era deb —
-`sudo dpkg -i /tmp/phosphor_4.7.1_amd64.deb` when Ben's at it. NOTE: packaging/build-deb.sh
-HARDCODES its version (env PHOSPHOR_DEB_VERSION overrides) — I clobbered the local 4.7.0
-dist deb before catching it (removed; canonical lives on the GH release). Fix the script.
+### What shipped (all receipts in docs/dev/receipts/)
+- **Corner-clip root fix** — chromeSafeDrawingInsets (ui/Insets.kt): RoundedCorner radii
+  → per-callsite sagitta clearance ∪ safeDrawing; every room inherits. Receipts: glass+amber.
+- **Accuracy root fix (Ben's live report)** — "2-3 circles out of sync" + "doesn't look
+  120fps" = the old beam-rate control SLICED one drained window into N separately decayed
+  deposits + froze decay on empty ticks. Now: real polyphase reconstruction (48k→96k/192k
+  inside Computer), ONE deposit per display frame, decay advances on empty windows.
+  Regression test in engine.rs; on-device receipt `accuracy-circle-after.png` — ONE
+  phase-locked circle from a quadrature tone. BEAM RATE labels are honest now (·kHz).
+- **Remote A/V sync** — the oboe callback publishes its exact played samples via a
+  lock-free slot ring; scope draws what the EAR hears (was leading by the whole jitter
+  buffer). scope_drops stat in remoteStatus. Ear/camera verify still pending (Ben's gate).
+- **Adaptive latency (Lane 1.2)** — tight 80ms / balanced 150ms / safe (= shipped shape
+  bit-for-bit, DEFAULT); underruns widen 40ms→cap, 2 clean min shrink 20ms; mid-stream
+  mode changes; SETTINGS → REMOTE → LATENCY; HUD line2 shows `tgt N ms · und N`.
+- **Network selector (Lane 1.3)** — NETWORK auto/wifi/mobile; process-bind before rust
+  connect, reconnect on change; honest no-multipath prose; manifest permissions added.
+  HONEST LIMIT untested: forced wifi/mobile bind may bypass the VPN → tailnet 100.x could
+  be unreachable on forced routes; prove on S25 before trusting (report-uiwiring.md §2).
+- **Bug #5 (relay 2.2.0, BOTH machines)** — monitor-choose = real desktop output switch
+  (wpctl set-default + pactl move-sink-input, cancellable) + honest S echo + transactional
+  capture swap + revert-on-fail. Live round-trip receipt HDMI↔analog on interserve.
+  Bonus root-caused: pw-dump 247KB overfilled the runner pipe → empty source list (fixed +
+  regression). BUGLOG #7.
+- **Art parity** — desired art id from M (was R-slot: fresh connects could never fetch);
+  stale-art impossible at every boundary; R responses id-checked. Receipts: notification
+  card + in-app deck across track changes (remote path). Local-file path code-fixed but
+  not receipt-verified (needs a local track on device).
+- **RANDOM ⚄** — real-mode rolls, band shows `radial ⚄` truth, track-change + armed-tap
+  re-rolls, persisted. NOTE: persistence rides saveTuning = onStop only — adb force-stop
+  skips it (not a bug; HOME first when testing).
+- **Bottom-pull bloom** — engine-path (deposit-energy lift pre-advance, P7 layers own the
+  decay); Amber 7 detents / Glass underdamped+breath / Void cut / Blossom eased; sheets
+  rubber-band ≤28dp; stage arms only in bottom 88dp with console away. FEEL VERDICT IS
+  BEN'S — no capture clip yet (he took the phone back mid-session).
+- **Settings icons** — 8 hairline vectors, one geometry + ChromeCharacter wrapper
+  (engraved/carved/annotated/glass). Glass receipt done; amber variant receipt pending.
+- **Launcher icon** — hero untouched + 3 quieter closed-figure traces; monochrome matched;
+  PNG mipmaps regenerated (rsvg-convert, all densities). On-launcher eyeball = Ben.
+- **Swipe-up on play bar → SETTINGS** (verified in glass; in amber the cold-start timing
+  beat my adb swipe — likely fine by thumb, verify by hand) · **FULLSCREEN toggle**
+  (DISPLAY chip; off-state receipt pending) · **HUD on/auto/off** (auto rides console
+  timer; pref migration) · **AUTO-GAIN** (desktop autosize law verbatim, host-tested;
+  remote = passthrough; pinch disarms).
+- Desktop repo: build-deb.sh now derives version from Cargo.toml (`99264f5` there).
 
-**Four souls + the chrome feel:** RoomStyle framework (ChromeCharacter × MotionFeel per
-room, LocalRoomStyle, crossfade-aware) absorbed the amoled discriminators; the 240 ms
-whole-chrome crossfade finally exists (alpha-aware Palette.lerpTo). CRT Amber service bench
-(designators S1/V2/J1/S9, dotted leaders, detented motion, mono prose, BenchPost cold-start
-POST, CAL stamp). Liquid Glass 13th room (Ben's ask — glacial, translucent slabs with
-specular rims + iOS-6 sheen, springy sheets, room-scoped 12dp rounding, follows-beam).
-Custom style editor in the ROOM sheet (FEEL/MOTION/CORNERS/LABELS overrides, persisted).
-Self-portrait tiles (§2.6 complete). Fullscreen immersive by default (+ focus re-assert),
-BAND on/auto/off, expressive dismiss (sheets ACTUALLY animate out now — visible=true had
-made exits impossible), instant press tints. Nerd HUD line 2 = bridge health
-(buf ms/skips/drops/leaks).
+### The one live process learning
+Ben's phone is BEN'S: mid-session he took it back (Claude mobile foreground) — blind adb
+taps landed in HIS app. LAW for next hands: before ANY input tap, check
+`dumpsys window | grep mCurrentFocus` == dev.phosphor.mobil3; if not, hands off. Prefs
+snapshot/restore protocol worked (his glass/×1.92 state restored at close; app left
+stopped). His live pinches mid-session are HIS — stop "fixing" his gain.
 
-**The dev loop:** `source scripts/env.sh` then `dev/pm3 <verb>` — EVERY Bash call re-sources
-(shell state does not persist; half this session's noise was forgetting). **USB adb works
-now** (udev rule /etc/udev/rules.d/51-android.rules) + wireless re-paired; prefer USB.
-Drive the app: `am start-service -n dev.phosphor.mobil3/.PlaybackService -a
-dev.phosphor.mobil3.REMOTE_CONNECT --es host <ip> --ei port 45777 --es label <name>`;
-keyevent 126=play 85=toggle; room via `run-as dev.phosphor.mobil3 sed -i s,old,new,
-shared_prefs/phosphor.prefs.xml` (bare-word sed — quotes die in the shell layers) +
-force-stop + run. Blind stage taps register as GESTURES (a tap dragged Ben's gain to 6.0).
+## Next session queue
+1. **Ben's verdicts (the gates):** full-song listen per LATENCY mode (safe default still
+   right? tight on LAN?), bloom feel in Amber vs Glass, launcher icon on-launcher, amber
+   icons variant, fullscreen-off, swipe-up by thumb in every room. Camera rig for the
+   A/V-sync receipt (film both screens, frame-step).
+2. **Lane 1.1 tethered ground truth (GATED ON BEN):** USB-tether → iperf3/ping matrix
+   tether vs wifi vs mobile → receipts table; then LATENCY tight verdict on the best path.
+   Also prove NETWORK forced-wifi/mobile keeps tailnet reachable (see honest limit above).
+3. **Lane 2 phone terminal (GATED ON BEN's hands):** mosh roam receipt, termux-am
+   side-channel test, rig docs.
+4. **Fidelity map** (docs/SERIOUS-TODOS.md, from the accuracy audit): geometry-mode
+   64-seg decimation drawn as trace (first suspect if circles ever split in VISUALIZER
+   mode), s16 transport quantization, focus default 0.3 vs desktop 1.6 (ask Ben), JNI
+   ingest alloc, local deck mutex ring → SPSC.
+5. **Carry-over:** beam-cycle parity in LIGHT (task exists), Act X polish (shuffle/repeat
+   → REMOTE HOSTS editor → long-press+hints → LIGHT undo/redo → ember → volume poll),
+   glass glyph-tint pass, amber POST verify-by-eye, doze torture, codex re-audit
+   (pre-v1.0.0), M5 kits/compose/postcards, M6 prep (Ben gates), desktop backports
+   (LiquidGlass room, SPSC adoption, consumer-side tap idea).
 
-## Next session queue (FULL PLAN, written at Ben's ask 2026-07-18 late — three lanes)
-
-**Read NEXUS-FEEDBACK.md** (8 compiled items + my ack appendix at its foot answering the
-verify-questions). **Test bench moves to interserve-linux** (Ben's word); Spotify will be
-open on BOTH machines — drive play per-machine via relay transport/playerctl.
-
-### LANE 1 — the latency hunt, instrumented (Ben: "audio still lagging behind")
-Facts in hand: tailscale phone path is DIRECT (IPv6, no DERP — verified); Ben's wifi signal
-79%; current design is DELIBERATELY 250–350 ms behind (safe constants after the skip fix);
-his A/B is phone-buds vs laptop-speakers side by side, so ALL buffering is audible as lag.
-1. **Tethered ground truth** (Ben's protocol): USB-tether phone→interserve; measure
-   speed/latency/loss per transport — termux `pkg install iperf3` + iperf3 to the PC, ping
-   -c100 jitter/loss over tether vs wifi vs mobile; receipts table into docs/dev/receipts/.
-2. **Adaptive latency** (the real fix): replace fixed catch-up constants with an adaptive
-   jitter buffer — start tight (~80 ms), WIDEN on observed underruns (count zero-fill
-   events in the RT callback — atomic, RT-safe), SHRINK after clean minutes; SETTINGS →
-   REMOTE → `LATENCY · tight / balanced / safe` (tight for tether/LAN, safe = today's
-   shape). HUD buf-ms is the live receipt; Ben's camera rig (films both screens) gives the
-   VISIBLE end-to-end offset receipt — frame-step the clip.
-3. **Network selector (Ben's feature ask)**: SETTINGS → REMOTE → `NETWORK · auto / wifi /
-   mobile` — ConnectivityManager.requestNetwork(TRANSPORT_WIFI|CELLULAR) + bind (process or
-   per-socket) before session connect; reconnect on change; persist. HONEST LIMIT: one TCP
-   stream cannot true-multipath — offer auto (system) instead of "both" and say why in the
-   sheet prose. Verify tailscale stays direct per-transport (status receipt each).
-4. Re-run Ben's full-song verdict per transport+mode; his ears remain the gate.
-
-### LANE 2 — the phone becomes a station terminal (termux + mosh + rmux)
-Ben's flow (his words): **phone mosh → interserve-linux or thinkcenter → rmux attach.**
-VERIFIED already in place (2026-07-18 late): mosh-server on BOTH machines (/usr/bin);
-rmux on BOTH (PC /usr/bin/rmux, laptop ~/.local/bin/rmux — non-login ssh PATH misses the
-laptop's, use the explicit path or fix PATH); Termux on the phone (com.termux) with keys
-per Ben, phone has mosh. rmux = github.com/Helvesec/rmux (rmux.io) — Rust tmux-compatible
-multiplexer with a TYPED SDK to drive CLI/TUI from code; sessions persist on the machine.
-Remaining next session: (1) verify phone→both-machines mosh over tailnet + one
-roam-survival receipt (wifi→mobile mid-session, rmux session lives); (2) `pkg install
-iperf3` in termux for lane 1; (3) the side-channel: termux `am` firing phosphor-mobil3
-intents (REMOTE_CONNECT…) WITHOUT adb — backup control path, test + document; (4) document
-the rig (docs/ + concourse node if it earns one); rmux's typed SDK is a future
-agent-drives-the-phone lever.
-
-### LANE 3 — the Nexus batch (order = Nexus's read + my root-cause; ack at file foot)
-1. **#2/#2b corner-clip ROOT FIX** — CONFIRMED root cause: chrome pads by
-   WindowInsets.safeDrawing, which does NOT include the physical corner radius; with
-   immersive bars hidden the bottom inset ≈ 0 so every room draws into the S25's clipped
-   curve. Fix ONCE at the chrome root: read the Android 12+ RoundedCorner API
-   (rootWindowInsets.getRoundedCorner(BOTTOM_*) radius) → min-inset the console/sheet
-   bottoms; per-room rounding stays cosmetic. Screenshot sweep across a box room + glass.
-2. **#3 bottom-pull phosphor bloom** — the creative budget item: overscroll at bottom =
-   beam blooms proportional to pull (engine brightness path if reachable, else chrome
-   overlay), rubber-band, spring-back HONORING each room's MotionFeel (Nexus's stake:
-   never average the rooms). Borrow the real P7 two-layer decay from ../phosphor render.
-3. **#1 RANDOM ⚄ mode** — picker entry; rolls a REAL mode (band shows `xy45 ⚄`, never
-   "random"); re-roll on track change + tap-to-reroll. App-side roll over the 11-mode pool.
-4. **#4 notification/lock-screen art parity** — feed the SAME resolved bitmap the in-app
-   UI uses into MediaMetadata (remote/Drive art included; never stale, blank when absent).
-5. **#5 thinkcenter output-switch bug — GET REPRO FROM BEN FIRST** (which UI: desktop
-   phosphor vs phone SOURCE picker? exact steps?) — fix differs (desktop sink re-bind vs
-   picker echo). Likely relay S-frame echo vs pw sink move; do not build blind.
-6. **#6 settings parity diff + HUD auto-hide + auto-gain setting** — diff desktop Settings
-   vs mobile groups; HUD auto-hide rides the console timer pattern; auto-gain = decide
-   local-engine port vs desktop passthrough after the diff (band `·a` tag exists).
-7. **#7 custom settings icons** — ImageVector set in phosphor's own language (beam/knob/
-   sink/decay-curve), room-ChromeCharacter-aware (engraved/carved/annotated variants).
-8. **#8 launcher icon: more waveforms, keep the hero** — layer supporting traces behind
-   the anchor figure; phosphor-icon skill laws (closed figures, guard bands, verify
-   on-launcher).
-
-### Carry-over (after the lanes)
-- Act X polish: shuffle/repeat → REMOTE HOSTS editor → long-press+hints → LIGHT undo/redo
-  → ember → volume poll; glass glyph-tint pass; amber POST verify-by-eye.
-- Deferred receipts: doze torture (USB adb ✓ now — udev rule installed), codex re-audit
-  (optional pre-v1.0.0 ceremony).
-- M5 kits/compose/postcards; M6 prep (Ben gates); desktop backports (LiquidGlass room,
-  SPSC adoption).
-
-## Field notes (so they don't bite twice)
-
-- Ben's live feedback drove two mid-session fixes: stale-mute (BUGLOG #5) and the catch-up
-  retune — HIS EARS ARE THE ACCEPTANCE GATE for audio; ask for a full-song verdict after
-  any latency change. (Tonight's verdict on the retune was still pending at close.)
-- Ben lives in the Void room (amoled); receipts left him in glass — he can walk back via
-  ROOM (which crossfades now). His gain was left at 6.0 by my stray tap — one pinch fixes.
-- relay-install.sh over ssh: fine. Desktop phosphor over ssh: non-login PATH resolves
-  /usr/bin FIRST — use explicit ~/.local/bin/phosphor for the overlay instance.
-- `adb mdns` can advertise a stale connect port after wireless-debug wedges; a phone-side
-  toggle mints a new port; pairing needs the dialog OPEN (adb-tls-pairing service).
-- grep -c returning 0 exits 1 and kills && chains; `sed s,a,b,` bare-word survives adb
-  shell quoting layers, anything with quotes/>| dies.
-- The narration rig (kitty right-panel + timestamps + amber ANSI + intercom TTS + memes)
-  is session-local — pattern: scratchpad narrate.sh {say,win,ouch,meme,act}; Ben resized
-  the panel once (respawn on glitch) and asked for timestamps+color (keep).
-- codex gpt-5.6-sol (high) one-shotted the desktop gain verb across 5 files incl. laws I
-  didn't brief (FEEDBACK.md SOP, schema-coverage test) — 145 tests green. Ben's standing
-  directive: route subagent work through codex; spare his Claude quota.
+## Field notes (new ones only — prior notes in git history still hold)
+- codex workers write compile-clean rust but NOT compile-clean Compose: this session's
+  breaks were suspend-in-restricted-pointer-scope (Animatable calls must hop onto a real
+  scope) and cubicTo≠curveTo (PathBuilder). Budget an integration-fix pass after every
+  Kotlin wave; rust waves came in green every time.
+- The MODE/SRC/… console buttons: chain summon-tap + action-tap inside one adb shell
+  (`input tap ...; sleep 0.4; input tap ...`) — the console auto-hides in ~4s and cold
+  start swallows early input for ~1.2s (warm-up).
+- An AskUserQuestion dialog EATS Ben's typed text if the session moves on — he flagged it
+  ("it deleted my feedback"). Ask again immediately when that happens; better, keep
+  questions terse and singular while he's semi-AFK on Telegram.
+- Relay deploys: relay-install.sh local + `--host thinkcenter` both fine; the LOCAL
+  service does NOT restart on install — `systemctl --user restart phosphor-relay`
+  explicitly (thinkcenter's did restart via the script's remote path).
+- paplay + ffmpeg lavfi quadrature (sin|cos) through the default sink = instant clean-
+  circle ground truth for any future accuracy claim. 12s tone, screenshot at 5s.
 
 ## Decisions & honest limits (standing + new)
-
-- All prior standing decisions hold (>120 fps, DRM/bridge, Spotify Connect, geometry needs
-  desktop phosphor, one media session, AGP9/pins, oboe shared-stdcxx).
-- Audio latency policy: ~250-350 ms behind the laptop by design (listenability > tightness);
-  the HUD shows live buf ms; constants in remote.rs are the tuning surface.
-- Glass = specular translucency, NOT true backdrop refraction (Compose can't blur a sibling
-  SurfaceView; would need the TextureView experiment — only if Ben asks).
-- Rounded corners exist ONLY inside the glass room / user override (Ben's explicit ask);
-  every other room stays sharp (house law intact).
-- ctl gain drives desktop settings.gain (persisted there via SaveSettings) — the phone is
-  genuinely reconfiguring the desktop app, as Ben asked ("change the remote render").
+- All prior standing decisions hold. Latency POLICY changed: safe (≈today) remains
+  default; tight/balanced exist but are unverified by ear — Ben's verdict gates any
+  default change.
+- A/V sync: trace now matches the callback-era audio exactly; remaining lead = BT/route
+  latency, unmeasurable without an output-timestamp/acoustic loop (documented in
+  report-avsync.md). No promise made in UI about absolute sync.
+- Scope accuracy: audio-path fixed and receipt-proven; GEOMETRY mode (VISUALIZER
+  streaming) still draws decimated midpoints as a trace — known, mapped, unfixed.
+- Auto-gain constants are desktop-verbatim (0.999 release / 0.92 headroom / 0.05 glide);
+  any retune is desktop-first (engine source-of-truth law).
