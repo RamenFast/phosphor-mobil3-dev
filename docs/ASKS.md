@@ -15,7 +15,7 @@
 | 2026-07-18 | **Re-run the ENTIRE M5 UI with Fable — full quality-pass/redo of the Compose chrome against UX-SPEC + ben-ui-design, on fresh context** | shipped (the Fable redo, Acts 0–V) |
 | 2026-07-18 | **Native audio residency for the remote source — its own media notification + lock-screen player, notification transport drives the laptop** | shipped (one MediaSession, RemotePlayer, lock-screen card) |
 | 2026-07-18 | **Full settings port (desktop Settings surface) + a bridge host field** | mostly shipped (grouped settings live; REMOTE HOSTS add/edit UI still queued — this session's stretch) |
-| 2026-07-18 | **3 themes of VERY DIFFERENT UI STYLE, all mobile-friendly (not just palette swaps)** | 2 of 3 shipped (Blossom Dark carved + AMOLED Void engraved); **CRT Amber service bench lands this session** |
+| 2026-07-18 | **3 themes of VERY DIFFERENT UI STYLE, all mobile-friendly (not just palette swaps)** | **FOUR shipped** (Blossom Dark carved · AMOLED Void engraved · CRT Amber bench annotated · Liquid Glass — distinct personalities on the RoomStyle framework, not palette swaps) |
 | 2026-07-18 | **Google Drive music: browse + play (incl. skip/back) over the bridge** | shipped (rclone backend, cache-then-play, OAuth done) |
 | 2026-07-18 | **Pinch to zoom in/out = gain on the mobile app** | shipped (pinch=gain/dolly, drag=gain/orbit, ×ribbon) |
 | 2026-07-18 | **Remote-render control: while streaming VISUALIZER, phone settings drive the mainline desktop phosphor; patch + redeploy desktop on the laptop if needed (authorized)** | **SHIPPED** (V frames + ctl socket + desktop 4.7.1 `ctl gain`; phone drives mode/light/gain, band shows desktop truth) |
