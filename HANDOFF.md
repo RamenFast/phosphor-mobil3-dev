@@ -182,3 +182,19 @@ wired). TOP lockstep receipted (pure scope). Opus subagents went 5-for-5 on firs
 compiles. REMAINS FOR BEN'S HANDS: physical rotation matrix re-verify post-sign-flip,
 beam-cycle eyeball, latency/full-song verdicts, lanes 1.1/2 (tether ground truth, mosh
 roam, termux-am) — all gated on his body, not on code. Codex returns Jul 24.
+
+---
+
+## Appendix: v1 night (2026-07-19, the close-out batch)
+
+Ben's batch: no-Python verify · GitHub public v1 w/ screenshots + APK · desktop sync ·
+beam/glow ⚄ randomizers w/ range · ban faces from mode-⚄ · "MANIPULATE GEOMETRY" · agent-CLI JSON.
+
+**All shipped.**
+- **Python: verified clean** — zero authored/tracked Python (cargo-ndk via plain Gradle Exec; NDK's .py gitignored).
+- **Features** (commit 0395482): `RangeDragRule` two-thumb primitive + ⚄ dice on BEAM/GLOW (tap=arm+roll in range, per-track re-roll, manual drag disarms) · BAN FACES editor in MODE·AUTOMATIC (≥2 guard, CSV pref) · GEOMETRY FX stage in rust render (kaleido/spin/tunnel/pulse, pre-deposit/pre-rotation, loop-local state = pre-surface-safe, never mirrored to desktop) + 5 unit tests (32 green). Live receipts: geomfx-kaleido-live.png (4-fold mandala on Ben's Spotify), ban-faces-receipt.png, randrange-rules-receipt.png. Device driven with Spotify playing; state restored exactly (Spotify forward, screen off, prefs intact).
+- **Public view** (commit b73d6d8): private repo renamed **phosphor-mobil3-dev** (remote URL updated); public **RamenFast/phosphor-mobil3** created from `scripts/publish-public.sh` (agent-CLI JSON; allowlist rsync + sanitization gate: tailnet IPs/hostnames/ecosystem names abort the publish; independently re-grepped clean). Hosts left source → BuildConfig via gitignored local.properties (`phosphor.remoteHosts=…`; Ben's file seeded, his installed debug build carries his hosts). README rewritten w/ 4 screenshots; docs/REMOTE.md = generalized bridge knowledge.
+- **Release v1.0.0** (both repos tagged): signed APK (keystore `~/.secrets/phosphor-mobil3-release.jks` + `.pass`, NEVER commit; cert sha256 e4d14ce2…) built with EMPTY hosts (dex grepped clean), SHA256SUMS, download+checksum round-trip verified. **Ben's phone keeps the debug install** — release-over-debug = uninstall = wiped prefs; adopt deliberately if wanted.
+- **Desktop sync**: 4.7.2 deb built; interserve = deb 4.7.2 ✓; thinkcenter = ~/.local/bin/phosphor now the true 4.7.2 deb payload (session PATH puts ~/.local/bin first — verified via systemd user env). **One Ben command pending** (root gated headless, sudoplz couldn't authorize over ssh): `sudo dpkg -i /tmp/phosphor_4.7.2_amd64.deb` on thinkcenter to true up /usr/bin. v4.7.2 GitHub release cut w/ deb. Relay 2.2.0 active both machines.
+
+**Ben-verify list**: geometry FX by eye (tunnel breathes ~17s — stills undersell), dice feel, ban-roll behavior across tracks, the public repo front page reads right, thinkcenter dpkg one-liner. Old gated lanes #11/#12 still parked.
