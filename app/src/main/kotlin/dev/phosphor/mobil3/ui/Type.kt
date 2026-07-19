@@ -49,7 +49,9 @@ fun Mono(
     )
 }
 
-// The one text primitive for prose (gentle notes, consent copy).
+// The one text primitive for prose (gentle notes, consent copy). In Annotated
+// rooms (the service bench) prose renders in the mono face — service manuals
+// are set on a line printer; the humanist voice returns in every other room.
 @Composable
 fun Prose(
     text: String,
@@ -59,11 +61,12 @@ fun Prose(
     maxLines: Int = Int.MAX_VALUE,
     medium: Boolean = false,
 ) {
+    val mono = LocalRoomStyle.current.monoProse
     BasicText(
         text = text,
         style = TextStyle(
             color = color,
-            fontFamily = if (medium) ProseMediumFace else ProseFace,
+            fontFamily = if (mono) MonoFace else if (medium) ProseMediumFace else ProseFace,
             fontSize = size, lineHeight = size * 1.45,
         ),
         maxLines = maxLines, overflow = TextOverflow.Ellipsis, modifier = modifier,

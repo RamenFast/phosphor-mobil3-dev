@@ -435,6 +435,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putString("room", ui.room.id)
             .putBoolean("nerd_hud", ui.nerdHud)
             .putInt("band_mode", ui.bandMode)
+            .putString(
+                "cal_date",
+                java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
+                    .format(java.util.Date()),
+            )
             .apply()
     }
 
@@ -453,6 +458,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         focusPref = p.getFloat("focus", 0.3f)
         ui.nerdHud = p.getBoolean("nerd_hud", false)
         ui.bandMode = p.getInt("band_mode", 0)
+        ui.calDate = p.getString("cal_date", "") ?: ""
         dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
             .let { baseRoom = it; ui.room = it }
     }

@@ -48,6 +48,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK }
@@ -440,6 +441,14 @@ fun SettingsSheet(
                     "sample-locked to what you hear. GPL-3.0. The beam remembers.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
+            // The bench keeps a service stamp: the REAL date the knobs were last
+            // saved (Annotated rooms only — a calibration sticker, typeset).
+            if (LocalRoomStyle.current.designators && state.calDate.isNotBlank()) {
+                Mono(
+                    "CAL · ${state.calDate}   S/N 003", p.muted, Type.dataXs,
+                    Modifier.padding(bottom = Dim.gap), letterSpacing = 1.2.sp,
+                )
+            }
         }
     }
 }

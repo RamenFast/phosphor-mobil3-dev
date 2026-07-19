@@ -199,6 +199,14 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 StatusBand(state, p, reduced)
             }
 
+            // The service-bench POST rides the warm-up (Annotated rooms only).
+            if (style.designators) {
+                Box(
+                    Modifier.align(Alignment.BottomStart)
+                        .padding(start = 18.dp, bottom = 140.dp)
+                ) { BenchPost(state, p) }
+            }
+
             // Layer 1b: console strip, auto-hiding, with the settle-down exit.
             AnimatedVisibility(
                 visible = consoleVisible && sheet == Sheet.NONE,

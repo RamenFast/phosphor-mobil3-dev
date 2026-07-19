@@ -25,8 +25,11 @@ import androidx.compose.foundation.layout.safeDrawing
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
@@ -38,6 +41,7 @@ import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 import kotlin.math.roundToInt
 
 // ── Burn-in walk: persistent chrome drifts ±1 px on a slow orbit (60 s period) ──
@@ -188,7 +192,7 @@ fun Console(
                 FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
                 Spacer(Modifier.width(Dim.gap))
             }
-            StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced) {
+            StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced, designator = "S1") {
                 Haptics.light(view); onPlay()
             }
             if (hasTransport) {
@@ -196,11 +200,42 @@ fun Console(
                 FlatKey("▸▸", p) { Haptics.light(view); onNext() }
             }
             Spacer(Modifier.width(Dim.gapLg))
-            FlatKey("MODE", p, onClick = onMode)
+            // Reference-designator conventions, honestly applied: V = the tube
+            // (the mode IS the displayed figure), J = input jack, S = switch.
+            FlatKey("MODE", p, designator = "V2", onClick = onMode)
             Spacer(Modifier.width(Dim.gap))
-            FlatKey("SRC", p, onClick = onSrc)
+            FlatKey("SRC", p, designator = "J1", onClick = onSrc)
             Spacer(Modifier.weight(1f))
-            FlatKey("⋯", p, onClick = onMore)
+            FlatKey("⋯", p, designator = "S9", onClick = onMore)
+        }
+    }
+}
+
+// ── The bench POST: a cold-start self-test readout (Annotated rooms only),
+//    stepped in like a line printer under the thermionic bloom. Every line is
+//    REAL state — no theatre (honesty law). ──
+@Composable
+fun BenchPost(state: ScopeUiState, p: Palette) {
+    var lines by remember { mutableIntStateOf(0) }
+    var visible by remember { mutableStateOf(true) }
+    LaunchedEffect(Unit) {
+        repeat(3) {
+            kotlinx.coroutines.delay(160)
+            lines = it + 1
+        }
+        kotlinx.coroutines.delay(900)
+        visible = false
+    }
+    if (!visible) return
+    val checks = listOf(
+        "V1 ENGINE" to "OK",
+        "J1 RELAY" to if (state.remote) "OK" else "—",
+        "V2 HEATER" to if (state.remote && state.remoteAudio) "OK" else "—",
+    )
+    Column {
+        checks.take(lines).forEach { (k, v) ->
+            Mono("$k · $v", p.muted, Type.dataXs, letterSpacing = 1.2.sp)
+            Spacer(Modifier.height(2.dp))
         }
     }
 }
