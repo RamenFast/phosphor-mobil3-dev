@@ -23,6 +23,7 @@ class CaptureService : Service() {
     private var projection: MediaProjection? = null
     private var record: AudioRecord? = null
     @Volatile private var running = false
+    private var metadataBridgeActive = false
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -77,6 +78,11 @@ class CaptureService : Service() {
         PhosphorNative.setRingActive(true)
         running = true
         rec.startRecording()
+        metadataBridgeActive = true
+        startService(
+            Intent(this, PlaybackService::class.java)
+                .setAction(PlaybackService.ACTION_CAPTURE_STARTED)
+        )
         Thread {
             val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
             while (running) {
@@ -93,9 +99,19 @@ class CaptureService : Service() {
         running = false
         record?.run { runCatching { stop() }; release() }
         record = null
-        projection?.stop()
+        // Null first: MediaProjection.stop() synchronously calls our callback on some
+        // builds, and a second stop must be a harmless no-op rather than recursion.
+        val oldProjection = projection
         projection = null
+        runCatching { oldProjection?.stop() }
         PhosphorNative.setRingActive(false)
+        if (metadataBridgeActive) {
+            metadataBridgeActive = false
+            startService(
+                Intent(this, PlaybackService::class.java)
+                    .setAction(PlaybackService.ACTION_CAPTURE_STOPPED)
+            )
+        }
         stopForeground(STOP_FOREGROUND_REMOVE)
         stopSelf()
     }

@@ -10,7 +10,6 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
@@ -23,6 +22,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -38,7 +38,6 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
@@ -68,42 +67,56 @@ fun Modifier.burnInWalk(reduced: Boolean): Modifier {
 // ── Status band — read-only, mono, flanking the punch-hole. Never a tap target. ──
 @Composable
 fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean) {
-    Row(
+    val landscape = LocalChromeLandscape.current
+    Box(
         Modifier
             .fillMaxWidth()
             .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
             .padding(horizontal = 16.dp, vertical = 6.dp)
             .burnInWalk(reduced),
-        horizontalArrangement = Arrangement.SpaceBetween,
     ) {
-        val left = buildString {
-            append("src · ")
-            append(state.sourceLabel)
-            if (state.noSignal) append("   ·   no signal")
-        }
-        androidx.compose.foundation.layout.Column {
-            Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
-            if (hudVisible && state.hudLine.isNotBlank()) {
-                Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
+        Row(
+            Modifier
+                .align(Alignment.TopCenter)
+                .then(
+                    if (landscape) Modifier.widthIn(max = Dim.landscapeBandMaxWidth)
+                        .fillMaxWidth()
+                    else Modifier.fillMaxWidth()
+                ),
+            horizontalArrangement = Arrangement.SpaceBetween,
+        ) {
+            val left = buildString {
+                append("src · ")
+                append(state.sourceLabel)
+                if (state.noSignal) append("   ·   no signal")
             }
-            if (hudVisible && state.hudLine2.isNotBlank()) {
-                Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
+            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
+                Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
+                if (hudVisible && state.hudLine.isNotBlank()) {
+                    Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
+                }
+                if (hudVisible && state.hudLine2.isNotBlank()) {
+                    Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
+                }
             }
+            // Honesty law (Ben's ask): while the DESKTOP renders the beam
+            // (VISUALIZER), the band shows the desktop's truth — its mode and its
+            // live breathing gain, `auto · pc` under autogain — never a stale
+            // local multiplier that isn't changing the view.
+            val rolledMark = if (state.randomModeArmed) " ⚄" else ""
+            val right = state.remoteScopeLine?.let { remoteTruth ->
+                if (rolledMark.isEmpty()) remoteTruth
+                else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
+            } ?: run {
+                val gainTag = "×" + String.format("%.2f", state.gain) +
+                    if (state.localAutoGain) "·a" else ""
+                "${state.modeTag}$rolledMark · $gainTag"
+            }
+            Mono(
+                right, p.ink2.copy(alpha = 0.70f), Type.dataSm,
+                Modifier.padding(start = Dim.gapLg).widthIn(max = 280.dp),
+            )
         }
-        // Honesty law (Ben's ask): while the DESKTOP renders the beam
-        // (VISUALIZER), the band shows the desktop's truth — its mode and its
-        // live breathing gain, `auto · pc` under autogain — never a stale
-        // local multiplier that isn't changing the view.
-        val rolledMark = if (state.randomModeArmed) " ⚄" else ""
-        val right = state.remoteScopeLine?.let { remoteTruth ->
-            if (rolledMark.isEmpty()) remoteTruth
-            else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
-        } ?: run {
-            val gainTag = "×" + String.format("%.2f", state.gain) +
-                if (state.localAutoGain) "·a" else ""
-            "${state.modeTag}$rolledMark · $gainTag"
-        }
-        Mono(right, p.ink2.copy(alpha = 0.70f), Type.dataSm)
     }
 }
 
@@ -130,18 +143,15 @@ fun SeekRule(
                 .weight(1f)
                 .padding(horizontal = 8.dp)
                 .height(20.dp)
-                .pointerInput(durationMs) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { o -> scrub = (o.x / size.width).coerceIn(0f, 1f) },
-                        onDragEnd = {
-                            if (scrub >= 0f && durationMs > 0) onSeek((scrub * durationMs).toLong())
-                            scrub = -1f
-                        },
-                        onDragCancel = { scrub = -1f },
-                    ) { change, _ ->
-                        scrub = (change.position.x / size.width).coerceIn(0f, 1f)
-                    }
-                }
+                .consoleSeekGesture(
+                    durationMs = durationMs,
+                    onScrub = { scrub = it },
+                    onCommit = {
+                        if (durationMs > 0) onSeek((it * durationMs).toLong())
+                        scrub = -1f
+                    },
+                    onCancel = { scrub = -1f },
+                )
                 .drawBehind {
                     val midY = size.height / 2f
                     drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
@@ -181,6 +191,7 @@ fun Console(
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
     val style = LocalRoomStyle.current
+    val landscape = LocalChromeLandscape.current
     val cardShape = RoundedCornerShape(style.cornerRadius)
     Box(
         Modifier
@@ -195,7 +206,11 @@ fun Console(
     ) {
         Column(
             Modifier
-                .fillMaxWidth()
+                .then(
+                    if (landscape) Modifier.widthIn(max = Dim.landscapeConsoleMaxWidth)
+                        .fillMaxWidth()
+                    else Modifier.fillMaxWidth()
+                )
                 .clip(cardShape)
                 .background(
                     p.surface.copy(alpha = Dim.consoleAlpha * style.panelAlphaScale)

@@ -19,6 +19,7 @@ class ScopeUiState {
     var remoteAudio by mutableStateOf(true) // bridge stream toggles (H frame)
     var remoteGeometry by mutableStateOf(false)
     var live by mutableStateOf(false) // capture or mic actively feeding the beam
+    var captureMetadataAccess by mutableStateOf(false)
     var playing by mutableStateOf(false)
     var trackTitle by mutableStateOf<String?>(null)
     var trackArtist by mutableStateOf<String?>(null)

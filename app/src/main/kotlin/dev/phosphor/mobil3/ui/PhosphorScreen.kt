@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.ui
 
+import android.content.res.Configuration
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -13,6 +14,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
@@ -31,6 +33,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
@@ -64,6 +67,12 @@ interface ScopeActions {
     fun setGainAuto(on: Boolean)
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
+    fun openCaptureMetadataSettings()
+    fun isScopeRotationLocked(): Boolean
+    fun setScopeRotationLocked(locked: Boolean)
+    fun isUiPlacementLocked(): Boolean
+    fun lockedUiLandscape(): Boolean
+    fun setUiPlacementLocked(locked: Boolean)
     fun setRemoteLatencyMode(mode: Int)
     fun setRemoteNetworkMode(mode: Int)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
@@ -109,12 +118,17 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val style = (if (t >= 0.5f) target else fromRoom).style.overridden(state.styleOverride)
     val view = LocalView.current
     val density = LocalDensity.current
+    val actualLandscape =
+        LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
+    val chromeLandscape =
+        if (actions.isUiPlacementLocked()) actions.lockedUiLandscape() else actualLandscape
     var consoleVisible by remember { mutableStateOf(true) }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     var overflowComposed by remember { mutableStateOf(false) }
     var overflowTargetOpen by remember { mutableStateOf(false) }
     var overflowPendingSheet by remember { mutableStateOf(Sheet.NONE) }
     var settingsPullActive by remember { mutableStateOf(false) }
+    var bottomEdgePullActive by remember { mutableStateOf(false) }
     var rootHeightPx by remember { mutableStateOf(0) }
     var consoleHeightPx by remember { mutableStateOf(0) }
     var focusValue by remember { mutableFloatStateOf(0.3f) }
@@ -197,6 +211,13 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setGrid(on: Boolean) = actions.setGrid(on)
             override fun setHudMode(mode: Int) = actions.setHudMode(mode)
             override fun setFullscreen(on: Boolean) = actions.setFullscreen(on)
+            override fun openCaptureMetadataSettings() = actions.openCaptureMetadataSettings()
+            override fun isScopeRotationLocked() = actions.isScopeRotationLocked()
+            override fun setScopeRotationLocked(locked: Boolean) =
+                actions.setScopeRotationLocked(locked)
+            override fun isUiPlacementLocked() = actions.isUiPlacementLocked()
+            override fun setUiPlacementLocked(locked: Boolean) =
+                actions.setUiPlacementLocked(locked)
             override fun setRemoteLatencyMode(mode: Int) = actions.setRemoteLatencyMode(mode)
             override fun setRemoteNetworkMode(mode: Int) = actions.setRemoteNetworkMode(mode)
             override fun openRoom() { }
@@ -307,6 +328,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         LocalReducedMotion provides reduced,
         LocalRoomStyle provides style,
         LocalBloomPull provides bloom,
+        LocalChromeLandscape provides chromeLandscape,
     ) {
         Box(
             Modifier
@@ -321,16 +343,16 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 0.5: the stage — gesture arbiter (drags/pinches) + tap layer.
             // Sits BELOW the console so console controls win hit-testing in their bounds.
-            if (sheet == Sheet.NONE) {
+            if (sheet == Sheet.NONE || bottomEdgePullActive) {
                 Box(
                     Modifier
                         .fillMaxSize()
                         .stageGestures(
-                            remember(
-                                actions, state, bloom, style.motion, reduced,
-                                consoleVisible, overflowComposed,
-                            ) {
+                            remember(actions, state, bloom, style.motion, reduced) {
                                 object : StageGestureHost {
+                                    private var edgeTravelPx = 0f
+                                    private var settingsHandedOff = false
+
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
                                     override fun orbitBy(dyaw: Float, dpitch: Float) =
@@ -342,18 +364,58 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     override fun currentGlow() = state.glow
                                     override fun setGlowAbsolute(g: Float) = actions.setGlow(g)
                                     // The console owns its upward swipe while visible. Once it
-                                    // settles away, only a pull born in the physical bottom-edge
-                                    // band may bloom; gain/orbit keep every other drag.
+                                    // settles away, only a one-finger pull born in the physical
+                                    // bottom band may summon it (with the same bloom); gain/orbit
+                                    // keep every other clearly classified stage drag.
                                     override fun bottomPullArmed() =
                                         !consoleVisible && !overflowComposed
-                                    override fun beginBloomPull(resistancePx: Float) =
+                                    override fun beginBottomChromePull(resistancePx: Float) {
+                                        edgeTravelPx = 0f
+                                        settingsHandedOff = false
+                                        bottomEdgePullActive = true
+                                        consoleVisible = true
                                         bloom.begin(resistancePx)
-                                    override fun dragBloomPull(
+                                    }
+                                    override fun dragBottomChromePull(
                                         upwardDeltaPx: Float,
                                         resistancePx: Float,
-                                    ) = bloom.dragBy(upwardDeltaPx, resistancePx, style.motion)
-                                    override fun releaseBloomPull() =
+                                    ) {
+                                        val delta = upwardDeltaPx.coerceAtLeast(-edgeTravelPx)
+                                        edgeTravelPx = (edgeTravelPx + delta).coerceAtLeast(0f)
+                                        bloom.dragBy(delta, resistancePx, style.motion)
+                                        val handoffAt = maxOf(
+                                            consoleHeightPx * 0.72f,
+                                            with(density) { 96.dp.toPx() },
+                                        )
+                                        if (!settingsHandedOff && edgeTravelPx >= handoffAt) {
+                                            settingsHandedOff = true
+                                            if (currentReduced.value) {
+                                                sheet = Sheet.SETTINGS
+                                            } else {
+                                                settingsPullHost.begin()
+                                                settingsPullHost.dragBy(edgeTravelPx - handoffAt)
+                                            }
+                                        } else if (settingsHandedOff && !currentReduced.value) {
+                                            settingsPullHost.dragBy(delta)
+                                        }
+                                    }
+                                    override fun releaseBottomChromePull(velocityY: Float) {
+                                        bottomEdgePullActive = false
                                         bloom.release(style.motion, reduced)
+                                        if (settingsHandedOff && !currentReduced.value) {
+                                            settingsPullHost.release(velocityY)
+                                        }
+                                    }
+                                    override fun cancelBottomChromePull() {
+                                        bottomEdgePullActive = false
+                                        bloom.release(style.motion, reduced)
+                                        if (settingsHandedOff && !currentReduced.value) {
+                                            settingsPullHost.cancel()
+                                        }
+                                        settingsPullActive = false
+                                        sheet = Sheet.NONE
+                                        consoleVisible = false
+                                    }
                                     override fun view() = view
                                 }
                             },
@@ -389,7 +451,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             if (style.designators) {
                 Box(
                     Modifier.align(Alignment.BottomStart)
-                        .padding(start = 18.dp, bottom = 140.dp)
+                        .windowInsetsPadding(chromeSafeDrawingInsets(18.dp, 18.dp))
+                        .padding(
+                            start = 18.dp,
+                            bottom = if (chromeLandscape) 18.dp else 140.dp,
+                        )
                 ) { BenchPost(state, p) }
             }
 

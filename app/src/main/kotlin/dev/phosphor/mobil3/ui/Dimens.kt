@@ -1,6 +1,7 @@
 package dev.phosphor.mobil3.ui
 
 import androidx.compose.ui.unit.dp
+import androidx.compose.runtime.staticCompositionLocalOf
 
 // Chrome geometry tokens. Sharp corners everywhere (no radius token on purpose).
 object Dim {
@@ -18,6 +19,10 @@ object Dim {
     val popoutGap = 8.dp         // measured from the console card's outer top edge
     val popoutWidth = 220.dp
     val popoutPullTravel = 184.dp
+    val landscapeConsoleMaxWidth = 620.dp
+    val landscapeSheetMaxWidth = 600.dp
+    val landscapeBandMaxWidth = 760.dp
+    val bottomGestureBand = 88.dp
     val sheetDismissDistance = 72.dp
     val chromeFlickVelocity = 920.dp // dp per second; converted at the gesture boundary
 
@@ -33,3 +38,7 @@ object Dim {
     const val scrimAlpha = 0.40f
     const val chromeLuminanceCap = 0.60f // burn-in: chrome never exceeds ~60% of panel max
 }
+
+// The responsive chrome profile may deliberately differ from the current display
+// orientation when UI PLACEMENT is locked. Text itself is never rotated.
+val LocalChromeLandscape = staticCompositionLocalOf { false }

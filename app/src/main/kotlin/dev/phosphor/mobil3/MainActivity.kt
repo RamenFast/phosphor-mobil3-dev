@@ -1,14 +1,18 @@
 package dev.phosphor.mobil3
 
 import android.Manifest
+import android.app.NotificationManager
 import android.content.ComponentName
 import android.content.Intent
 import android.content.pm.PackageManager
+import android.content.pm.ActivityInfo
+import android.content.res.Configuration
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.provider.Settings
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
@@ -17,6 +21,9 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
+import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
@@ -43,6 +50,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var reduced = false
     private var gainValue = 1.0f
     private var lastRandomTrackTitle: String? = null
+    private var scopeRotationLockState by mutableStateOf(false)
+    private var uiPlacementLockState by mutableStateOf(false)
+    private var lockedUiLandscape by mutableStateOf(false)
+    private var lockedScopeOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
         prefs().edit().putFloat("gain", gainValue).apply()
@@ -107,6 +118,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             result.data?.let { data ->
                 applyLocalGainPolicy()
+                mic.stop()
                 startForegroundService(
                     Intent(this, CaptureService::class.java)
                         .putExtra(CaptureService.EXTRA_RESULT, data)
@@ -131,24 +143,25 @@ class MainActivity : ComponentActivity(), ScopeActions {
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
         }
-        // Fullscreen by default (Ben's ask): the scope owns the whole panel;
-        // system bars return transiently on an edge swipe.
-        applyImmersive()
-
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
         ui.bindRandomModeRequest(::armAndRollRandomMode)
         restoreTuning()
+        refreshCaptureMetadataAccess()
+        applyScopeRotationPreference()
+        // Fullscreen by default (Ben's ask): the scope owns the whole panel;
+        // system bars return transiently on an edge swipe.
+        applyImmersive()
         // PiP (spec §3): Home while the beam is live → the scope becomes the floating
         // window. Pure scope, no chrome (ui.pip gates the whole chrome tree).
-        setPictureInPictureParams(
-            android.app.PictureInPictureParams.Builder()
-                .setAutoEnterEnabled(true)
-                .setAspectRatio(android.util.Rational(9, 16))
-                .build()
-        )
+        updatePictureInPictureParams()
         setContent { PhosphorScreen(ui, this, reduced) }
         handleIntent(intent)
+    }
+
+    override fun onResume() {
+        super.onResume()
+        refreshCaptureMetadataAccess()
     }
 
     override fun onPictureInPictureModeChanged(
@@ -157,6 +170,26 @@ class MainActivity : ComponentActivity(), ScopeActions {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         ui.pip = isInPictureInPictureMode
+    }
+
+    override fun onConfigurationChanged(newConfig: Configuration) {
+        super.onConfigurationChanged(newConfig)
+        // The SurfaceView is still full-bleed and receives its new buffer dimensions
+        // through surfaceChanged. Only PiP's advertised frame needs explicit refresh.
+        updatePictureInPictureParams()
+    }
+
+    private fun updatePictureInPictureParams() {
+        val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        setPictureInPictureParams(
+            android.app.PictureInPictureParams.Builder()
+                .setAutoEnterEnabled(true)
+                .setAspectRatio(
+                    if (landscape) android.util.Rational(16, 9)
+                    else android.util.Rational(9, 16)
+                )
+                .build()
+        )
     }
 
     override fun onStart() {
@@ -170,28 +203,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = isPlaying }
                     override fun onTimelineChanged(
                         t: androidx.media3.common.Timeline, reason: Int,
-                    ) = syncQueue(c)
+                    ) {
+                        syncQueue(c)
+                        syncSessionFace(c)
+                    }
                     override fun onMediaItemTransition(
                         item: androidx.media3.common.MediaItem?, reason: Int,
                     ) = syncQueue(c)
                     override fun onMediaMetadataChanged(m: MediaMetadata) {
-                        acceptTrackTitle(m.title?.toString())
-                        ui.trackArtist = m.artist?.toString()
-                        ui.artwork = m.artworkData
-                        // The session's metadata extras are the remote deck's mirror
-                        // channel: source/conn/host without a second state path.
-                        val src = m.extras?.getString("source")
-                        ui.remote = src == "remote"
-                        if (ui.remote) {
-                            val conn = m.extras?.getString("conn")
-                            val host = m.extras?.getString("host") ?: "remote"
-                            ui.sourceLabel = when (conn) {
-                                "CONNECTING" -> "remote · connecting…"
-                                "LOST" -> "remote · reconnecting…"
-                                "FAILED" -> "remote · unreachable"
-                                else -> "remote · $host"
-                            }
-                        }
+                        syncSessionFace(c, m)
                         // Track boundary: advance a per-song light cycle (engine ignores
                         // it unless per-track cycling is active).
                         PhosphorNative.cycleAdvance()
@@ -201,16 +221,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 // (earbud skips with the screen off) — mirror the session's truth now,
                 // not just on the next change event.
                 ui.playing = c.isPlaying
-                c.mediaMetadata.let { m ->
-                    acceptTrackTitle(m.title?.toString())
-                    ui.trackArtist = m.artist?.toString()
-                    val src = m.extras?.getString("source")
-                    ui.remote = src == "remote"
-                    if (ui.remote) {
-                        val host = m.extras?.getString("host") ?: "remote"
-                        ui.sourceLabel = "remote · $host"
-                    }
-                }
+                syncSessionFace(c)
             }
         }, MoreExecutors.directExecutor())
         tick.post(uiTick)
@@ -355,12 +366,46 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.queueIndex = c.currentMediaItemIndex.coerceAtLeast(0)
     }
 
+    /** The one MediaSession is the source of truth for every visible now-playing face. */
+    private fun syncSessionFace(c: MediaController, metadata: MediaMetadata = c.mediaMetadata) {
+        acceptTrackTitle(metadata.title?.toString())
+        ui.trackArtist = metadata.artist?.toString()
+        ui.artwork = metadata.artworkData?.takeIf { it.isNotEmpty() }
+        val source = metadata.extras?.getString("source")
+        ui.remote = source == "remote"
+        when (source) {
+            "capture" -> {
+                ui.sourceLabel = "capture"
+                ui.live = true
+            }
+            "remote" -> {
+                ui.live = false
+                val conn = metadata.extras?.getString("conn")
+                val host = metadata.extras?.getString("host") ?: "remote"
+                ui.sourceLabel = when (conn) {
+                    "CONNECTING" -> "remote · connecting…"
+                    "LOST" -> "remote · reconnecting…"
+                    "FAILED" -> "remote · unreachable"
+                    else -> "remote · $host"
+                }
+            }
+            else -> if (ui.sourceLabel == "capture" && c.mediaItemCount == 0) {
+                // Capture ended (including a system MediaProjection stop): clear the
+                // entire face now. No old title or art may survive into "no source".
+                ui.sourceLabel = "no source"
+                ui.live = false
+            }
+        }
+    }
+
     private fun queryDisplayName(uri: Uri): String? =
         contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
             ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
 
     private fun openDeck(path: String, label: String) {
         mic.stop()
+        stopCaptureService()
+        ui.live = false
         applyLocalGainPolicy()
         startService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
         ui.sourceLabel = label
@@ -429,6 +474,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))
 
     override fun startMic() {
+        stopCaptureService()
+        ui.live = false
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
         ) { applyLocalGainPolicy(); mic.start(); ui.sourceLabel = "mic"; ui.live = true }
@@ -443,12 +490,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun stopLive() {
         mic.stop()
-        startService(
-            Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP)
-        )
+        stopCaptureService()
         PhosphorNative.setRingActive(false)
         ui.live = false
-        if (ui.sourceLabel == "capture" || ui.sourceLabel == "mic") ui.sourceLabel = "no source"
+        if (ui.sourceLabel == "capture" || ui.sourceLabel == "mic") {
+            ui.sourceLabel = "no source"
+            acceptTrackTitle(null)
+            ui.trackArtist = null
+            ui.artwork = null
+        }
+    }
+
+    private fun stopCaptureService() {
+        startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
     }
 
     // The consent moment (spec §2.3): one calm card before the system dialog, first time.
@@ -475,6 +529,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putInt("hud_mode", ui.hudMode)
             .putInt("band_mode", ui.bandMode)
             .putBoolean("fullscreen", ui.fullscreen)
+            .putBoolean("scope_rotation_locked", scopeRotationLockState)
+            .putInt("scope_locked_orientation", lockedScopeOrientation)
+            .putBoolean("ui_placement_locked", uiPlacementLockState)
+            .putBoolean("ui_locked_landscape", lockedUiLandscape)
             .putInt("remote_latency_mode", ui.latencyMode)
             .putInt("remote_network_mode", ui.networkMode)
             .putBoolean("amoled_seen", ui.amoledCaptionSeen)
@@ -516,6 +574,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         } else if (p.getBoolean("nerd_hud", false)) 0 else 2
         ui.bandMode = p.getInt("band_mode", 0)
         ui.fullscreen = p.getBoolean("fullscreen", true)
+        scopeRotationLockState = p.getBoolean("scope_rotation_locked", false)
+        lockedScopeOrientation = p.getInt(
+            "scope_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+        )
+        uiPlacementLockState = p.getBoolean("ui_placement_locked", false)
+        lockedUiLandscape = p.getBoolean(
+            "ui_locked_landscape",
+            resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
+        )
         ui.latencyMode = p.getInt("remote_latency_mode", 2).coerceIn(0, 2)
             .also { PhosphorNative.remoteSetLatencyMode(it) }
         ui.networkMode = p.getInt("remote_network_mode", 0).coerceIn(0, 2)
@@ -552,6 +619,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
     override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
+
+    override fun openCaptureMetadataSettings() {
+        startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+    }
+
+    private fun refreshCaptureMetadataAccess() {
+        val component = ComponentName(this, CaptureNotificationListenerService::class.java)
+        ui.captureMetadataAccess = getSystemService(NotificationManager::class.java)
+            .isNotificationListenerAccessGranted(component)
+    }
 
     private fun acceptTrackTitle(title: String?) {
         ui.trackTitle = title
@@ -675,7 +752,68 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun setFullscreen(on: Boolean) {
         ui.fullscreen = on
+        prefs().edit().putBoolean("fullscreen", on).apply()
         applyImmersive()
+    }
+
+    override fun isScopeRotationLocked(): Boolean = scopeRotationLockState
+
+    override fun setScopeRotationLocked(locked: Boolean) {
+        if (scopeRotationLockState == locked) return
+        scopeRotationLockState = locked
+        if (locked) lockedScopeOrientation = exactCurrentOrientation()
+        prefs().edit()
+            .putBoolean("scope_rotation_locked", locked)
+            .putInt("scope_locked_orientation", lockedScopeOrientation)
+            .apply()
+        applyScopeRotationPreference()
+    }
+
+    override fun isUiPlacementLocked(): Boolean = uiPlacementLockState
+    override fun lockedUiLandscape(): Boolean = lockedUiLandscape
+
+    override fun setUiPlacementLocked(locked: Boolean) {
+        if (uiPlacementLockState == locked) return
+        if (locked) {
+            lockedUiLandscape =
+                resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
+        }
+        uiPlacementLockState = locked
+        prefs().edit()
+            .putBoolean("ui_placement_locked", locked)
+            .putBoolean("ui_locked_landscape", lockedUiLandscape)
+            .apply()
+    }
+
+    private fun applyScopeRotationPreference() {
+        requestedOrientation = if (scopeRotationLockState) {
+            if (lockedScopeOrientation in setOf(
+                    ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT,
+                    ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE,
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE,
+                )
+            ) lockedScopeOrientation else exactCurrentOrientation()
+        } else {
+            // Return rotation ownership to Android. This follows the sensor when the
+            // system allows rotation and respects the user's OS-level rotation lock.
+            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+    }
+
+    private fun exactCurrentOrientation(): Int {
+        val rotation = display?.rotation ?: Surface.ROTATION_0
+        return when (resources.configuration.orientation) {
+            Configuration.ORIENTATION_LANDSCAPE ->
+                if (rotation == Surface.ROTATION_270)
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+                else ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            Configuration.ORIENTATION_PORTRAIT ->
+                if (rotation == Surface.ROTATION_180)
+                    ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+                else ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
     }
 
     // Android can undo an onCreate-time hide when the window (re)gains focus —

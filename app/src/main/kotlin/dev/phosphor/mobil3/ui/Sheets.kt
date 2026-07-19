@@ -23,6 +23,7 @@ import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -32,6 +33,7 @@ import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
@@ -175,6 +177,7 @@ fun SheetHost(
     body: @Composable () -> Unit,
 ) {
     val style = LocalRoomStyle.current
+    val landscape = LocalChromeLandscape.current
     val bloom = LocalBloomPull.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -288,7 +291,7 @@ fun SheetHost(
                 )
                 .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
                 .onSizeChanged { availableHeightPx = it.height },
-            contentAlignment = Alignment.BottomCenter,
+            contentAlignment = if (landscape) Alignment.BottomEnd else Alignment.BottomCenter,
         ) {
             AnimatedVisibility(
                 visibleState = openState,
@@ -313,7 +316,11 @@ fun SheetHost(
                                 (dismissOffset.value.coerceAtLeast(0f) + bloomOffsetPx).roundToInt(),
                             )
                         }
-                        .fillMaxWidth()
+                        .then(
+                            if (landscape) Modifier.widthIn(max = Dim.landscapeSheetMaxWidth)
+                                .fillMaxWidth()
+                            else Modifier.fillMaxWidth()
+                        )
                         .onSizeChanged {
                             sheetHeightPx = it.height
                             entryReveal?.setTravelPx(it.height.toFloat())
@@ -457,6 +464,20 @@ fun SourceSheet(
             if (actions.captureConsentNeeded()) consentCard = true
             else { actions.startCapture(); onDismiss() }
         }
+        if (!state.captureMetadataAccess) {
+            Row(
+                Modifier.fillMaxWidth().padding(bottom = Dim.gap),
+                horizontalArrangement = Arrangement.spacedBy(Dim.gap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Prose(
+                    "Track names and cover art need notification access; sound capture still works without it.",
+                    p.muted,
+                    modifier = Modifier.weight(1f),
+                )
+                FlatKey("grant…", p) { actions.openCaptureMetadataSettings() }
+            }
+        }
         SectionHeading("MICROPHONE", p)
         SheetRow("built-in mic", p, checked = state.sourceLabel == "mic") {
             actions.startMic(); onDismiss()
@@ -465,8 +486,8 @@ fun SourceSheet(
         RemoteFlow(state, p, actions, onDismiss)
         Prose(
             "Remote scopes another machine's audio over Tailscale — it plays here and " +
-                "the transport drives that machine. Local capture can't see Spotify or " +
-                "DRM apps; games, browsers and local players work.",
+                "the transport drives that machine. Local capture hears whatever apps " +
+                "allow it (Spotify currently does; some DRM apps stay silent).",
             p.muted, modifier = Modifier.padding(top = Dim.gap, bottom = Dim.gapLg),
         )
         StoneToggle(
@@ -832,16 +853,63 @@ fun SettingsSheet(
                         actions.setGrid(!state.grid)
                     }
                 }
-                Box(Modifier.weight(1f)) {
-                    // Ben's ask: immersive is a choice, not a law. Off shows the bars;
-                    // the corner-clearance helper reads real insets either way.
+                Spacer(Modifier.weight(2f))
+            }
+            Spacer(Modifier.height(6.dp))
+            BoxWithConstraints(Modifier.fillMaxWidth()) {
+                val wideEnoughForOneRow = maxWidth >= 480.dp
+                val fullscreen: @Composable () -> Unit = {
+                    // Immersive is a choice, not a law. Off shows the bars; the
+                    // corner-clearance helper reads real insets either way.
                     ChipCell(
                         "FULLSCREEN · " + (if (state.fullscreen) "on" else "off"),
                         active = state.fullscreen, p = p, small = true,
                     ) { actions.setFullscreen(!state.fullscreen) }
                 }
-                Spacer(Modifier.weight(1f))
+                val scopeRotation: @Composable () -> Unit = {
+                    ChipCell(
+                        "SCOPE ROTATION · " +
+                            (if (actions.isScopeRotationLocked()) "locked" else "free"),
+                        active = actions.isScopeRotationLocked(), p = p, small = true,
+                    ) {
+                        actions.setScopeRotationLocked(!actions.isScopeRotationLocked())
+                    }
+                }
+                val uiPlacement: @Composable () -> Unit = {
+                    ChipCell(
+                        "UI PLACEMENT · " +
+                            (if (actions.isUiPlacementLocked()) "locked" else "follow"),
+                        active = actions.isUiPlacementLocked(), p = p, small = true,
+                    ) {
+                        actions.setUiPlacementLocked(!actions.isUiPlacementLocked())
+                    }
+                }
+                if (wideEnoughForOneRow) {
+                    Row(
+                        Modifier.fillMaxWidth(),
+                        horizontalArrangement = Arrangement.spacedBy(6.dp),
+                    ) {
+                        Box(Modifier.weight(1f)) { fullscreen() }
+                        Box(Modifier.weight(1f)) { scopeRotation() }
+                        Box(Modifier.weight(1f)) { uiPlacement() }
+                    }
+                } else {
+                    Column(Modifier.fillMaxWidth()) {
+                        fullscreen()
+                        scopeRotation()
+                        uiPlacement()
+                    }
+                }
             }
+            Prose(
+                "Scope lock pins the exact current orientation; free returns rotation " +
+                    "to Android. UI placement lock freezes the portrait/landscape card " +
+                    "layout while the scope keeps resizing underneath. Text stays upright " +
+                    "and safety caps may tighten a card: one Activity cannot hold chrome " +
+                    "on an absolute handset edge while rotating only its native surface " +
+                    "without counter-rotating the labels.",
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
             Spacer(Modifier.height(Dim.gap))
             Mono("FRAME RATE", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -953,12 +1021,17 @@ fun SettingsSheet(
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
     fun setFullscreen(on: Boolean)
+    fun isScopeRotationLocked(): Boolean
+    fun setScopeRotationLocked(locked: Boolean)
+    fun isUiPlacementLocked(): Boolean
+    fun setUiPlacementLocked(locked: Boolean)
     fun openFile()
     fun startMic()
     fun startCapture()
     fun startRemote()
     fun stopLive()
     fun captureConsentNeeded(): Boolean
+    fun openCaptureMetadataSettings()
     fun setFps(value: Int)
     fun setOversample(n: Int)
     fun setGainAbsolute(g: Float)

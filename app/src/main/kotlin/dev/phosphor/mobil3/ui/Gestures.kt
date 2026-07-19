@@ -64,6 +64,7 @@ fun Modifier.playBarSwipeUp(
         var fired = false
         var pullActive = false
         var bloomActive = false
+        var multiTouch = false
         var finishedNormally = false
         try {
             while (true) {
@@ -76,6 +77,15 @@ fun Modifier.playBarSwipeUp(
                     finishedNormally = true
                     break
                 }
+                if (pressed.size != 1) {
+                    multiTouch = true
+                    if (pullActive) {
+                        pullHost.cancel()
+                        pullActive = false
+                    }
+                    continue
+                }
+                if (multiTouch) continue
                 if (!fired) {
                     val change = pressed.first()
                     val travel = change.position - origin
@@ -191,6 +201,65 @@ fun Modifier.overflowHandleGesture(
   }
 }
 
+// The seek rule is a console child, never a stage shortcut. It waits for a
+// horizontal-dominant classification before publishing any scrub value; crossing
+// vertical slop first rejects the whole sequence, so a settings-door pull cannot
+// skip toward the end as it passes over the timeline.
+@Composable
+fun Modifier.consoleSeekGesture(
+    durationMs: Long,
+    onScrub: (Float) -> Unit,
+    onCommit: (Float) -> Unit,
+    onCancel: () -> Unit,
+): Modifier {
+    val currentScrub by rememberUpdatedState(onScrub)
+    val currentCommit by rememberUpdatedState(onCommit)
+    val currentCancel by rememberUpdatedState(onCancel)
+    return pointerInput(durationMs) {
+        if (durationMs <= 0L) return@pointerInput
+        val slop = viewConfiguration.touchSlop
+        awaitEachGesture {
+            val first = awaitFirstDown(requireUnconsumed = false)
+            val origin = first.position
+            var ownership = 0 // 0 undecided · 1 horizontal seek · 2 rejected
+            var fraction = (origin.x / size.width).coerceIn(0f, 1f)
+            var finishedNormally = false
+            try {
+                while (true) {
+                    val event = awaitPointerEvent()
+                    val pressed = event.changes.filter { it.pressed }
+                    if (pressed.isEmpty()) {
+                        finishedNormally = true
+                        break
+                    }
+                    if (pressed.size != 1) {
+                        ownership = 2
+                        continue
+                    }
+                    val change = pressed.first()
+                    val travel = change.position - origin
+                    if (ownership == 0 &&
+                        (abs(travel.x) > slop || abs(travel.y) > slop)
+                    ) {
+                        ownership = if (
+                            abs(travel.x) > slop &&
+                            abs(travel.x) > abs(travel.y) * 1.35f
+                        ) 1 else 2
+                    }
+                    if (ownership == 1) {
+                        fraction = (change.position.x / size.width).coerceIn(0f, 1f)
+                        currentScrub(fraction)
+                        change.consume()
+                    }
+                }
+            } finally {
+                if (ownership == 1 && finishedNormally) currentCommit(fraction)
+                else if (ownership == 1) currentCancel()
+            }
+        }
+    }
+}
+
 // The gesture arbiter (UX-SPEC §1.2/§1.3, core map): each pointer sequence is classified
 // ONCE and owned by exactly one verb. This layer owns drags and pinches on the stage;
 // taps fall through to the tap layer beneath it (which never sees moved sequences).
@@ -215,9 +284,10 @@ interface StageGestureHost {
     fun currentGlow(): Float
     fun setGlowAbsolute(g: Float)
     fun bottomPullArmed(): Boolean
-    fun beginBloomPull(resistancePx: Float)
-    fun dragBloomPull(upwardDeltaPx: Float, resistancePx: Float)
-    fun releaseBloomPull()
+    fun beginBottomChromePull(resistancePx: Float)
+    fun dragBottomChromePull(upwardDeltaPx: Float, resistancePx: Float)
+    fun releaseBottomChromePull(velocityY: Float)
+    fun cancelBottomChromePull()
     fun view(): View
 }
 
@@ -227,7 +297,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
             // 0 undecided · 1 drag · 2 pinch · 4 mode-step (fired) · 5 glow swipe
-            // 6 bottom-pull bloom. It can only win from the physical bottom edge.
+            // 6 bottom chrome door. It can only win from the physical bottom edge.
             var mode = 0
             var gain = host.currentGain()
             var glow = host.currentGlow()
@@ -236,18 +306,28 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
             var twoOrigin = Offset.Zero
             var twoStartDist = 0f
             val bottomCandidate = host.bottomPullArmed() &&
-                first.position.y >= size.height - 88.dp.toPx()
+                first.position.y >= size.height - Dim.bottomGestureBand.toPx()
             val bloomResistance = 156.dp.toPx()
-            var bloomActive = false
+            var bottomChromeActive = false
+            var finishedNormally = false
+            val velocity = VelocityTracker().apply {
+                addPosition(first.uptimeMillis, first.position)
+            }
             try {
               while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
-                if (pressed.isEmpty()) break
+                event.changes.firstOrNull()?.let {
+                    velocity.addPosition(it.uptimeMillis, it.position)
+                }
+                if (pressed.isEmpty()) {
+                    finishedNormally = true
+                    break
+                }
                 if (pressed.size >= 2) {
-                    if (bloomActive) {
-                        bloomActive = false
-                        host.releaseBloomPull()
+                    if (bottomChromeActive) {
+                        bottomChromeActive = false
+                        host.cancelBottomChromePull()
                     }
                     if (mode == 0 || mode == 1) {
                         mode = 2; lastDist = -1f
@@ -326,10 +406,24 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             abs(delta.y) > abs(delta.x) * 1.35f
                         ) {
                             mode = 6
-                            bloomActive = true
-                            host.beginBloomPull(bloomResistance)
-                            host.dragBloomPull((-delta.y - slop).coerceAtLeast(0f), bloomResistance)
+                            bottomChromeActive = true
+                            host.beginBottomChromePull(bloomResistance)
+                            host.dragBottomChromePull(
+                                (-delta.y - slop).coerceAtLeast(0f), bloomResistance,
+                            )
                             ch.consume()
+                        } else if (bottomCandidate && !(
+                                abs(delta.x) > slop * 2f &&
+                                    abs(delta.x) > abs(delta.y) * 1.6f
+                                ) && !(
+                                delta.y > slop * 2f &&
+                                    abs(delta.y) > abs(delta.x) * 1.6f
+                                )
+                        ) {
+                            // A bottom-born gesture stays undecided until upward intent
+                            // or an unmistakable stage drag wins. A diagonal
+                            // system-bars swipe can never leak a few gain/orbit frames.
+                            continue
                         } else {
                             mode = 1
                         }
@@ -338,7 +432,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     }
                     if (mode == 6 && ch.positionChanged()) {
                         val d = ch.position - ch.previousPosition
-                        host.dragBloomPull(-d.y, bloomResistance)
+                        host.dragBottomChromePull(-d.y, bloomResistance)
                         ch.consume()
                         continue
                     }
@@ -363,7 +457,13 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                 }
               }
             } finally {
-                if (bloomActive) host.releaseBloomPull()
+                if (bottomChromeActive) {
+                    if (finishedNormally) {
+                        host.releaseBottomChromePull(velocity.calculateVelocity().y)
+                    } else {
+                        host.cancelBottomChromePull()
+                    }
+                }
             }
         }
     }
