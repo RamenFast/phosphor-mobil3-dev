@@ -23,7 +23,9 @@ object Dim {
     val gap = 8.dp
     val gapLg = 12.dp
     val popoutGap = 8.dp         // measured from the console card's outer top edge
-    val popoutWidth = 220.dp
+    val popoutWidth = 180.dp     // hugs the 2×2 nav grid + quick-toggle row
+    val popoutPad = 8.dp         // inner card padding — dense but still breathing
+    val popoutGridGap = 6.dp     // between the four destination cells
     val popoutPullTravel = 184.dp
     val landscapeConsoleMaxWidth = 620.dp
     val landscapeSheetMaxWidth = 600.dp

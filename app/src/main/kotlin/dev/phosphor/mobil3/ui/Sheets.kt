@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.ui
 
+import android.view.Surface
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
@@ -179,6 +180,14 @@ fun SheetHost(
 ) {
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
+    // "For each respective side" (Ben's ask): in landscape the card anchors to the
+    // edge nearest the user's reach — the phone's chin. ROTATION_90 puts the chin on
+    // the right, ROTATION_270 on the left; ROTATION_0/180/null keep the historical
+    // right so the common landscape is unchanged.
+    val landscapeSide = when (LocalView.current.display?.rotation) {
+        Surface.ROTATION_270 -> Alignment.BottomStart
+        else -> Alignment.BottomEnd
+    }
     val bloom = LocalBloomPull.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -292,7 +301,7 @@ fun SheetHost(
                 )
                 .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
                 .onSizeChanged { availableHeightPx = it.height },
-            contentAlignment = if (landscape) Alignment.BottomEnd else Alignment.BottomCenter,
+            contentAlignment = if (landscape) landscapeSide else Alignment.BottomCenter,
         ) {
             AnimatedVisibility(
                 visibleState = openState,
@@ -824,12 +833,14 @@ fun SettingsSheet(
     onDismiss: () -> Unit,
 ) {
     val scroll = rememberScrollState()
+    val landscape = LocalChromeLandscape.current
     SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob) {
-        Column(
-            Modifier
-                .bottomBloomOverscroll { !scroll.canScrollForward }
-                .verticalScroll(scroll, overscrollEffect = null)
-        ) {
+        // Each settings group is a self-contained block so the same content lays out
+        // as one portrait column or, in landscape, two side-by-side columns (Ben's
+        // ask: settings is the full view — a real landscape split, not a narrow
+        // portrait column). One shared vertical scroll keeps the fill-driven top-curl
+        // and the nested-scroll dismiss working exactly as before.
+        val signal: @Composable () -> Unit = {
             SettingsSectionHeading(
                 "SIGNAL", SettingsGlyph.Signal, p, Modifier.padding(top = 0.dp),
             )
@@ -865,7 +876,8 @@ fun SettingsSheet(
             DragRule(
                 "GLOW", state.glow, 0.0f, 0.98f, p, { "%.0f %%".format(it * 100) },
             ) { actions.setGlow(it) }
-
+        }
+        val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
@@ -953,8 +965,12 @@ fun SettingsSheet(
                 }
             }
             Prose(BeamRateNote, p.muted, modifier = Modifier.padding(top = 6.dp))
-
-            SettingsSectionHeading("PERFORMANCE", SettingsGlyph.Performance, p)
+        }
+        val performance: @Composable (Boolean) -> Unit = { head ->
+            SettingsSectionHeading(
+                "PERFORMANCE", SettingsGlyph.Performance, p,
+                if (head) Modifier.padding(top = 0.dp) else Modifier,
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell(
@@ -975,7 +991,8 @@ fun SettingsSheet(
                 }
                 Spacer(Modifier.weight(1f))
             }
-
+        }
+        val remote: @Composable () -> Unit = {
             SettingsSectionHeading("REMOTE", SettingsGlyph.Remote, p)
             Mono("LATENCY", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1011,7 +1028,8 @@ fun SettingsSheet(
                     "There is no both: one TCP stream cannot multipath.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
-
+        }
+        val roomLight: @Composable () -> Unit = {
             SettingsSectionHeading("ROOM & LIGHT", SettingsGlyph.RoomLight, p)
             SettingsGlyphRow("room · ${state.room.label}", SettingsGlyph.Room, p) {
                 actions.openRoom()
@@ -1019,7 +1037,8 @@ fun SettingsSheet(
             SettingsGlyphRow("light · beam color", SettingsGlyph.BeamColor, p) {
                 actions.openLight()
             }
-
+        }
+        val about: @Composable () -> Unit = {
             SettingsSectionHeading("ABOUT", SettingsGlyph.About, p)
             Prose(
                 "Phosphor draws sound as light — a CRT oscilloscope in your pocket, " +
@@ -1033,6 +1052,40 @@ fun SettingsSheet(
                     "CAL · ${state.calDate}   S/N 003", p.muted, Type.dataXs,
                     Modifier.padding(bottom = Dim.gap), letterSpacing = 1.2.sp,
                 )
+            }
+        }
+        // One shared vertical scroll drives the sheet's fill (top-curl) and the
+        // nested-scroll dismiss. Landscape lays the groups into two weighted columns;
+        // portrait stacks them. Left column carries the tall SIGNAL + DISPLAY; the
+        // right carries PERFORMANCE + REMOTE + ROOM & LIGHT + ABOUT (balanced by eye).
+        Column(
+            Modifier
+                .bottomBloomOverscroll { !scroll.canScrollForward }
+                .verticalScroll(scroll, overscrollEffect = null)
+        ) {
+            if (landscape) {
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(Dim.gapLg),
+                ) {
+                    Column(Modifier.weight(1f)) {
+                        signal()
+                        display()
+                    }
+                    Column(Modifier.weight(1f)) {
+                        performance(true)
+                        remote()
+                        roomLight()
+                        about()
+                    }
+                }
+            } else {
+                signal()
+                display()
+                performance(false)
+                remote()
+                roomLight()
+                about()
             }
         }
     }

@@ -221,6 +221,12 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut target_fps: i32 = 0; // 0 = panel vsync
     let mut oversample: u32 = 1; // DSP reconstruction multiplier (48/96/192 kHz)
     let mut view_rotation: u32 = 0; // quadrants; beam-to-gravity in UI-locked mode
+    // Settings can arrive BEFORE the first surface (restoreTuning at app boot) — mirror
+    // them so renderer creation applies the persisted truth, not defaults (Ben's field
+    // receipt: grid pref needed a manual re-toggle after every install).
+    let mut grid_on = true;
+    let mut glow_persistence = defaults.persistence;
+    let mut focus_px = defaults.beam_focus;
     let mut last_present = std::time::Instant::now();
 
     // Camera mirror (Computer's camera is crate-private; set_camera takes absolutes).
@@ -298,10 +304,14 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                                     a.config.format,
                                 ) {
                                     Ok(mut r) => {
-                                        r.beam_focus = defaults.beam_focus;
-                                        r.persistence = defaults.persistence;
+                                        // Persisted truth, not defaults: these commands
+                                        // may have arrived before the first surface.
+                                        r.beam_focus = focus_px;
+                                        r.persistence = glow_persistence;
+                                        r.grid_enabled = grid_on;
                                         r.display_scale = density;
-                                        r.theme = phosphor_beam::THEME_PRESETS[0].1;
+                                        r.theme = phosphor_beam::THEME_PRESETS
+                                            [beam_color % phosphor_beam::THEME_PRESETS.len()].1;
                                         renderer = Some(r);
                                         // Cold start: the cathode warms.
                                         if !reduced_motion {
@@ -399,13 +409,15 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     bloom_pull = pull.clamp(0.0, 1.0);
                 }
                 Cmd::SetGrid(on) => {
+                    grid_on = on;
                     if let Some(r) = renderer.as_mut() {
                         r.grid_enabled = on;
                     }
                 }
                 Cmd::SetGlow(p) => {
+                    glow_persistence = p.clamp(0.0, 0.98);
                     if let Some(r) = renderer.as_mut() {
-                        r.persistence = p.clamp(0.0, 0.98);
+                        r.persistence = glow_persistence;
                     }
                 }
                 Cmd::OrbitBy(dy, dp) => {
@@ -418,8 +430,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     computer.set_camera(None, None, Some(cam_dolly));
                 }
                 Cmd::SetFocus(f) => {
+                    focus_px = f.clamp(0.3, 3.0);
                     if let Some(r) = renderer.as_mut() {
-                        r.beam_focus = f.clamp(0.3, 3.0);
+                        r.beam_focus = focus_px;
                         log::info!("beam focus: {:.2}", r.beam_focus);
                     }
                 }

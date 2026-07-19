@@ -888,7 +888,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN) return
         val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
         val displayQ = display?.rotation ?: Surface.ROTATION_0
-        val q = (((4 - deviceQ) % 4) - displayQ + 4) % 4
+        // Sign fixed by Ben's field receipt ("right way if they weren't upside down —
+        // it thinks it's on the wrong side"): device CW = content CCW on the pinned
+        // screen, i.e. +deviceQ in our CCW quadrant convention, not its inverse.
+        val q = ((deviceQ - displayQ) % 4 + 4) % 4
         if (q == lastRoutedQ && !force) return
         lastRoutedQ = q
         when {

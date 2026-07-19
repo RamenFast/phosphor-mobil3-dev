@@ -390,37 +390,37 @@ fun OverflowPopout(
                     reveal.dragBy(-delta)
                 }
             }
-            .padding(6.dp)
+            .padding(Dim.popoutPad)
     ) {
-        listOf(
+        // 2×2 destination grid (Ben's ask: kill the dead space) — each cell is a
+        // glyph over a small mono label, the quick-toggle idiom applied to the four
+        // rooms. The icon+label pair uprights as one unit to the viewing edge.
+        val cells = listOf(
             Triple("deck", SettingsGlyph.Deck, onDeck),
             Triple("light", SettingsGlyph.BeamColor, onLight),
             Triple("room", SettingsGlyph.Room, onRoom),
             Triple("settings", SettingsGlyph.Knob, onSettings),
-        ).forEach { (label, glyph, action) ->
+        )
+        cells.chunked(2).forEachIndexed { index, gridRow ->
+            if (index > 0) Spacer(Modifier.height(Dim.popoutGridGap))
             Row(
-                Modifier
-                    .fillMaxWidth()
-                    .clickable { action() }
-                    .padding(horizontal = 10.dp, vertical = 11.dp),
-                verticalAlignment = Alignment.CenterVertically,
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dim.popoutGridGap),
             ) {
-                // The icon+label pair uprights as one unit to the viewing edge.
-                UprightCell {
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        SettingsGlyphIcon(glyph, p, 16.dp)
-                        Spacer(Modifier.width(10.dp))
-                        Mono(label, p.ink, Type.data)
-                    }
+                gridRow.forEach { (label, glyph, action) ->
+                    PopoutNavCell(glyph, label, p, Modifier.weight(1f), action)
                 }
             }
         }
-        // Quick settings (Ben's ask): the three live toggles, wearing the same
-        // glyphs the SETTINGS sheet uses. State reads under the icon, mono truth.
-        Spacer(Modifier.height(4.dp))
+        // A hairline rule divides the destinations from the live quick toggles.
+        Spacer(Modifier.height(Dim.gap))
+        Box(Modifier.fillMaxWidth().height(Dim.hairline).background(p.line))
+        Spacer(Modifier.height(Dim.gap))
+        // Quick settings (Ben's ask): the three live toggles, spread evenly across
+        // the width, wearing the SETTINGS glyphs. State reads under each icon.
         Row(
-            Modifier.fillMaxWidth().padding(horizontal = 6.dp, vertical = 6.dp),
-            horizontalArrangement = Arrangement.SpaceBetween,
+            Modifier.fillMaxWidth(),
+            horizontalArrangement = Arrangement.SpaceEvenly,
         ) {
             QuickToggle(
                 SettingsGlyph.Fps,
@@ -464,6 +464,32 @@ private fun QuickToggle(
                 SettingsGlyphIcon(glyph, p, 18.dp)
                 Spacer(Modifier.height(3.dp))
                 Mono(value, if (active) p.accent else p.muted, Type.dataXs)
+            }
+        }
+    }
+}
+
+// One destination cell of the 2×2 grid: room-aware glyph over a small mono label.
+// The whole weighted cell is the hit target; icon+label upright as one unit.
+@Composable
+private fun PopoutNavCell(
+    glyph: SettingsGlyph,
+    label: String,
+    p: Palette,
+    modifier: Modifier = Modifier,
+    onTap: () -> Unit,
+) {
+    Box(
+        modifier
+            .clickable(onClick = onTap)
+            .padding(vertical = 10.dp),
+        contentAlignment = Alignment.Center,
+    ) {
+        UprightCell {
+            Column(horizontalAlignment = Alignment.CenterHorizontally) {
+                SettingsGlyphIcon(glyph, p, 20.dp)
+                Spacer(Modifier.height(4.dp))
+                Mono(label, p.ink, Type.dataXs)
             }
         }
     }

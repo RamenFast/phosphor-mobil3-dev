@@ -15,7 +15,6 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
-import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.lazy.grid.GridCells
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
@@ -86,16 +85,48 @@ fun LightSheetV2(
                         sw, active = state.customCount == 0 && i == state.beamIndex, p = p,
                     ) {
                         state.customCount = 0
+                        editSlot = -1
                         onCustomChange(state.customColors, 0)
                         onPickPreset(i)
                     }
                 }
             }
 
+            // ── CUSTOM: the slot-count chips are the way in — tap 1/2/3 to leave the
+            //    presets and mix your own. Slots 2/3 keep their colors while inactive
+            //    (desktop law), so shrinking then re-growing the count remembers. ──
             SectionHeading("CUSTOM", p)
-            Row(verticalAlignment = Alignment.CenterVertically) {
-                for (i in 0 until 3) {
-                    if (i < maxOf(state.customCount, 1)) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(6.dp),
+            ) {
+                for (n in 1..3) {
+                    Box(Modifier.weight(1f)) {
+                        ChipCell(
+                            n.toString(),
+                            active = state.customCount == n, p = p, small = true,
+                        ) {
+                            if (editSlot >= n) editSlot = -1
+                            state.customCount = n
+                            onCustomChange(state.customColors, n)
+                        }
+                    }
+                }
+            }
+            if (state.customCount == 0) {
+                Prose(
+                    "tap a count to mix your own — 1 is a solid custom color, 2 or 3 " +
+                        "builds a cycle",
+                    p.muted, modifier = Modifier.padding(top = 6.dp),
+                )
+            } else {
+                // Per-slot pickers: a tap opens the same HSV square slot 1 has always used.
+                Spacer(Modifier.height(Dim.gap))
+                Row(
+                    verticalAlignment = Alignment.CenterVertically,
+                    horizontalArrangement = Arrangement.spacedBy(Dim.gap),
+                ) {
+                    for (i in 0 until state.customCount) {
                         val c = state.customColors[i]
                         Box(
                             Modifier
@@ -103,51 +134,33 @@ fun LightSheetV2(
                                 .background(c)
                                 .border(
                                     if (editSlot == i) 2.dp else Dim.hairline,
-                                    if (state.customCount > 0) p.accent else p.line,
+                                    if (editSlot == i) p.accent else p.line,
                                 )
-                                .clickable {
-                                    if (state.customCount == 0) {
-                                        state.customCount = 1
-                                        onCustomChange(state.customColors, 1)
-                                    }
-                                    editSlot = if (editSlot == i) -1 else i
-                                },
+                                .clickable { editSlot = if (editSlot == i) -1 else i },
                         )
-                        Spacer(Modifier.width(Dim.gap))
                     }
+                    Spacer(Modifier.weight(1f))
+                    Mono(
+                        if (editSlot >= 0) "slot ${editSlot + 1}" else "tap a slot",
+                        p.muted, Type.dataXs,
+                    )
                 }
-                if (state.customCount in 1..2) {
-                    FlatKey("+", p) {
-                        state.customCount++
+                if (editSlot in 0 until state.customCount) {
+                    Spacer(Modifier.height(Dim.gapLg))
+                    HsvSquare(state.customColors[editSlot], p) { picked ->
+                        state.customColors = state.customColors.toMutableList().also {
+                            it[editSlot] = picked
+                        }
                         onCustomChange(state.customColors, state.customCount)
                     }
-                    Spacer(Modifier.width(Dim.gap))
-                }
-                if (state.customCount >= 2) {
-                    FlatKey("−", p) {
-                        state.customCount--
-                        if (editSlot >= state.customCount) editSlot = -1
-                        onCustomChange(state.customColors, state.customCount)
-                    }
-                }
-                Spacer(Modifier.weight(1f))
-                if (state.customCount == 0) {
-                    Mono("tap a slot to go custom", p.muted, Type.dataXs)
                 }
             }
 
-            if (editSlot in 0 until maxOf(state.customCount, 0)) {
-                Spacer(Modifier.height(Dim.gapLg))
-                HsvSquare(state.customColors[editSlot], p) { picked ->
-                    state.customColors = state.customColors.toMutableList().also {
-                        it[editSlot] = picked
-                    }
-                    onCustomChange(state.customColors, state.customCount)
-                }
-            }
-
+            // ── CYCLE: only earns its section once two colors give the beam somewhere
+            //    to walk. The ring preview loops home; LEG is one color→color leg;
+            //    TIMER/TRACK choose the clock. ──
             if (state.customCount >= 2) {
-                Spacer(Modifier.height(Dim.gapLg))
+                SectionHeading("CYCLE", p)
                 // The gradient strip — the ring the cycle walks, looping home.
                 val cols = state.customColors.take(state.customCount) +
                     state.customColors.first()
@@ -159,34 +172,44 @@ fun LightSheetV2(
                         .border(Dim.hairline, p.line),
                 )
                 Spacer(Modifier.height(Dim.gapLg))
-                Mono("ADVANCE", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
-                Row(horizontalArrangement = Arrangement.spacedBy(Dim.gap)) {
-                    FlatKey("TIMER", p, active = !state.cyclePerTrack) {
-                        state.cyclePerTrack = false
-                        onCycleChange(state.cycleSeconds, false)
-                    }
-                    FlatKey("EVERY SONG", p, active = state.cyclePerTrack) {
-                        state.cyclePerTrack = true
-                        onCycleChange(state.cycleSeconds, true)
+                DragRule(
+                    "LEG", state.cycleSeconds, 0.1f, 60f, p, { "%.1f s".format(it) },
+                ) { v ->
+                    // The guard: in TIMER a sub-1 s leg strobes the whole screen, so it
+                    // stops at 1 s until knowingly accepted. TRACK is exempt — one
+                    // crossfade per song is not a strobe.
+                    if (!state.cyclePerTrack && v < 1.0f && !epilepsyAcknowledged()) {
+                        pendingSeconds = v
+                        state.cycleSeconds = 1.0f
+                        guardCard = true
+                    } else {
+                        state.cycleSeconds = v
+                        onCycleChange(v, state.cyclePerTrack)
                     }
                 }
-                if (!state.cyclePerTrack) {
-                    Spacer(Modifier.height(Dim.gap))
-                    DragRule(
-                        "EVERY", state.cycleSeconds, 0.1f, 60f, p, { "%.2f s".format(it) },
-                    ) { v ->
-                        // The guard: sub-1 s stops at 1 s until knowingly accepted.
-                        // Track mode is exempt — one fade per song is not a strobe.
-                        if (v < 1.0f && !epilepsyAcknowledged()) {
-                            pendingSeconds = v
-                            state.cycleSeconds = 1.0f
-                            guardCard = true
-                        } else {
-                            state.cycleSeconds = v
-                            onCycleChange(v, false)
+                Spacer(Modifier.height(Dim.gap))
+                Row(
+                    Modifier.fillMaxWidth(),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    Box(Modifier.weight(1f)) {
+                        ChipCell("TIMER", active = !state.cyclePerTrack, p = p, small = true) {
+                            state.cyclePerTrack = false
+                            onCycleChange(state.cycleSeconds, false)
+                        }
+                    }
+                    Box(Modifier.weight(1f)) {
+                        ChipCell("TRACK", active = state.cyclePerTrack, p = p, small = true) {
+                            state.cyclePerTrack = true
+                            onCycleChange(state.cycleSeconds, true)
                         }
                     }
                 }
+                Prose(
+                    "TIMER walks the ring on its own clock — one LEG per color. TRACK " +
+                        "holds a color and steps to the next when the song changes.",
+                    p.muted, modifier = Modifier.padding(top = 6.dp),
+                )
             }
             Spacer(Modifier.height(Dim.gap))
             Prose(

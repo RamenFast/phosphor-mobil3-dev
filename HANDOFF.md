@@ -168,3 +168,17 @@ Notification access granted (adb allow_listener) + capture transport verified E2
 rotation modes physically, chrome-to-gravity hit-testing, insets in rotated chrome
 (honest approximation — top inset not permuted), sensor feel. His HUD was auto — one
 tap on the SETTINGS HUD chip restores the fade (TOP toggle left both on).
+
+## Pass 6 + the close (appended ~23:35) — "let's get everything done this session"
+Commit below = the finish. Sign flip per Ben's receipt (deviceQ−displayQ — if anything
+still turns wrong, flip THAT line). Pre-surface settings-drop CLASS fixed in render.rs
+(grid/glow/focus/beam-theme now applied at renderer creation from mirrors — the
+"toggle-it-twice-after-update" family is dead). Popout = dense 2×2 grid + rule + even
+toggles (RECEIPTED live in landscape with capture metadata showing Braden Ross — one
+frame proving popout density, category icons, landscape console, seek rule, capture
+mirror). Settings = real two-column landscape anchored per rotation side. LIGHT beam
+cycle SHIPPED (slots/ring/LEG/TIMER-TRACK, photosensitivity-gated, persistence already
+wired). TOP lockstep receipted (pure scope). Opus subagents went 5-for-5 on first-try
+compiles. REMAINS FOR BEN'S HANDS: physical rotation matrix re-verify post-sign-flip,
+beam-cycle eyeball, latency/full-song verdicts, lanes 1.1/2 (tether ground truth, mosh
+roam, termux-am) — all gated on his body, not on code. Codex returns Jul 24.
