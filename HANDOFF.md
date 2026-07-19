@@ -47,24 +47,80 @@ keyevent 126=play 85=toggle; room via `run-as dev.phosphor.mobil3 sed -i s,old,n
 shared_prefs/phosphor.prefs.xml` (bare-word sed — quotes die in the shell layers) +
 force-stop + run. Blind stage taps register as GESTURES (a tap dragged Ben's gain to 6.0).
 
-## Next session queue, in order
+## Next session queue (FULL PLAN, written at Ben's ask 2026-07-18 late — three lanes)
 
-1. **Act X polish remainder** (untouched this session, all located): shuffle/repeat on the
-   deck queue (DeckSheet.kt:99-128 absent) → REMOTE HOSTS add/edit UI (MainActivity
-   remoteHosts hardcode) → long-press 450 ms context popout + first-entry hints (Gestures.kt)
-   → LIGHT undo/redo (SheetHost header) → local auto-gain (fresh engine-side port; the
-   band's `·a` tag exists) → ember auto-dim (brightness-budget verb in render.rs) → volume
-   rule live-poll. Also: glass glyph tint pass (dark glyph on glass slab — Ben may want
-   accent), amber POST is hard to screenshot but plays for humans (verify by eye).
-2. **Deferred receipts:** doze force-idle torture (needs USB adb — wireless strands the
-   phone), the two-screen camera latency clip (Ben's rig films laptop scope + phone scope;
-   camera was busy tonight), codex re-audit of the hardened bridge (optional ceremony
-   before v1.0.0).
-3. **M5 remainder: kits · compose · postcards** (unchanged from before).
-4. **M6 prep** (keystore, release.sh, README screenshots from the CURRENT four-soul build,
-   concourse pm3 registration) — Ben's polish round still gates any release.
-5. **Desktop backports queued as asks:** LiquidGlass room; SPSC ring adoption
-   (phosphor-audio still Mutex+Condvar — mobile's spsc.rs is the reference impl).
+**Read NEXUS-FEEDBACK.md** (8 compiled items + my ack appendix at its foot answering the
+verify-questions). **Test bench moves to interserve-linux** (Ben's word); Spotify will be
+open on BOTH machines — drive play per-machine via relay transport/playerctl.
+
+### LANE 1 — the latency hunt, instrumented (Ben: "audio still lagging behind")
+Facts in hand: tailscale phone path is DIRECT (IPv6, no DERP — verified); Ben's wifi signal
+79%; current design is DELIBERATELY 250–350 ms behind (safe constants after the skip fix);
+his A/B is phone-buds vs laptop-speakers side by side, so ALL buffering is audible as lag.
+1. **Tethered ground truth** (Ben's protocol): USB-tether phone→interserve; measure
+   speed/latency/loss per transport — termux `pkg install iperf3` + iperf3 to the PC, ping
+   -c100 jitter/loss over tether vs wifi vs mobile; receipts table into docs/dev/receipts/.
+2. **Adaptive latency** (the real fix): replace fixed catch-up constants with an adaptive
+   jitter buffer — start tight (~80 ms), WIDEN on observed underruns (count zero-fill
+   events in the RT callback — atomic, RT-safe), SHRINK after clean minutes; SETTINGS →
+   REMOTE → `LATENCY · tight / balanced / safe` (tight for tether/LAN, safe = today's
+   shape). HUD buf-ms is the live receipt; Ben's camera rig (films both screens) gives the
+   VISIBLE end-to-end offset receipt — frame-step the clip.
+3. **Network selector (Ben's feature ask)**: SETTINGS → REMOTE → `NETWORK · auto / wifi /
+   mobile` — ConnectivityManager.requestNetwork(TRANSPORT_WIFI|CELLULAR) + bind (process or
+   per-socket) before session connect; reconnect on change; persist. HONEST LIMIT: one TCP
+   stream cannot true-multipath — offer auto (system) instead of "both" and say why in the
+   sheet prose. Verify tailscale stays direct per-transport (status receipt each).
+4. Re-run Ben's full-song verdict per transport+mode; his ears remain the gate.
+
+### LANE 2 — the phone becomes a station terminal (termux + mosh + rmux)
+Ben's flow (his words): **phone mosh → interserve-linux or thinkcenter → rmux attach.**
+VERIFIED already in place (2026-07-18 late): mosh-server on BOTH machines (/usr/bin);
+rmux on BOTH (PC /usr/bin/rmux, laptop ~/.local/bin/rmux — non-login ssh PATH misses the
+laptop's, use the explicit path or fix PATH); Termux on the phone (com.termux) with keys
+per Ben, phone has mosh. rmux = github.com/Helvesec/rmux (rmux.io) — Rust tmux-compatible
+multiplexer with a TYPED SDK to drive CLI/TUI from code; sessions persist on the machine.
+Remaining next session: (1) verify phone→both-machines mosh over tailnet + one
+roam-survival receipt (wifi→mobile mid-session, rmux session lives); (2) `pkg install
+iperf3` in termux for lane 1; (3) the side-channel: termux `am` firing phosphor-mobil3
+intents (REMOTE_CONNECT…) WITHOUT adb — backup control path, test + document; (4) document
+the rig (docs/ + concourse node if it earns one); rmux's typed SDK is a future
+agent-drives-the-phone lever.
+
+### LANE 3 — the Nexus batch (order = Nexus's read + my root-cause; ack at file foot)
+1. **#2/#2b corner-clip ROOT FIX** — CONFIRMED root cause: chrome pads by
+   WindowInsets.safeDrawing, which does NOT include the physical corner radius; with
+   immersive bars hidden the bottom inset ≈ 0 so every room draws into the S25's clipped
+   curve. Fix ONCE at the chrome root: read the Android 12+ RoundedCorner API
+   (rootWindowInsets.getRoundedCorner(BOTTOM_*) radius) → min-inset the console/sheet
+   bottoms; per-room rounding stays cosmetic. Screenshot sweep across a box room + glass.
+2. **#3 bottom-pull phosphor bloom** — the creative budget item: overscroll at bottom =
+   beam blooms proportional to pull (engine brightness path if reachable, else chrome
+   overlay), rubber-band, spring-back HONORING each room's MotionFeel (Nexus's stake:
+   never average the rooms). Borrow the real P7 two-layer decay from ../phosphor render.
+3. **#1 RANDOM ⚄ mode** — picker entry; rolls a REAL mode (band shows `xy45 ⚄`, never
+   "random"); re-roll on track change + tap-to-reroll. App-side roll over the 11-mode pool.
+4. **#4 notification/lock-screen art parity** — feed the SAME resolved bitmap the in-app
+   UI uses into MediaMetadata (remote/Drive art included; never stale, blank when absent).
+5. **#5 thinkcenter output-switch bug — GET REPRO FROM BEN FIRST** (which UI: desktop
+   phosphor vs phone SOURCE picker? exact steps?) — fix differs (desktop sink re-bind vs
+   picker echo). Likely relay S-frame echo vs pw sink move; do not build blind.
+6. **#6 settings parity diff + HUD auto-hide + auto-gain setting** — diff desktop Settings
+   vs mobile groups; HUD auto-hide rides the console timer pattern; auto-gain = decide
+   local-engine port vs desktop passthrough after the diff (band `·a` tag exists).
+7. **#7 custom settings icons** — ImageVector set in phosphor's own language (beam/knob/
+   sink/decay-curve), room-ChromeCharacter-aware (engraved/carved/annotated variants).
+8. **#8 launcher icon: more waveforms, keep the hero** — layer supporting traces behind
+   the anchor figure; phosphor-icon skill laws (closed figures, guard bands, verify
+   on-launcher).
+
+### Carry-over (after the lanes)
+- Act X polish: shuffle/repeat → REMOTE HOSTS editor → long-press+hints → LIGHT undo/redo
+  → ember → volume poll; glass glyph-tint pass; amber POST verify-by-eye.
+- Deferred receipts: doze torture (USB adb ✓ now — udev rule installed), codex re-audit
+  (optional pre-v1.0.0 ceremony).
+- M5 kits/compose/postcards; M6 prep (Ben gates); desktop backports (LiquidGlass room,
+  SPSC adoption).
 
 ## Field notes (so they don't bite twice)
 
