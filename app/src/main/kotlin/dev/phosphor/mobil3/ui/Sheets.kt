@@ -1038,8 +1038,8 @@ fun SettingsSheet(
             ) { lo, hi -> actions.setGlowRandomRange(lo, hi) }
             Prose(
                 "check a ⚄ box to arm the die: it rolls inside the kept range now and " +
-                    "re-rolls on every track, like the mode die. Dragging the plain rule " +
-                    "above takes over and unchecks it.",
+                    "re-rolls on every track, like the mode die. Uncheck to disarm (the " +
+                    "last roll stays put); dragging the plain rule also takes over.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
         }

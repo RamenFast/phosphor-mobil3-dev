@@ -1015,8 +1015,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setBeamEnergy(e: Float) { ui.beamRandomArmed = false; applyBeamEnergy(e) }
     override fun setGlow(g: Float) { ui.glowRandomArmed = false; applyGlow(g) }
 
-    override fun tapBeamRandom() { ui.beamRandomArmed = true; applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi)) }
-    override fun tapGlowRandom() { ui.glowRandomArmed = true; applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi)) }
+    // The checkbox is a true toggle: check = arm + roll now; uncheck = disarm, the last
+    // rolled value simply stays on the rule.
+    override fun tapBeamRandom() {
+        ui.beamRandomArmed = !ui.beamRandomArmed
+        if (ui.beamRandomArmed) applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi))
+    }
+    override fun tapGlowRandom() {
+        ui.glowRandomArmed = !ui.glowRandomArmed
+        if (ui.glowRandomArmed) applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi))
+    }
     override fun setBeamRandomRange(lo: Float, hi: Float) {
         ui.beamRandomLo = lo.coerceIn(1f, 30f)
         ui.beamRandomHi = hi.coerceIn(ui.beamRandomLo, 30f)
