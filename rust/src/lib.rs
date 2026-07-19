@@ -5,6 +5,7 @@
 pub mod bridge_core;
 pub mod engine;
 pub mod selftest;
+pub mod spsc;
 
 #[cfg(target_os = "android")]
 pub mod deck;

@@ -18,10 +18,9 @@ use oboe::{
     AudioStreamBuilder, DataCallbackResult, Error as OboeError, Output, PerformanceMode,
     SharingMode, Stereo, Usage,
 };
-use phosphor_audio::playback::AudibleRing;
-
 use crate::bridge_core::{self, WriterCmd};
 use crate::deck::{RATE, scope_ring};
+use crate::spsc::BlockRing;
 
 // ── Link state (JNI-visible via status_json) ─────────────────────────────────
 pub const ST_IDLE: u8 = 0;
@@ -81,6 +80,12 @@ struct Link {
     rx_a: AtomicU64,
     rx_g: AtomicU64,
     last_rx_ms: AtomicU64,
+    // Audio-latency instrumentation (mirrored from the ring by the watchdog
+    // tick; ask-2 receipts + the Nerd HUD bridge line read these).
+    audio_buf_ms: AtomicU64,
+    audio_skips: AtomicU64,
+    audio_skip_ms: AtomicU64,
+    a_drops: AtomicU64,
 }
 
 fn link() -> &'static Link {
@@ -106,6 +111,10 @@ fn link() -> &'static Link {
         rx_a: AtomicU64::new(0),
         rx_g: AtomicU64::new(0),
         last_rx_ms: AtomicU64::new(0),
+        audio_buf_ms: AtomicU64::new(0),
+        audio_skips: AtomicU64::new(0),
+        audio_skip_ms: AtomicU64::new(0),
+        a_drops: AtomicU64::new(0),
     })
 }
 
@@ -194,21 +203,29 @@ fn json_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
 }
 
-// ── The audio path seam (audit finding 10 lands here in Act II) ──────────────
-// Two opaque endpoints around the ring: the worker pushes through AudioSink,
-// the RT callback pops through AudioTap. Swapping the AudibleRing internals for
-// the lock-free SPSC BlockRing (../phosphor/docs/dev/SPSC-RING-DESIGN.md) is a
-// contained change behind these types — no signature churn on the callback or
-// worker. Deliberately no trait: a vtable has no place on the RT path.
+// ── The audio path (audit finding 10: lock-free on the RT callback) ──────────
+// Two opaque endpoints around the SPSC BlockRing (rust/src/spsc.rs — the first
+// implementation of ../phosphor/docs/dev/SPSC-RING-DESIGN.md): the worker
+// pushes through AudioSink (park-timeout backpressure, no Condvar), the RT
+// callback pops through AudioTap (no alloc/lock/syscall/log) and runs the
+// catch-up policy as pure index math. Deliberately no trait: a vtable has no
+// place on the RT path.
+
+/// ~100 ms of buffered audio at 48 kHz (doc §1 playback sizing → 16384 samples).
+const RING_FRAMES: usize = (RATE as usize) / 10;
+/// Catch-up thresholds (Ben's "lagging behind" killer): above HIGH, the
+/// callback skips down to TARGET — one audible glitch, then live again.
+const CATCHUP_HIGH_FRAMES: usize = (RATE as usize) * 3 / 20; // 150 ms
+const CATCHUP_TARGET_FRAMES: usize = (RATE as usize) * 3 / 50; // 60 ms
 
 #[derive(Clone)]
 struct AudioPath {
-    ring: Arc<AudibleRing>,
+    ring: Arc<BlockRing>,
 }
 
 impl AudioPath {
-    fn new(rate: u32) -> Self {
-        Self { ring: AudibleRing::new(rate) }
+    fn new(_rate: u32) -> Self {
+        Self { ring: BlockRing::new(RING_FRAMES) }
     }
     fn sink(&self) -> AudioSink {
         AudioSink(self.ring.clone())
@@ -222,12 +239,23 @@ impl AudioPath {
     fn close(&self) {
         self.ring.close();
     }
+    /// Post-close teardown drain (single-threaded context — both hot sides are
+    /// already exiting): purge any ghost audio a reconnect must never replay.
     fn clear(&self) {
-        self.ring.clear();
+        self.ring.skip_to_latest(0);
+    }
+    fn buffered_ms(&self) -> u64 {
+        (self.ring.buffered_frames() as u64) * 1000 / RATE as u64
+    }
+    fn skips(&self) -> (u64, u64) {
+        (
+            self.ring.skips.load(Ordering::Relaxed),
+            self.ring.skipped_frames.load(Ordering::Relaxed) * 1000 / RATE as u64,
+        )
     }
 }
 
-struct AudioSink(Arc<AudibleRing>);
+struct AudioSink(Arc<BlockRing>);
 impl AudioSink {
     /// Blocking push; returns false once the path is closed (teardown's waker).
     fn push(&mut self, samples: &[f32]) -> bool {
@@ -235,10 +263,17 @@ impl AudioSink {
     }
 }
 
-struct AudioTap(Arc<AudibleRing>);
+struct AudioTap(Arc<BlockRing>);
 impl AudioTap {
     fn pop_into(&mut self, out: &mut [f32]) -> usize {
         self.0.pop_into(out)
+    }
+    /// RT-safe: index math only. Fires only when the network genuinely raced
+    /// ahead of playback (>150 ms buffered) — drops to 60 ms, newest wins.
+    fn catch_up(&mut self) {
+        if self.0.buffered_frames() > CATCHUP_HIGH_FRAMES {
+            self.0.skip_to_latest(CATCHUP_TARGET_FRAMES);
+        }
     }
 }
 
@@ -257,14 +292,17 @@ impl AudioOutputCallback for RemoteOutput {
         _s: &mut dyn AudioOutputStreamSafe,
         frames: &mut [(f32, f32)],
     ) -> DataCallbackResult {
-        let need = frames.len() * 2;
-        self.scratch.resize(need, 0.0);
-        let got = self.tap.pop_into(&mut self.scratch);
+        // RT path law (audit finding 10): no alloc, no lock, no syscall, no
+        // log. Scratch is preallocated at open; a burst beyond it (absurd)
+        // plays silence for the tail rather than allocating.
+        let need = (frames.len() * 2).min(self.scratch.len());
+        self.tap.catch_up(); // index math only — the anti-lag policy
+        let got = self.tap.pop_into(&mut self.scratch[..need]);
         self.scratch[got..need].fill(0.0);
         // Instant local mute: keep draining (no stale-buffer buildup), emit silence.
         let muted = self.muted.load(Ordering::Relaxed);
         for (i, f) in frames.iter_mut().enumerate() {
-            if muted {
+            if muted || 2 * i + 1 >= need {
                 f.0 = 0.0;
                 f.1 = 0.0;
             } else {
@@ -302,7 +340,9 @@ fn open_output(
         .set_channel_count::<Stereo>()
         .set_callback(RemoteOutput {
             tap: path.tap(),
-            scratch: Vec::new(),
+            // Preallocated far above any real AAudio burst (8192 frames) — the
+            // callback never resizes it (finding 10's alloc half).
+            scratch: vec![0.0; 16384],
             muted,
             restart_tx,
         })
@@ -516,7 +556,7 @@ pub fn status_json() -> String {
     let welcome = l.slots.welcome.lock().unwrap().clone();
     let error = l.slots.error.lock().unwrap().clone();
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -529,6 +569,10 @@ pub fn status_json() -> String {
         l.listing_gen.load(Ordering::Relaxed),
         l.art_gen.load(Ordering::Relaxed),
         l.leaked_threads.load(Ordering::Relaxed),
+        l.audio_buf_ms.load(Ordering::Relaxed),
+        l.audio_skips.load(Ordering::Relaxed),
+        l.audio_skip_ms.load(Ordering::Relaxed),
+        l.a_drops.load(Ordering::Relaxed),
         if welcome.is_empty() { "null".into() } else { welcome },
         if error.is_empty() { "null".into() } else { error },
     )
@@ -827,8 +871,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 
     // Audio worker: bounded, drop-if-behind — audio can glitch, the scope never
     // stalls. Exits on cancel, on a closed ring (finding 5's waker), or when the
-    // reader drops the sender.
-    let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(24);
+    // reader drops the sender. Depth 12 ≈ 120 ms: half the old buffering (the
+    // ring's callback-side catch-up owns the rest of the anti-lag policy).
+    let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(12);
     session.parts.audio = {
         let mut sink = path.sink();
         let shared_a = shared.clone();
@@ -925,6 +970,11 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         }
         // Mirror the global mute onto this session's flag (JNI writes the global).
         muted.store(l.muted.load(Ordering::Relaxed), Ordering::Relaxed);
+        // Mirror ring instrumentation into the JNI-readable atomics (1/tick).
+        l.audio_buf_ms.store(path.buffered_ms(), Ordering::Relaxed);
+        let (skips, skip_ms) = path.skips();
+        l.audio_skips.store(skips, Ordering::Relaxed);
+        l.audio_skip_ms.store(skip_ms, Ordering::Relaxed);
         std::thread::sleep(Duration::from_millis(250));
     }
 }
@@ -1038,7 +1088,9 @@ fn reader(
                 if !l.cfg_geometry.load(Ordering::Relaxed) {
                     scope_ring().lock().unwrap().push_interleaved(&f32buf);
                 }
-                let _ = audio_tx.try_send(f32buf);
+                if audio_tx.try_send(f32buf).is_err() {
+                    l.a_drops.fetch_add(1, Ordering::Relaxed);
+                }
             }
             b'G' => {
                 l.rx_g.fetch_add(1, Ordering::Relaxed);
