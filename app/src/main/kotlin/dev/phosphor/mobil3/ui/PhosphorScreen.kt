@@ -75,6 +75,7 @@ interface ScopeActions {
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
     fun openCaptureMetadataSettings()
+    fun openLink(url: String)
     fun isScopeRotationLocked(): Boolean
     fun setScopeRotationLocked(locked: Boolean)
     fun isUiPlacementLocked(): Boolean
@@ -249,6 +250,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setRemoteNetworkMode(mode: Int) = actions.setRemoteNetworkMode(mode)
             override fun openRoom() { }
             override fun openLight() { }
+            override fun openManual() { }
+            override fun openLink(url: String) = actions.openLink(url)
             override fun remoteHosts() = actions.remoteHosts()
             override fun startRemoteHost(label: String, host: String, port: Int) =
                 actions.startRemoteHost(label, host, port)
@@ -601,6 +604,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     sheetActions.withSheetRouting(
                         openRoom = { sheet = Sheet.ROOM },
                         openLight = { sheet = Sheet.LIGHT },
+                        openManual = { sheet = Sheet.MANUAL },
                     ),
                     focusValue = focusValue,
                     onFocus = { focusValue = it; actions.setFocus(it) },
@@ -609,6 +613,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     settingsPullActive = false
                     sheet = Sheet.NONE
                 }
+                Sheet.MANUAL -> ManualSheet(
+                    p, reduced,
+                    onOpenLink = { actions.openLink(it) },
+                ) { sheet = Sheet.SETTINGS }
                 Sheet.NONE -> {}
             }
             } // inner chrome box (rootHeightPx / chrome-space layout)
@@ -617,14 +625,16 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     }
 }
 
-// Route the settings sheet's room/light links back into the sheet state machine.
+// Route the settings sheet's room/light/manual links back into the sheet state machine.
 private fun SheetActions.withSheetRouting(
     openRoom: () -> Unit,
     openLight: () -> Unit,
+    openManual: () -> Unit = {},
 ): SheetActions {
     val base = this
     return object : SheetActions by base {
         override fun openRoom() = openRoom()
         override fun openLight() = openLight()
+        override fun openManual() = openManual()
     }
 }

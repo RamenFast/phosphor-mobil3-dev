@@ -695,6 +695,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
+    override fun openLink(url: String) {
+        // Cards leave through the user's own browser — the app renders no web content.
+        runCatching {
+            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+        }
+    }
+
     private fun refreshCaptureMetadataAccess() {
         val component = ComponentName(this, CaptureNotificationListenerService::class.java)
         ui.captureMetadataAccess = getSystemService(NotificationManager::class.java)

@@ -78,7 +78,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK }
+enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK, MANUAL }
 
 private fun sheetCurlProgress(
     fillFraction: Float,
@@ -541,11 +541,22 @@ fun SourceSheet(
       ) {
         if (consentCard) {
             Prose(
-                "Android will ask you to let Phosphor see what's playing. Phosphor turns " +
-                    "that sound into light on this screen — nothing is recorded, nothing " +
-                    "leaves your phone. You can turn it off any time with the LIVE key.",
-                p.ink, modifier = Modifier.padding(bottom = Dim.gapLg),
+                "Android is about to say “start recording or casting” and ask you to " +
+                    "SHARE YOUR SCREEN. That's the system's blanket wording for media " +
+                    "capture — what phosphor actually takes is the AUDIO: the sound " +
+                    "other apps play (Spotify works today) becomes light on this glass.",
+                p.ink, modifier = Modifier.padding(bottom = Dim.gap),
             )
+            Prose(
+                "Nothing is recorded, nothing leaves your phone, no data is taken — " +
+                    "ever. The source is public, so you don't have to take our word " +
+                    "for it. LIVE turns it off any time.",
+                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
+            )
+            LinkCard(
+                "read the source", "github.com/RamenFast/phosphor-mobil3", p,
+            ) { actions.openLink("https://github.com/RamenFast/phosphor-mobil3") }
+            Spacer(Modifier.height(Dim.gapLg))
             Row(horizontalArrangement = Arrangement.spacedBy(Dim.gap)) {
                 FlatKey("CONTINUE", p, active = true) {
                     consentCard = false
@@ -1211,6 +1222,9 @@ fun SettingsSheet(
                     "sample-locked to what you hear. GPL-3.0. The beam remembers.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
+            SettingsGlyphRow("manual · how it all works", SettingsGlyph.About, p) {
+                actions.openManual()
+            }
             // The bench keeps a service stamp: the REAL date the knobs were last
             // saved (Annotated rooms only — a calibration sticker, typeset).
             if (LocalRoomStyle.current.designators && state.calDate.isNotBlank()) {
@@ -1288,6 +1302,8 @@ interface SheetActions {
     fun setRemoteNetworkMode(mode: Int)
     fun openRoom()
     fun openLight()
+    fun openManual()
+    fun openLink(url: String)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
     fun startRemoteHost(label: String, host: String, port: Int)
     fun setRemoteStreams(audio: Boolean, geometry: Boolean)
