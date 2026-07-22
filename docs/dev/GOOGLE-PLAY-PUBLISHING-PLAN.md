@@ -1,5 +1,7 @@
 # Google Play publishing plan
 
+> **Product-alignment addendum, 2026-07-22:** This document still controls Google Play publication, commerce, privacy, and Console work. The broader product is now specified in `vision/` and `spec/`. Play and Fortress are separate compile-time distributions. Fortress-only agent, overlay, ADB/Shizuku, and privileged-audio work must be absent from the Play AAB. Any earlier first-release non-goal that conflicts with the new cabinet means “does not block initial Play submission,” not “must not be designed or built in Fortress.” The Play promises remain unchanged: no ads, seven full days, $3.99 one-time Pro, no auto-charge, no subscription, and minimal user-controlled diagnostics.
+
 **App:** Phosphor Mobile (`dev.phosphor.mobil3`)
 **Plan date:** 2026-07-22
 **Repository baseline:** `master` at `9e1ab3b`, app version `1.0.7` / version code `10007`

@@ -1,5 +1,7 @@
 # phosphor-mobil3 — Architecture
 
+> **Authority notice, 2026-07-22:** This describes the working MVP baseline. Future architecture is governed by `vision/`, `spec/`, and `docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md`. The binding additions are the Play/Fortress compile-time seam, one causal store with provenance, signature-guarded Binder plus the outbound Nexidex/tailnet gate, the reopened shell-audio spike, and the ProjectM blended scope-view architecture.
+
 Decisions ratified in the 2026-07-18 planning session (web-verified). The full plan lived
 in the session plan file; this is the standing reference.
 

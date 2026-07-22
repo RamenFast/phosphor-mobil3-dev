@@ -1,18 +1,10 @@
 # SERIOUS TODOS
 
-- [ ] M4 Shizuku spike: can ADB-level privileges grant CAPTURE_AUDIO_OUTPUT-equivalent capture (Spotify)? Timeboxed; record outcome here either way.
+- [ ] **P0 Fortress audio spike, reopened 2026-07-22:** test whether a process already running as shell can capture output through `REMOTE_SUBMIX`/AudioPolicy, first with scrcpy ground truth, then a Shizuku UserService, then an ADB sidecar fallback. Record Spotify, SoundCloud, YouTube Music, browser/game, route, lock, reboot, and DRM edge cases. Full contract: `spec/AUDIO-CONNECTIVITY-AND-PROJECTM.md`.
 - [ ] Instrumentation-test suite deferred (SELFTEST smoke covers cheaper) — revisit if regressions slip past.
 - [ ] core-ktx/lifecycle pinned below latest until platforms;android-37 publishes.
 - [ ] M4 remainder: mic source (RECORD_AUDIO AudioRecord path in CaptureService, mode extra) + in-app capture STOP control (service is not exported — only the app itself or force-stop can end it until the SRC popout lands in M5).
-- [x] Shizuku spike — **CONCLUSIVE NEGATIVE (2026-07-18).** Shizuku installed (from GitHub;
-  Play version refused the S25's Android version). Shizuku hands an app the shell UID (2000)
-  privilege level — which is exactly what an adb shell has. Tested directly from adb:
-  `pm grant dev.phosphor.mobil3 android.permission.CAPTURE_AUDIO_OUTPUT` →
-  `SecurityException: Permission ... is managed by role`. That permission is ROLE-MANAGED, not
-  a runtime grant, so neither shell nor Shizuku can confer it — only system-signed/privileged
-  apps (Samsung's own recorder) hold it. **There is no sideloaded path to capturing opted-out
-  apps (Spotify/YT Music/DRM). Do not revisit.** The honest capture story stands: deck +
-  browsers/games/non-DRM apps + mic.
+- [x] Shizuku permission-grant test — **NARROW NEGATIVE (2026-07-18), overbroad conclusion corrected 2026-07-22.** Directly running `pm grant dev.phosphor.mobil3 android.permission.CAPTURE_AUDIO_OUTPUT` fails because the permission is role/signature managed. This proves that shell cannot grant the privileged permission to the ordinary Phosphor app process. It does **not** prove that a shell process cannot capture output. Read-only S25 evidence now shows `com.android.shell` itself already holds `CAPTURE_AUDIO_OUTPUT`, `CAPTURE_MEDIA_OUTPUT`, `MODIFY_AUDIO_ROUTING`, and `MANAGE_MEDIA_PROJECTION`, and the remote-submix path exists. Shizuku UserService can execute code as UID 2000. Therefore all-app music capture is a plausible Fortress-only controlled spike, not a Play path and not yet a shipped capability. Public MediaProjection remains opt-out-respecting and must stay honest.
 - [ ] Resting-beam dot (desktop law) not yet on mobile: silent source shows black, should show the centered dot + `no signal · <source>` label (M5).
 - [ ] Genuine ">120" quality lever (Ben wants above-120): Android can't PRESENT above the panel
   rate (compositor vsync-locks all app surfaces; caps = [Mailbox, Fifo], no Immediate). The

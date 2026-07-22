@@ -1,5 +1,7 @@
 # Handoff — next session starts here
 
+> **CURRENT FRONT DOOR, 2026-07-22:** Ben has ratified a larger Phosphor/Nexidex product alignment. No application code was changed in that specification pass. Read `vision/PHOSPHOR-LIVING-INSTRUMENT.md`, `spec/README.md`, and `docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md` before acting. The detailed 2026-07-18 completion record below remains valuable baseline evidence, but its “queue is empty” statement and any conflicting architecture/UX assumptions are superseded.
+
 ## Where we are (2026-07-18 night, after the COMPLETION session): the queue is EMPTY of buildables
 
 One Fable session (this one) executed the entire three-lane plan with six codex

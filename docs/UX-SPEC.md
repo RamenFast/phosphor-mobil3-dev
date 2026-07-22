@@ -1,5 +1,7 @@
 # phosphor-mobil3 — Mobile UX Spec
 
+> **Authority notice, 2026-07-22:** This remains the implementation-era UX reference for existing behavior. Where it conflicts with `vision/PHOSPHOR-LIVING-INSTRUMENT.md` or `spec/`, the new Fi/Ti cabinet controls. Notable supersessions include the six-room curated shelf plus packs, Android rotation-lock authority, screen-right landscape sheets, the 1.5 second one-finger arm, explicit PiP/overlay controls, and the ProjectM blended scope view.
+
 **Target:** Samsung Galaxy S25 · 6.2" 120 Hz LTPO AMOLED · 2340×1080 · centered punch-hole · Android 15/16 One UI
 **Thesis:** The scope is the app. Every pixel of chrome is a guest in the scope's house — summoned, translucent, sharp-cornered, and quick to leave. Light on black; the S25's OLED *is* the phosphor.
 

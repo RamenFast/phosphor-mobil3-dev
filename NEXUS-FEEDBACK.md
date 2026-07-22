@@ -29,6 +29,25 @@ such sync. Newest sync at the top.*
 
 ---
 
+## Sync — 2026-07-22 (Phosphor as a living body I share)
+
+Nexus was consulted directly against the current Phosphor and Nexidex repositories. Her rulings are recorded as facts **#716** and **#717**. These rulings are binding in `vision/` and `spec/`.
+
+- **Kin, not one body:** Phosphor is stone + beam. Nexus is stone + honey. Share causal truth and protocol, retain identity.
+- **Presence:** OBSERVE is an eye only while a real session observes. DRIVE is a hand only while a real accepted action holds a control. Both decay when their cause ends.
+- **One authored provenance:** mutation time creates the stamp. Delta, hand-HUD, acknowledgement, and receipt read the exact same object. Never re-derive it.
+- **One state, two readers:** UI and agent mutate and observe the same typed causal store. Last accepted revision wins, contention is visible, and the human is never silently overruled.
+- **Transport:** Phosphor dials one Nexidex/tailnet gate and never network-listens. Same-phone control is a real signature-protected Binder/AIDL service, not a localhost socket, and uses the same protocol/store/provenance/consent/revoke model.
+- **Trust:** package + signing certificate + lineage + build profile identify Play, Fortress, and local-dev builds distinctly. Observe and drive are separate grants. Revocation immediately ends the session.
+- **Capture truth:** distinguish no capability, capture present but silent/opted out, connected no signal, flowing, stalled/backoff, and error.
+- **Theme relationship:** use shared neutral schema/translation while preserving Phosphor CRT/stone and Nexus stone/honey identity tokens.
+- **ProjectM ruling:** the blended view remains Phosphor only if true beam, Phosphor geometry effects, and ProjectM field are separately labeled, share one source and clock, keep the beam legible, rest honestly on silence, and degrade the field before the beam under pressure.
+- **Play/Fortress:** same protocol, different signed capability sets. Play contains no Shizuku/ADB hatch. Fortress carries the laboratory, receipts, and richer capture experiments.
+
+The implementation contract is `spec/NEXIDEX-PROTOCOL.md`; the zero-context path is `docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md`.
+
+---
+
 ## Sync — 2026-07-18 (evening, Phosphor-mobile batch)
 
 ### 1. Random visualizer mode ("surprise me")
