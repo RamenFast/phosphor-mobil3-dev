@@ -81,3 +81,15 @@ Each entry contains:
 - **owner:** Public publisher/release phases
 - **receipt:** Pending public allowlist, secret scan, independent build, and downloaded-asset checksum verification.
 - **supersedes:** None
+
+## PRD-0006
+
+- **date:** 2026-07-25
+- **capability:** Ratified signing lineages and data-bearing migration
+- **fortress_behavior:** `dev.phosphor.mobil3.fortress` uses the Ben-controlled RamenFast estate certificate `e4d14c...d9b00`, remains co-installable, and does not disturb the installed debug app or its data.
+- **play_blocker:** Installed Play builds use a separate Google Play App Signing identity. They cannot update or coexist under `dev.phosphor.mobil3` with the currently installed unrelated debug signer.
+- **policy_evidence:** Ben's 2026-07-25 instruction; `decisions/2026-07-25-phosphor-2.0-release-contracts.md`; Android package signature enforcement; Play Console certificate evidence pending enrollment.
+- **required_public_change:** Publish Play as `dev.phosphor.mobil3`; exclude the Fortress keystore, certificate trust implementation, private receipts, and suffix activation paths; provide versioned settings/theme export-import and document the explicit debug-to-Play migration.
+- **owner:** Distribution/release phases
+- **receipt:** `docs/dev/receipts/phosphor-2.0/phase-01-contracts-and-signing.md`; artifact and migration tests pending.
+- **supersedes:** PRD-0004

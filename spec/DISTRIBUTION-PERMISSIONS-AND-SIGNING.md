@@ -1,6 +1,6 @@
 # Distribution, permissions, and signing specification
 
-**Status:** Binding
+**Status:** Binding for Phosphor `2.0.0`
 
 ## 1. Compile-time distribution seam
 
@@ -11,7 +11,7 @@ play
 fortress
 ```
 
-Recommended identities:
+Required identities:
 
 ```text
 play:     dev.phosphor.mobil3
@@ -33,16 +33,17 @@ A CI artifact scan enforces absence.
 
 ## 2. Signing identities
 
-### 2.0 Existing package lineage gate
+### 2.0 Ratified package and lineage strategy
 
-The working MVP already uses `dev.phosphor.mobil3` with a local release signature. Before Play enrollment or installing flavored builds over real user data, Ben must choose and receipt one lineage strategy:
+The working MVP and currently installed debug build already use `dev.phosphor.mobil3`. The 2026-07-25 release instruction resolves the lineage strategy:
 
-1. **Preserve update lineage:** use the current acceptable release app-signing key as the Play app-signing key where Play Console enrollment supports that choice, then move Fortress to the suffix package.
-2. **Start a new Play lineage:** use a new/Google-generated Play app-signing key, accept that it cannot update the currently installed differently signed package, and provide explicit settings/theme export-import or a documented uninstall/reinstall migration.
+1. **Fortress:** `dev.phosphor.mobil3.fortress`, signed by the Ben-controlled RamenFast estate certificate. It installs beside the current debug package and future Play package.
+2. **Play:** `dev.phosphor.mobil3`, signed for installed users by a separate Google Play App Signing identity. The Play certificate is unknown until Console enrollment and is a release gate, not a placeholder to guess.
+3. **Current debug:** preserve the installed debug `dev.phosphor.mobil3` and its data during Fortress activation. A later Play installation cannot coexist under the same package name and unrelated signer, so it requires a signed settings/theme export, archived debug APK identity, explicit debug uninstall, Play install, and import.
 
 Android will not update an installed package across unrelated signing certificates. A package-name match does not solve that. Do not let a local MVP and Play build silently compete for `dev.phosphor.mobil3` with incompatible certificates.
 
-The intended steady state remains Play on `dev.phosphor.mobil3` and Fortress on a co-installable suffix, but implementation must inspect the current installed/release certificate and make the lineage decision before data-bearing device migration.
+The intended steady state is Play on `dev.phosphor.mobil3` and Fortress on the co-installable suffix. No build may overwrite, uninstall, clear, or migrate the current debug package implicitly.
 
 ### 2.1 Play
 
@@ -54,15 +55,20 @@ The intended steady state remains Play on `dev.phosphor.mobil3` and Fortress on 
 
 ### 2.2 Fortress
 
-- Use a dedicated Ben-controlled release key, not the Android debug keystore.
+- Use the healthy Ben-controlled RamenFast keystore outside the repository, not the Android debug keystore.
+- Required current certificate SHA-256: `e4d14ce2d62983acd393f012cbce759b6c97bdcca979feeb04a97afb279d9b00`.
 - Store private key material outside the repository.
 - Record certificate SHA-256 and rotation procedure.
-- Prefer the same estate trust family as Nexidex only if the certificate governance is intentionally shared.
+- This certificate is the Fortress estate identity. A later rotation requires an accepted Android signing lineage and a superseding decision/receipt.
 - Do not require the Play key to build or use Fortress.
+
+Release signing fails closed. If store path, store password, alias, key password, key entry, expected certificate, or signing tool is unavailable or mismatched, `playRelease`, `fortressRelease`, and release bundles fail. They never fall back to the Android debug keystore or produce an unsigned artifact under a release filename.
 
 ### 2.3 Local development
 
 Local dev signatures may be enrolled explicitly in a development trust file. They never automatically inherit production trust.
+
+The current installed Phosphor and Nexus packages use Android Debug certificate SHA-256 `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`. That identity is development-only. It must never be described as the stable release identity.
 
 ## 3. Nexidex compatibility
 
@@ -75,6 +81,8 @@ The UI shows the connected identity distinctly:
 - `PHOSPHOR LOCAL DEV`
 
 Capabilities differ by identity. A Play identity cannot claim Fortress capabilities even if a state flag is tampered with.
+
+The current debug-signed Nexus installation cannot cross the production Fortress signature-permission wall. Production same-phone activation requires: Nexus export/backup, uninstall, estate-signed reinstall, import, signer verification, and bad-signer/rollback tests. Until that human-approved activation gate, use an explicitly enrolled development pair or authenticated tailnet development session and report production Binder as `signer_migration_required`.
 
 ## 4. Permission inventory model
 
@@ -190,6 +198,8 @@ For every Play candidate:
 6. Review exported components and Binder guards.
 7. Confirm Data Safety against packet/network behavior and backend logs.
 8. Run Play pre-review checks and treat them as findings, not proof of declaration accuracy.
+9. Build from a checkout with release-signing inputs removed and assert a release task fails instead of selecting debug signing.
+10. Verify package, version `2.0.0`, debuggability, installed-app certificate expectation, and absence of private trust material.
 
 For every Fortress candidate:
 
@@ -198,6 +208,8 @@ For every Fortress candidate:
 3. Confirm Nexidex certificate identity and capability grants.
 4. Confirm elevated features fail closed without Shizuku/ADB.
 5. Confirm audit and one-tap stop paths.
+6. Confirm package `dev.phosphor.mobil3.fortress`, version `2.0.0`, non-debuggable release, and certificate `e4d14c...d9b00` with `apksigner`.
+7. Build with every signing input independently removed or corrupted and assert fail-closed behavior.
 
 ## 11. Ask-for-forgiveness interpretation
 
@@ -213,18 +225,40 @@ The correct response to a Play conflict is:
 
 This keeps the originating application intent without endangering the public listing or user trust.
 
-## 12. Human gates before implementation/release
+## 12. Settings, artifact, and release rollback
+
+Before either release distribution touches data-bearing installs, export settings and themes through a versioned inert format containing schema version, source package, source version, export timestamp, content hashes, and no executable content or secrets. Import validates schema, bounds, hashes, package-independent IDs, and reports every skipped or migrated field.
+
+The release rollback manifest contains:
+
+- private branch, phase commit, tag, release, and asset IDs;
+- package names, versions, APK/AAB hashes, and certificate reports;
+- archived installed APK identities and signed settings/theme exports;
+- exact `git revert <phase-commit>` sequence;
+- suffix-only Fortress stop/uninstall command;
+- archived APK reinstall instructions where needed;
+- signed export import command and verification;
+- proof that preserved debug data still launches after Fortress removal.
+
+Git tags/releases and historical assets are retained. A correction publishes a superseding checkpoint rather than mutating signed evidence.
+
+## 13. Human gates before implementation/release
+
+Already resolved by the 2026-07-25 instruction and Phase 01 custody check:
+
+- Fortress package `dev.phosphor.mobil3.fortress`;
+- Fortress RamenFast estate certificate `e4d14c...d9b00` and external key custody;
+- separate Google Play App Signing identity;
+- preservation of the current debug install during Fortress activation.
 
 Ben must eventually provide or approve:
 
-- final Fortress package name;
-- Fortress signing-key governance;
-- Nexidex and Fortress certificate SHA-256 values;
 - Play Console signing certificate after enrollment;
+- final Nexus signer migration activation after backup/restore rehearsal;
 - whether any overlay attempt enters the first Play review;
 - exact six curated rooms if existing IDs differ;
 - final theme and preset license policy;
 - store listing/legal/price submission;
 - diagnostics backend, if any.
 
-These decisions do not block writing or implementing the neutral architecture first.
+These remaining decisions do not block neutral architecture, flavor separation, fail-closed signing, export/import, tests, or Fortress artifacts. They do block the specific production trust or store action they govern.

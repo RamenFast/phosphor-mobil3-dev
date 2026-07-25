@@ -1,6 +1,6 @@
 # Phosphor specification cabinet
 
-**Status:** Source of truth from 2026-07-22 onward
+**Status:** Source of truth for Phosphor `2.0.0`
 
 This directory is the normative Ti specification for the next Phosphor Mobile build. Read the Fi source first:
 
@@ -13,6 +13,7 @@ This directory is the normative Ti specification for the next Phosphor Mobile bu
 7. [`DISTRIBUTION-PERMISSIONS-AND-SIGNING.md`](DISTRIBUTION-PERMISSIONS-AND-SIGNING.md)
 8. [`ACCEPTANCE.md`](ACCEPTANCE.md)
 9. [`../docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md`](../docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md)
+10. [`../decisions/2026-07-25-phosphor-2.0-release-contracts.md`](../decisions/2026-07-25-phosphor-2.0-release-contracts.md)
 
 ## Authority order
 
@@ -52,6 +53,6 @@ A feature is not complete until it has:
 7. performance and lifecycle tests;
 8. an acceptance receipt named in `ACCEPTANCE.md`.
 
-## No-code status of this cabinet
+## Current implementation status
 
-This cabinet was authored as a specification and handoff pass. It does not claim that the described functionality is implemented. The implementation baseline remains commit `383472b` until a future executor changes it.
+The Phosphor 2.0 release program is active on `release/phosphor-2.0.0`. Phase 00 commit `70c8e2860bfe22310dd41bb341b19202580fef56` changed documentation and evidence only. The application remains the 1.0.7 implementation until later phase receipts name compiled behavior. Specifications are requirements, never proof that a feature is live.

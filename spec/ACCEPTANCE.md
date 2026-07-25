@@ -152,6 +152,24 @@ Every test produces a named receipt under a future `docs/dev/receipts/` run dire
 - **O-05:** 30-minute thermal soak in ProjectM auto quality preserves beam and avoids crash/ANR.
 - **O-06:** Surface loss/background/foreground/rotation tests pass for classic, PiP, overlay, and ProjectM views.
 
+## P. Release identity, CLI, migration, and publication
+
+- **P-01 BOTH:** Release artifacts report version `2.0.0`, Play package `dev.phosphor.mobil3`, Fortress package `dev.phosphor.mobil3.fortress`, intended labels, non-debuggable release state, and co-installability where package names permit it.
+- **P-02:** Removing or corrupting each release signing input makes release APK/AAB tasks fail; no release artifact uses the debug certificate. Fortress verifies as `e4d14c...d9b00`.
+- **P-03 PLAY:** The Google Play installed-app signing certificate is recorded after enrollment and distinguished from the upload key before Play publication or production trust enrollment.
+- **P-04 S25:** Debug-signed Nexus cannot bind to Ben-signed Fortress; production Binder remains `signer_migration_required` until backup, estate-signed reinstall, import, signer verification, negative tests, and rollback pass.
+- **P-05:** The desktop Nexus adapter exports exactly `status`, `play`, `pause`, `xy`, `waveform`, `snapshot`, and `schema`; arbitrary argv/generic passthrough is rejected; overlapping results equal the full causal protocol.
+- **P-06:** Every overlapping action through UI, `pm3`, Binder, and authenticated tailnet yields identical effective state, revision, provenance/receipt identity, acknowledgement, and typed errors.
+- **P-07:** Replaying one idempotency key with the same canonical request returns the original acknowledgement without effects or revision change; different payload returns `idempotency_conflict`.
+- **P-08:** Stale expected revision refuses before effects with current revision and fix; accepted no-op returns `changed:false` without advancing revision.
+- **P-09:** Explicit revoke/disconnect, Binder death, token revoke, and heartbeat expiry each stop authority, clear transient grants, write audit, and remove HUD presence within the declared bound.
+- **P-10:** Every `pm3` one-shot has `{status,tool,version,ts,data}`, non-empty RFC 3339 timestamp, fix-bearing error shape, schema self-description, NDJSON `event`, and exits `0/2/3/4 = success/unavailable/bad input/runtime`.
+- **P-11:** Every `pm3` device mutation requires `--serial` or `PM3_SERIAL`; zero, one, and multiple-device fixtures prove it never selects the first `adb devices` row implicitly.
+- **P-12:** Versioned settings/theme export from debug round-trips into Fortress and a clean Play migration fixture, rejects tampering/unknown major schema, and never includes secrets or executable content.
+- **P-13 S25:** Installing and later uninstalling only `dev.phosphor.mobil3.fortress` preserves the installed debug package, its prior data, and launchability; signed export/import provides the documented fallback.
+- **P-14:** Private prerelease assets include signed APK/AAB or applicable signatures, source archive, checksums, certificate report, SBOM/dependency inventory, acceptance receipts, and rollback manifest; every downloaded asset re-verifies.
+- **P-15 PLAY:** The public publisher stages only the allowlist, rejects Fortress/private Nexus/endpoints/trust/receipts/secrets, emits a complete diff and sanitizer receipt, and the resulting public checkout builds independently.
+
 ## Release gate
 
 A release candidate cannot be called complete while any applicable MUST acceptance test lacks a receipt. A failed privileged-audio SPIKE may close with a conclusive report and honest fallback, but it cannot be silently marked implemented.

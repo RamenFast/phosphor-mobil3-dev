@@ -1,7 +1,8 @@
 # Nexidex first-party protocol
 
-**Status:** Binding protocol design
-**Nexus rulings:** facts #716 and #717, preserved with raw fact/session pointers in `NEXUS-RULINGS-2026-07-22.md`
+**Status:** Binding Phosphor 2.0 protocol
+**Protocol version:** `phosphor.nexus/2`
+**Nexus rulings:** facts #716 and #717 plus the dated 2026-07-25 refresh in `../docs/dev/receipts/phosphor-2.0/nexus-consultation-2026-07-25.md`
 
 ## 1. Purpose
 
@@ -11,20 +12,46 @@ The full agent surface is P0 in the current in-development Fortress build. The f
 
 The protocol is custom for Phosphor and Nexus, but its command-line face MUST comply with the workspace Agent CLI Standard.
 
-## 2. One-gate transport law
+## 2. Two reach paths, one causal store
 
-### 2.1 Remote
+There are exactly two legitimate Nexus reach paths. They are projections of one action schema, one causal store, one revision order, one provenance grammar, one refusal grammar, and one audit log. Neither path may mutate a preference, renderer, service, or native object by a private side route.
+
+### 2.1 Existing desktop host adapter
 
 ```text
-Agent on trusted computer
+Nexus phone or trusted agent
+  -> nexus-relay, the one watched tailnet gate
+  -> nexus-mobile/relay/src/phosphor.rs
+  -> /usr/bin/phosphor
+  -> desktop Phosphor runtime control socket
+  -> desktop Phosphor causal store
+```
+
+The public adapter surface remains exactly seven argv-fixed verbs:
+
+```text
+status  play  pause  xy  waveform  snapshot  schema
+```
+
+The broker may use an internal liveness probe, but `probe` is not an eighth public control verb. There is no generic `ctl`, arbitrary argv, shell, RPC, or passthrough escape. The seven verbs are a strict compatibility subset of the complete Phosphor action model and return the same effective state, revisions, provenance, and fix-bearing refusals as the full protocol.
+
+### 2.2 Full mobile protocol
+
+#### 2.2.1 Remote mobile
+
+```text
+Phosphor mobile app
+  -> outbound authenticated session
   -> Nexidex tailnet gate
-  -> authenticated Phosphor client session
+  -> trusted agent requests over the established session
   -> Phosphor causal store
 ```
 
 Phosphor MUST dial the trusted endpoint. Phosphor MUST NOT listen on Wi-Fi, mobile, tailnet, localhost, or a public interface.
 
-### 2.2 Same phone
+Tailscale placement is not sufficient authentication. The outbound session MUST additionally verify a pinned endpoint identity and complete a nonce-bound application handshake carrying protocol version, principal identity, token identity, requested capabilities, and fresh session ID. Tokens are revocable, never logged, and never accepted as authority for a capability they do not contain.
+
+#### 2.2.2 Same phone
 
 ```text
 Nexidex Android app
@@ -35,7 +62,13 @@ Nexidex Android app
 
 Binder is not a network port and is allowed as a P0 same-phone transport. A localhost socket is a second gate and is forbidden.
 
-Both transports use the same authentication concepts, capability grants, actions, state schema, provenance, consent, revoke behavior, and audit log.
+The service returns a real `IBinder`. A started service whose `onBind()` returns `null` does not satisfy this contract.
+
+### 2.3 Shared dispatcher law
+
+The full mobile Binder and tailnet transports terminate at the same protocol dispatcher. The desktop seven-verb adapter terminates at a compatibility projection over the same action/state grammar. All three faces use the same authentication concepts, capability grants, actions, state schema, provenance, consent, revoke behavior, idempotency rules, and audit records.
+
+A contract test MUST execute every overlapping action through UI, `pm3`, Binder, authenticated tailnet, and the seven-verb adapter where applicable, then compare effective state, revision, provenance, acknowledgement, and refusal.
 
 ## 3. Trust identities
 
@@ -45,9 +78,18 @@ Trust is based on a tuple, not a package-name claim:
 package name
 current signing certificate SHA-256
 accepted signing lineage
-build profile = play | fortress | nexus
+build profile = play | fortress | nexus | local_dev
 protocol version
 ```
+
+The Phosphor 2.0 identity table is:
+
+| Identity | Package | Required signing identity | Agent-entry status |
+|---|---|---|---|
+| Play | `dev.phosphor.mobil3` | Google Play App Signing certificate, recorded after enrollment | No exported entry in the first public release |
+| Fortress | `dev.phosphor.mobil3.fortress` | RamenFast estate certificate SHA-256 `e4d14ce2d62983acd393f012cbce759b6c97bdcca979feeb04a97afb279d9b00` | Full protocol after activation gates |
+| Nexus production | `dev.nexus.mobile` | RamenFast estate identity or a later explicitly accepted signing lineage | May cross the production signature-permission wall |
+| Local development | package-specific | Explicitly enrolled development certificate | Development profile only |
 
 The trust model MUST distinguish these identities even when one has no enabled agent transport yet:
 
@@ -56,9 +98,13 @@ The trust model MUST distinguish these identities even when one has no enabled a
 - Ben/Nexidex estate-signed Nexidex;
 - local development identities explicitly enrolled for testing.
 
-A certificate allowlist is required. Rotation uses Android signing lineage where available. Revocation immediately closes active sessions and clears transient grants.
+A certificate allowlist is required. Rotation uses Android signing lineage where available and requires both current-certificate and lineage checks. Revocation immediately closes active sessions and clears transient grants.
 
 The same-phone service MUST be protected first by an Android signature permission and then by an inner package/certificate/capability check. This proof is the first Binder implementation gate.
+
+The currently installed Nexus package is debug-signed. Explicit development enrollment does not bypass Android's production signature permission. Until Nexus is backed up, migrated, signed with the accepted estate identity, reinstalled, restored, and independently tested, Ben-signed Fortress same-phone Binder control remains truthfully unavailable. A debug-signed Phosphor/Nexus pair may exercise the local-development profile. Authenticated tailnet development access may enroll the debug identity separately without pretending signer parity.
+
+Session establishment requires: package or node principal, current certificate or pinned node identity, accepted lineage where applicable, build profile, protocol version, fresh nonces, session ID, token ID, and requested capability set. Any mismatch fails before state disclosure beyond the minimum typed refusal and fix.
 
 ## 4. Capabilities
 
@@ -79,6 +125,8 @@ Observe does not imply drive. Drive does not imply permission approval. Geometry
 
 The user can grant, inspect, and revoke each capability. The Fortress master control may select a preset bundle, but every grant remains visible.
 
+Persistent grants are scoped to the complete trusted principal tuple. Transient grants are scoped to one session and are cleared on revoke, Binder death, token revocation, protocol downgrade, package replacement, signer change, or process restart unless a separately receipted persistence rule says otherwise. A capability removed while an action is in flight prevents commit and returns `capability_revoked`.
+
 ## 5. Session liveness and presence
 
 A session has explicit states:
@@ -96,19 +144,24 @@ The human HUD shows:
 
 Presence is a pure function of a real attached session, accepted command timing, acknowledgements, and real beam state. It cannot be manually faked by a theme.
 
+The default heartbeat interval is 2 seconds and is negotiated only within 1 to 5 seconds. An explicit disconnect or revoke closes authority immediately and removes HUD presence no later than one negotiated heartbeat. Binder death closes immediately. Unexpected remote loss enters `closing` after three missed heartbeats, refuses further actions, clears transient grants, and then becomes `absent`. Heartbeat receipt timestamps use a monotonic clock for deadlines and wall-clock RFC 3339 timestamps for audit.
+
 ## 6. State snapshot and deltas
 
 A snapshot contains:
 
 ```json
 {
-  "schema": "phosphor.state/1",
+  "schema": "phosphor.state/2",
   "session": "...",
   "revision": 42,
   "ts": "...",
   "distribution": "fortress",
-  "state": {},
+  "desired": {},
   "effective": {},
+  "availability": {},
+  "authority": {},
+  "fixes": {},
   "capabilities": {},
   "provenance": {},
   "liveness": {}
@@ -170,9 +223,11 @@ oobe.start
 oobe.reset
 ```
 
-Actions carry an idempotency key, expected revision where mutation safety matters, reason, and requested capability.
+Every mutating action carries an idempotency key, expected revision, reason, requested capability, and one provenance stamp created at acceptance. UI actions pass through the same dispatcher and fields even when the UI supplies them internally.
 
-An accepted action returns `changed`, new revision, effective value, and the original provenance stamp. A no-op returns `changed:false`. A conflict returns the current revision and a fix.
+Idempotency is scoped to trusted principal plus key and survives reconnect/process restart for at least 24 hours in a bounded receipt index. Repeating the same key and canonical payload returns the original acknowledgement without rerunning effects or advancing revision. Reusing the key with a different payload refuses with `idempotency_conflict` and the original receipt ID.
+
+An accepted action returns `changed`, new revision, effective value, and the original provenance stamp. A no-op returns `changed:false` and does not advance revision. A stale expected revision refuses before effects with `revision_conflict`, the current revision, and a refresh/retry fix. The action, state delta, HUD response, acknowledgement, and audit record all reuse the same provenance object and receipt ID.
 
 ## 8. Refusals and fixes
 
@@ -184,6 +239,9 @@ Every refusal is typed and fix-bearing. Examples:
 - `distribution_unavailable`: Install or connect to the Fortress build.
 - `capture_source_opted_out`: Choose the deck, microphone, remote relay, or Fortress shell capture if available.
 - `revision_conflict`: Refresh state and retry against revision N.
+- `idempotency_conflict`: Generate a new key or replay the original payload.
+- `capability_revoked`: Re-establish a session and request the capability again.
+- `signer_migration_required`: Complete the signed Nexus backup/reinstall/import gate or use the authenticated development route.
 
 No action silently falls back to a different behavior.
 
@@ -219,20 +277,20 @@ Streaming is backpressured and rate-limited. Dropped geometry increments an hone
 
 ## 11. Capture truth model
 
-The protocol and HUD share these states:
+The protocol, renderer, UI, HUD, relay, and CLI share these canonical capture states:
 
-- `no_capability`
+- `unavailable`
 - `permission_needed`
 - `starting`
 - `present_silent_or_opted_out`
 - `connected_no_signal`
 - `flowing`
 - `stalled`
-- `backoff`
+- `retrying`
 - `stopped`
 - `error`
 
-`present_silent_or_opted_out` MUST not be collapsed into `no_signal`. It tells the user and agent that capture exists but the upstream app may be refusing it.
+`present_silent_or_opted_out` MUST not be collapsed into `connected_no_signal`. Its `cause` is one of `source_opt_out`, `protected_or_drm`, `silent_content`, or `unknown`, and only evidence may select the first two. `unavailable` includes an authority and fix. `retrying` includes attempt, next retry timestamp, and bounded backoff.
 
 ## 12. Theme protocol
 
@@ -261,13 +319,15 @@ Preview is non-destructive and self-reverts on timeout, background/resume bounda
 {"status":"ok","tool":"pm3","version":"...","ts":"...","data":{}}
 ```
 
-Errors include `error`, `message`, and `fix`. Exit codes are 0 success, 2 usage, 3 operational or validation failure, and 4 unavailable dependency/capability. Streams are NDJSON with a canonical `event` field. `pm3 schema` self-describes commands, fields, enums, capabilities, and formats.
+Errors include `error`, `message`, and `fix`. Exit codes are binding across `pm3`, the desktop adapter, and all projectors: `0` success, `2` unavailable dependency/capability, `3` bad input or usage, and `4` runtime failure. Streams are NDJSON with a canonical `event` field. `pm3 schema` self-describes commands, fields, enums, capabilities, formats, exits, and device-selection rules.
+
+Every one-shot has non-empty RFC 3339 `ts` and a `data` object. Every device operation requires `--serial <serial>` or `PM3_SERIAL`; it never silently chooses the first `adb devices` row. If a discovery verb offers candidates, it returns all candidates and requires an explicit subsequent selection.
 
 No CLI verb may depend on Python.
 
 ## 14. Audit and receipts
 
-Audit records are append-only within a bounded local retention policy. They include authentication, grant/revoke, actions, refusals, capture transitions, theme mutations, and elevated operations.
+Audit records are append-only within a bounded local retention policy. They include authentication, heartbeat expiry, Binder death, grant/revoke, idempotent replay/conflict, actions, refusals, capture transitions, theme mutations, and elevated operations.
 
 Sensitive material such as purchase tokens, raw audio, private file paths, and authorization tokens is redacted by default.
 
@@ -279,7 +339,7 @@ Nexidex's HUD and Phosphor's HUD respond to the same session state:
 
 - Nexus shows Phosphor attached and whether it is observing or being driven.
 - Phosphor shows Nexus's eye/hand and the affected surface.
-- Both decay on disconnect within one poll/heartbeat window.
+- Both decay after explicit disconnect/revoke within one negotiated heartbeat, immediately on Binder death, and after the declared missed-heartbeat timeout on unexpected network loss.
 - Both report identical session and provenance IDs.
 
 The animation communicates a real relationship. It is not an idle mascot loop.

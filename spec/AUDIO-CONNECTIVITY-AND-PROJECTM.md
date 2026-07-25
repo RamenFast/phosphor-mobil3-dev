@@ -2,6 +2,7 @@
 
 **Status:** Binding architecture plus required spikes
 **Primary target:** Galaxy S25, Android 16, locked bootloader, no root
+**Release target:** Phosphor `2.0.0`
 
 ## 1. Audio source hierarchy
 
@@ -17,6 +18,25 @@ Phosphor supports these source classes:
 | Physical loopback | FORTRESS fallback | Device-dependent | Hardware path |
 
 The Android `Visualizer` API remains rejected because its 8-bit, often mono/limited data is inadequate for Phosphor's vectorscope.
+
+### 1.1 Canonical source truth
+
+Every source projects one shared `AudioSourceState` to UI, renderer, Nexus, `pm3`, HUD, persistence, and receipts:
+
+```text
+unavailable
+permission_needed
+starting
+present_silent_or_opted_out
+connected_no_signal
+flowing
+stalled
+retrying
+stopped
+error
+```
+
+The state also carries source ID, method, route, desired/effective selection, availability, authority, fix, session ID, monotonic sample timestamp, last frame timestamp, channel count, sample rate, drop/stall counters, and evidence-backed cause. `present_silent_or_opted_out` has cause `source_opt_out`, `protected_or_drm`, `silent_content`, or `unknown`; only direct evidence may assign the first two. `connected_no_signal` means the transport/capture path is healthy but no meaningful PCM is arriving. None of these states may be collapsed into fake `flowing`.
 
 ## 2. Corrected Shizuku finding
 
@@ -54,6 +74,8 @@ Use scrcpy or a minimal pre-existing shell-capable tool to capture Android outpu
 - wired/USB output if available.
 
 Record whether PCM exists, whether it matches what is heard, channel count, sample rate, latency, dropouts, and what happens on route change, lock, app background, and reboot.
+
+Each source is exercised foreground and background, before and after screen lock, over speaker, Bluetooth, and USB when available, after cable/route loss, after capture-service death, and after reboot. DRM/protected content, consent loss, silent content, and upstream opt-out are separate result categories.
 
 Calls, communications audio, secure DRM, protected content, alarms, and private capture policies are separate categories and must not be promised from a music-output success.
 
@@ -93,6 +115,8 @@ Stop and document the route if:
 
 A failed spike does not remove deck, MediaProjection, microphone, or relay sources.
 
+Rollback for a privileged experiment stops capture, revokes its session/token, kills the UserService or sidecar, removes only the versioned `/data/local/tmp` binary if one was installed, restores the prior audio source, and leaves Play code/artifacts untouched. The compatibility matrix and failure receipts remain retained.
+
 ## 4. MediaProjection honesty
 
 PLAY and FORTRESS standard capture use the public MediaProjection path.
@@ -120,13 +144,13 @@ device/build
 route
 capture method
 speaker/BT/USB
-result = flowing | silent/opted-out | no-signal | error
+result = unavailable | permission-needed | starting | present-silent-or-opted-out | connected-no-signal | flowing | stalled | retrying | stopped | error
 latency
 notes
 receipt
 ```
 
-At minimum test Spotify, SoundCloud, YouTube Music, Chrome media, Samsung Internet media, local deck, microphone, and both relay hosts.
+At minimum test Spotify, SoundCloud app and browser, YouTube Music, Chrome media, Samsung Internet media, local playback, games, local deck, microphone, and both relay hosts across foreground/background, screen lock, Bluetooth, speakers, USB where available, DRM/protected content, reboot, and route changes.
 
 The app copy is driven by known categories, not hardcoded optimism for a brand.
 

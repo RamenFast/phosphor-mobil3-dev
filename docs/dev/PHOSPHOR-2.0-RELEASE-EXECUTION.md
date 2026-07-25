@@ -73,4 +73,4 @@ At most three delegated workers run beside the primary orchestrator. Delegated w
 
 ## Current checkpoint
 
-Phase 00 is ready to seal. Repository, artifact, device, installed APK, signer, Shizuku, Concourse, baseline-test, and dated Nexus consultation evidence has been captured and archived. The private release branch exists. Application behavior has not been changed.
+Phase 00 is sealed and pushed at `70c8e2860bfe22310dd41bb341b19202580fef56`; rollback is `git revert 70c8e2860bfe22310dd41bb341b19202580fef56`. Phase 01 is active: protocol exits, reach paths, package/signing identities, grants, liveness, idempotency, audio truth, migration, and rollback are being made binding before behavior changes. Application behavior remains 1.0.7.
