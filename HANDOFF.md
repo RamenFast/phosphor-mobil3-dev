@@ -1,6 +1,8 @@
 # Handoff — next session starts here
 
-> **CURRENT FRONT DOOR, 2026-07-22:** Ben has ratified a larger Phosphor/Nexidex product alignment. No application code was changed in that specification pass. Read `vision/PHOSPHOR-LIVING-INSTRUMENT.md`, `spec/README.md`, and `docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md` before acting. The detailed 2026-07-18 completion record below remains valuable baseline evidence, but its “queue is empty” statement and any conflicting architecture/UX assumptions are superseded.
+> **CURRENT FRONT DOOR, 2026-07-25:** Phosphor 2.0 implementation is active on `release/phosphor-2.0.0`. Start with `docs/dev/PHOSPHOR-2.0-RELEASE-EXECUTION.md`, `docs/dev/REQUIREMENT-TRACEABILITY.md`, `docs/dev/PUBLIC-RELEASE-DIVERGENCE.md`, and `docs/dev/receipts/phosphor-2.0/phase-00-baseline.md`, then read `vision/`, `spec/`, `decisions/2026-07-22-product-alignment.md`, and `docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md`. Phase 00 has captured and durably archived the private/public/Nexus, artifact, signing, S25, installed APK, Shizuku, and baseline-test state. Application behavior has not changed yet. Do not modify either untracked `Phosphor build.md`. Each later phase must end in its own verified commit and recorded `git revert` command. Release-branch and prerelease pushes are authorized. Master/main promotion still requires Ben's final confirmation.
+
+> **PREVIOUS FRONT DOOR, 2026-07-22:** Ben ratified the larger Phosphor/Nexidex product alignment. No application code was changed in that specification pass. The detailed 2026-07-18 completion record below remains baseline evidence, but its “queue is empty” statement and conflicting architecture/UX assumptions are superseded.
 
 ## Where we are (2026-07-18 night, after the COMPLETION session): the queue is EMPTY of buildables
 
