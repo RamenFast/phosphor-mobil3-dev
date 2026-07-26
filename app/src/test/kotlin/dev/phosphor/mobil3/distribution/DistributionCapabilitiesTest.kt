@@ -30,17 +30,19 @@ class DistributionCapabilitiesTest {
 
     @Test
     fun privateNexusContractsExistOnlyInTheFortressClasspath() {
-        val nexusContractsPresent = runCatching {
-            Class.forName(
-                "dev.phosphor.mobil3.nexus.NexusTrustPolicy",
-                false,
-                javaClass.classLoader,
-            )
-        }.isSuccess
+        val nexusClassesPresent = listOf(
+            "dev.phosphor.mobil3.nexus.NexusTrustPolicy",
+            "dev.phosphor.mobil3.nexus.NexusObservationDispatcher",
+            "dev.phosphor.mobil3.nexus.NexusObservationResult",
+        ).map { className ->
+            runCatching {
+                Class.forName(className, false, javaClass.classLoader)
+            }.isSuccess
+        }
 
         when (DistributionCapabilities.profile.distribution) {
-            Distribution.PLAY -> assertFalse(nexusContractsPresent)
-            Distribution.FORTRESS -> assertTrue(nexusContractsPresent)
+            Distribution.PLAY -> assertTrue(nexusClassesPresent.all { !it })
+            Distribution.FORTRESS -> assertTrue(nexusClassesPresent.all { it })
         }
     }
 }

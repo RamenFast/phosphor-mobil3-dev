@@ -744,6 +744,7 @@ class NexusTrustPolicy private constructor(
         if (currentSession.lifecycle != NexusLifecycle.ABSENT && currentSession.tokenId == tokenId) {
             val closed = currentSession.disconnect(NexusClosureCause.TOKEN_REVOKED, currentGrants)
             return PolicyTokenRevocation(
+                previousPolicy = this,
                 policy = updatedPolicy,
                 previousSession = currentSession,
                 session = closed.session,
@@ -754,6 +755,7 @@ class NexusTrustPolicy private constructor(
             )
         }
         return PolicyTokenRevocation(
+            previousPolicy = this,
             policy = updatedPolicy,
             previousSession = currentSession,
             session = currentSession,
@@ -859,6 +861,7 @@ class NexusTrustPolicy private constructor(
 
 /** Opaque result produced only by [NexusTrustPolicy.revokeToken]. */
 sealed interface NexusTokenRevocation {
+    val previousPolicy: NexusTrustPolicy
     val policy: NexusTrustPolicy
     val previousSession: NexusSession
     val session: NexusSession
@@ -869,6 +872,7 @@ sealed interface NexusTokenRevocation {
 }
 
 private class PolicyTokenRevocation(
+    override val previousPolicy: NexusTrustPolicy,
     override val policy: NexusTrustPolicy,
     override val previousSession: NexusSession,
     override val session: NexusSession,
@@ -878,6 +882,7 @@ private class PolicyTokenRevocation(
     override val previousGeneration: NexusGeneration,
 ) : NexusTokenRevocation {
     init {
+        require(previousPolicy !== policy) { "revocation result must advance the trust policy" }
         require(policy.isTokenRevoked(revokedTokenId)) { "revocation result must include the revoked token" }
         require(previousSession.generation == previousGeneration) {
             "revocation result must retain the exact previous generation"

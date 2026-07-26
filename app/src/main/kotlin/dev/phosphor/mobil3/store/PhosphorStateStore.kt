@@ -5,6 +5,7 @@ import dev.phosphor.mobil3.state.ActionAcknowledgement
 import dev.phosphor.mobil3.state.ActionRequest
 import dev.phosphor.mobil3.state.AuditRecord
 import dev.phosphor.mobil3.state.Capability
+import dev.phosphor.mobil3.state.FrozenList
 import dev.phosphor.mobil3.state.IdempotencyRecord
 import dev.phosphor.mobil3.state.PhosphorAction
 import dev.phosphor.mobil3.state.PhosphorStateSnapshot
@@ -29,6 +30,12 @@ fun interface PhosphorStateListener {
 fun interface PhosphorStoreHealthListener {
     fun onHealth(health: StoreHealth)
 }
+
+data class PhosphorStoreObservation(
+    val snapshot: PhosphorStateSnapshot,
+    val auditRecords: FrozenList<AuditRecord>,
+    val health: StoreHealth,
+)
 
 const val LOCAL_HUMAN_PRINCIPAL_ID: String = "local-human"
 const val LOCAL_HUD_MIGRATION_PRINCIPAL_ID: String = "local-hud-preferences"
@@ -57,6 +64,14 @@ class PhosphorStateStore(
     val health: StoreHealth get() = runtimeHealth
     val auditRecords: List<AuditRecord> get() = image.audit.records.toList()
     val idempotencyRecords: List<IdempotencyRecord> get() = image.idempotency.records.toList()
+
+    fun observe(): PhosphorStoreObservation = synchronized(this) {
+        PhosphorStoreObservation(
+            snapshot = image.snapshot,
+            auditRecords = FrozenList.copyOf(image.audit.records),
+            health = runtimeHealth,
+        )
+    }
 
     fun addListener(listener: PhosphorStateListener): PhosphorStateSnapshot = synchronized(this) {
         listeners += listener

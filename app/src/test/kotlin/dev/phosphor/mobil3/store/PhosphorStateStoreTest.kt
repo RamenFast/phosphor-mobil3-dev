@@ -2,6 +2,8 @@ package dev.phosphor.mobil3.store
 
 import dev.phosphor.mobil3.state.ActionRequest
 import dev.phosphor.mobil3.state.Capability
+import dev.phosphor.mobil3.state.AuditRecord
+import dev.phosphor.mobil3.state.FrozenList
 import dev.phosphor.mobil3.state.FrozenMap
 import dev.phosphor.mobil3.state.InitialSnapshots
 import dev.phosphor.mobil3.state.PhosphorStateSnapshot
@@ -13,6 +15,7 @@ import dev.phosphor.mobil3.state.SetDisplayHud
 import dev.phosphor.mobil3.state.Transport
 import dev.phosphor.mobil3.state.frozenSetOf
 import kotlin.test.assertEquals
+import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
 import kotlin.test.assertIs
 import kotlin.test.assertSame
@@ -136,6 +139,93 @@ class PhosphorStateStoreTest {
 
         assertEquals(listOf("first:Fix persistence.", "second:Fix persistence."), observed)
         assertSame(failure, store.health.fix)
+    }
+
+    @Test fun observationCapturesExactSnapshotImmutableAuditAndHealthInOneStoreCriticalSection() {
+        val port = MemoryPort(PhosphorStoreLoadResult.CausalImage(PhosphorStoreImage(base("off"))))
+        val store = PhosphorStateStore(port, base("off"))
+        assertIs<PhosphorDispatchResult.Accepted>(store.dispatch(SetDisplayHud("on"), request(key = "observe"), 1L, 20L))
+
+        val observation = store.observe()
+
+        assertSame(store.snapshot, observation.snapshot)
+        assertEquals(store.auditRecords, observation.auditRecords)
+        assertSame(store.health, observation.health)
+        assertEquals(1, observation.auditRecords.size)
+        assertIs<FrozenList<AuditRecord>>(observation.auditRecords)
+        assertFailsWith<RuntimeException> { observation.auditRecords.clearForProbe() }
+        assertEquals(1, store.auditRecords.size, "mutating the observed audit view must not reach store audit")
+    }
+
+    @Test fun observationIsAtomicAgainstDispatchBlockedInsideSave() {
+        val port = BlockingPort(PhosphorStoreLoadResult.CausalImage(PhosphorStoreImage(base("off"))))
+        val store = PhosphorStateStore(port, base("off"))
+        var dispatchResult: PhosphorDispatchResult? = null
+        val dispatcher = thread {
+            dispatchResult = store.dispatch(SetDisplayHud("on"), request(key = "blocked-save"), 1L, 20L)
+        }
+        assertTrue(port.saveEntered.await(1, TimeUnit.SECONDS), "dispatch must be blocked inside persistence save")
+
+        val observerStarted = CountDownLatch(1)
+        var observation: PhosphorStoreObservation? = null
+        val observer = thread {
+            observerStarted.countDown()
+            observation = store.observe()
+        }
+        assertTrue(observerStarted.await(1, TimeUnit.SECONDS), "observer must reach the observe call")
+        assertThreadState(observer, Thread.State.BLOCKED, "observe must be blocked on the store monitor while save is in progress")
+        assertTrue(observer.isAlive, "observe must not complete while persistence save still holds the store monitor")
+        assertEquals("off", store.snapshot.effective.displayHud, "accepted image must not publish before persistence succeeds")
+
+        port.allowSave.countDown()
+        dispatcher.join(1_000)
+        observer.join(1_000)
+
+        assertFalse(dispatcher.isAlive, "dispatch must finish after persistence is released")
+        assertFalse(observer.isAlive, "observe must finish after the save critical section commits")
+        assertIs<PhosphorDispatchResult.Accepted>(dispatchResult)
+        val persisted = port.saved.single()
+        val captured = observation ?: error("observe must return")
+        assertSame(persisted.snapshot, captured.snapshot)
+        assertSame(store.snapshot, captured.snapshot)
+        assertEquals("on", captured.snapshot.effective.displayHud)
+        assertEquals(persisted.audit.records, captured.auditRecords)
+        assertSame(store.health, captured.health)
+    }
+
+    @Test fun saveFailureObservationReturnsPriorSnapshotWithCurrentReadOnlyHealth() {
+        val failure = Refusal(RefusalCode.SYSTEM_UNAVAILABLE, "Fix persistence.", 0L)
+        val port = MemoryPort(PhosphorStoreLoadResult.CausalImage(PhosphorStoreImage(base("off"))), failSaves = true, failure = failure)
+        val store = PhosphorStateStore(port, base("off"))
+        val priorSnapshot = store.snapshot
+
+        val failed = assertIs<PhosphorDispatchResult.Failed>(store.dispatch(SetDisplayHud("on"), request(key = "failed-save"), 1L, 20L))
+        val observation = store.observe()
+
+        assertSame(failure, failed.refusal)
+        assertSame(priorSnapshot, observation.snapshot)
+        assertSame(store.snapshot, observation.snapshot)
+        assertSame(store.health, observation.health)
+        assertTrue(observation.health.readable)
+        assertFalse(observation.health.writable)
+        assertSame(failure, observation.health.fix)
+        assertEquals(emptyList(), observation.auditRecords)
+        assertEquals(emptyList(), store.idempotencyRecords, "observation must not expose or change idempotency")
+        assertTrue(port.saved.isEmpty())
+    }
+
+    private fun List<*>.clearForProbe() {
+        @Suppress("UNCHECKED_CAST")
+        (this as MutableList<Any?>).clear()
+    }
+
+    private fun assertThreadState(thread: Thread, expected: Thread.State, message: String) {
+        val deadline = System.nanoTime() + TimeUnit.SECONDS.toNanos(1)
+        while (System.nanoTime() < deadline) {
+            if (thread.state == expected) return
+            Thread.yield()
+        }
+        assertEquals(expected, thread.state, message)
     }
 
     @Test fun healthFailureCallbackAllowsCrossThreadRemoveBeforeSlowCallbackReturns() {
@@ -382,5 +472,20 @@ class PhosphorStateStoreTest {
             saved += image
             PhosphorStorePersistenceResult.Saved
         } }
+    }
+
+    private class BlockingPort(
+        private val loadResult: PhosphorStoreLoadResult,
+    ) : PhosphorStatePersistencePort {
+        val saveEntered = CountDownLatch(1)
+        val allowSave = CountDownLatch(1)
+        val saved = mutableListOf<PhosphorStoreImage>()
+        override fun load(): PhosphorStoreLoadResult = loadResult
+        override fun save(image: PhosphorStoreImage): PhosphorStorePersistenceResult {
+            saveEntered.countDown()
+            assertTrue(allowSave.await(1, TimeUnit.SECONDS), "test must release blocked save")
+            saved += image
+            return PhosphorStorePersistenceResult.Saved
+        }
     }
 }
