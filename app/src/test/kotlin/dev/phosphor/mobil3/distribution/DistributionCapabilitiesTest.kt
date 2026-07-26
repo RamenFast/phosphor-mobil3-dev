@@ -27,4 +27,20 @@ class DistributionCapabilitiesTest {
             }
         }
     }
+
+    @Test
+    fun privateNexusContractsExistOnlyInTheFortressClasspath() {
+        val nexusContractsPresent = runCatching {
+            Class.forName(
+                "dev.phosphor.mobil3.nexus.NexusTrustPolicy",
+                false,
+                javaClass.classLoader,
+            )
+        }.isSuccess
+
+        when (DistributionCapabilities.profile.distribution) {
+            Distribution.PLAY -> assertFalse(nexusContractsPresent)
+            Distribution.FORTRESS -> assertTrue(nexusContractsPresent)
+        }
+    }
 }
