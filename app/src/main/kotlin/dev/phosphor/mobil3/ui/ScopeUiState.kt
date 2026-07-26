@@ -16,6 +16,8 @@ class ScopeUiState {
     var oversample by mutableStateOf(1) // beam integration multiplier
 
     var sourceLabel by mutableStateOf("no source")
+    var captureStatus by mutableStateOf("")
+    var captureFix by mutableStateOf("")
     var remote by mutableStateOf(false) // remote (Tailscale) source active
     var remoteAudio by mutableStateOf(true) // bridge stream toggles (H frame)
     var remoteGeometry by mutableStateOf(false)
@@ -71,6 +73,7 @@ class ScopeUiState {
     var amoledCaptionSeen by mutableStateOf(false)       // one-time Void caption
     var bestiaryFound by mutableStateOf(false)           // the tube's secret, once kept
     var pip by mutableStateOf(false)
+    var settingsTransferStatus by mutableStateOf("")
 
     // Custom light (LIGHT sheet): 0 slots = presets active.
     var customColors by mutableStateOf(

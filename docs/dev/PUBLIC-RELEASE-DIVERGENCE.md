@@ -93,3 +93,15 @@ Each entry contains:
 - **owner:** Distribution/release phases
 - **receipt:** `docs/dev/receipts/phosphor-2.0/phase-01-contracts-and-signing.md`; artifact and migration tests pending.
 - **supersedes:** PRD-0004
+
+## PRD-0007
+
+- **date:** 2026-07-26
+- **capability:** Proven compile-time distribution, signing, and migration boundary
+- **fortress_behavior:** `dev.phosphor.mobil3.fortress` compiles from its own source set, accepts private endpoint seeding, signs only with the pinned RamenFast estate certificate, and remains ready for later privileged implementation without claiming that implementation is active.
+- **play_blocker:** The initial Play graph must contain no Fortress package, Binder/Nexus control, Shizuku, ADB-sidecar, shell-capture, overlay, private endpoint, or private trust implementation. Google Play App Signing identity is still unknown before enrollment.
+- **policy_evidence:** `decisions/2026-07-25-phosphor-2.0-release-contracts.md`; `spec/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md`; official Play policy still requires a fresh pre-submission review.
+- **required_public_change:** Build `dev.phosphor.mobil3` from the Play source set; require complete external upload-signing inputs; compile an unconditionally empty seeded-host list; run the Gradle-owned source/graph/manifest/archive boundary gate; expose only inert, allowlisted settings migration.
+- **owner:** Distribution/release phases
+- **receipt:** `docs/dev/receipts/phosphor-2.0/phase-02-distributions-signing-migration.md`; S25 co-install, signed rollback export, Play enrollment, and public sanitizer remain pending.
+- **supersedes:** PRD-0006

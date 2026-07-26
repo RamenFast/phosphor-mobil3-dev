@@ -600,6 +600,16 @@ fun SourceSheet(
             if (actions.captureConsentNeeded()) consentCard = true
             else { actions.startCapture(); onDismiss() }
         }
+        if (state.captureStatus.isNotBlank()) {
+            Prose(
+                buildString {
+                    append(state.captureStatus)
+                    if (state.captureFix.isNotBlank()) append(" · fix: ${state.captureFix}")
+                },
+                if (state.live) p.accent else p.muted,
+                modifier = Modifier.padding(bottom = Dim.gap),
+            )
+        }
         Row(
             Modifier.fillMaxWidth().padding(bottom = Dim.gap),
             horizontalArrangement = Arrangement.spacedBy(Dim.gap),
@@ -1248,6 +1258,33 @@ fun SettingsSheet(
                 actions.openLight()
             }
         }
+        val migration: @Composable () -> Unit = {
+            SettingsSectionHeading("MIGRATION", SettingsGlyph.About, p)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ChipCell("EXPORT SETTINGS", active = false, p = p, small = true) {
+                        actions.exportSettings()
+                    }
+                }
+                Box(Modifier.weight(1f)) {
+                    ChipCell("IMPORT SETTINGS", active = false, p = p, small = true) {
+                        actions.importSettings()
+                    }
+                }
+            }
+            Prose(
+                "Portable .phossettings archives carry only allowlisted instrument settings " +
+                    "and room/light state. They exclude media paths, hosts, consent tokens, " +
+                    "purchase data, and agent authorization.",
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
+            if (state.settingsTransferStatus.isNotBlank()) {
+                Mono(
+                    state.settingsTransferStatus, p.accent, Type.dataXs,
+                    Modifier.padding(top = 6.dp),
+                )
+            }
+        }
         val about: @Composable () -> Unit = {
             SettingsSectionHeading("ABOUT", SettingsGlyph.About, p)
             Prose(
@@ -1291,6 +1328,7 @@ fun SettingsSheet(
                         performance(true)
                         remote()
                         roomLight()
+                        migration()
                         about()
                     }
                 }
@@ -1300,6 +1338,7 @@ fun SettingsSheet(
                 performance(false)
                 remote()
                 roomLight()
+                migration()
                 about()
             }
         }
@@ -1315,6 +1354,8 @@ interface SheetActions {
     fun isUiPlacementLocked(): Boolean
     fun setUiPlacementLocked(locked: Boolean)
     fun openFile()
+    fun exportSettings()
+    fun importSettings()
     fun startMic()
     fun startCapture()
     fun startRemote()

@@ -12,7 +12,7 @@
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS" />
 
     <application
-        android:label="Phosphor"
+        android:label="@string/app_name"
         android:icon="@mipmap/ic_launcher"
         android:roundIcon="@mipmap/ic_launcher_round"
         android:theme="@android:style/Theme.Black.NoTitleBar"
@@ -39,7 +39,7 @@
         <service
             android:name=".CaptureNotificationListenerService"
             android:exported="false"
-            android:label="Phosphor capture metadata"
+            android:label="@string/capture_metadata_label"
             android:permission="android.permission.BIND_NOTIFICATION_LISTENER_SERVICE">
             <intent-filter>
                 <action android:name="android.service.notification.NotificationListenerService" />

@@ -6,6 +6,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
+import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONObject
@@ -14,6 +15,7 @@ import org.json.JSONObject
 // The loaded deck owns the transport (the v4.7.0 law) — this player IS the loaded deck.
 // v2: a REAL playlist. The queue (a folder, gaplessly ordered) maps to Media3 items;
 // next/prev from any surface — console, lock screen, earbuds — walks it.
+@androidx.annotation.OptIn(UnstableApi::class)
 class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     private var playing = false

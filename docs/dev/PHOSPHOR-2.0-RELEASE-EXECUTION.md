@@ -49,7 +49,7 @@ A phase cannot advance with an unexplained missing receipt. A hardware or policy
 |---|---|---|---|
 | 00 | Baseline, asks, traceability, divergence, handoff | Documentation only | Revert phase-00 commit |
 | 01 | Protocol, identity, signing, audio-truth, rollback contracts | Documentation and inert schemas only | Revert phase-01 commit |
-| 02 | Play/Fortress flavors, package IDs, fail-closed signing, boundary scanner | No privileged implementation yet | Revert phase-02 commits before adding Fortress features |
+| 02 | Play/Fortress flavors, package IDs, fail-closed signing, boundary scanner | SEALED; no privileged implementation | `git revert checkpoint/phosphor-2.0.0-phase-02` before adding Fortress features |
 | 03 | Inert causal state/action/provenance schemas and tests | No production readers/writers | Revert phase-03 commit |
 | 04 | Store/reducer/persistence migration by functional slice | One slice at a time | Revert latest slice commit |
 | 05 | Fortress Binder/tailnet session security and complete `pm3` projection | Transport stays inert until auth/revoke/receipt suite passes | Revert transport activation commit |
@@ -73,4 +73,4 @@ At most three delegated workers run beside the primary orchestrator. Delegated w
 
 ## Current checkpoint
 
-Phase 00 is sealed and pushed at `70c8e2860bfe22310dd41bb341b19202580fef56`; rollback is `git revert 70c8e2860bfe22310dd41bb341b19202580fef56`. Phase 01 is active: protocol exits, reach paths, package/signing identities, grants, liveness, idempotency, audio truth, migration, and rollback are being made binding before behavior changes. Application behavior remains 1.0.7.
+Phases 00 and 01 are sealed at their named remote checkpoints. Phase 02 host proof covers 2.0.0 package identities, fail-closed signing, the typed compile-time seam, inert settings migration, success-driven capture state, full lint without a baseline, Play archive separation including malicious symlink rejection, 32 Rust tests, and 15 relay tests. The commit carrying this section is the sole intended target of `checkpoint/phosphor-2.0.0-phase-02`; Phase 02 is sealed only after that annotated tag resolves locally and remotely. Once it exists, rollback is `git revert checkpoint/phosphor-2.0.0-phase-02`. Device co-installation, signed rollback export, and Play installed-app identity remain pending their later gates. Phase 03 is next and may introduce only inert causal schemas and tests.

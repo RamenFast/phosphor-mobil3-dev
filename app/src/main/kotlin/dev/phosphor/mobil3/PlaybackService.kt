@@ -29,6 +29,7 @@ import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
+import androidx.media3.common.util.UnstableApi
 import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
@@ -42,6 +43,7 @@ import java.net.URL
 // swapped with MediaSession.setPlayer(). The loaded deck owns the transport: lock screen,
 // notification, earbuds and Bluetooth all drive whichever deck the session holds.
 // SimpleBasePlayer does NOT handle audio focus or becoming-noisy — hand-rolled here.
+@androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     private lateinit var localPlayer: PhosphorPlayer
@@ -913,6 +915,7 @@ class PlaybackService : MediaSessionService() {
  * A Media3 face for the selected phone-local Android media session. It owns no audio and
  * no MediaSession: PlaybackService temporarily installs it into Phosphor's single session.
  */
+@androidx.annotation.OptIn(UnstableApi::class)
 private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(looper) {
     var playPauseRouter: ((Boolean) -> Unit)? = null
     var nextRouter: (() -> Unit)? = null

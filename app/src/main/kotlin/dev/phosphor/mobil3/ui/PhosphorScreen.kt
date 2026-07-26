@@ -45,6 +45,8 @@ import kotlinx.coroutines.flow.distinctUntilChanged
 interface ScopeActions {
     fun togglePlay()
     fun openFile()
+    fun exportSettings()
+    fun importSettings()
     fun startMic()
     fun startCapture()
     fun stopLive()
@@ -220,6 +222,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val sheetActions = remember(actions) {
         object : SheetActions {
             override fun openFile() = actions.openFile()
+            override fun exportSettings() = actions.exportSettings()
+            override fun importSettings() = actions.importSettings()
             override fun startMic() = actions.startMic()
             override fun startCapture() = actions.startCapture()
             override fun startRemote() = actions.startRemote()

@@ -2,8 +2,11 @@ package dev.phosphor.mobil3
 
 import android.Manifest
 import android.app.NotificationManager
+import android.content.BroadcastReceiver
 import android.content.ComponentName
+import android.content.Context
 import android.content.Intent
+import android.content.IntentFilter
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -39,6 +42,9 @@ import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
 import dev.phosphor.mobil3.ui.readReducedMotion
 import dev.phosphor.mobil3.ui.rollModeExcluding
+import dev.phosphor.mobil3.settings.SettingsArchive
+import dev.phosphor.mobil3.distribution.DistributionCapabilities
+import java.io.ByteArrayOutputStream
 import java.io.File
 
 // M5: the app. Compose chrome over the scope SurfaceView; the loaded deck owns the transport
@@ -64,9 +70,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var lastSourceReopened = false
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
     private var lastRoutedQ = -1
+    private var captureStatusReceiverRegistered = false
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
         prefs().edit().putFloat("gain", gainValue).apply()
+    }
+    private val captureStatusReceiver = object : BroadcastReceiver() {
+        override fun onReceive(context: Context?, intent: Intent?) {
+            if (intent?.action == CaptureService.ACTION_STATUS) {
+                applyCaptureStatus(CaptureService.statusFrom(intent))
+            }
+        }
     }
 
     private val surfaceCallback = object : SurfaceHolder.Callback {
@@ -124,17 +138,131 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }.start()
         }
 
+    private val createSettingsArchive =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            uri ?: return@registerForActivityResult
+            saveTuning()
+            ui.settingsTransferStatus = "exporting settings…"
+            Thread {
+                runCatching {
+                    val result = SettingsArchive.export(
+                        sourcePackage = packageName,
+                        sourceVersion = BuildConfig.VERSION_NAME,
+                        sourceDistribution = if (BuildConfig.DEBUG) {
+                            "local_dev"
+                        } else {
+                            DistributionCapabilities.profile.distribution.wireName
+                        },
+                        exportedAt = java.time.Instant.now().toString(),
+                        allPreferences = prefs().all,
+                    )
+                    val output = contentResolver.openOutputStream(uri, "wt")
+                        ?: error("Android did not provide a writable document")
+                    output.bufferedWriter(Charsets.UTF_8).use { it.write(result.json) }
+                    "exported ${result.exportedKeys.size} settings · ${result.contentSha256.take(12)}"
+                }.onSuccess { status ->
+                    runOnUiThread { ui.settingsTransferStatus = status }
+                }.onFailure { error ->
+                    runOnUiThread {
+                        ui.settingsTransferStatus = "export failed · ${error.message ?: "choose another document"}"
+                    }
+                }
+            }.start()
+        }
+
+    private val openSettingsArchive =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            uri ?: return@registerForActivityResult
+            ui.settingsTransferStatus = "checking settings…"
+            Thread {
+                runCatching {
+                    val input = contentResolver.openInputStream(uri)
+                        ?: error("Android did not provide a readable document")
+                    val text = input.use { stream ->
+                        val output = ByteArrayOutputStream()
+                        val buffer = ByteArray(16 * 1024)
+                        var total = 0
+                        while (true) {
+                            val count = stream.read(buffer)
+                            if (count < 0) break
+                            total += count
+                            if (total > SettingsArchive.MAX_BYTES) {
+                                throw SettingsArchive.ArchiveException(
+                                    "archive_too_large",
+                                    "Settings archive exceeds ${SettingsArchive.MAX_BYTES} bytes",
+                                    "Choose an original .phossettings export",
+                                )
+                            }
+                            output.write(buffer, 0, count)
+                        }
+                        output.toString(Charsets.UTF_8.name())
+                    }
+                    val imported = SettingsArchive.decode(text)
+                    val editor = prefs().edit()
+                    imported.values.forEach { (key, value) ->
+                        when (value) {
+                            is Boolean -> editor.putBoolean(key, value)
+                            is Int -> editor.putInt(key, value)
+                            is Float -> editor.putFloat(key, value)
+                            is String -> editor.putString(key, value)
+                            else -> error("unsupported imported preference type for $key")
+                        }
+                    }
+                    check(editor.commit()) { "Android could not commit imported settings" }
+                    imported
+                }.onSuccess { imported ->
+                    runOnUiThread {
+                        restoreTuning()
+                        applyScopeRotationPreference()
+                        applyImmersive()
+                        updatePictureInPictureParams()
+                        ui.settingsTransferStatus = buildString {
+                            append("imported ${imported.values.size} from ")
+                            append(imported.sourceVersion)
+                            if (imported.skippedKeys.isNotEmpty()) {
+                                append(" · skipped ${imported.skippedKeys.size} newer fields")
+                            }
+                        }
+                    }
+                }.onFailure { error ->
+                    runOnUiThread {
+                        ui.settingsTransferStatus = when (error) {
+                            is SettingsArchive.ArchiveException ->
+                                "${error.error} · ${error.fix}"
+                            else -> "import failed · ${error.message ?: "choose another archive"}"
+                        }
+                    }
+                }
+            }.start()
+        }
+
     private val captureConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
-            result.data?.let { data ->
-                applyLocalGainPolicy()
-                mic.stop()
+            val data = result.data
+            if (result.resultCode != android.app.Activity.RESULT_OK || data == null) {
+                applyCaptureStatus(
+                    CaptureService.CaptureStatus.permissionNeeded(
+                        "capture permission not granted",
+                        "Choose everything playing and approve Android's capture prompt",
+                    )
+                )
+                return@registerForActivityResult
+            }
+            applyLocalGainPolicy()
+            mic.stop()
+            applyCaptureStatus(CaptureService.CaptureStatus.starting())
+            runCatching {
                 startForegroundService(
                     Intent(this, CaptureService::class.java)
                         .putExtra(CaptureService.EXTRA_RESULT, data)
                 )
-                ui.sourceLabel = "capture"
-                ui.live = true
+            }.onFailure {
+                applyCaptureStatus(
+                    CaptureService.CaptureStatus.error(
+                        "capture service could not start",
+                        "Allow Phosphor notifications and foreground media projection, then retry",
+                    )
+                )
             }
         }
 
@@ -217,6 +345,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onStart() {
         super.onStart()
+        if (!captureStatusReceiverRegistered) {
+            ContextCompat.registerReceiver(
+                this,
+                captureStatusReceiver,
+                IntentFilter(CaptureService.ACTION_STATUS),
+                ContextCompat.RECEIVER_NOT_EXPORTED,
+            )
+            captureStatusReceiverRegistered = true
+        }
+        applyCaptureStatus(CaptureService.currentStatus())
         PhosphorNative.setRenderPaused(false)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
@@ -254,6 +392,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         saveTuning()
         tick.removeCallbacks(uiTick)
         PhosphorNative.setRenderPaused(true)
+        if (captureStatusReceiverRegistered) {
+            unregisterReceiver(captureStatusReceiver)
+            captureStatusReceiverRegistered = false
+        }
         controller?.release()
         controller = null
         super.onStop()
@@ -470,7 +612,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // `phosphor.remoteHosts=label:host:port,label:host:port`) — a build-machine fact,
     // never source. Add/edit UI rides the full settings port.
     override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> =
-        BuildConfig.REMOTE_HOSTS.split(",").mapNotNull { entry ->
+        DistributionCapabilities.profile.seededRemoteHosts.split(",").mapNotNull { entry ->
             val parts = entry.trim().split(":")
             if (parts.size != 3) return@mapNotNull null
             val port = parts[2].toIntOrNull() ?: return@mapNotNull null
@@ -509,6 +651,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))
 
+    override fun exportSettings() = createSettingsArchive.launch(
+        "phosphor-settings-${BuildConfig.VERSION_NAME}.phossettings"
+    )
+
+    override fun importSettings() = openSettingsArchive.launch(
+        arrayOf("application/json", "application/octet-stream", "text/plain")
+    )
+
     override fun startMic() {
         stopCaptureService()
         ui.live = false
@@ -520,6 +670,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun startCapture() {
         markConsentSeen()
+        ui.captureStatus = "waiting for Android capture permission"
+        ui.captureFix = "Approve the prompt to connect playback audio"
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
         captureConsent.launch(mpm.createScreenCaptureIntent())
     }
@@ -529,16 +681,41 @@ class MainActivity : ComponentActivity(), ScopeActions {
         stopCaptureService()
         PhosphorNative.setRingActive(false)
         ui.live = false
-        if (ui.sourceLabel == "capture" || ui.sourceLabel == "mic") {
+        if (ui.sourceLabel.startsWith("capture") || ui.sourceLabel == "mic") {
             ui.sourceLabel = "no source"
             acceptTrackTitle(null)
             ui.trackArtist = null
             ui.artwork = null
         }
+        ui.captureStatus = ""
+        ui.captureFix = ""
     }
 
     private fun stopCaptureService() {
         startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
+    }
+
+    private fun applyCaptureStatus(status: CaptureService.CaptureStatus) {
+        val wasCapture = ui.sourceLabel.startsWith("capture")
+        ui.captureStatus = status.message
+        ui.captureFix = status.fix
+        when (status.state) {
+            CaptureService.STATE_STARTING -> {
+                ui.sourceLabel = "capture · starting…"
+                ui.live = false
+            }
+            CaptureService.STATE_FLOWING -> {
+                ui.sourceLabel = "capture"
+                ui.live = true
+            }
+            else -> if (wasCapture) {
+                ui.sourceLabel = "no source"
+                ui.live = false
+                acceptTrackTitle(null)
+                ui.trackArtist = null
+                ui.artwork = null
+            }
+        }
     }
 
     // The consent moment (spec §2.3): one calm card before the system dialog, first time.

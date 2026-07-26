@@ -9,6 +9,7 @@ import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.common.SimpleBasePlayer
+import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONObject
@@ -23,6 +24,7 @@ import org.json.JSONObject
 // run). The GHOST PLAYLIST [ghost-prev, now, ghost-next] with the live item at index 1
 // makes next/prev resolvable; handleSeek maps them onto bridge transport and the state
 // snaps back to index 1 on the next invalidate.
+@androidx.annotation.OptIn(UnstableApi::class)
 class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     // The service owns process-network binding; STOP must return through it so a
