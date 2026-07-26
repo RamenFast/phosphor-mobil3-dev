@@ -7,6 +7,7 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
+import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -15,6 +16,7 @@ import android.net.Uri
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.SystemClock
 import android.provider.Settings
 import android.view.OrientationEventListener
 import android.view.Surface
@@ -31,6 +33,7 @@ import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
+import androidx.lifecycle.Lifecycle
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
@@ -42,21 +45,53 @@ import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
 import dev.phosphor.mobil3.ui.readReducedMotion
 import dev.phosphor.mobil3.ui.rollModeExcluding
+import dev.phosphor.mobil3.ui.PENDING_HUD_SETTINGS_IMPORT_KEY
+import dev.phosphor.mobil3.ui.settingsExportPreferences
+import dev.phosphor.mobil3.ui.settingsImportAppliedCount
+import dev.phosphor.mobil3.ui.settingsImportHudOperation
+import dev.phosphor.mobil3.ui.pendingHudCleanupResult
+import dev.phosphor.mobil3.ui.pendingHudMarkerRead
+import dev.phosphor.mobil3.ui.pendingHudMarkerWakeDecision
+import dev.phosphor.mobil3.ui.pendingHudResumeDecision
+import dev.phosphor.mobil3.ui.PreferenceValueSnapshot
+import dev.phosphor.mobil3.ui.PendingHudCleanupResult
+import dev.phosphor.mobil3.ui.PendingHudMarkerTransaction
+import dev.phosphor.mobil3.ui.hudImportStatusWithCleanup
+import dev.phosphor.mobil3.ui.preferenceValueSnapshots
 import dev.phosphor.mobil3.settings.SettingsArchive
+import dev.phosphor.mobil3.settings.CausalStatePreferences
 import dev.phosphor.mobil3.distribution.DistributionCapabilities
+import dev.phosphor.mobil3.state.ActionRequest
+import dev.phosphor.mobil3.state.Capability
+import dev.phosphor.mobil3.state.FrozenMap
+import dev.phosphor.mobil3.state.InitialSnapshots
+import dev.phosphor.mobil3.state.PhosphorStateSnapshot
+import dev.phosphor.mobil3.state.PrincipalId
+import dev.phosphor.mobil3.state.PrincipalKind
+import dev.phosphor.mobil3.state.SetDisplayHud
+import dev.phosphor.mobil3.state.Transport
+import dev.phosphor.mobil3.state.frozenSetOf
+import dev.phosphor.mobil3.store.LOCAL_HUD_MIGRATION_PRINCIPAL_ID
+import dev.phosphor.mobil3.store.LOCAL_HUMAN_PRINCIPAL_ID
+import dev.phosphor.mobil3.store.PhosphorDispatchResult
+import dev.phosphor.mobil3.store.PhosphorStateStore
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.UUID
 
 // M5: the app. Compose chrome over the scope SurfaceView; the loaded deck owns the transport
 // through a MediaController, so console + notification + lock screen never disagree.
 class MainActivity : ComponentActivity(), ScopeActions {
 
-    private val ui = ScopeUiState()
+    private lateinit var causalStore: PhosphorStateStore
+    private lateinit var ui: ScopeUiState
     private val mic = MicController()
     private var controller: MediaController? = null
     private var reduced = false
     private var gainValue = 1.0f
     private var lastRandomTrackTitle: String? = null
+    private var pendingHudResumeAttempted = false
+    @Volatile private var localInFlightPendingHudRaw: String? = null
     private var scopeRotationLockState by mutableStateOf(false)
     private var uiPlacementLockState by mutableStateOf(false)
     private var lockedUiLandscape by mutableStateOf(false)
@@ -71,6 +106,24 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
     private var lastRoutedQ = -1
     private var captureStatusReceiverRegistered = false
+    private var pendingHudMarkerListenerRegistered = false
+    private val pendingHudMarkerListener = SharedPreferences.OnSharedPreferenceChangeListener { shared, key ->
+        tick.post {
+            val decision = pendingHudMarkerWakeDecision(
+                changedKey = key,
+                rawMarker = pendingHudMarkerRead(shared.all).raw,
+                localInFlightRawMarker = localInFlightPendingHudRaw,
+                lifecycleStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+                activityFinishing = isFinishing,
+                activityDestroyed = isDestroyed,
+            )
+            if (!decision.shouldWake) return@post
+            if (decision.reconcileImportedPreferences) reconcileImportedSettingsPreferences()
+            pendingHudResumeAttempted = false
+            resumePendingHudSettingsImport()
+            pendingHudResumeAttempted = decision.keepResumeAttempted || pendingHudResumeAttempted
+        }
+    }
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
         prefs().edit().putFloat("gain", gainValue).apply()
@@ -142,6 +195,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
             uri ?: return@registerForActivityResult
             saveTuning()
+            val causalExportSnapshot = causalStore.snapshot
+            val causalExportWritable = causalStore.health.writable
+            val exportPreferences = settingsExportPreferences(
+                allPreferences = prefs().all,
+                causalHudMode = when (causalExportSnapshot.effective.displayHud) {
+                    "on" -> 0
+                    "auto" -> 1
+                    "off" -> 2
+                    else -> error("unsupported causal display HUD mode ${causalExportSnapshot.effective.displayHud}")
+                },
+                causalStoreWritable = causalExportWritable,
+            )
             ui.settingsTransferStatus = "exporting settings…"
             Thread {
                 runCatching {
@@ -154,7 +219,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                             DistributionCapabilities.profile.distribution.wireName
                         },
                         exportedAt = java.time.Instant.now().toString(),
-                        allPreferences = prefs().all,
+                        allPreferences = exportPreferences,
                     )
                     val output = contentResolver.openOutputStream(uri, "wt")
                         ?: error("Android did not provide a writable document")
@@ -198,30 +263,86 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         output.toString(Charsets.UTF_8.name())
                     }
                     val imported = SettingsArchive.decode(text)
-                    val editor = prefs().edit()
-                    imported.values.forEach { (key, value) ->
-                        when (value) {
-                            is Boolean -> editor.putBoolean(key, value)
-                            is Int -> editor.putInt(key, value)
-                            is Float -> editor.putFloat(key, value)
-                            is String -> editor.putString(key, value)
-                            else -> error("unsupported imported preference type for $key")
+                    synchronized(PendingHudMarkerTransaction.lock) {
+                        val importedHudMode = imported.values["hud_mode"] as? Int
+                        val pendingHudImport = importedHudMode?.let { mode ->
+                            settingsImportHudOperation(
+                                pendingRaw = pendingHudMarkerRead(prefs().all).raw,
+                                contentSha256 = imported.contentSha256,
+                                hudMode = mode,
+                                newOperationId = UUID.randomUUID().toString(),
+                            )
                         }
+                        val importedPreferenceKeys = imported.values.keys.filter { it != "hud_mode" }.toSet()
+                        val compensatedKeys = importedPreferenceKeys + PENDING_HUD_SETTINGS_IMPORT_KEY
+                        val priorValues = preferenceValueSnapshots(prefs().all, compensatedKeys)
+                        val pendingHudRaw = pendingHudImport?.encode()
+                        localInFlightPendingHudRaw = pendingHudRaw
+                        val editor = prefs().edit()
+                        imported.values.forEach { (key, value) ->
+                            if (key == "hud_mode") return@forEach
+                            when (value) {
+                                is Boolean -> editor.putBoolean(key, value)
+                                is Int -> editor.putInt(key, value)
+                                is Float -> editor.putFloat(key, value)
+                                is String -> editor.putString(key, value)
+                                else -> error("unsupported imported preference type for $key")
+                            }
+                        }
+                        pendingHudRaw?.let {
+                            editor.putString(PENDING_HUD_SETTINGS_IMPORT_KEY, it)
+                        }
+                        if (!editor.commit()) {
+                            val restored = restorePreferenceSnapshots(priorValues)
+                            if (localInFlightPendingHudRaw == pendingHudRaw) {
+                                localInFlightPendingHudRaw = null
+                            }
+                            error(
+                                if (restored) {
+                                    "Android could not commit imported settings; restored previous in-memory settings"
+                                } else {
+                                    "Android could not commit imported settings; previous in-memory settings restore was not committed"
+                                },
+                            )
+                        }
+                        Triple(imported, importedHudMode, pendingHudImport)
                     }
-                    check(editor.commit()) { "Android could not commit imported settings" }
-                    imported
-                }.onSuccess { imported ->
+                }.onSuccess { (imported, importedHudMode, pendingHudImport) ->
                     runOnUiThread {
+                        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || isFinishing || isDestroyed) {
+                            // The durable marker is the handoff to the next foreground
+                            // Activity/process. Never dispatch through a stale store.
+                            pendingHudResumeAttempted = false
+                            if (localInFlightPendingHudRaw == pendingHudImport?.encode()) {
+                                localInFlightPendingHudRaw = null
+                            }
+                            return@runOnUiThread
+                        }
+                        var hudApplied = importedHudMode == null
+                        val hudStatus = importedHudMode?.let { mode ->
+                            val outcome = applyPendingHudSettingsImport(
+                                pending = requireNotNull(pendingHudImport),
+                                reason = "Apply display HUD from verified settings archive ${imported.contentSha256.take(12)}.",
+                            )
+                            hudApplied = outcome.applied
+                            outcome.status
+                        }
+                        if (localInFlightPendingHudRaw == pendingHudImport?.encode()) {
+                            localInFlightPendingHudRaw = null
+                        }
                         restoreTuning()
                         applyScopeRotationPreference()
                         applyImmersive()
                         updatePictureInPictureParams()
                         ui.settingsTransferStatus = buildString {
-                            append("imported ${imported.values.size} from ")
+                            append("imported ")
+                            append(settingsImportAppliedCount(imported.values.size, hudApplied))
+                            append(" from ")
                             append(imported.sourceVersion)
                             if (imported.skippedKeys.isNotEmpty()) {
                                 append(" · skipped ${imported.skippedKeys.size} newer fields")
                             }
+                            if (hudStatus != null) append(" · $hudStatus")
                         }
                     }
                 }.onFailure { error ->
@@ -276,6 +397,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        val causalBase = compiledCausalBaseSnapshot(System.currentTimeMillis())
+        causalStore = PhosphorStateStore(
+            port = CausalStatePreferences(prefs(), causalBase),
+            initialSnapshot = causalBase,
+            initialWallTimeMillis = causalBase.wallTimeMillis,
+        )
+        ui = ScopeUiState(causalStore)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes = window.attributes.apply {
@@ -299,6 +427,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onResume() {
         super.onResume()
+        if (!pendingHudResumeAttempted) {
+            pendingHudResumeAttempted = true
+            resumePendingHudSettingsImport()
+        }
         refreshCaptureMetadataAccess()
         // Reopen the last source once per process (Ben's ask): capture re-raises the
         // system share dialog (only if the in-app consent was already given some day);
@@ -345,6 +477,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onStart() {
         super.onStart()
+        if (!pendingHudMarkerListenerRegistered) {
+            prefs().registerOnSharedPreferenceChangeListener(pendingHudMarkerListener)
+            pendingHudMarkerListenerRegistered = true
+        }
         if (!captureStatusReceiverRegistered) {
             ContextCompat.registerReceiver(
                 this,
@@ -392,6 +528,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         saveTuning()
         tick.removeCallbacks(uiTick)
         PhosphorNative.setRenderPaused(true)
+        if (pendingHudMarkerListenerRegistered) {
+            prefs().unregisterOnSharedPreferenceChangeListener(pendingHudMarkerListener)
+            pendingHudMarkerListenerRegistered = false
+        }
         if (captureStatusReceiverRegistered) {
             unregisterReceiver(captureStatusReceiver)
             captureStatusReceiverRegistered = false
@@ -756,7 +896,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putFloat("focus", focusPref)
             .putString("room", ui.room.id)
             .putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
-            .putInt("hud_mode", ui.hudMode)
             .putInt("band_mode", ui.bandMode)
             .putBoolean("fullscreen", ui.fullscreen)
             .putBoolean("scope_rotation_locked", scopeRotationLockState)
@@ -823,9 +962,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .also { PhosphorNative.setGeomAmount(it) }
         ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
         focusPref = p.getFloat("focus", 0.3f)
-        ui.hudMode = if (p.contains("hud_mode")) {
-            p.getInt("hud_mode", 2).coerceIn(0, 2)
-        } else if (p.getBoolean("nerd_hud", false)) 0 else 2
         ui.bandMode = p.getInt("band_mode", 0)
         ui.fullscreen = p.getBoolean("fullscreen", true)
         ui.viewLock = p.getBoolean("view_lock", false)
@@ -996,8 +1132,213 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun setHudMode(mode: Int) {
-        ui.hudMode = mode.coerceIn(0, 2)
-        prefs().edit().putInt("hud_mode", ui.hudMode).apply()
+        val result = dispatchHudMode(
+            mode = mode,
+            principal = PrincipalId(PrincipalKind.HUMAN, LOCAL_HUMAN_PRINCIPAL_ID),
+            transport = Transport.UI,
+            idempotencyKey = UUID.randomUUID().toString(),
+            reason = "Local user changed display HUD from settings.",
+        )
+        ui.hudControlStatus = hudResultText(result)
+    }
+
+    private fun dispatchHudMode(
+        mode: Int,
+        principal: PrincipalId,
+        transport: Transport,
+        idempotencyKey: String,
+        reason: String,
+    ): PhosphorDispatchResult {
+        val wireMode = when (mode) {
+            0 -> "on"
+            1 -> "auto"
+            2 -> "off"
+            else -> return PhosphorDispatchResult.Failed(
+                dev.phosphor.mobil3.state.Refusal(
+                    dev.phosphor.mobil3.state.RefusalCode.INVALID_VALUE,
+                    "Use HUD mode on, auto, or off.",
+                    causalStore.snapshot.revision,
+                ),
+            )
+        }
+        return causalStore.dispatch(
+            action = SetDisplayHud(wireMode),
+            request = ActionRequest(
+                principal = principal,
+                idempotencyKey = idempotencyKey,
+                expectedRevision = causalStore.snapshot.revision,
+                reason = reason,
+                requestedCapability = Capability.CONTROL_DISPLAY,
+                transport = transport,
+            ),
+            monotonicMillis = SystemClock.elapsedRealtime(),
+            wallTimeMillis = System.currentTimeMillis(),
+        )
+    }
+
+    private fun hudResultText(result: PhosphorDispatchResult): String = when (result) {
+        is PhosphorDispatchResult.Accepted -> if (result.acknowledgement.changed) {
+            "HUD accepted · revision ${result.acknowledgement.revision}"
+        } else {
+            "HUD already ${ui.hudModeLabel()}"
+        }
+        is PhosphorDispatchResult.Replayed -> "HUD import replayed · ${result.acknowledgement.receiptId}"
+        is PhosphorDispatchResult.Refused -> "HUD refused · ${result.refusal.fix}"
+        is PhosphorDispatchResult.Failed -> "HUD unavailable · ${result.refusal.fix}"
+    }
+
+    private data class PendingHudApplyOutcome(
+        val applied: Boolean,
+        val status: String,
+    )
+
+    private fun resumePendingHudSettingsImport() {
+        val marker = pendingHudMarkerRead(prefs().all)
+        if (marker.wrongType) {
+            pendingHudResumeAttempted = true
+            marker.status?.let { ui.settingsTransferStatus = it }
+            return
+        }
+        val raw = marker.raw ?: return
+        val decision = pendingHudResumeDecision(
+            rawMarker = raw,
+            lifecycleStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
+            activityFinishing = isFinishing,
+            activityDestroyed = isDestroyed,
+        )
+        pendingHudResumeAttempted = decision.attempted
+        if (!decision.shouldDispatch) {
+            decision.status?.let { ui.settingsTransferStatus = it }
+            return
+        }
+        val pending = dev.phosphor.mobil3.ui.PendingHudSettingsImport.decode(raw)
+            ?: return
+        val outcome = applyPendingHudSettingsImport(
+            pending = pending,
+            reason = "Resume verified settings HUD import ${pending.contentSha256.take(12)} after lifecycle recovery.",
+        )
+        ui.settingsTransferStatus = "resumed HUD import · ${outcome.status}"
+    }
+
+    private fun reconcileImportedSettingsPreferences() {
+        restoreTuning()
+        applyScopeRotationPreference()
+        applyImmersive()
+        updatePictureInPictureParams()
+    }
+
+    private fun applyPendingHudSettingsImport(
+        pending: dev.phosphor.mobil3.ui.PendingHudSettingsImport,
+        reason: String,
+    ): PendingHudApplyOutcome {
+        val result = dispatchHudMode(
+            mode = pending.hudMode,
+            principal = PrincipalId(PrincipalKind.MIGRATION, LOCAL_HUD_MIGRATION_PRINCIPAL_ID),
+            transport = Transport.MIGRATION,
+            idempotencyKey = pending.idempotencyKey,
+            reason = reason,
+        )
+        val applied = result is PhosphorDispatchResult.Accepted || result is PhosphorDispatchResult.Replayed
+        if (!applied) return PendingHudApplyOutcome(false, hudResultText(result))
+
+        val status = hudImportStatusWithCleanup(
+            hudStatus = hudResultText(result),
+            cleanup = clearPendingHudImportMarker(pending.encode()),
+        )
+        return PendingHudApplyOutcome(true, status)
+    }
+
+    private fun clearPendingHudImportMarker(expectedRaw: String): PendingHudCleanupResult {
+        synchronized(PendingHudMarkerTransaction.lock) {
+            val allBeforeCleanup = prefs().all
+            val current = pendingHudMarkerRead(allBeforeCleanup).raw
+            if (current != expectedRaw) {
+                val observedMarker = pendingHudMarkerRead(prefs().all)
+                return pendingHudCleanupResult(
+                    expectedRaw = expectedRaw,
+                    currentRaw = current,
+                    observedRawAfterCleanup = observedMarker.raw,
+                    observedWrongTypeAfterCleanup = observedMarker.wrongType,
+                    removeCommitted = false,
+                    restoreCommitted = false,
+                )
+            }
+            val priorValues = preferenceValueSnapshots(
+                allBeforeCleanup,
+                setOf(PENDING_HUD_SETTINGS_IMPORT_KEY),
+            )
+            val removeCommitted = prefs().edit().remove(PENDING_HUD_SETTINGS_IMPORT_KEY).commit()
+            val restoreCommitted = if (!removeCommitted) {
+                // Android SharedPreferences mutates its in-memory map before commit() reports
+                // a disk failure. Restore the durable operation marker in memory as well, so
+                // this process and the next restart agree that cleanup is still pending.
+                restorePreferenceSnapshots(priorValues)
+            } else {
+                false
+            }
+            val observedMarker = pendingHudMarkerRead(prefs().all)
+            return pendingHudCleanupResult(
+                expectedRaw = expectedRaw,
+                currentRaw = current,
+                observedRawAfterCleanup = observedMarker.raw,
+                observedWrongTypeAfterCleanup = observedMarker.wrongType,
+                removeCommitted = removeCommitted,
+                restoreCommitted = restoreCommitted,
+            )
+        }
+    }
+
+    private fun restorePreferenceSnapshots(
+        snapshots: Map<String, PreferenceValueSnapshot>,
+    ): Boolean {
+        val editor = prefs().edit()
+        snapshots.forEach { (key, snapshot) ->
+            if (!snapshot.present) {
+                editor.remove(key)
+                return@forEach
+            }
+            when (val value = snapshot.value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is Int -> editor.putInt(key, value)
+                is Float -> editor.putFloat(key, value)
+                is Long -> editor.putLong(key, value)
+                is String -> editor.putString(key, value)
+                is Set<*> -> {
+                    val strings = value.filterIsInstance<String>().toSet()
+                    if (strings.size == value.size) editor.putStringSet(key, strings) else editor.remove(key)
+                }
+                null -> editor.remove(key)
+                else -> editor.remove(key)
+            }
+        }
+        return editor.commit()
+    }
+
+    private fun ScopeUiState.hudModeLabel(): String = when (hudMode) {
+        0 -> "on"
+        1 -> "auto"
+        else -> "off"
+    }
+
+    private fun compiledCausalBaseSnapshot(nowWallTimeMillis: Long): PhosphorStateSnapshot {
+        val base = when {
+            BuildConfig.DEBUG -> InitialSnapshots.localDevelopment(nowWallTimeMillis)
+            DistributionCapabilities.profile.distribution ==
+                dev.phosphor.mobil3.distribution.Distribution.PLAY -> InitialSnapshots.play(nowWallTimeMillis)
+            else -> InitialSnapshots.fortress(nowWallTimeMillis)
+        }
+        val human = PrincipalId(PrincipalKind.HUMAN, LOCAL_HUMAN_PRINCIPAL_ID)
+        val migration = PrincipalId(PrincipalKind.MIGRATION, LOCAL_HUD_MIGRATION_PRINCIPAL_ID)
+        return base.copy(
+            desired = base.desired.copy(displayHud = "off"),
+            effective = base.effective.copy(displayHud = "off"),
+            capabilities = FrozenMap.copyOf(
+                mapOf(
+                    human to frozenSetOf(Capability.CONTROL_DISPLAY),
+                    migration to frozenSetOf(Capability.CONTROL_DISPLAY),
+                ),
+            ),
+        )
     }
 
     override fun setRemoteLatencyMode(mode: Int) {

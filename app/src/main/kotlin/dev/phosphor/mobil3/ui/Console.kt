@@ -428,12 +428,15 @@ fun OverflowPopout(
                 when (state.fpsValue) { 0 -> "120"; -1 -> "unc"; else -> "${state.fpsValue}" },
                 active = true, p = p, onTap = onFps,
             )
-            // ONE switch for the whole top block (Ben ×2: "not all of it turns off") —
-            // drives BAND and HUD in lockstep; SETTINGS keeps the fine-grained pair.
+            // HUD quick control is a direct projection of the causal HUD row. The status
+            // band remains an independent legacy control until its own store slice lands.
             QuickToggle(
                 SettingsGlyph.Hud,
-                when (state.bandMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
-                active = state.bandMode != 2, p = p, onTap = onHud,
+                when (state.hudMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
+                active = state.hudMode != 2,
+                enabled = state.hudControlWritable,
+                p = p,
+                onTap = onHud,
             )
             QuickToggle(
                 SettingsGlyph.Grid,
@@ -450,12 +453,13 @@ private fun QuickToggle(
     glyph: SettingsGlyph,
     value: String,
     active: Boolean,
+    enabled: Boolean = true,
     p: Palette,
     onTap: () -> Unit,
 ) {
     Column(
         Modifier
-            .clickable(onClick = onTap)
+            .clickable(enabled = enabled, onClick = onTap)
             .padding(horizontal = 10.dp, vertical = 4.dp),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
@@ -464,7 +468,7 @@ private fun QuickToggle(
             Column(horizontalAlignment = Alignment.CenterHorizontally) {
                 SettingsGlyphIcon(glyph, p, 18.dp)
                 Spacer(Modifier.height(3.dp))
-                Mono(value, if (active) p.accent else p.muted, Type.dataXs)
+                Mono(value, if (enabled && active) p.accent else p.muted, Type.dataXs)
             }
         }
     }

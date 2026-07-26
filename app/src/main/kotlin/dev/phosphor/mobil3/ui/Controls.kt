@@ -320,6 +320,7 @@ fun ChipCell(
     active: Boolean,
     p: Palette,
     small: Boolean = false,
+    enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
     Box(
@@ -327,11 +328,21 @@ fun ChipCell(
             .padding(3.dp)
             .fillMaxWidth()
             .height(if (small) 40.dp else 48.dp)
-            .border(Dim.hairline, if (active) p.accent else p.line)
-            .clickable(onClick = onClick)
+            .border(Dim.hairline, if (active && enabled) p.accent else p.line)
+            .clickable(enabled = enabled, onClick = onClick)
             .padding(6.dp),
         contentAlignment = Alignment.Center,
-    ) { Mono(label, if (active) p.accent else p.ink2, if (small) Type.dataSm else Type.data) }
+    ) {
+        Mono(
+            label,
+            when {
+                !enabled -> p.muted
+                active -> p.accent
+                else -> p.ink2
+            },
+            if (small) Type.dataSm else Type.data,
+        )
+    }
 }
 
 @Composable

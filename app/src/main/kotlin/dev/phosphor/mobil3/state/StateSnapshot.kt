@@ -297,4 +297,10 @@ object InitialSnapshots {
         distribution = Distribution.FORTRESS,
         buildProfile = BuildProfile.FORTRESS_RELEASE,
     )
+
+    fun localDevelopment(nowWallMillis: Long = 0L): PhosphorStateSnapshot = PhosphorStateSnapshot(
+        wallTimeMillis = nowWallMillis,
+        distribution = Distribution.LOCAL_DEV,
+        buildProfile = BuildProfile.LOCAL_DEVELOPMENT,
+    )
 }

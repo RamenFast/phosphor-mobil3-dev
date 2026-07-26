@@ -1197,7 +1197,10 @@ fun SettingsSheet(
                         "HUD · " + when (state.hudMode) {
                             0 -> "on"; 1 -> "auto"; else -> "off"
                         },
-                        active = state.hudMode == 0, p = p, small = true,
+                        active = state.hudMode == 0,
+                        p = p,
+                        small = true,
+                        enabled = state.hudControlWritable,
                     ) { actions.setHudMode((state.hudMode + 1) % 3) }
                 }
                 Box(Modifier.weight(1f)) {
@@ -1210,6 +1213,10 @@ fun SettingsSheet(
                     ) { state.bandMode = (state.bandMode + 1) % 3 }
                 }
                 Spacer(Modifier.weight(1f))
+            }
+            val hudMessage = state.hudControlFix.ifBlank { state.hudControlStatus }
+            if (hudMessage.isNotBlank()) {
+                Prose(hudMessage, p.muted, modifier = Modifier.padding(top = 6.dp))
             }
         }
         val remote: @Composable () -> Unit = {

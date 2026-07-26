@@ -565,10 +565,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                             sheetActions.setFps(next)
                         },
                         onHud = {
-                            // TOP lockstep: band + HUD move together from the quick toggle.
-                            val next = (state.bandMode + 1) % 3
-                            state.bandMode = next
-                            sheetActions.setHudMode(next)
+                            // TOP truth is causal: no band pre-mutation, and no action while
+                            // HUD control is degraded. The accepted store snapshot updates HUD.
+                            val hudAction = hudQuickAction(state.hudControlWritable, state.hudMode)
+                            if (hudAction.enabled) sheetActions.setHudMode(hudAction.requestedMode)
                         },
                         onGrid = { sheetActions.setGrid(!state.grid) },
                         onRequestClose = { closeOverflow(Sheet.NONE) },
