@@ -93,9 +93,44 @@ A state counts as proven only if a named action produces it and two surfaces agr
 6. **L-04 itself should be amended** to drop `authenticated` from the relay lane or
    rename it `greeted`. Recorded as an ask for Ben rather than silently reinterpreted.
 
-## Honest status of this receipt
+## Live device results, 2026-07-28
 
-States proven live on device: **0 of 5** so far. The forcing actions above are agreed but
-not yet executed, because Ben is out with the phone in use and device work waits for an
-idle handset. This receipt records the plan and the audit; the live column gets filled in
-when the phone is free.
+Run against Fortress 2.0.0 release (`e4d14ce2...`) on the S25 at `100.102.2.83:5555`,
+relay `interserve-linux` 100.114.165.77 running phosphor-relay 2.2.0.
+
+| what | result | evidence |
+|---|---|---|
+| Fortress cold start | pass | `v2/fortress-2.0.0-cold-start.png`: grid, resting beam dot, `src · no source`. No FATAL/ANR in logcat. |
+| Seeded hosts appear | pass | `v2/remote-sheet-with-add-relay.png`: REMOTE lists `thinkcenter` and `interserve-linux`. |
+| **ADD RELAY control exists** | pass | Same shot: `+ ADD RELAY` renders in the sheet language. This is the control the Play build previously had no way to reach. |
+| Connect to a relay | pass | `v2/remote-connected-interserve.png`: row checked green, band reads `src · remote · interserve-linux`, `MUSIC · on`. |
+| Relay serving frames | pass | `phosphor-relay probe --host 100.114.165.77` → `a_per_sec: 97.67`, 293 A-frames in 3 s. |
+| Link survives sheet dismiss | pass | `v2/remote-beam-live.png` and the later scroll shot both still show `src · remote · interserve-linux`. |
+| v1.0.7 untouched | pass | `firstInstallTime` and the `shared_prefs` listing hash are byte-identical before and after install. Both packages coexist. |
+
+### The "silent" gap, demonstrated rather than argued
+
+The beam drew nothing while the link was healthy. That is not a defect, and the live
+numbers say exactly why:
+
+```
+phosphor-relay probe --host 100.114.165.77 --rms
+  → a_per_sec: 97.67, rms: 0.0, rms_peak: 0.0
+```
+
+The desktop was silent. The relay faithfully streamed 97 frames/sec of silence, and the
+scope correctly drew nothing. This is precisely the case the audit predicted: **the app
+cannot tell "connected and silent" from "connected and loud"**, because there is no RMS
+anywhere on the remote path. A user seeing a black screen here has no way to know whether
+the link is fine or broken.
+
+That makes the deferred `silent` work concrete rather than theoretical. The relay already
+computes RMS for its own `probe --rms`; carrying it on the existing `K` frame would close
+the gap. **Gate unchanged: implement RMS on the `K` frame before claiming L-04 `silent`.**
+
+### Still unproven live
+
+The forcing actions for `stalled`, `backoff`, and `error` need `iptables`/`SIGSTOP` on the
+relay host, and I have no shell on `interserve-linux` (SSH refused: publickey). They pass
+as host-side unit tests (`RemoteLinkTruthTest`, 9 tests) but are **not** proven end to end
+on device. Recorded as unproven rather than assumed.

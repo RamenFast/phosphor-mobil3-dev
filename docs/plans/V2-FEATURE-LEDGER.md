@@ -55,9 +55,15 @@ These mattered enough to name. Each cost, or would have cost, real time.
 | Relay crate | `works` | 15/15 tests, `cargo test` in `relay/` |
 | Phone-side remote engine (SPSC ring, supervisor) | `works` | `rust/src/remote.rs`; 32/32 Rust tests |
 | Fortress seeded hosts | `works` | Fortress dex contains 2 private host strings; `ship-check.sh --only=boundary.endpoints` |
-| **Play host list** | **`absent`** | **Play dex contains 0 host strings and there is NO add-host UI. `grep -rn 'addHost\|customHost' app/src/main` returns nothing. The flagship feature is unreachable on Play.** |
-| User-managed host store | *in progress* | Being built this session; will be `works` only when its tests and an on-device round-trip pass |
-| 7-state connection truth (L-04) | *under audit* | Acceptance `spec/ACCEPTANCE.md` L-04; audit in flight, result lands in `docs/dev/receipts/phosphor-2.0/phase-B-remote-truth.md` |
+| **Play host list** | `works` | `RemoteHostStore` + `+ ADD RELAY` UI. Play seeds empty, Fortress seeds from BuildConfig, and the Play dex still contains 0 private host strings. Proven live on device: `docs/dev/receipts/phosphor-2.0/v2/remote-sheet-with-add-relay.png` |
+| User-managed host store | `works` | 13 unit tests: parse, malformed-skip, empty-Play-seed, one-shot seeding, add/edit/remove round-trip, restore-after-process-death, every refusal path, failed-write reporting, delimiter-corruption resistance, trim-on-save |
+| Connect to a relay | `works` | Live: `remote-connected-interserve.png`, band reads `src · remote · interserve-linux`, relay serving 97.67 A-frames/sec |
+| Link state: dialing / greeted / connected | `works` | `RemoteLinkTruth` + 9 tests. `greeted` is new and stops the app claiming a live link before any frame arrives |
+| Link state: stalled | `partial` | Logic and tests exist and it no longer masquerades as `reconnecting`, but the forcing action needs shell on the relay host, which I lack. **Unproven on device.** |
+| Link state: backoff / error | `partial` | Same: unit-tested, not device-proven |
+| Link state: silent | `absent` | No RMS anywhere on the remote path. **Demonstrated live:** relay streaming 97 frames/sec at `rms 0.0` while the beam drew nothing, indistinguishable from a broken link. **Gate: RMS on the `K` frame.** |
+| Link state: authenticated | `not applicable` | Protocol v2 has no authentication. L-04 borrowed the word from the Nexus session plane. **Ask: amend L-04.** |
+| Error `fix` text surfaced | `works` | Engine and relay both guarantee a fix; it was built and discarded. Now shown in the REMOTE sheet |
 
 ## Causal store / Nexus machinery (v2 additions)
 
@@ -123,7 +129,8 @@ Three further findings are **gates, not blockers**, recorded here rather than fi
 | Lint clean (0 errors) | `works` | `lint-results-playRelease.txt` |
 | Release signing fails closed | `works` | `verifyPlayReleaseSigning` blocks the build without inputs |
 | Play/Fortress boundary enforced | `works` | `check-play-boundary.sh all` exits 0; Play dex has 0 private strings |
-| Backup policy (`dataExtractionRules`) | *in progress* | Currently `allowBackup="true"` with no rules |
+| Backup policy (`dataExtractionRules`) | `works` | `data_extraction_rules.xml` + `backup_rules.xml`. Causal envelope, runtime state and `remote_hosts` excluded from cloud backup and device transfer; genuine settings still restore. Lint `DataExtractionRules` gone |
+| Lint dispositions | `works` | 48 → 41 warnings; every survivor has a written disposition in `docs/dev/LINT-DISPOSITIONS.md` |
 | **Play upload keystore** | **`absent`** | `~/.secrets/` holds only the Fortress JKS. **Ben must mint this.** Blocks the Play AAB only, not testing. |
 | **Privacy policy URL** | **`absent`** | Play-required. **Ben must publish it.** |
 | **Billing / Pro unlock** | **`absent`** | No `BillingClient` anywhere. See cost estimate below. |
