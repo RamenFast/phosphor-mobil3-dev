@@ -3,12 +3,12 @@
 set -uo pipefail
 
 TOOL="pm3"
-VERSION="0.2.0"
+VERSION="0.3.0"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 SERIAL="${PM3_SERIAL:-}"
 DISTRIBUTION="fortress"
 PROFILE="debug"
-PHASE05_FIX="Activate Phase 05 by wiring dev/pm3 to the authenticated Nexus Binder/tailnet client, then retry this exact verb."
+PROVIDER_METHOD="pm3"
 USAGE_TEXT="pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]"
 
 # shellcheck disable=SC1091
@@ -20,7 +20,8 @@ pm3 $VERSION - phosphor-mobil3 development CLI
 usage: pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]
 verbs: help, schema, doctor, pair, connect, build, install, run, logcat, screenshot, record,
        media, fps, smoke, state-get, state-watch, nexus-status, nexus-grant, nexus-revoke,
-       action-run, audit-list, audit-export
+       action-run, audit-list, audit-export, tailnet-status, tailnet-configure, tailnet-clear,
+       tailnet-start, tailnet-stop, tailnet-secret
 EOF
 }
 
@@ -85,6 +86,15 @@ stream_fail() {
 
 need_command() {
   command -v "$1" >/dev/null 2>&1 || fail 2 dependency_unavailable "$1 not on PATH" "$2"
+}
+
+base64url_encode() { base64 | tr -- '+/' '-_' | tr -d '=\n'; }
+base64url_decode() {
+  local s="$1" pad
+  case "$s" in *[!A-Za-z0-9_-]*|'') return 1 ;; esac
+  pad=$(( (4 - ${#s} % 4) % 4 ))
+  s="$s$(printf '%*s' "$pad" '' | tr ' ' '=')"
+  printf '%s' "$s" | tr -- '-_' '+/' | base64 -d 2>/dev/null
 }
 
 validate_distribution() {
@@ -185,7 +195,7 @@ schema() {
   contract="$(cat <<'JSON' | tr -d '\n'
 {
   "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "$id":"https://phosphor.dev/schemas/pm3-cli-0.2.0.json",
+  "$id":"https://phosphor.dev/schemas/pm3-cli-0.3.0.json",
   "title":"pm3 CLI contract",
   "description":"Strict machine-readable contract for pm3 one-shots, streams, commands, capabilities, formats, exits, signing, and explicit device selection.",
   "type":"object",
@@ -230,7 +240,7 @@ schema() {
   },
   "$defs":{
     "timestamp":{"type":"string","format":"date-time","minLength":1},
-    "stableError":{"type":"string","enum":["dependency_unavailable","invalid_distribution","invalid_profile","serial_required","missing_argument","unknown_argument","unexpected_argument","signing_inputs_missing","signing_keystore_missing","signing_verification_failed","signing_certificate_mismatch","phase_unavailable","prerequisites_unavailable","pair_usage","pair_failed","connect_usage","connect_failed","build_failed","apk_missing","apk_unavailable","install_failed","package_query_failed","version_missing","launch_failed","pid_query_failed","process_missing","screenshot_usage","screenshot_capture_failed","screenshot_save_failed","record_usage","invalid_duration","record_capture_failed","record_pull_failed","record_cleanup_failed","record_save_failed","media_query_failed","audio_query_failed","gfxinfo_query_failed","gfxinfo_unavailable","debuggable_required","broadcast_failed","selftest_timeout","selftest_image_failed","unknown_verb","logcat_failed"]},
+    "stableError":{"type":"string","enum":["dependency_unavailable","invalid_distribution","invalid_profile","serial_required","missing_argument","unknown_argument","unexpected_argument","signing_inputs_missing","signing_keystore_missing","signing_verification_failed","signing_certificate_mismatch","phase_unavailable","prerequisites_unavailable","pair_usage","pair_failed","connect_usage","connect_failed","build_failed","apk_missing","apk_unavailable","install_failed","package_query_failed","version_missing","launch_failed","pid_query_failed","process_missing","screenshot_usage","screenshot_capture_failed","screenshot_save_failed","record_usage","invalid_duration","record_capture_failed","record_pull_failed","record_cleanup_failed","record_save_failed","media_query_failed","audio_query_failed","gfxinfo_query_failed","gfxinfo_unavailable","debuggable_required","broadcast_failed","selftest_timeout","selftest_image_failed","unknown_verb","logcat_failed","play_unavailable","invalid_args","provider_call_failed","provider_response_missing","provider_response_invalid","provider_refused"]},
     "emptyData":{"type":"object","additionalProperties":false,"required":[],"properties":{}},
     "usageData":{"type":"object","additionalProperties":false,"required":["usage"],"properties":{"usage":{"type":"string","minLength":1}}},
     "check":{"type":"object","additionalProperties":false,"required":["check","ok","detail"],"properties":{"check":{"type":"string"},"ok":{"type":"boolean"},"detail":{"type":"string"}}},
@@ -247,24 +257,24 @@ schema() {
     "mediaData":{"type":"object","additionalProperties":false,"required":["media_session","audio"],"properties":{"media_session":{"type":"string"},"audio":{"type":"string"}}},
     "fpsData":{"type":"object","additionalProperties":false,"required":["gfxinfo"],"properties":{"gfxinfo":{"type":"string","minLength":1}}},
     "smokeData":{"type":"object","additionalProperties":false,"required":["report_json","png_pulled"],"properties":{"report_json":{"type":"string"},"png_pulled":{"type":"string"}}},
-    "errorEnvelopeEmpty":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"$ref":"#/$defs/stableError"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/emptyData"}}},
-    "errorEnvelopeUsage":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"$ref":"#/$defs/stableError"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/usageData"}}},
-    "doctorErrorEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"const":"prerequisites_unavailable"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/doctorData"}}},
-    "helpEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/helpData"}}},
-    "schemaEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/schemaData"}}},
-    "doctorEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/doctorData"}}},
-    "pairEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/pairData"}}},
-    "connectEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/connectData"}}},
-    "buildEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/buildData"}}},
-    "installEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/installData"}}},
-    "runEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/runData"}}},
-    "screenshotEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/screenshotData"}}},
-    "recordEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/recordData"}}},
-    "mediaEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/mediaData"}}},
-    "fpsEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/fpsData"}}},
-    "smokeEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/smokeData"}}},
-    "logcatEvent":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","event","serial","package_id","line"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"event":{"const":"logcat"},"serial":{"type":"string","minLength":1},"package_id":{"type":"string"},"line":{"type":"string"}}},
-    "streamError":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","event","error","message","fix"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.2.0"},"ts":{"$ref":"#/$defs/timestamp"},"event":{"const":"stream_error"},"error":{"const":"logcat_failed"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1}}},
+    "errorEnvelopeEmpty":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"$ref":"#/$defs/stableError"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/emptyData"}}},
+    "errorEnvelopeUsage":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"$ref":"#/$defs/stableError"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/usageData"}}},
+    "doctorErrorEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"const":"prerequisites_unavailable"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/doctorData"}}},
+    "helpEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/helpData"}}},
+    "schemaEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/schemaData"}}},
+    "doctorEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/doctorData"}}},
+    "pairEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/pairData"}}},
+    "connectEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/connectData"}}},
+    "buildEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/buildData"}}},
+    "installEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/installData"}}},
+    "runEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/runData"}}},
+    "screenshotEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/screenshotData"}}},
+    "recordEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/recordData"}}},
+    "mediaEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/mediaData"}}},
+    "fpsEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/fpsData"}}},
+    "smokeEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/smokeData"}}},
+    "logcatEvent":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","event","serial","package_id","line"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"event":{"const":"logcat"},"serial":{"type":"string","minLength":1},"package_id":{"type":"string"},"line":{"type":"string"}}},
+    "streamError":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","event","error","message","fix"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"event":{"const":"stream_error"},"error":{"const":"logcat_failed"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1}}},
     "phase05Verb":{"type":"object","additionalProperties":false,"required":["arguments","mode","availability","errors","exits"],"properties":{"arguments":{"const":[]},"mode":{"const":"one-shot"},"availability":{"const":"Phase 05a exit 2 and side-effect free until authenticated transport activation"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[2,3]}}}
   }
 }
@@ -324,10 +334,47 @@ release_signing_preflight() {
   return 0
 }
 
-phase05_unavailable() {
+provider_authority() { printf '%s.pm3\n' "$(package_id)"; }
+
+json_args_or_empty() {
+  if [ "$#" -eq 0 ]; then printf '{}\n'; return 0; fi
+  if [ "$#" -eq 1 ]; then printf '%s' "$1" | jq -e 'type == "object"' >/dev/null || return 1; printf '%s\n' "$1"; return 0; fi
+  return 1
+}
+
+provider_call() {
+  local verb="$1" args_json request encoded raw response decoded ok data
+  shift
+  [ "$DISTRIBUTION" = fortress ] || fail 2 play_unavailable "pm3 provider verbs are Fortress-only" "retry with --distribution fortress on a Fortress build"
+  need_command jq "install jq for strict pm3 JSON construction and response validation"
+  need_serial
+  args_json="$(json_args_or_empty "$@")" || fail 3 invalid_args "usage: pm3 $verb [json-object-args]" "pass one strict JSON object argument or run pm3 schema"
+  request="$(jq -cn --arg verb "$verb" --argjson args "$args_json" '{verb:$verb,args:$args}')"
+  encoded="$(printf '%s' "$request" | base64url_encode)"
+  raw="$(adb_s shell content call --uri "content://$(provider_authority)" --method "$PROVIDER_METHOD" --extra request:s:"$encoded" 2>&1)" || fail 4 provider_call_failed "provider call failed: $raw" "install and start a current Fortress build, then retry"
+  response="$(printf '%s\n' "$raw" | sed -n 's/.*response=//p' | sed 's/[]}].*//' | head -1 | tr -d '\r')"
+  [ -n "$response" ] || fail 4 provider_response_missing "provider returned no response Bundle key: $raw" "check logcat for pm3 provider refusal"
+  decoded="$(base64url_decode "$response")" || fail 4 provider_response_invalid "provider response was not valid base64url" "upgrade Fortress app and retry"
+  printf '%s' "$decoded" | jq -e . >/dev/null || fail 4 provider_response_invalid "provider response decoded to invalid JSON" "upgrade Fortress app and retry"
+  ok="$(printf '%s' "$decoded" | jq -r '.ok')"
+  data="$(printf '%s' "$decoded" | jq -c '.data // {}')"
+  if [ "$ok" = true ]; then
+    succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$(package_id)\",\"provider_protocol\":$(printf '%s' "$decoded" | jq -r '.protocol // 0'),\"result\":$data"
+  else
+    fail 4 provider_refused "$(printf '%s' "$decoded" | jq -r '.message // "provider refused"')" "$(printf '%s' "$decoded" | jq -r '.fix // "inspect app logcat"')" "\"provider_error\":$(printf '%s' "$decoded" | jq -c '{error,message,fix}')"
+  fi
+}
+
+tailnet_secret_write() {
+  [ "$DISTRIBUTION" = fortress ] || fail 2 play_unavailable "pm3 tailnet-secret is Fortress-only" "retry with --distribution fortress on a Fortress build"
   no_args "$@"
-  fail 2 phase_unavailable \
-    "Phase 05 protocol verb $VERB unavailable: no authenticated Binder/tailnet client is wired" "$PHASE05_FIX"
+  need_serial
+  raw="$(adb_s shell content write --uri "content://$(provider_authority)/tailnet-secret" 2>&1)" || fail 4 provider_call_failed "tailnet secret write failed: $raw" "pipe the secret on stdin into pm3 tailnet-secret after installing Fortress"
+  succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$(package_id)\",\"secret_written\":true" "tailnet secret stored via provider pipe"
+}
+
+provider_stream_watch() {
+  provider_call state-watch "$@" | jq -c '.data.result.events[] | {status:"ok",tool:"pm3",version:"'"$VERSION"'",ts:"'"$(now)"'",event:.event,data:.}'
 }
 
 parse_globals "$@"
@@ -336,7 +383,7 @@ set -- "${REST[@]}"
 case "$VERB" in
   help)
     no_args "$@"
-    succeed '"usage":"pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]","verbs":["doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke","schema","state-get","state-watch","nexus-status","nexus-grant","nexus-revoke","action-run","audit-list","audit-export"]'
+    succeed '"usage":"pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]","verbs":["doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke","schema","state-get","state-watch","nexus-status","nexus-grant","nexus-revoke","action-run","audit-list","audit-export","tailnet-status","tailnet-configure","tailnet-clear","tailnet-start","tailnet-stop","tailnet-secret"]'
     ;;
   schema)
     no_args "$@"
@@ -569,8 +616,14 @@ case "$VERB" in
     fi
     succeed "\"report_json\":\"$(json_escape "$report")\",\"png_pulled\":\"$(json_escape "$output_path")\"" "selftest passed; image=$output_path"
     ;;
-  state-get|state-watch|nexus-status|nexus-grant|nexus-revoke|action-run|audit-list|audit-export)
-    phase05_unavailable "$@"
+  state-watch)
+    provider_stream_watch "$@"
+    ;;
+  state-get|nexus-status|nexus-grant|nexus-revoke|action-run|audit-list|audit-export|tailnet-status|tailnet-configure|tailnet-clear|tailnet-start|tailnet-stop)
+    provider_call "$VERB" "$@"
+    ;;
+  tailnet-secret)
+    tailnet_secret_write "$@"
     ;;
   *) fail 3 unknown_verb "unknown verb: $VERB" "run pm3 help or pm3 schema" ;;
 esac

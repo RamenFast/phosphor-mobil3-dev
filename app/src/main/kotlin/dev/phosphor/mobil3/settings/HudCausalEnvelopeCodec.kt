@@ -33,9 +33,11 @@ import dev.phosphor.mobil3.state.Transport
 import dev.phosphor.mobil3.state.frozenListOf
 import dev.phosphor.mobil3.state.frozenMapOf
 import dev.phosphor.mobil3.store.PhosphorStoreImage
+import dev.phosphor.mobil3.store.NEXUS_LIFECYCLE_AUDIT_KINDS
 
 object HudCausalEnvelopeCodec {
-    const val SCHEMA = "phosphor.causal.hud/1"
+    const val LEGACY_SCHEMA = "phosphor.causal.hud/1"
+    const val SCHEMA = "phosphor.causal.hud/2"
     internal const val MAX_BYTES = 512 * 1024
     private val hudReceipt = Regex("hud-(\\d+)")
 
@@ -92,6 +94,7 @@ object HudCausalEnvelopeCodec {
             .put("snapshot_provenance_receipt_id", snapshotProvenance?.receiptId ?: JSONObject.NULL)
             .put("next_receipt_ordinal", image.nextReceiptOrdinal)
             .put("next_idempotency_ordinal", image.nextIdempotencyOrdinal)
+            .put("authority_plane", image.authorityPlane ?: JSONObject.NULL)
             .put("provenance_pool", JSONArray().also { array -> provenancePool.values.forEach { array.put(provenanceJson(it)) } })
             .put("audit", auditJson(image.audit))
             .put("idempotency", idempotencyJson(image.idempotency))
@@ -116,6 +119,9 @@ object HudCausalEnvelopeCodec {
         }
         rejectDecimalIntegerLiterals(encoded)
         root.requireKeys("root", setOf("schema", "payload", "checksum_sha256"))
+        if (root.requiredString("schema") == LEGACY_SCHEMA) {
+            throw HudCausalCodecException("schema_migration_required", "HUD causal schema '${root.requiredString("schema")}' must be migrated explicitly", "Run the explicit HUD causal schema migration so the v2 checksum-bound envelope can be verified before load")
+        }
         if (root.requiredString("schema") != SCHEMA) {
             throw HudCausalCodecException("unsupported_schema", "Unsupported HUD causal schema '${root.requiredString("schema")}'", "Upgrade Phosphor or run explicit schema migration")
         }
@@ -151,6 +157,7 @@ object HudCausalEnvelopeCodec {
         val idempotency = idempotency(payload.requiredObject("idempotency"), provenancePool)
         val nextReceiptOrdinal = payload.requiredLong("next_receipt_ordinal")
         val nextIdempotencyOrdinal = payload.requiredLong("next_idempotency_ordinal")
+        val authorityPlane = payload.optNullableString("authority_plane")
         val retainedReceiptIds = mutableListOf<String>()
         val provenanceReferenceReceiptIds = mutableListOf<String>()
         snapshotProvenance?.let {
@@ -185,6 +192,7 @@ object HudCausalEnvelopeCodec {
             idempotency = idempotency,
             nextReceiptOrdinal = nextReceiptOrdinal,
             nextIdempotencyOrdinal = nextIdempotencyOrdinal,
+            authorityPlane = authorityPlane,
         ).also { image ->
             validateSupportedImage(image)
             validateCanonicalEncoding(encoded, image)
@@ -199,11 +207,37 @@ object HudCausalEnvelopeCodec {
         throw HudCausalCodecException("malformed_payload", "HUD causal envelope violates the HUD causal contract: ${error.message ?: "invalid value"}", "Preserve the corrupt envelope and rebuild through explicit repair")
     }
 
+    fun migrateLegacyV1(encoded: String, compiledBaseSnapshot: PhosphorStateSnapshot): String {
+        val root = try { JSONObject(encoded) } catch (_: Exception) {
+            throw HudCausalCodecException("invalid_json", "Legacy HUD causal envelope is not valid JSON", "Preserve the corrupt envelope and run explicit repair")
+        }
+        if (root.optString("schema") != LEGACY_SCHEMA) {
+            throw HudCausalCodecException("unsupported_schema", "Explicit migration only accepts $LEGACY_SCHEMA", "Use the matching migration for this envelope schema")
+        }
+        root.requireKeys("root", setOf("schema", "payload", "checksum_sha256"))
+        val legacyPayload = root.requiredObject("payload").also { it.requireKeys("payload", LEGACY_PAYLOAD_KEYS) }
+        val legacyChecksum = root.requiredString("checksum_sha256")
+        if (!legacyChecksum.matches(Regex("[0-9a-f]{64}")) || legacyChecksum != sha256(canonicalJson(legacyPayload))) {
+            throw HudCausalCodecException("checksum_mismatch", "Legacy HUD causal envelope checksum does not match", "Do not migrate a tampered v1 envelope; preserve it and run explicit repair")
+        }
+        root.put("schema", SCHEMA)
+        val payload = legacyPayload
+        payload.put("authority_plane", JSONObject.NULL)
+        root.put("checksum_sha256", sha256(canonicalJson(payload)))
+        return canonicalJson(root).also { decode(it, compiledBaseSnapshot) }
+    }
+
     private fun validateSupportedImage(image: PhosphorStoreImage) {
         if (image.snapshot.desired.displayHud != image.snapshot.effective.displayHud) {
             throw HudCausalCodecException("unsupported_image", "HUD causal image has divergent desired/effective HUD values", "Persist only a reconciled HUD slice image")
         }
         image.audit.records.forEach { record ->
+            if (record.kind in NEXUS_LIFECYCLE_AUDIT_KINDS) {
+                if (record.actionType != null || record.fields.isNotEmpty() || record.provenance != null || record.refusal != null) {
+                    throw HudCausalCodecException("unsupported_image", "Nexus lifecycle audit records must be actionless", "Persist lifecycle audit with only receipt, kind, and wall time")
+                }
+                return@forEach
+            }
             if (record.kind !in HUD_AUDIT_KINDS) {
                 throw HudCausalCodecException("unsupported_image", "HUD causal audit kind is outside the HUD reducer grammar", "Persist only HUD reducer audit records")
             }
@@ -319,20 +353,29 @@ object HudCausalEnvelopeCodec {
 
     private fun validatePrincipal(principal: PrincipalId) {
         if (!isAllowedPrincipal(principal, null, null)) {
-            throw HudCausalCodecException("unsupported_image", "HUD causal principal is outside local HUD writers", "Persist only local HUD human or migration provenance")
+            throw HudCausalCodecException("unsupported_image", "HUD causal principal is outside declared HUD writers", "Persist only the local HUD principals or an authenticated Nexus principal")
         }
     }
 
     private fun validatePrincipal(principal: PrincipalId, transport: Transport, sessionId: String?) {
         if (!isAllowedPrincipal(principal, transport, sessionId)) {
-            throw HudCausalCodecException("unsupported_image", "HUD causal provenance is outside local HUD writers", "Persist only local HUD human or migration provenance without sessions")
+            throw HudCausalCodecException("unsupported_image", "HUD causal provenance is outside declared HUD writers", "Persist local HUD provenance without a session, or Nexus provenance through Binder/tailnet with a nonblank session")
         }
     }
 
     private fun isAllowedPrincipal(principal: PrincipalId, transport: Transport?, sessionId: String?): Boolean {
-        if (sessionId != null) return false
-        return (principal.kind == PrincipalKind.HUMAN && principal.stableId == "local-human" && (transport == null || transport == Transport.UI)) ||
-            (principal.kind == PrincipalKind.MIGRATION && principal.stableId == "local-hud-preferences" && (transport == null || transport == Transport.MIGRATION))
+        val local = sessionId == null && (
+            (principal.kind == PrincipalKind.HUMAN && principal.stableId == "local-human" && (transport == null || transport == Transport.UI)) ||
+                (principal.kind == PrincipalKind.MIGRATION && principal.stableId == "local-hud-preferences" && (transport == null || transport == Transport.MIGRATION))
+            )
+        val nexus = principal.kind == PrincipalKind.NEXUS && when (transport) {
+            null -> sessionId == null
+            Transport.BINDER,
+            Transport.TAILNET,
+            -> !sessionId.isNullOrBlank()
+            else -> false
+        }
+        return local || nexus
     }
 
     private fun provenanceJson(value: ProvenanceStamp): JSONObject = JSONObject()
@@ -393,6 +436,12 @@ object HudCausalEnvelopeCodec {
                 provenance = receiptId?.let { provenancePool[it] ?: throw missingProvenance(it) },
                 refusal = if (item.isNull("refusal")) null else refusal(item.requiredObject("refusal")),
             ).also { record ->
+                if (record.kind in NEXUS_LIFECYCLE_AUDIT_KINDS) {
+                    if (record.actionType != null || record.fields.isNotEmpty() || record.provenance != null || record.refusal != null) {
+                        throw HudCausalCodecException("unsupported_image", "Nexus lifecycle audit record is not actionless", "Repair lifecycle audit records to contain only receipt, kind, and wall time")
+                    }
+                    return@also
+                }
                 if (record.kind !in HUD_AUDIT_KINDS || record.actionType != ActionType.SET_DISPLAY_HUD || record.fields != FrozenSet.copyOf(setOf(StateField.DISPLAY_HUD))) {
                     throw HudCausalCodecException("unsupported_image", "HUD causal audit record is outside the DisplayHudReducer contract", "Repair retained audit records to SET_DISPLAY_HUD DISPLAY_HUD HUD reducer kinds")
                 }
@@ -669,7 +718,8 @@ object HudCausalEnvelopeCodec {
     private fun missingProvenance(receiptId: String): HudCausalCodecException = HudCausalCodecException("provenance_missing", "HUD causal record references missing provenance '$receiptId'", "Preserve the envelope and repair through the store")
     private fun sha256(value: String): String = MessageDigest.getInstance("SHA-256").digest(value.toByteArray(Charsets.UTF_8)).joinToString("") { "%02x".format(it.toInt() and 0xff) }
 
-    private val PAYLOAD_KEYS = setOf("revision", "sequence", "wall_time_millis", "distribution", "build_profile", "display_hud", "snapshot_provenance_receipt_id", "next_receipt_ordinal", "next_idempotency_ordinal", "provenance_pool", "audit", "idempotency")
+    private val PAYLOAD_KEYS = setOf("revision", "sequence", "wall_time_millis", "distribution", "build_profile", "display_hud", "snapshot_provenance_receipt_id", "next_receipt_ordinal", "next_idempotency_ordinal", "authority_plane", "provenance_pool", "audit", "idempotency")
+    private val LEGACY_PAYLOAD_KEYS = PAYLOAD_KEYS - "authority_plane"
     private val DECIMAL_INTEGER_FIELD = Regex("\\\"(revision|sequence|wall_time_millis|next_receipt_ordinal|next_idempotency_ordinal|monotonic_millis|policy_maximum_records|policy_maximum_age_millis|observed_wall_time_millis|policy_minimum_ttl_millis|accepted_wall_time_millis|expires_wall_time_millis|ordinal|current_revision)\\\"\\s*:\\s*-?\\d+(?:\\.\\d+|[eE][+-]?\\d+)")
     private val PROVENANCE_KEYS = setOf("receipt_id", "principal_kind", "principal_id", "reason", "transport", "session_id", "monotonic_millis", "wall_time_millis")
     private val AUDIT_KEYS = setOf("policy_maximum_records", "policy_maximum_age_millis", "observed_wall_time_millis", "records")

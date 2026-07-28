@@ -91,6 +91,19 @@ enum class ActionType(
         Capability.CONTROL_TRANSPORT,
         setOf(StateField.SOURCE_KIND, StateField.REMOTE_HOST_ID),
     ),
+    // Saving and removing a relay change the durable host list rather than the live
+    // connection, so they carry CONTROL_SETTINGS. They project REMOTE_HOST_ID because
+    // the set of reachable hosts is what changes.
+    SAVE_REMOTE_HOST(
+        "remote.host.save",
+        Capability.CONTROL_SETTINGS,
+        setOf(StateField.REMOTE_HOST_ID),
+    ),
+    REMOVE_REMOTE_HOST(
+        "remote.host.remove",
+        Capability.CONTROL_SETTINGS,
+        setOf(StateField.REMOTE_HOST_ID),
+    ),
     SET_REMOTE_STREAMS(
         "remote.streams.set",
         Capability.CONTROL_TRANSPORT,
@@ -146,6 +159,11 @@ fun PhosphorAction.directStateIntent(): FrozenMap<StateField, StateValue>? = whe
     RandomizeGlow,
     OpenCaptureMetadataSettings,
     is StartRemoteHost,
+    // Saving or removing a relay edits the durable host list. The accepted result depends
+    // on the current list (a duplicate is refused, an edit rewrites one row), so there is
+    // no direct assignment a receipt could pin without reducing against that state first.
+    is SaveRemoteHost,
+    is RemoveRemoteHost,
     DisconnectRemote,
     is OrbitScope,
     is DollyScope,
@@ -446,6 +464,52 @@ data class StartRemoteHost(val label: String, val host: String, val port: Int) :
         label.isBlank() -> invalid("Remote host label must be nonblank.")
         host.isBlank() -> invalid("Remote host address must be nonblank.")
         port !in 1..65535 -> invalid("Remote host port must be from 1 through 65535.")
+        else -> null
+    }
+}
+
+/**
+ * Save a relay endpoint. A blank [existingHost] adds; otherwise it edits the endpoint
+ * currently stored at ([existingHost], [existingPort]). The durable rules live in
+ * RemoteHostStore, so this validates only what the wire contract itself can know.
+ */
+data class SaveRemoteHost(
+    val existingHost: String,
+    val existingPort: Int,
+    val label: String,
+    val host: String,
+    val port: Int,
+) : PhosphorAction {
+    override val type = ActionType.SAVE_REMOTE_HOST
+    override fun canonicalPayload() = CanonicalPayload.of(
+        type.wireName,
+        "existing_host" to CanonicalString(existingHost),
+        "existing_port" to CanonicalInt(existingPort),
+        "host" to CanonicalString(host),
+        "label" to CanonicalString(label),
+        "port" to CanonicalInt(port),
+    )
+    override fun validate(): Refusal? = when {
+        label.isBlank() -> invalid("Relay label must be nonblank.")
+        host.isBlank() -> invalid("Relay host address must be nonblank.")
+        ':' in host -> invalid("Relay host cannot contain ':'. Plain IPv6 literals are unsupported.")
+        port !in 1..65535 -> invalid("Relay port must be from 1 through 65535.")
+        existingHost.isNotEmpty() && existingPort !in 1..65535 ->
+            invalid("The relay being edited must carry a port from 1 through 65535.")
+        else -> null
+    }
+}
+
+data class RemoveRemoteHost(val host: String, val port: Int) : PhosphorAction {
+    override val type = ActionType.REMOVE_REMOTE_HOST
+    override fun canonicalPayload() = CanonicalPayload.of(
+        type.wireName,
+        "host" to CanonicalString(host),
+        "port" to CanonicalInt(port),
+    )
+    override fun validate(): Refusal? = when {
+        host.isBlank() -> invalid("Relay host address must be nonblank.")
+        port !in 1..65535 -> invalid("Relay port must be from 1 through 65535.")
         else -> null
     }
 }

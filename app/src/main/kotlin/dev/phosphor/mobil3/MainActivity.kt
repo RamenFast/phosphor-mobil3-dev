@@ -11,6 +11,7 @@ import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
+import android.graphics.Rect
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
@@ -35,6 +36,7 @@ import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.lifecycle.Lifecycle
 import androidx.media3.common.MediaMetadata
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -397,12 +399,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        val causalBase = compiledCausalBaseSnapshot(System.currentTimeMillis())
-        causalStore = PhosphorStateStore(
-            port = CausalStatePreferences(prefs(), causalBase),
-            initialSnapshot = causalBase,
-            initialWallTimeMillis = causalBase.wallTimeMillis,
-        )
+        causalStore = (application as PhosphorApplication).causalStore
         ui = ScopeUiState(causalStore)
         enableEdgeToEdge()
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -418,10 +415,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         // Fullscreen by default (Ben's ask): the scope owns the whole panel;
         // system bars return transiently on an edge swipe.
         applyImmersive()
-        // PiP (spec §3): Home while the beam is live → the scope becomes the floating
-        // window. Pure scope, no chrome (ui.pip gates the whole chrome tree).
-        updatePictureInPictureParams()
         setContent { PhosphorScreen(ui, this, reduced) }
+        // PiP (spec §3): Home while the beam is live → the scope becomes the floating
+        // window. Post once so the source-rectangle hint uses laid-out content bounds.
+        window.decorView.post { updatePictureInPictureParams() }
         handleIntent(intent)
     }
 
@@ -439,7 +436,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (!lastSourceReopened) {
             lastSourceReopened = true
             if (!ui.live && ui.sourceLabel == "no source") {
-                when (prefs().getString("last_source", "none")) {
+                when (runtimePrefs().getString("last_source", "none")) {
                     "capture" -> if (!captureConsentNeeded()) startCapture()
                     "mic" -> startMic()
                 }
@@ -464,15 +461,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun updatePictureInPictureParams() {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
-        setPictureInPictureParams(
-            android.app.PictureInPictureParams.Builder()
-                .setAutoEnterEnabled(true)
-                .setAspectRatio(
-                    if (landscape) android.util.Rational(16, 9)
-                    else android.util.Rational(9, 16)
-                )
-                .build()
-        )
+        val sourceRectHint = Rect()
+        val hasSourceRectHint = window.decorView.getGlobalVisibleRect(sourceRectHint)
+        val builder = android.app.PictureInPictureParams.Builder()
+            .setAutoEnterEnabled(true)
+            .setAspectRatio(
+                if (landscape) android.util.Rational(16, 9)
+                else android.util.Rational(9, 16)
+            )
+        if (hasSourceRectHint) builder.setSourceRectHint(sourceRectHint)
+        setPictureInPictureParams(builder.build())
     }
 
     override fun onStart() {
@@ -498,6 +496,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
             controller = future.get().also { c ->
                 c.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = isPlaying }
+                    // The relay's failures arrive here carrying the engine's fix text.
+                    // Keeping the message means the REMOTE sheet can show a remedy instead
+                    // of a dead end; a recovered link clears it.
+                    override fun onPlayerErrorChanged(error: PlaybackException?) {
+                        if (ui.remote) ui.remoteFailure = error?.message.orEmpty()
+                    }
                     override fun onTimelineChanged(
                         t: androidx.media3.common.Timeline, reason: Int,
                     ) {
@@ -695,6 +699,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 val host = metadata.extras?.getString("host") ?: "remote"
                 ui.sourceLabel = when (conn) {
                     "CONNECTING" -> "remote · connecting…"
+                    // Greeted but no frame yet. The old code called this connected, which
+                    // claimed a live link before anything had flowed.
+                    "GREETED" -> "remote · waiting for audio"
+                    // Frozen socket, not a dropped one. Acceptance H-04 forbids showing a
+                    // frozen live trace, and this is what stops that happening.
+                    "STALLED" -> "remote · signal stalled"
                     "LOST" -> "remote · reconnecting…"
                     "FAILED" -> "remote · unreachable"
                     else -> "remote · $host"
@@ -748,21 +758,51 @@ class MainActivity : ComponentActivity(), ScopeActions {
         startRemoteHost(first.first, first.second.first, first.second.second)
     }
 
-    // The relay hosts the phone knows come from BuildConfig (local.properties
-    // `phosphor.remoteHosts=label:host:port,label:host:port`) — a build-machine fact,
-    // never source. Add/edit UI rides the full settings port.
+    // The relay hosts the phone knows. Seeded once from BuildConfig (a build-machine
+    // fact, never source) and thereafter owned by the user, so the Play distribution,
+    // which compiles an empty seed, can still reach a desktop the user runs.
+    private val remoteHostStore by lazy {
+        RemoteHostStore(this, DistributionCapabilities.profile.seededRemoteHosts)
+    }
+
     override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> =
-        DistributionCapabilities.profile.seededRemoteHosts.split(",").mapNotNull { entry ->
-            val parts = entry.trim().split(":")
-            if (parts.size != 3) return@mapNotNull null
-            val port = parts[2].toIntOrNull() ?: return@mapNotNull null
-            parts[0] to (parts[1] to port)
+        remoteHostStore.hosts().map { it.label to (it.host to it.port) }
+
+    override fun saveRemoteHost(
+        existingHost: String,
+        existingPort: Int,
+        label: String,
+        host: String,
+        port: String,
+    ): String? {
+        // The port arrives as raw text because the field is a text field. Refuse it here
+        // in the same fix-bearing shape the store uses, so the sheet has one error path.
+        val parsedPort = port.trim().toIntOrNull()
+            ?: return "Enter a port number from 1 through 65535."
+        val outcome = if (existingHost.isEmpty()) {
+            remoteHostStore.add(label, host, parsedPort)
+        } else {
+            remoteHostStore.update(existingHost, existingPort, label, host, parsedPort)
+        }
+        return when (outcome) {
+            is RemoteHostOutcome.Saved -> null
+            is RemoteHostOutcome.Refused -> "${outcome.message} ${outcome.fix}"
+            is RemoteHostOutcome.Failed -> "${outcome.message} ${outcome.fix}"
+        }
+    }
+
+    override fun removeRemoteHost(host: String, port: Int): String? =
+        when (val outcome = remoteHostStore.remove(host, port)) {
+            is RemoteHostOutcome.Saved -> null
+            is RemoteHostOutcome.Refused -> "${outcome.message} ${outcome.fix}"
+            is RemoteHostOutcome.Failed -> "${outcome.message} ${outcome.fix}"
         }
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
         mic.stop()
         prefs().edit().putFloat("gain", gainValue).apply()
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
+        ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
         ui.remote = true
         startService(
             Intent(this, PlaybackService::class.java)
@@ -859,7 +899,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // The consent moment (spec §2.3): one calm card before the system dialog, first time.
-    private fun prefs() = getSharedPreferences("phosphor.prefs", MODE_PRIVATE)
+    private fun prefs() = getSharedPreferences(PhosphorApplication.PREFERENCES_NAME, MODE_PRIVATE)
+    private fun runtimePrefs() = getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)
 
     // ── Tuning persistence: the scope remembers its knobs across launches. ──
     private var focusPref = 0.3f
@@ -867,17 +908,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         prefs().edit()
             .putInt("mode", ui.modeIndex)
             .putBoolean("random_mode_armed", ui.randomModeArmed)
-            .putString("random_track_title", lastRandomTrackTitle)
-            // The instrument remembers what it was listening to (capture/mic only —
-            // files and networks stay deliberate acts).
-            .putString(
-                "last_source",
-                when {
-                    ui.live && ui.sourceLabel == "capture" -> "capture"
-                    ui.live && ui.sourceLabel == "mic" -> "mic"
-                    else -> "none"
-                },
-            )
             .putString("random_ban_modes", ui.randomBanModes.sorted().joinToString(","))
             .putInt("beam", ui.beamIndex)
             .putInt("fps", ui.fpsValue)
@@ -911,6 +941,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putInt("ov_desig", when (ui.styleOverride.designators) {
                 null -> -1; true -> 1; false -> 0
             })
+            .apply()
+        runtimePrefs().edit()
+            .putString("random_track_title", lastRandomTrackTitle)
+            // The remembered input and calibration date are device runtime metadata.
+            .putString(
+                "last_source",
+                when {
+                    ui.live && ui.sourceLabel == "capture" -> "capture"
+                    ui.live && ui.sourceLabel == "mic" -> "mic"
+                    else -> "none"
+                },
+            )
             .putString(
                 "cal_date",
                 java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
@@ -923,7 +965,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val p = prefs()
         ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
-        lastRandomTrackTitle = p.getString("random_track_title", null)
+        lastRandomTrackTitle = runtimePrefs().getString("random_track_title", null)
         ui.randomBanModes = (p.getString("random_ban_modes", "") ?: "")
             .split(",").mapNotNull { it.toIntOrNull() }
             .filter { it in dev.phosphor.mobil3.ui.ModeLabels.indices }.toSet()
@@ -981,7 +1023,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.latencyMode = p.getInt("remote_latency_mode", 2).coerceIn(0, 2)
             .also { PhosphorNative.remoteSetLatencyMode(it) }
         ui.networkMode = p.getInt("remote_network_mode", 0).coerceIn(0, 2)
-        ui.calDate = p.getString("cal_date", "") ?: ""
+        ui.calDate = runtimePrefs().getString("cal_date", "") ?: ""
         ui.amoledCaptionSeen = p.getBoolean("amoled_seen", false)
         ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride(
             character = p.getInt("ov_char", -1).takeIf { it >= 0 }
@@ -1012,8 +1054,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)
         }
     }
-    override fun captureConsentNeeded(): Boolean = !prefs().getBoolean("consent_seen", false)
-    private fun markConsentSeen() = prefs().edit().putBoolean("consent_seen", true).apply()
+    override fun captureConsentNeeded(): Boolean = !runtimePrefs().getBoolean("consent_seen", false)
+    private fun markConsentSeen() = runtimePrefs().edit().putBoolean("consent_seen", true).apply()
 
     override fun setViewLock(on: Boolean) {
         ui.viewLock = on
@@ -1320,27 +1362,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         else -> "off"
     }
 
-    private fun compiledCausalBaseSnapshot(nowWallTimeMillis: Long): PhosphorStateSnapshot {
-        val base = when {
-            BuildConfig.DEBUG -> InitialSnapshots.localDevelopment(nowWallTimeMillis)
-            DistributionCapabilities.profile.distribution ==
-                dev.phosphor.mobil3.distribution.Distribution.PLAY -> InitialSnapshots.play(nowWallTimeMillis)
-            else -> InitialSnapshots.fortress(nowWallTimeMillis)
-        }
-        val human = PrincipalId(PrincipalKind.HUMAN, LOCAL_HUMAN_PRINCIPAL_ID)
-        val migration = PrincipalId(PrincipalKind.MIGRATION, LOCAL_HUD_MIGRATION_PRINCIPAL_ID)
-        return base.copy(
-            desired = base.desired.copy(displayHud = "off"),
-            effective = base.effective.copy(displayHud = "off"),
-            capabilities = FrozenMap.copyOf(
-                mapOf(
-                    human to frozenSetOf(Capability.CONTROL_DISPLAY),
-                    migration to frozenSetOf(Capability.CONTROL_DISPLAY),
-                ),
-            ),
-        )
-    }
-
     override fun setRemoteLatencyMode(mode: Int) {
         ui.latencyMode = mode.coerceIn(0, 2)
         prefs().edit().putInt("remote_latency_mode", ui.latencyMode).apply()
@@ -1582,8 +1603,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // Photosensitivity acceptance persists forever, as on desktop.
-    override fun epilepsyAcknowledged(): Boolean = prefs().getBoolean("epilepsy_ack", false)
-    override fun ackEpilepsy() { prefs().edit().putBoolean("epilepsy_ack", true).apply() }
+    override fun epilepsyAcknowledged(): Boolean = runtimePrefs().getBoolean("epilepsy_ack", false)
+    override fun ackEpilepsy() { runtimePrefs().edit().putBoolean("epilepsy_ack", true).apply() }
 
     // Desktop-parity tuning verbs (Ben's audit ask): same fields, same clamps.
     private fun applyBeamEnergy(e: Float) { PhosphorNative.setBeamEnergy(e); ui.beamEnergy = e.coerceIn(1f, 30f) }

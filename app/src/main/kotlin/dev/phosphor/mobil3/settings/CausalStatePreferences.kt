@@ -13,10 +13,21 @@ import dev.phosphor.mobil3.store.PhosphorStorePersistenceResult
 class CausalStatePreferences(
     private val preferences: PreferenceBoundary,
     private val compiledBaseSnapshot: PhosphorStateSnapshot,
+    private val portablePreferences: PreferenceBoundary = preferences,
 ) : PhosphorStatePersistencePort {
     constructor(sharedPreferences: SharedPreferences, compiledBaseSnapshot: PhosphorStateSnapshot) : this(
         AndroidPreferenceBoundary(sharedPreferences),
         compiledBaseSnapshot,
+    )
+
+    constructor(
+        causalPreferences: SharedPreferences,
+        portablePreferences: SharedPreferences,
+        compiledBaseSnapshot: PhosphorStateSnapshot,
+    ) : this(
+        AndroidPreferenceBoundary(causalPreferences),
+        compiledBaseSnapshot,
+        AndroidPreferenceBoundary(portablePreferences),
     )
 
     override fun load(): PhosphorStoreLoadResult {
@@ -31,23 +42,49 @@ class CausalStatePreferences(
             return try {
                 PhosphorStoreLoadResult.CausalImage(HudCausalEnvelopeCodec.decode(envelope, compiledBaseSnapshot))
             } catch (error: HudCausalCodecException) {
-                PhosphorStoreLoadResult.CorruptEnvelope(error.refusal())
+                // A v1 envelope is old, not corrupt. Without this the store would latch
+                // read-only forever on any device that ever ran a schema-v1 build, and
+                // the HUD would silently fall back with no way to recover but a wipe.
+                // The migration is explicit and checksum-bound, so a tampered envelope
+                // still refuses rather than being re-checksummed into acceptance.
+                if (error.error == CODE_SCHEMA_MIGRATION_REQUIRED) {
+                    migrateLegacyEnvelope(envelope)
+                } else {
+                    PhosphorStoreLoadResult.CorruptEnvelope(error.refusal())
+                }
             }
         }
         return PhosphorStoreLoadResult.LegacyBootstrap(
-            hudModeRaw = rawLegacyInt(KEY_LEGACY_HUD_MODE),
-            nerdHudRaw = rawLegacyBoolean(KEY_LEGACY_NERD_HUD),
+            hudModeRaw = rawLegacyInt(portablePreferences, KEY_LEGACY_HUD_MODE),
+            nerdHudRaw = rawLegacyBoolean(preferences, KEY_LEGACY_NERD_HUD),
         )
     }
 
-    private fun rawLegacyInt(key: String): String? = when {
-        !preferences.contains(key) -> null
-        else -> preferences.getIntOrNull(key)?.toString() ?: INVALID_LEGACY_TYPE
+    /**
+     * Upgrade a schema-v1 envelope in place.
+     *
+     * The rewritten envelope is only persisted after it decodes cleanly, so a failure
+     * here leaves the original bytes untouched for a later repair. If the commit fails,
+     * the migrated image is still returned: the user gets a working HUD now, and the
+     * upgrade is simply retried on the next launch.
+     */
+    private fun migrateLegacyEnvelope(envelope: String): PhosphorStoreLoadResult = try {
+        val migrated = HudCausalEnvelopeCodec.migrateLegacyV1(envelope, compiledBaseSnapshot)
+        val image = HudCausalEnvelopeCodec.decode(migrated, compiledBaseSnapshot)
+        preferences.editCommit { putString(KEY_CAUSAL_ENVELOPE, migrated) }
+        PhosphorStoreLoadResult.CausalImage(image)
+    } catch (error: HudCausalCodecException) {
+        PhosphorStoreLoadResult.CorruptEnvelope(error.refusal())
     }
 
-    private fun rawLegacyBoolean(key: String): String? = when {
-        !preferences.contains(key) -> null
-        else -> preferences.getBooleanOrNull(key)?.toString() ?: INVALID_LEGACY_TYPE
+    private fun rawLegacyInt(source: PreferenceBoundary, key: String): String? = when {
+        !source.contains(key) -> null
+        else -> source.getIntOrNull(key)?.toString() ?: INVALID_LEGACY_TYPE
+    }
+
+    private fun rawLegacyBoolean(source: PreferenceBoundary, key: String): String? = when {
+        !source.contains(key) -> null
+        else -> source.getBooleanOrNull(key)?.toString() ?: INVALID_LEGACY_TYPE
     }
 
     override fun save(image: PhosphorStoreImage): PhosphorStorePersistenceResult {
@@ -64,19 +101,29 @@ class CausalStatePreferences(
                 Refusal(RefusalCode.INVALID_VALUE, "Persist only display.hud values on, auto, or off.", image.snapshot.revision),
             )
         }
-        val prior = preferences.snapshot().filterKeys { it == KEY_CAUSAL_ENVELOPE || it == KEY_LEGACY_HUD_MODE }
-        val committed = preferences.editCommit {
+        val causalKeys = setOf(KEY_CAUSAL_ENVELOPE, KEY_LEGACY_HUD_MODE)
+        val priorCausal = preferences.snapshot().filterKeys { it in causalKeys }
+        val priorPortable = portablePreferences.snapshot().filterKeys { it == KEY_LEGACY_HUD_MODE }
+        val causalCommitted = preferences.editCommit {
             putString(KEY_CAUSAL_ENVELOPE, encoded)
             putInt(KEY_LEGACY_HUD_MODE, legacyMode)
         }
-        return if (committed) {
+        val portableCommitted = causalCommitted && (
+            portablePreferences === preferences || portablePreferences.editCommit {
+                putInt(KEY_LEGACY_HUD_MODE, legacyMode)
+            }
+        )
+        return if (portableCommitted) {
             PhosphorStorePersistenceResult.Saved
         } else {
-            preferences.restore(prior, setOf(KEY_CAUSAL_ENVELOPE, KEY_LEGACY_HUD_MODE))
+            preferences.restore(priorCausal, causalKeys)
+            if (portablePreferences !== preferences) {
+                portablePreferences.restore(priorPortable, setOf(KEY_LEGACY_HUD_MODE))
+            }
             PhosphorStorePersistenceResult.Failed(
                 Refusal(
                     code = RefusalCode.SYSTEM_UNAVAILABLE,
-                    fix = "Retry after storage is available; the HUD causal image and rollback hud_mode were not committed.",
+                    fix = "Retry after storage is available; the HUD causal image and portable hud_mode were not committed together.",
                     currentRevision = image.snapshot.revision,
                 ),
             )
@@ -84,11 +131,14 @@ class CausalStatePreferences(
     }
 
     companion object {
-        const val PREFERENCES_NAME = "phosphor.prefs"
+        const val PREFERENCES_NAME = "phosphor.causal_state"
         const val KEY_CAUSAL_ENVELOPE = "__phosphor_private.hud_causal_envelope"
         const val KEY_LEGACY_HUD_MODE = "hud_mode"
         const val KEY_LEGACY_NERD_HUD = "nerd_hud"
         internal const val INVALID_LEGACY_TYPE = "__invalid_preference_type__"
+
+        /** The codec's error string for an envelope written by a schema-v1 build. */
+        private const val CODE_SCHEMA_MIGRATION_REQUIRED = "schema_migration_required"
     }
 }
 

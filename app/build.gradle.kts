@@ -160,7 +160,18 @@ android {
             // Private seeded estate endpoints are Fortress-only build-machine facts.
             val fortressRemoteHosts = System.getenv("PHOSPHOR_REMOTE_HOSTS")
                 ?: localProps.getProperty("phosphor.remoteHosts") ?: ""
+            val nexusBinderPackage = propertyOrEnvironment("PHOSPHOR_NEXUS_BINDER_PACKAGE") ?: "dev.nexus.mobile"
+            val nexusBinderSigningLineage = propertyOrEnvironment("PHOSPHOR_NEXUS_BINDER_SIGNING_LINEAGE")
+                ?: "e4d14ce2d62983acd393f012cbce759b6c97bdcca979feeb04a97afb279d9b00"
+            val nexusBinderCurrentSigner = propertyOrEnvironment("PHOSPHOR_NEXUS_BINDER_CURRENT_SIGNER_SHA256")
+                ?: nexusBinderSigningLineage.split(',').last().trim()
+            val nexusBinderCapabilities = propertyOrEnvironment("PHOSPHOR_NEXUS_BINDER_CAPABILITIES")
+                ?: "observe.state,observe.audit,control.display"
             buildConfigField("String", "REMOTE_HOSTS", buildConfigString(fortressRemoteHosts))
+            buildConfigField("String", "NEXUS_BINDER_PACKAGE", buildConfigString(nexusBinderPackage))
+            buildConfigField("String", "NEXUS_BINDER_CURRENT_SIGNER_SHA256", buildConfigString(nexusBinderCurrentSigner))
+            buildConfigField("String", "NEXUS_BINDER_SIGNING_LINEAGE", buildConfigString(nexusBinderSigningLineage))
+            buildConfigField("String", "NEXUS_BINDER_CAPABILITIES", buildConfigString(nexusBinderCapabilities))
             signingConfig = signingConfigs.findByName("fortressRelease")
         }
     }
@@ -179,6 +190,7 @@ android {
     buildFeatures {
         compose = true
         buildConfig = true
+        aidl = true
     }
 
     // Native outputs are build products, not source. Keep debug and release

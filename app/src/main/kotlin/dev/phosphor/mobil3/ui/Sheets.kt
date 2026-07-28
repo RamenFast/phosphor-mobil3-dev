@@ -1388,6 +1388,14 @@ interface SheetActions {
     fun openManual()
     fun openLink(url: String)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
+    fun saveRemoteHost(
+        existingHost: String,
+        existingPort: Int,
+        label: String,
+        host: String,
+        port: String,
+    ): String?
+    fun removeRemoteHost(host: String, port: Int): String?
     fun startRemoteHost(label: String, host: String, port: Int)
     fun setRemoteStreams(audio: Boolean, geometry: Boolean)
     fun disconnectRemote()
@@ -1410,6 +1418,15 @@ fun RemoteFlow(
     var browsePath by remember { mutableStateOf("") }
     var sourcesJson by remember { mutableStateOf("") }
     var listingJson by remember { mutableStateOf("") }
+    // Host-editing state. editTarget null while editing means "adding a new relay";
+    // refusal holds the store's fix-bearing text until the user changes something.
+    var editing by remember { mutableStateOf(false) }
+    var editTarget by remember { mutableStateOf<dev.phosphor.mobil3.RemoteHost?>(null) }
+    var refusal by remember { mutableStateOf<String?>(null) }
+    // The store lives outside Compose, so reading it is not observable on its own.
+    // Bumping this after every accepted mutation is what re-reads the list; without it
+    // a saved relay would not appear until some unrelated state happened to recompose.
+    var hostRevision by remember { mutableIntStateOf(0) }
 
     // Gentle wire poll while the remote panels are open (generation-gated on the JNI side).
     LaunchedEffect(state.remote, showSources, browsing) {
@@ -1420,13 +1437,90 @@ fun RemoteFlow(
         }
     }
 
-    actions.remoteHosts().forEach { (label, hostPort) ->
+    // The saved relays. Each row connects on tap; EDIT opens the same editor the ADD
+    // key uses, so there is one way to reason about a host rather than two.
+    val hosts = remember(hostRevision) { actions.remoteHosts() }
+    if (hosts.isEmpty() && !editing) {
+        RemoteEmptyState(p)
+    }
+    // The last failure, with the engine's own fix. Shown above the host rows because it
+    // explains why the row you just tapped did not work.
+    if (state.remoteFailure.isNotBlank()) {
+        Box(
+            Modifier
+                .fillMaxWidth()
+                .border(Dim.hairline, p.accent)
+                .padding(Dim.rowPad),
+        ) {
+            Mono(state.remoteFailure, p.ink, Type.data, maxLines = 6)
+        }
+        Spacer(Modifier.height(Dim.gap))
+    }
+    hosts.forEach { (label, hostPort) ->
         val connected = state.remote && state.sourceLabel.contains(label)
-        SheetRow("$label (Tailscale)", p, checked = connected, glyph = SettingsGlyph.Remote) {
-            if (!connected) {
-                actions.startRemoteHost(label, hostPort.first, hostPort.second)
+        Row(
+            horizontalArrangement = Arrangement.spacedBy(Dim.gap),
+            verticalAlignment = androidx.compose.ui.Alignment.CenterVertically,
+        ) {
+            Box(Modifier.weight(1f)) {
+                SheetRow(label, p, checked = connected, glyph = SettingsGlyph.Remote) {
+                    if (!connected) {
+                        actions.startRemoteHost(label, hostPort.first, hostPort.second)
+                    }
+                }
+            }
+            FlatKey("EDIT", p) {
+                refusal = null
+                editTarget = dev.phosphor.mobil3.RemoteHost(label, hostPort.first, hostPort.second)
+                editing = true
             }
         }
+    }
+
+    if (editing) {
+        RemoteHostEditor(
+            p = p,
+            existing = editTarget,
+            refusal = refusal,
+            onSubmit = { label, host, port ->
+                val outcome = actions.saveRemoteHost(
+                    editTarget?.host.orEmpty(),
+                    editTarget?.port ?: 0,
+                    label,
+                    host,
+                    port,
+                )
+                refusal = outcome
+                if (outcome == null) {
+                    hostRevision++
+                    editing = false
+                    editTarget = null
+                }
+            },
+            onRemove = editTarget?.let { target ->
+                {
+                    val outcome = actions.removeRemoteHost(target.host, target.port)
+                    refusal = outcome
+                    if (outcome == null) {
+                        hostRevision++
+                        editing = false
+                        editTarget = null
+                    }
+                }
+            },
+            onCancel = {
+                editing = false
+                editTarget = null
+                refusal = null
+            },
+        )
+    } else {
+        FlatKey("+ ADD RELAY", p, modifier = Modifier.fillMaxWidth()) {
+            refusal = null
+            editTarget = null
+            editing = true
+        }
+        Spacer(Modifier.height(Dim.gap))
     }
 
     if (state.remote) {

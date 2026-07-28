@@ -98,7 +98,7 @@ class DisplayHudReducerTest {
                 reduce(SetDisplayHud("on"), image = PhosphorStoreImage(withoutGrant), request = request(principal = human)),
             ).refusal.code,
         )
-        assertEquals(RefusalCode.PERMISSION_REQUIRES_HUMAN, assertIs<DisplayHudReduction.Refused>(reduce(SetDisplayHud("on"), request = request(principal = nexus, transport = Transport.TAILNET))).refusal.code)
+        assertEquals(RefusalCode.SESSION_UNAVAILABLE, assertIs<DisplayHudReduction.Refused>(reduce(SetDisplayHud("on"), request = request(principal = nexus, transport = Transport.TAILNET))).refusal.code)
         assertIs<DisplayHudReduction.Accepted>(reduce(SetDisplayHud("on"), request = request(principal = migration, transport = Transport.MIGRATION)))
     }
 

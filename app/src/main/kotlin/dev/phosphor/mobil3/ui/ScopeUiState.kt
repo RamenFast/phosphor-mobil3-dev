@@ -41,6 +41,10 @@ class ScopeUiState(store: PhosphorStateStore) {
     var captureStatus by mutableStateOf("")
     var captureFix by mutableStateOf("")
     var remote by mutableStateOf(false) // remote (Tailscale) source active
+    // The last relay failure, carrying the engine's own fix text. Both the engine and the
+    // relay protocol guarantee a fix on every error; before this field existed the fix was
+    // built and then discarded, so the user saw a bare failure with no remedy.
+    var remoteFailure by mutableStateOf("")
     var remoteAudio by mutableStateOf(true) // bridge stream toggles (H frame)
     var remoteGeometry by mutableStateOf(false)
     var live by mutableStateOf(false) // capture or mic actively feeding the beam

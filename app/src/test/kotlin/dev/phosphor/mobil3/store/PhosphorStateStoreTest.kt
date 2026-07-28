@@ -12,6 +12,8 @@ import dev.phosphor.mobil3.state.PrincipalKind
 import dev.phosphor.mobil3.state.Refusal
 import dev.phosphor.mobil3.state.RefusalCode
 import dev.phosphor.mobil3.state.SetDisplayHud
+import dev.phosphor.mobil3.state.SessionLiveness
+import dev.phosphor.mobil3.state.SessionState
 import dev.phosphor.mobil3.state.Transport
 import dev.phosphor.mobil3.state.frozenSetOf
 import kotlin.test.assertEquals
@@ -191,6 +193,36 @@ class PhosphorStateStoreTest {
         assertEquals("on", captured.snapshot.effective.displayHud)
         assertEquals(persisted.audit.records, captured.auditRecords)
         assertSame(store.health, captured.health)
+    }
+
+    @Test fun authorityPlaneCommitDeliversSessionLivenessListenersOutsideMonitorAndAllowsReentrantObserve() {
+        val port = MemoryPort(PhosphorStoreLoadResult.CausalImage(PhosphorStoreImage(base("off"))))
+        val store = PhosphorStateStore(port, base("off"))
+        val observed = mutableListOf<PhosphorStateSnapshot>()
+        store.addListener { snapshot ->
+            assertFalse(Thread.holdsLock(store), "authority listener must not run under store monitor")
+            observed += snapshot
+            assertSame(snapshot, store.observe().snapshot)
+        }
+
+        val failure = store.commitAuthorityPlane(
+            update = { image ->
+                image.copy(
+                    snapshot = image.snapshot.copy(
+                        session = "nexus-session-1",
+                        liveness = SessionLiveness("nexus-session-1", SessionState.OBSERVING),
+                    ),
+                    authorityPlane = "authority-v1",
+                )
+            },
+            persisted = { image -> image.copy(snapshot = image.snapshot.copy(session = null, liveness = SessionLiveness(null, SessionState.ABSENT))) },
+        )
+
+        assertEquals(null, failure)
+        assertEquals(1, observed.size)
+        assertEquals("nexus-session-1", observed.single().session)
+        assertEquals(SessionState.OBSERVING, observed.single().liveness.state)
+        assertEquals(SessionState.ABSENT, port.saved.single().snapshot.liveness.state)
     }
 
     @Test fun saveFailureObservationReturnsPriorSnapshotWithCurrentReadOnlyHealth() {
@@ -457,6 +489,25 @@ class PhosphorStateStoreTest {
         val store = PhosphorStateStore(port, fortress, initialWallTimeMillis = 40L)
         assertEquals(fortress.effective.sourceKind, store.snapshot.effective.sourceKind)
         assertEquals("on", store.snapshot.effective.displayHud)
+    }
+
+    @Test fun unchangedAuthorityTransactionDoesNotSavePublishAuditOrPoisonHealth() {
+        val port = MemoryPort(PhosphorStoreLoadResult.CausalImage(PhosphorStoreImage(base("off"))))
+        val store = PhosphorStateStore(port, base("off"))
+        var listenerCalls = 0
+        store.addListener { listenerCalls++ }
+
+        val refusal = store.commitAuthorityPlane(
+            update = { it },
+            lifecycleAuditKind = dev.phosphor.mobil3.state.AuditKind.REVOKE,
+            wallTimeMillis = 20L,
+        )
+
+        assertEquals(null, refusal)
+        assertTrue(port.saved.isEmpty())
+        assertTrue(store.auditRecords.isEmpty())
+        assertEquals(0, listenerCalls)
+        assertTrue(store.health.writable)
     }
 
     private class MemoryPort(

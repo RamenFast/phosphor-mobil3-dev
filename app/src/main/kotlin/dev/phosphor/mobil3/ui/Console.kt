@@ -45,6 +45,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import java.util.Locale
 import kotlin.math.roundToInt
 
 // ── Burn-in walk: persistent chrome drifts ±1 px on a slow orbit (60 s period) ──
@@ -110,7 +111,7 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                 if (rolledMark.isEmpty()) remoteTruth
                 else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
             } ?: run {
-                val gainTag = "×" + String.format("%.2f", state.gain) +
+                val gainTag = "×" + String.format(Locale.ROOT, "%.2f", state.gain) +
                     if (state.localAutoGain) "·a" else ""
                 "${state.modeTag}$rolledMark · $gainTag"
             }

@@ -54,7 +54,7 @@ class CausalStatePreferencesTest {
 
         val decoded = HudCausalEnvelopeCodec.decode(encoded, base)
 
-        assertEquals("phosphor.causal.hud/1", JSONObject(encoded).getString("schema"))
+        assertEquals("phosphor.causal.hud/2", JSONObject(encoded).getString("schema"))
         assertTrue(JSONObject(encoded).getString("checksum_sha256").matches(Regex("[0-9a-f]{64}")))
         assertEquals(3, decoded.snapshot.revision)
         assertEquals("auto", decoded.snapshot.effective.displayHud)
@@ -64,6 +64,44 @@ class CausalStatePreferencesTest {
         val stamp = decoded.snapshot.provenance.getValue(StateField.DISPLAY_HUD)
         assertSame(stamp, decoded.audit.records.single().provenance)
         assertSame(stamp, decoded.idempotency.records.single().acknowledgement.provenance)
+    }
+
+    @Test
+    fun legacyV1EnvelopeRequiresExplicitMigrationToStrictChecksumBoundV2() {
+        val base = InitialSnapshots.play()
+        val image = sampleImage(base, mode = "auto", revision = 3)
+        val legacyRoot = JSONObject(HudCausalEnvelopeCodec.encode(image))
+            .put("schema", HudCausalEnvelopeCodec.LEGACY_SCHEMA)
+        legacyRoot.getJSONObject("payload").remove("authority_plane")
+        legacyRoot.put("checksum_sha256", sha256(HudCausalEnvelopeCodec.canonicalJson(legacyRoot.getJSONObject("payload"))))
+        val legacy = legacyRoot.toString()
+
+        val direct = kotlin.test.assertFailsWith<HudCausalCodecException> {
+            HudCausalEnvelopeCodec.decode(legacy, base)
+        }
+        assertEquals("schema_migration_required", direct.error)
+
+        val migrated = HudCausalEnvelopeCodec.migrateLegacyV1(legacy, base)
+        val migratedRoot = JSONObject(migrated)
+        assertEquals(HudCausalEnvelopeCodec.SCHEMA, migratedRoot.getString("schema"))
+        assertEquals("auto", HudCausalEnvelopeCodec.decode(migrated, base).snapshot.effective.displayHud)
+    }
+
+    @Test
+    fun tamperedLegacyV1EnvelopeCannotBeMigratedByRechecksumming() {
+        val base = InitialSnapshots.play()
+        val legacy = JSONObject(HudCausalEnvelopeCodec.encode(sampleImage(base, mode = "auto", revision = 3)))
+            .put("schema", HudCausalEnvelopeCodec.LEGACY_SCHEMA)
+        legacy.getJSONObject("payload").remove("authority_plane")
+        val validLegacy = JSONObject(legacy.toString())
+        validLegacy.put("checksum_sha256", sha256(HudCausalEnvelopeCodec.canonicalJson(validLegacy.getJSONObject("payload"))))
+        validLegacy.getJSONObject("payload").put("display_hud", "off")
+
+        val error = kotlin.test.assertFailsWith<HudCausalCodecException> {
+            HudCausalEnvelopeCodec.migrateLegacyV1(validLegacy.toString(), base)
+        }
+
+        assertEquals("checksum_mismatch", error.error)
     }
 
     @Test
@@ -98,6 +136,83 @@ class CausalStatePreferencesTest {
 
         assertEquals("on", loaded.image.snapshot.effective.displayHud)
         assertEquals(8, loaded.image.snapshot.revision)
+    }
+
+    @Test
+    fun authorityPlaneRoundTripsThroughRealCausalPreferencesAndV1MigrationSetsItAbsent() {
+        val base = InitialSnapshots.play()
+        val authority = "{\"schema\":\"phosphor.nexus.authority/1\",\"payload\":{\"grants\":[],\"revoked_token_ids\":[],\"consumed_idempotency_keys\":[],\"consumed_nonces\":[]},\"checksum_sha256\":\"${"0".repeat(64)}\"}"
+        val image = sampleImage(base, mode = "on", revision = 8).copy(authorityPlane = authority)
+        val prefs = InMemoryPreferenceBoundary()
+
+        assertEquals(PhosphorStorePersistenceResult.Saved, CausalStatePreferences(prefs, base).save(image))
+        val loaded = assertIs<PhosphorStoreLoadResult.CausalImage>(CausalStatePreferences(prefs, base).load())
+        assertEquals(authority, loaded.image.authorityPlane)
+
+        val v1Root = JSONObject(HudCausalEnvelopeCodec.encode(image)).put("schema", HudCausalEnvelopeCodec.LEGACY_SCHEMA).apply {
+            getJSONObject("payload").remove("authority_plane")
+        }
+        v1Root.put("checksum_sha256", sha256(HudCausalEnvelopeCodec.canonicalJson(v1Root.getJSONObject("payload"))))
+        val v1 = v1Root.toString()
+        val migrated = HudCausalEnvelopeCodec.migrateLegacyV1(v1, base)
+        assertEquals(null, HudCausalEnvelopeCodec.decode(migrated, base).authorityPlane)
+    }
+
+    @Test
+    fun loadUpgradesALegacyV1EnvelopeInPlaceInsteadOfLatchingReadOnly() {
+        // Without this path, any device that ever ran a schema-v1 build loads
+        // CorruptEnvelope forever: the store stays read-only, the HUD silently falls back,
+        // and nothing short of clearing app data recovers it.
+        val base = InitialSnapshots.play()
+        val image = sampleImage(base, mode = "auto", revision = 5)
+        val legacy = legacyV1EnvelopeOf(image)
+        val prefs = InMemoryPreferenceBoundary(
+            mapOf(CausalStatePreferences.KEY_CAUSAL_ENVELOPE to legacy),
+        )
+
+        val loaded = assertIs<PhosphorStoreLoadResult.CausalImage>(
+            CausalStatePreferences(prefs, base).load(),
+        )
+        assertEquals("auto", loaded.image.snapshot.effective.displayHud)
+
+        // The upgrade is durable: the stored envelope is now v2, so the next launch takes
+        // the ordinary path rather than migrating again.
+        val stored = JSONObject(prefs.getString(CausalStatePreferences.KEY_CAUSAL_ENVELOPE)!!)
+        assertEquals(HudCausalEnvelopeCodec.SCHEMA, stored.getString("schema"))
+        assertIs<PhosphorStoreLoadResult.CausalImage>(CausalStatePreferences(prefs, base).load())
+    }
+
+    @Test
+    fun aTamperedLegacyEnvelopeIsStillRefusedByLoadRatherThanMigrated() {
+        // Migration must not become a laundering path: re-checksumming forged content
+        // would turn a tampered v1 envelope into a trusted v2 one.
+        val base = InitialSnapshots.play()
+        val image = sampleImage(base, mode = "on", revision = 2)
+        val tampered = JSONObject(legacyV1EnvelopeOf(image)).apply {
+            getJSONObject("payload").put("revision", 99)
+        }.toString()
+        val prefs = InMemoryPreferenceBoundary(
+            mapOf(CausalStatePreferences.KEY_CAUSAL_ENVELOPE to tampered),
+        )
+
+        val result = assertIs<PhosphorStoreLoadResult.CorruptEnvelope>(
+            CausalStatePreferences(prefs, base).load(),
+        )
+        assertTrue(result.refusal.fix.isNotBlank())
+        // The original bytes survive for explicit repair.
+        assertEquals(tampered, prefs.getString(CausalStatePreferences.KEY_CAUSAL_ENVELOPE))
+    }
+
+    /** A schema-v1 envelope: no authority plane, checksum bound over the v1 payload. */
+    private fun legacyV1EnvelopeOf(image: PhosphorStoreImage): String {
+        val root = JSONObject(HudCausalEnvelopeCodec.encode(image))
+            .put("schema", HudCausalEnvelopeCodec.LEGACY_SCHEMA)
+        root.getJSONObject("payload").remove("authority_plane")
+        root.put(
+            "checksum_sha256",
+            sha256(HudCausalEnvelopeCodec.canonicalJson(root.getJSONObject("payload"))),
+        )
+        return root.toString()
     }
 
     @Test
@@ -178,6 +293,60 @@ class CausalStatePreferencesTest {
         assertEquals(2, prefs.snapshot()[CausalStatePreferences.KEY_LEGACY_HUD_MODE])
         val encoded = prefs.snapshot()[CausalStatePreferences.KEY_CAUSAL_ENVELOPE] as String
         assertEquals("off", HudCausalEnvelopeCodec.decode(encoded, InitialSnapshots.play()).snapshot.effective.displayHud)
+    }
+
+    @Test
+    fun splitStorageLoadsPortableHudWithoutRestoringCausalRuntimeState() {
+        val causal = InMemoryPreferenceBoundary()
+        val portable = InMemoryPreferenceBoundary(
+            linkedMapOf(CausalStatePreferences.KEY_LEGACY_HUD_MODE to 1),
+        )
+
+        val loaded = CausalStatePreferences(causal, InitialSnapshots.play(), portable).load()
+
+        val bootstrap = assertIs<PhosphorStoreLoadResult.LegacyBootstrap>(loaded)
+        assertEquals("1", bootstrap.hudModeRaw)
+        assertEquals(null, bootstrap.nerdHudRaw)
+    }
+
+    @Test
+    fun splitStorageKeepsEnvelopePrivateAndMirrorsPortableHudMode() {
+        val base = InitialSnapshots.play()
+        val causal = InMemoryPreferenceBoundary()
+        val portable = InMemoryPreferenceBoundary()
+
+        val result = CausalStatePreferences(causal, base, portable)
+            .save(sampleImage(base, mode = "on", revision = 4))
+
+        assertEquals(PhosphorStorePersistenceResult.Saved, result)
+        assertTrue(causal.snapshot().containsKey(CausalStatePreferences.KEY_CAUSAL_ENVELOPE))
+        assertFalse(portable.snapshot().containsKey(CausalStatePreferences.KEY_CAUSAL_ENVELOPE))
+        assertEquals(0, causal.snapshot()[CausalStatePreferences.KEY_LEGACY_HUD_MODE])
+        assertEquals(0, portable.snapshot()[CausalStatePreferences.KEY_LEGACY_HUD_MODE])
+    }
+
+    @Test
+    fun splitStoragePortableFailureRollsBackBothFiles() {
+        val base = InitialSnapshots.play()
+        val priorEnvelope = HudCausalEnvelopeCodec.encode(sampleImage(base, mode = "auto", revision = 3))
+        val causal = InMemoryPreferenceBoundary(
+            linkedMapOf(
+                CausalStatePreferences.KEY_CAUSAL_ENVELOPE to priorEnvelope,
+                CausalStatePreferences.KEY_LEGACY_HUD_MODE to 1,
+            ),
+        )
+        val portable = InMemoryPreferenceBoundary(
+            linkedMapOf(CausalStatePreferences.KEY_LEGACY_HUD_MODE to 1),
+            commitSucceeds = false,
+        )
+
+        val result = CausalStatePreferences(causal, base, portable)
+            .save(sampleImage(base, mode = "off", revision = 4))
+
+        assertIs<PhosphorStorePersistenceResult.Failed>(result)
+        assertEquals(priorEnvelope, causal.snapshot()[CausalStatePreferences.KEY_CAUSAL_ENVELOPE])
+        assertEquals(1, causal.snapshot()[CausalStatePreferences.KEY_LEGACY_HUD_MODE])
+        assertEquals(1, portable.snapshot()[CausalStatePreferences.KEY_LEGACY_HUD_MODE])
     }
 
     @Test
@@ -595,7 +764,7 @@ class CausalStatePreferencesTest {
     }
 
     @Test
-    fun strictHudReducerAuditGrammarRejectsAuthenticationNullActionAndEmptyFields() {
+    fun strictHudReducerAuditGrammarAllowsOnlyActionlessLifecycleRecords() {
         val base = InitialSnapshots.play()
         val image = sampleImage(base).let { image ->
             image.copy(
@@ -604,15 +773,27 @@ class CausalStatePreferencesTest {
                         kind = AuditKind.AUTHENTICATION,
                         actionType = null,
                         fields = FrozenSet.copyOf(emptySet()),
+                        provenance = null,
+                        refusal = null,
                     )
                 )))
             )
         }
 
-        val error = kotlin.test.assertFailsWith<HudCausalCodecException> { HudCausalEnvelopeCodec.encode(image) }
+        val decoded = HudCausalEnvelopeCodec.decode(HudCausalEnvelopeCodec.encode(image), base)
 
+        assertEquals(AuditKind.AUTHENTICATION, decoded.audit.records.single().kind)
+        assertEquals(null, decoded.audit.records.single().actionType)
+        assertTrue(decoded.audit.records.single().fields.isEmpty())
+
+        val malformed = image.copy(
+            audit = image.audit.copy(records = FrozenList.copyOf(listOf(
+                image.audit.records.single().copy(actionType = ActionType.SET_DISPLAY_HUD),
+            )))
+        )
+        val error = kotlin.test.assertFailsWith<HudCausalCodecException> { HudCausalEnvelopeCodec.encode(malformed) }
         assertEquals("unsupported_image", error.error)
-        assertTrue(error.fix.contains("HUD reducer"))
+        assertTrue(error.message.contains("actionless") || error.fix.contains("actionless") || error.fix.contains("lifecycle"))
     }
 
     @Test

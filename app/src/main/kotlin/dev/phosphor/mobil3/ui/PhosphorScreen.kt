@@ -87,6 +87,19 @@ interface ScopeActions {
     fun setRemoteLatencyMode(mode: Int)
     fun setRemoteNetworkMode(mode: Int)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
+    /**
+     * Add, edit, or remove a saved relay. Returns null on success, or the store's
+     * fix-bearing refusal text so the sheet can show the user exactly why it declined.
+     * The empty-string [existingHost] means "add", matching the editor's null [existing].
+     */
+    fun saveRemoteHost(
+        existingHost: String,
+        existingPort: Int,
+        label: String,
+        host: String,
+        port: String,
+    ): String?
+    fun removeRemoteHost(host: String, port: Int): String?
     fun startRemoteHost(label: String, host: String, port: Int)
     fun setRemoteStreams(audio: Boolean, geometry: Boolean)
     fun disconnectRemote()
@@ -259,6 +272,15 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun openManual() { }
             override fun openLink(url: String) = actions.openLink(url)
             override fun remoteHosts() = actions.remoteHosts()
+            override fun saveRemoteHost(
+                existingHost: String,
+                existingPort: Int,
+                label: String,
+                host: String,
+                port: String,
+            ) = actions.saveRemoteHost(existingHost, existingPort, label, host, port)
+            override fun removeRemoteHost(host: String, port: Int) =
+                actions.removeRemoteHost(host, port)
             override fun startRemoteHost(label: String, host: String, port: Int) =
                 actions.startRemoteHost(label, host, port)
             override fun setRemoteStreams(audio: Boolean, geometry: Boolean) =

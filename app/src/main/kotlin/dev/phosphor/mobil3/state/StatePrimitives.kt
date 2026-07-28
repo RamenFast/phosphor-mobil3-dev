@@ -31,6 +31,7 @@ enum class PrincipalKind(val wireName: String) {
 
 enum class Transport(val wireName: String) {
     UI("ui"),
+    CLI("cli"),
     BINDER("binder"),
     TAILNET("tailnet"),
     LIFECYCLE("lifecycle"),

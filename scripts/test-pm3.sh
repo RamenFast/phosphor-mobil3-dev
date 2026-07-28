@@ -91,7 +91,7 @@ assert_one_line_json() {
   printf '%s' "$OUT" | jq -e '
     def success_root: ["data","status","tool","ts","version"];
     def error_root: ["data","error","fix","message","status","tool","ts","version"];
-    (.tool == "pm3") and (.version == "0.2.0")
+    (.tool == "pm3") and (.version == "0.3.0")
     and (.ts | type == "string" and length > 0
       and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"))
     and (.data | type == "object")
@@ -182,6 +182,7 @@ cat >"$BIN/adb" <<'ADB'
 #!/usr/bin/env bash
 mode="${PM3_FAKE_ADB_MODE:-ok}"
 printf 'adb %s\n' "$*" >>"$PM3_FIXTURE_LOG"
+pm3_b64() { printf '%s' "$1" | base64 | tr '+/' '-_' | tr -d '=\n'; }
 case "$mode" in
   unavailable) echo "fixture adb should not have been called in unavailable mode" >&2; exit 127 ;;
   version_fail) [ "${1:-}" = --version ] && { echo "fixture adb version failure" >&2; exit 8; } ;;
@@ -200,10 +201,22 @@ case "${1:-}" in
     serial="$2"; shift 2
     case "${1:-}" in
       install) echo "Success" ;;
-      shell)
-        shift
-        case "$*" in
-          *"dumpsys package"*) echo "versionName=9.9.9" ;;
+	      shell)
+	        shift
+	        case "$*" in
+	          *"content call"*)
+	            case "$mode" in
+	              provider_malicious) echo 'Bundle[{response=%%%not-base64%%%}]' ;;
+	              provider_refusal) echo "Bundle[{response=$(pm3_b64 '{"ok":false,"error":"SecurityException","message":"pm3 provider is shell/root only","fix":"retry as adb shell"}')}]" ;;
+	              provider_play_unavailable) echo "Bundle[{response=$(pm3_b64 '{"ok":false,"error":"IllegalStateException","message":"Play unavailable","fix":"use Fortress"}')}]" ;;
+	              *)
+	                if [[ "$*" == *"request:s:"* ]]; then
+	                  echo "Bundle[{response=$(pm3_b64 '{"ok":true,"protocol":3,"verb":"fixture","data":{"revision":7,"events":[{"event":"state","revision":7}],"committed":true,"accepted":true,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes_base64url":"e30"}}')}]"
+	                else
+	                  echo 'Bundle[{}]'
+	                fi ;;
+	            esac ;;
+	          *"dumpsys package"*) echo "versionName=9.9.9" ;;
           *"am start"*) echo "Starting" ;;
           *"pidof"*) echo "1234" ;;
           *"dumpsys gfxinfo"*) echo "Total frames rendered: 12" ;;
@@ -341,6 +354,33 @@ check_missing_serial_precedes_missing_adb() {
   assert_data_keys '["usage"]'
 }
 run_check "missing serial remains usage exit3 when adb is unavailable" check_missing_serial_precedes_missing_adb
+
+check_provider_play_unavailable_without_adb() {
+  : >"$LOG"
+  run_capture --json --distribution play --serial SERIAL123 state-get
+  assert_rc 2
+  assert_json_error_has_fix
+  assert_error_code play_unavailable
+  assert_log_count "$LOG" "adb " 0
+}
+run_check "Play distribution refuses pm3 provider verbs before adb" check_provider_play_unavailable_without_adb
+
+run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 0; assert_one_line_json; assert_contains "$OUT" '"provider_protocol":3'; assert_contains "$OUT" '"revision":7'; assert_contains "$(cat "$LOG")" 'content call'; pass "state-get calls live provider bridge"
+run_capture --json --distribution fortress --serial SERIAL123 nexus-status; assert_rc 0; assert_contains "$OUT" '"provider_protocol":3'; pass "nexus-status calls live provider bridge"
+run_capture --json --distribution fortress --serial SERIAL123 nexus-grant '{"trust":{"kind":"tailnet","node_principal":"node-a","pinned_endpoint_identity":"tailnet-a","principal_stable_id":"operator-a"},"capability":"observe.state","receipt_id":"grant-a"}'; assert_rc 0; assert_contains "$OUT" '"committed":true'; pass "nexus-grant forwards exact trust tuple args"
+run_capture --json --distribution fortress --serial SERIAL123 nexus-revoke '{"trust":{"kind":"tailnet","node_principal":"node-a","pinned_endpoint_identity":"tailnet-a","principal_stable_id":"operator-a"},"capability":"observe.state"}'; assert_rc 0; assert_contains "$OUT" '"committed":true'; pass "nexus-revoke forwards exact trust tuple args"
+run_capture --json --distribution fortress --serial SERIAL123 action-run '{"action":"display.hud.set","value":"on","idempotency_key":"test-action"}'; assert_rc 0; assert_contains "$OUT" '"accepted":true'; pass "action-run returns provider acknowledgement"
+run_capture --json --distribution fortress --serial SERIAL123 audit-export; assert_rc 0; assert_contains "$OUT" '"sha256"'; assert_contains "$OUT" '"bytes_base64url"'; pass "audit-export carries sha256 and base64 payload"
+
+OUT="$($PM3 --json --distribution fortress --serial SERIAL123 state-watch 2>"$TMP/watch.err")"; RC=$?; ERR="$(cat "$TMP/watch.err")"; [ "$RC" -eq 0 ] || fail "state-watch exit $RC err=$ERR"; printf '%s' "$OUT" | jq -e '.event == "state"' >/dev/null || fail "state-watch did not emit NDJSON state event: $OUT"; pass "state-watch emits canonical event NDJSON"
+
+PM3_FAKE_ADB_MODE=provider_malicious; export PM3_FAKE_ADB_MODE
+run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 4; assert_json_error_has_fix; assert_error_code provider_response_invalid; pass "malicious Bundle output is rejected"
+PM3_FAKE_ADB_MODE=provider_refusal; export PM3_FAKE_ADB_MODE
+run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 4; assert_json_error_has_fix; assert_error_code provider_refused; assert_contains "$OUT" 'pm3 provider is shell/root only'; pass "provider refusal propagates with fix"
+PM3_FAKE_ADB_MODE=provider_play_unavailable; export PM3_FAKE_ADB_MODE
+run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 4; assert_json_error_has_fix; assert_error_code provider_refused; assert_contains "$OUT" 'Play unavailable'; pass "provider Play-unavailable refusal propagates"
+PM3_FAKE_ADB_MODE=ok; export PM3_FAKE_ADB_MODE
 
 check_doctor_adb_unavailable() {
   local save_adb="$PM3_ADB"
@@ -594,25 +634,33 @@ check_tty_one_shots_are_json() {
 }
 run_check "TTY one-shots remain exact JSON objects" check_tty_one_shots_are_json
 
-phase05_check() {
-  local cmd="$1" before after
-  before="$(wc -l <"$LOG")"
-  run_capture --json "$cmd"
-  after="$(wc -l <"$LOG")"
-  assert_rc 2 "$cmd"
-  assert_json_error_has_fix
-  assert_error_code phase_unavailable
-  assert_data_keys '[]'
-  assert_contains "$OUT" "authenticated Binder/tailnet client"
-  [ "$before" = "$after" ] || fail "Phase 05 side effect for $cmd"
-}
-for cmd in state-get state-watch nexus-status nexus-grant nexus-revoke action-run audit-list audit-export; do
-  run_check "Phase 05 unavailable flat verb: $cmd" phase05_check "$cmd"
-done
-pass "Phase 05 flat verbs are explicit exit-2 side-effect-free stubs"
-
 run_capture --json pair 127.0.0.1:12345 999999; assert_rc 0; assert_contract_shape pair output "$OUT"; pass "pair preserved with exact nested data"
 run_capture --json connect 127.0.0.1:34567; assert_rc 0; assert_contract_shape connect output "$OUT"; pass "connect preserved with exact nested data"
+
+check_pm3_tailnet_secret_source_boundary() {
+  assert_contains "$(grep -F "content write --uri \"content://\$(provider_authority)/tailnet-secret\"" "$PM3")" 'tailnet-secret'
+  ! grep -E 'tailnet-secret.*(--extra|Bundle|env|tokenSecret|secret:)' "$PM3" >/dev/null || fail "pm3 tailnet secret may leak through argv/env/Bundle"
+  grep -F 'MAX_SECRET_BYTES = 4096' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "provider secret bound missing"
+  grep -F 'AES/GCM/NoPadding' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "provider AES-GCM storage missing"
+  grep -F 'AndroidKeyStore' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "provider Android Keystore storage missing"
+}
+run_check "tailnet secret source boundary excludes argv env Bundle and enforces encrypted bounds" check_pm3_tailnet_secret_source_boundary
+
+check_pm3_authority_transaction_source_boundary() {
+  ! grep -F 'mutateAuthority' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "direct mutateAuthority survived in pm3 admin provider"
+  grep -F 'NexusAuthorityStoreTransaction.grantPersistent' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "grant transaction API missing"
+  grep -F 'NexusAuthorityStoreTransaction.revokePersistent' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "revoke transaction API missing"
+  grep -F 'closed_active_session' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "revoke session cleanup result missing"
+}
+run_check "pm3 authority mutations use transaction APIs and expose revoke cleanup" check_pm3_authority_transaction_source_boundary
+
+check_pm3_play_absence_and_lifecycle_boundary() {
+  ! grep -R 'dev.phosphor.mobil3.nexus.admin\|dev.phosphor.mobil3.nexus.tailnet' "$ROOT/app/src/main/kotlin" >/dev/null || fail "main source references Fortress-only pm3 admin/tailnet"
+  run_capture --json --distribution play tailnet-status
+  assert_rc 2
+  assert_error_code play_unavailable
+}
+run_check "pm3 Play absence and main-source lifecycle boundary" check_pm3_play_absence_and_lifecycle_boundary
 
 restore_repo_artifacts
 assert_repo_artifacts_restored

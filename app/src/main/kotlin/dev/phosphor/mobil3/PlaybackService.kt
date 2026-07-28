@@ -756,6 +756,34 @@ class PlaybackService : MediaSessionService() {
         boundNetwork = null
     }
 
+    /**
+     * Stop trying and tell the truth about why.
+     *
+     * The engine populates `last_error` with both an `error` and a `fix`, and the relay
+     * guarantees a `fix` on every error frame. Both are carried through to the player so
+     * the user reads the remedy rather than a bare failure.
+     */
+    private fun giveUpOnRemote(status: JSONObject) {
+        remotePolling = false
+        PhosphorNative.remoteDisconnect()
+        remoteEndpoint = null
+        clearRemoteNetwork()
+        val failure = RemoteLinkTruth.failureText(status)
+        remotePlayer.onConnectFailed(failure.ifBlank { "bridge unreachable" })
+    }
+
+    /**
+     * Give-up policy: 60 s without a live link surfaces the failure.
+     *
+     * Returns true when the caller should stop pumping. The clock covers every
+     * not-streaming state, including a relay that greets and then sends nothing.
+     */
+    private fun giveUpIfStuck(status: JSONObject): Boolean {
+        if (System.currentTimeMillis() - failingSinceMs <= REMOTE_GIVE_UP_MS) return false
+        giveUpOnRemote(status)
+        return true
+    }
+
     // 1 Hz status+metadata pump. Rust exposes generation counters so quiet ticks cost
     // one JNI read; state transitions drive the player face; art rides art_id changes.
     private var lastMetaGen = -1
@@ -774,8 +802,11 @@ class PlaybackService : MediaSessionService() {
                 }
                 val status = runCatching { JSONObject(PhosphorNative.remoteStatus()) }.getOrNull()
                 if (status != null) {
-                    when (status.optString("state")) {
-                        "streaming" -> {
+                    // The read is a tested pure function (RemoteLinkTruth) so the rules
+                    // about what counts as a live link live in one place and are provable
+                    // on the host, rather than being spread through this pump.
+                    when (RemoteLinkTruth.read(status).state) {
+                        RemoteLinkState.STREAMING -> {
                             failingSinceMs = 0L
                             remotePlayer.onConnected()
                             if (!remoteGainApplied) {
@@ -790,32 +821,27 @@ class PlaybackService : MediaSessionService() {
                                 remoteGainApplied = true
                             }
                         }
-                        "stalled", "reconnecting", "connecting" -> {
-                            // Give-up policy: 60 s of not-streaming → surface failure.
-                            val now = System.currentTimeMillis()
-                            if (failingSinceMs == 0L) failingSinceMs = now
-                            if (now - failingSinceMs > 60_000) {
-                                remotePolling = false
-                                PhosphorNative.remoteDisconnect()
-                                remoteEndpoint = null
-                                clearRemoteNetwork()
-                                remotePlayer.onConnectFailed(
-                                    status.optJSONObject("last_error")?.optString("error")
-                                        ?: "bridge unreachable"
-                                )
-                                return
-                            }
+                        RemoteLinkState.GREETED -> {
+                            // Greeted but nothing flowing yet. Still counts against the
+                            // give-up clock: a relay that greets and never sends is broken.
+                            if (failingSinceMs == 0L) failingSinceMs = System.currentTimeMillis()
+                            if (giveUpIfStuck(status)) return
+                            remotePlayer.onGreeted()
+                        }
+                        RemoteLinkState.STALLED -> {
+                            // Frozen socket, not a dropped one. Acceptance H-04 forbids
+                            // showing this as a live trace, and it is not a reconnect either.
+                            if (failingSinceMs == 0L) failingSinceMs = System.currentTimeMillis()
+                            if (giveUpIfStuck(status)) return
+                            remotePlayer.onConnectionStalled()
+                        }
+                        RemoteLinkState.RECONNECTING, RemoteLinkState.CONNECTING -> {
+                            if (failingSinceMs == 0L) failingSinceMs = System.currentTimeMillis()
+                            if (giveUpIfStuck(status)) return
                             remotePlayer.onConnectionLost()
                         }
-                        "failed" -> {
-                            remotePolling = false
-                            remoteEndpoint = null
-                            clearRemoteNetwork()
-                            remotePlayer.onConnectFailed(
-                                status.optJSONObject("last_error")?.let {
-                                    it.optString("error") + " — " + it.optString("fix")
-                                } ?: "bridge failed"
-                            )
+                        RemoteLinkState.FAILED -> {
+                            giveUpOnRemote(status)
                             return
                         }
                     }
@@ -881,6 +907,14 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /**
+         * How long a link may stay not-streaming before the failure is surfaced.
+         *
+         * Worth knowing: the engine's backoff ladder tops out at 15 s, so this 60 s
+         * ceiling means the final rung is never observed end to end. That is recorded as
+         * an open decision in docs/dev/receipts/phosphor-2.0/phase-B-remote-truth.md.
+         */
+        private const val REMOTE_GIVE_UP_MS = 60_000L
         const val EXTRA_OPEN = "open"
         const val ACTION_OPEN_QUEUE = "dev.phosphor.mobil3.OPEN_QUEUE"
         const val EXTRA_QUEUE_URIS = "queue_uris"

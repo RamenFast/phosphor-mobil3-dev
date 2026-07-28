@@ -352,6 +352,59 @@ data class NexusSession private constructor(
             activeControlReceiptId = null,
             closureCause = cause,
         )
+
+        internal fun binderObserving(
+            trustKey: NexusTrustKey,
+            sessionId: NexusSessionId,
+            tokenId: NexusTokenId,
+            generation: NexusGeneration,
+            capabilities: Collection<Capability>,
+        ): NexusSession {
+            val effective = FrozenSet.copyOf(capabilities)
+            require(Capability.OBSERVE_STATE in effective) { "Binder session requires observe.state" }
+            return NexusSession(
+                id = sessionId,
+                trustKey = trustKey,
+                tokenId = tokenId,
+                reachPath = NexusReachPath.BINDER,
+                generation = generation,
+                lifecycle = NexusLifecycle.OBSERVING,
+                authenticatedCapabilityCeiling = effective,
+                capabilities = effective,
+                heartbeatPolicy = null,
+                lastHeartbeatMonotonicMillis = null,
+                activeControlReceiptId = null,
+                closureCause = null,
+            )
+        }
+
+        internal fun tailnetObserving(
+            trustKey: NexusTrustKey,
+            sessionId: NexusSessionId,
+            tokenId: NexusTokenId,
+            generation: NexusGeneration,
+            capabilities: Collection<Capability>,
+            heartbeatIntervalMillis: Long,
+            nowMonotonicMillis: Long,
+        ): NexusSession {
+            nowMonotonicMillis.requireNexusNonNegative("tailnet session heartbeat time")
+            val effective = FrozenSet.copyOf(capabilities)
+            require(Capability.OBSERVE_STATE in effective) { "Tailnet session requires observe.state" }
+            return NexusSession(
+                id = sessionId,
+                trustKey = trustKey,
+                tokenId = tokenId,
+                reachPath = NexusReachPath.TAILNET,
+                generation = generation,
+                lifecycle = NexusLifecycle.OBSERVING,
+                authenticatedCapabilityCeiling = effective,
+                capabilities = effective,
+                heartbeatPolicy = NexusHeartbeatPolicy(heartbeatIntervalMillis),
+                lastHeartbeatMonotonicMillis = nowMonotonicMillis,
+                activeControlReceiptId = null,
+                closureCause = null,
+            )
+        }
     }
 
     fun establish(grantLedger: NexusGrantLedger): NexusSession {

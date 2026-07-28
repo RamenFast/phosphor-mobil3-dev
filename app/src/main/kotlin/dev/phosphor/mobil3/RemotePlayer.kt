@@ -31,7 +31,11 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     // remote transport stop cannot strand a process-wide route.
     var onStopRequested: (() -> Unit)? = null
 
-    enum class Conn { IDLE, CONNECTING, STREAMING, FAILED, LOST }
+    // GREETED and STALLED exist because the engine already knows both and the UI used to
+    // throw them away. GREETED is the window after the relay's welcome but before any
+    // frame, which previously read as a live link. STALLED is a frozen-but-open socket,
+    // which previously read as "reconnecting" while nothing was reconnecting.
+    enum class Conn { IDLE, CONNECTING, GREETED, STREAMING, STALLED, FAILED, LOST }
 
     private var conn = Conn.IDLE
     private var error: PlaybackException? = null
@@ -75,7 +79,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
             .build()
         val playback = when (conn) {
             Conn.IDLE -> Player.STATE_IDLE
-            Conn.CONNECTING, Conn.LOST -> Player.STATE_BUFFERING
+            Conn.CONNECTING, Conn.GREETED, Conn.LOST, Conn.STALLED -> Player.STATE_BUFFERING
             Conn.STREAMING -> Player.STATE_READY
             Conn.FAILED -> Player.STATE_IDLE
         }
@@ -106,6 +110,8 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     private fun nowItem(): MediaItemData {
         val label = when (conn) {
             Conn.CONNECTING -> "connecting · $host"
+            Conn.GREETED -> "waiting for audio · $host"
+            Conn.STALLED -> "signal stalled · $host"
             Conn.LOST -> "reconnecting · $host"
             Conn.FAILED -> "bridge unreachable · $host"
             else -> title ?: "remote · $host"
@@ -149,8 +155,26 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         }
     }
 
+    /** The relay greeted us but no frame has arrived yet. Not a live link. */
+    fun onGreeted() {
+        if (conn == Conn.CONNECTING || conn == Conn.LOST || conn == Conn.STALLED) {
+            conn = Conn.GREETED
+            invalidateState()
+        }
+    }
+
+    /** Frames stopped while the socket stayed open. Distinct from a dropped link. */
+    fun onConnectionStalled() {
+        if (conn == Conn.STREAMING || conn == Conn.GREETED || conn == Conn.CONNECTING) {
+            conn = Conn.STALLED
+            invalidateState()
+        }
+    }
+
     fun onConnectionLost() {
-        if (conn == Conn.STREAMING || conn == Conn.CONNECTING) {
+        if (conn == Conn.STREAMING || conn == Conn.CONNECTING ||
+            conn == Conn.GREETED || conn == Conn.STALLED
+        ) {
             conn = Conn.LOST
             invalidateState()
         }
@@ -207,7 +231,11 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
             m.optLong("duration_ms")
         } else C.TIME_UNSET
         canSeek = m.optBoolean("can_seek", false)
-        if (conn == Conn.CONNECTING || conn == Conn.LOST) conn = Conn.STREAMING
+        if (conn == Conn.CONNECTING || conn == Conn.LOST ||
+            conn == Conn.GREETED || conn == Conn.STALLED
+        ) {
+            conn = Conn.STREAMING
+        }
         invalidateState()
         return if (trackChanged) nextArtId else null
     }

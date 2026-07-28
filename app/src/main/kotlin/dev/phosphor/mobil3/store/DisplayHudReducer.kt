@@ -64,7 +64,7 @@ data class DisplayHudReducerConfig(
 class DisplayHudReducer(
     private val config: DisplayHudReducerConfig = DisplayHudReducerConfig(),
 ) {
-    fun reduce(
+    internal fun reduce(
         action: PhosphorAction,
         request: ActionRequest,
         image: PhosphorStoreImage,
@@ -72,6 +72,8 @@ class DisplayHudReducer(
         wallTimeMillis: Long,
         receiptId: String,
         ordinal: Long,
+        authorizedCommit: CommitAuthorizationDecision.Authorized? = null,
+        authorizationRefusal: Refusal? = null,
     ): DisplayHudReduction {
         require(monotonicMillis >= 0L) { "monotonic time must not be negative" }
         require(wallTimeMillis >= 0L) { "wall time must not be negative" }
@@ -91,49 +93,100 @@ class DisplayHudReducer(
         if (action.mode !in allowedHudModes) {
             return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.INVALID_VALUE, "Use display.hud mode auto, on, or off.", state.revision))
         }
-        if (request.principal.kind !in setOf(PrincipalKind.HUMAN, PrincipalKind.MIGRATION)) {
-            return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.PERMISSION_REQUIRES_HUMAN, "Use a local HUMAN principal or MIGRATION control path; Nexus authority cannot change display HUD.", state.revision))
-        }
-        val declaredLocalPrincipal = when (request.principal.kind) {
-            PrincipalKind.HUMAN -> request.principal.stableId == LOCAL_HUMAN_PRINCIPAL_ID
-            PrincipalKind.MIGRATION -> request.principal.stableId == LOCAL_HUD_MIGRATION_PRINCIPAL_ID
-            else -> false
-        }
-        if (!declaredLocalPrincipal) {
-            return refuse(
-                action,
-                state,
-                wallTimeMillis,
-                receiptId,
-                Refusal(
-                    RefusalCode.INVALID_REQUEST,
-                    "Use the declared local HUMAN or HUD migration principal; arbitrary stable IDs are not authorized for this slice.",
-                    state.revision,
-                ),
-            )
-        }
-        if (!((request.principal.kind == PrincipalKind.HUMAN && request.transport == Transport.UI) ||
-                (request.principal.kind == PrincipalKind.MIGRATION && request.transport == Transport.MIGRATION))) {
-            return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.INVALID_REQUEST, "Use HUMAN principals only through UI and MIGRATION principals only through MIGRATION for display HUD changes.", state.revision))
-        }
-        if (request.sessionId != null) {
-            return refuse(
-                action,
-                state,
-                wallTimeMillis,
-                receiptId,
-                Refusal(
-                    RefusalCode.INVALID_REQUEST,
-                    "Use no session id for the local Phase 04 HUD slice; Nexus and remote sessions are not active here.",
-                    state.revision,
-                ),
-            )
+        authorizationRefusal?.let {
+            return refuse(action, state, wallTimeMillis, receiptId, it.copy(currentRevision = state.revision))
         }
         if (request.requestedCapability != Capability.CONTROL_DISPLAY) {
             return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.INVALID_REQUEST, "Request control.display for display.hud.set.", state.revision))
         }
-        if (Capability.CONTROL_DISPLAY !in (state.capabilities[request.principal] ?: emptySet())) {
-            return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.CAPABILITY_NOT_GRANTED, "Grant control.display to this local principal before changing display HUD.", state.revision))
+        when (request.principal.kind) {
+            PrincipalKind.HUMAN,
+            PrincipalKind.MIGRATION,
+            -> {
+                val declaredLocalPrincipal = when (request.principal.kind) {
+                    PrincipalKind.HUMAN -> request.principal.stableId == LOCAL_HUMAN_PRINCIPAL_ID
+                    PrincipalKind.MIGRATION -> request.principal.stableId == LOCAL_HUD_MIGRATION_PRINCIPAL_ID
+                    else -> false
+                }
+                if (!declaredLocalPrincipal) {
+                    return refuse(
+                        action,
+                        state,
+                        wallTimeMillis,
+                        receiptId,
+                        Refusal(
+                            RefusalCode.INVALID_REQUEST,
+                            "Use the declared local HUMAN or HUD migration principal; arbitrary stable IDs are not authorized for this slice.",
+                            state.revision,
+                        ),
+                    )
+                }
+                if (!((request.principal.kind == PrincipalKind.HUMAN && request.transport == Transport.UI) ||
+                        (request.principal.kind == PrincipalKind.MIGRATION && request.transport == Transport.MIGRATION))) {
+                    return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.INVALID_REQUEST, "Use HUMAN principals only through UI and MIGRATION principals only through MIGRATION for display HUD changes.", state.revision))
+                }
+                if (request.sessionId != null) {
+                    return refuse(
+                        action,
+                        state,
+                        wallTimeMillis,
+                        receiptId,
+                        Refusal(
+                            RefusalCode.INVALID_REQUEST,
+                            "Use no session id for local HUMAN or MIGRATION HUD changes.",
+                            state.revision,
+                        ),
+                    )
+                }
+                if (Capability.CONTROL_DISPLAY !in (state.capabilities[request.principal] ?: emptySet())) {
+                    return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.CAPABILITY_NOT_GRANTED, "Grant control.display to this local principal before changing display HUD.", state.revision))
+                }
+            }
+            PrincipalKind.NEXUS -> {
+                if (authorizedCommit == null) {
+                    return refuse(
+                        action,
+                        state,
+                        wallTimeMillis,
+                        receiptId,
+                        Refusal(
+                            RefusalCode.SESSION_UNAVAILABLE,
+                            "Authenticate through the shared Nexus dispatcher and retry this exact action.",
+                            state.revision,
+                        ),
+                    )
+                }
+                if (!authorizedCommit.matches(action, request, state)) {
+                    return refuse(
+                        action,
+                        state,
+                        wallTimeMillis,
+                        receiptId,
+                        Refusal(
+                            RefusalCode.INVALID_REQUEST,
+                            "Retry through the current shared Nexus dispatcher; authorization did not match this request.",
+                            state.revision,
+                        ),
+                    )
+                }
+                if (request.transport != Transport.BINDER && request.transport != Transport.TAILNET) {
+                    return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.INVALID_REQUEST, "Use Binder or authenticated tailnet for Nexus display control.", state.revision))
+                }
+                if (request.sessionId.isNullOrBlank()) {
+                    return refuse(action, state, wallTimeMillis, receiptId, Refusal(RefusalCode.SESSION_UNAVAILABLE, "Establish a current Nexus session and retry.", state.revision))
+                }
+            }
+            else -> return refuse(
+                action,
+                state,
+                wallTimeMillis,
+                receiptId,
+                Refusal(
+                    RefusalCode.PERMISSION_REQUIRES_HUMAN,
+                    "Use the local HUMAN/MIGRATION path or an authenticated Nexus session for display HUD control.",
+                    state.revision,
+                ),
+            )
         }
         val availability = state.availability.getValue(StateField.DISPLAY_HUD)
         if (availability.fix != null) {

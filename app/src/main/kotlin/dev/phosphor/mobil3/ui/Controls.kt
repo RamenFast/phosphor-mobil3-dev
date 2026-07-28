@@ -28,6 +28,7 @@ import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 
@@ -137,7 +138,7 @@ fun StoneKey(
             .clickable(interactionSource = interaction, indication = null, onClick = onClick),
         contentAlignment = Alignment.Center,
     ) {
-        Box(Modifier.offset(x = sink, y = sink)) {
+        Box(Modifier.offset { IntOffset(sink.roundToPx(), sink.roundToPx()) }) {
             // The transport glyph (▶ / ❚❚) uprights to the viewing edge.
             UprightCell { Mono(label, if (void && pressed) p.accent else p.ink, Type.dataXl) }
         }

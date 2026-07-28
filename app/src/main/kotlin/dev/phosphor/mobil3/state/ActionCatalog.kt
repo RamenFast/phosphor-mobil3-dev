@@ -69,6 +69,8 @@ object StateActionCatalog {
         action("setRemoteLatencyMode", ActionType.SET_REMOTE_LATENCY_MODE),
         action("setRemoteNetworkMode", ActionType.SET_REMOTE_NETWORK_MODE),
         exception("remoteHosts", "read helper whose future state projection is not a mutation"),
+        action("saveRemoteHost", ActionType.SAVE_REMOTE_HOST),
+        action("removeRemoteHost", ActionType.REMOVE_REMOTE_HOST),
         action("startRemoteHost", ActionType.START_REMOTE_HOST),
         action("setRemoteStreams", ActionType.SET_REMOTE_STREAMS),
         action("disconnectRemote", ActionType.DISCONNECT_REMOTE),

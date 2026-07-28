@@ -1,0 +1,23 @@
+<?xml version="1.0" encoding="utf-8"?>
+<full-backup-content>
+    <!--
+      Phosphor currently has minSdk 35, so supported devices use data_extraction_rules.xml.
+      This legacy contract remains as a belt-and-braces fullBackupContent definition for
+      tooling, future minSdk changes, and older restore transports. It mirrors the same split.
+    -->
+
+    <!-- Restore the user's genuine instrument settings. -->
+    <include domain="sharedpref" path="." />
+
+    <!-- Relay endpoints are private network facts and are invalid on another device. -->
+    <exclude domain="sharedpref" path="remote_hosts.xml" />
+
+    <!-- Reserved billing state must never transfer a trial clock or cached entitlement. -->
+    <exclude domain="sharedpref" path="entitlement.xml" />
+
+    <!-- Device-local causal audit, idempotency, receipt, and authority state must not restore. -->
+    <exclude domain="sharedpref" path="phosphor.causal_state.xml" />
+
+    <!-- Device consent acknowledgements, source memory, and calibration metadata stay local. -->
+    <exclude domain="sharedpref" path="phosphor.runtime.xml" />
+</full-backup-content>

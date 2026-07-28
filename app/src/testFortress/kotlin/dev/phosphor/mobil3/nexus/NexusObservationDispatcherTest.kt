@@ -3,6 +3,16 @@ package dev.phosphor.mobil3.nexus
 import dev.phosphor.mobil3.state.Capability
 import dev.phosphor.mobil3.state.InitialSnapshots
 import dev.phosphor.mobil3.state.PhosphorStateSnapshot
+import dev.phosphor.mobil3.state.ActionRequest
+import dev.phosphor.mobil3.state.AuditKind
+import dev.phosphor.mobil3.state.PrincipalId
+import dev.phosphor.mobil3.state.PrincipalKind
+import dev.phosphor.mobil3.state.Refusal
+import dev.phosphor.mobil3.state.RefusalCode
+import dev.phosphor.mobil3.state.SetDisplayHud
+import dev.phosphor.mobil3.state.SessionState
+import dev.phosphor.mobil3.state.Transport
+import dev.phosphor.mobil3.store.PhosphorDispatchResult
 import dev.phosphor.mobil3.store.PhosphorStatePersistencePort
 import dev.phosphor.mobil3.store.PhosphorStateStore
 import dev.phosphor.mobil3.store.PhosphorStoreImage
@@ -59,7 +69,8 @@ class NexusObservationDispatcherTest {
         val result = fixture.dispatcher.observe(fixture.projection(Capability.OBSERVE_AUDIT), 50L)
 
         val audit = assertIs<NexusObservationResult.Audit>(result)
-        assertTrue(audit.auditRecords.isEmpty())
+        assertTrue(audit.auditRecords.isNotEmpty())
+        assertTrue(audit.auditRecords.all { it.actionType == null && it.provenance == null })
         assertSame(fixture.store.health, audit.health)
         assertEquals(setOf("auditRecords", "health"), payloadFields(NexusObservationResult.Audit::class.java))
         assertFailsUnsupported { audit.auditRecords.addForProbe() }
@@ -360,13 +371,351 @@ class NexusObservationDispatcherTest {
         assertEquals(beforeSaves, port.saves)
     }
 
+    @Test
+    fun authoritySaveFailureReturnsNoFakeAckAndLeavesAuthorityUnchanged() {
+        val failure = Refusal(RefusalCode.SYSTEM_UNAVAILABLE, "Fix authority storage.", 0L)
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)), failSavesAfter = 2, failure = failure)
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val fixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE), store = store)
+        val transition = fixture.session.disconnect(NexusClosureCause.EXPLICIT_DISCONNECT, fixture.grants)
+
+        assertFalse(fixture.dispatcher.apply(transition))
+
+        assertTrue(store.authorityPlane != null)
+        assertRefused(
+            fixture.dispatcher.observe(fixture.projection(Capability.OBSERVE_STATE), 50L),
+            NexusPreAuthRefusalCode.ENTRY_UNAVAILABLE,
+        )
+        assertFalse(store.health.writable)
+        assertSame(failure, store.health.fix)
+    }
+
+    @Test
+    fun constructorAbsentAuthorityRefusesWithoutAttemptingPersistence() {
+        val failure = Refusal(RefusalCode.SYSTEM_UNAVAILABLE, "Fix initial authority storage.", 0L)
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)), failSaves = true, failure = failure)
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val session = observingSession(trustKey, tokenId, sessionId, listOf(Capability.OBSERVE_STATE))
+        val token = NexusTokenGrant.of(tokenId, trustKey, listOf(Capability.OBSERVE_STATE), 0L, 100L)
+        val grants = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE))
+
+        val dispatcher = NexusObservationDispatcher(store, session, token, grants, NexusTrustPolicy.of())
+
+        assertRefused(
+            dispatcher.observe(
+                NexusObservationProjection.authorize(session, token, grants, NexusTrustPolicy.of(), Capability.OBSERVE_STATE, 50L),
+                50L,
+            ),
+            NexusPreAuthRefusalCode.ENTRY_UNAVAILABLE,
+        )
+        assertFalse(dispatcher.apply(session.disconnect(NexusClosureCause.EXPLICIT_DISCONNECT, grants)))
+        assertEquals(SessionState.ABSENT, store.snapshot.liveness.state)
+        assertEquals(null, store.snapshot.session)
+        assertEquals(null, store.authorityPlane)
+        assertTrue(store.health.writable)
+        assertEquals(null, store.health.fix)
+    }
+
+    @Test
+    fun constructorLoadedAuthoritySaveFailureFailsClosedWithoutAdmittingFreshSession() {
+        val session = observingSession(trustKey, tokenId, sessionId, listOf(Capability.OBSERVE_STATE))
+        val token = NexusTokenGrant.of(tokenId, trustKey, listOf(Capability.OBSERVE_STATE), 0L, 100L)
+        val grants = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE))
+        val durablePlane = NexusAuthorityCodec.encode(NexusAuthorityImage(grants = grants))
+        val failure = Refusal(RefusalCode.SYSTEM_UNAVAILABLE, "Fix loaded authority storage.", 0L)
+        val port = MemoryPort(
+            PhosphorStoreImage(InitialSnapshots.fortress(10L), authorityPlane = durablePlane),
+            failSaves = true,
+            failure = failure,
+        )
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+
+        val dispatcher = NexusObservationDispatcher(store, session, token, grants, NexusTrustPolicy.of())
+
+        assertRefused(
+            dispatcher.observe(
+                NexusObservationProjection.authorize(session, token, grants, NexusTrustPolicy.of(), Capability.OBSERVE_STATE, 50L),
+                50L,
+            ),
+            NexusPreAuthRefusalCode.ENTRY_UNAVAILABLE,
+        )
+        assertFalse(dispatcher.apply(session.disconnect(NexusClosureCause.EXPLICIT_DISCONNECT, grants)))
+        assertEquals(SessionState.ABSENT, store.snapshot.liveness.state)
+        assertEquals(null, store.snapshot.session)
+        assertEquals(durablePlane, store.authorityPlane)
+        assertFalse(store.health.writable)
+        assertSame(failure, store.health.fix)
+    }
+
+    @Test
+    fun corruptAuthorityEnvelopeFailsClosedOnRestartWithoutGrantDisclosure() {
+        val store = PhosphorStateStore(
+            MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L), authorityPlane = "{\"schema\":\"phosphor.nexus.authority/1\",\"payload\":{},\"checksum_sha256\":\"${"0".repeat(64)}\"}")),
+            InitialSnapshots.fortress(10L),
+        )
+        val fixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE, Capability.CONTROL_DISPLAY), store = store)
+
+        assertRefused(fixture.dispatcher.observe(fixture.projection(Capability.OBSERVE_STATE), 50L), NexusPreAuthRefusalCode.ENTRY_UNAVAILABLE)
+        assertIs<PhosphorDispatchResult.Failed>(fixture.dispatcher.dispatch(fixture.dispatchProjection("on", "corrupt"), 50L, 20L))
+    }
+
+    @Test
+    fun persistentGrantRevocationAndNoncePlaneRestoreWhileTransientGrantClears() {
+        val transientGrant = NexusCapabilityGrant(trustKey, Capability.OBSERVE_AUDIT, NexusGrantScope.TRANSIENT, sessionId, "transient-audit")
+        val image = NexusAuthorityImage(
+            grants = NexusGrantLedger.of(fixture(capabilities = listOf(Capability.OBSERVE_STATE)).grants.grants + transientGrant),
+            revokedTokenIds = setOf(tokenId),
+            consumedIdempotencyKeys = setOf("idem-restore"),
+            consumedNonces = setOf(NexusNonceRecord("nonce-a", 0L, NEXUS_NONCE_RETENTION_MILLIS, "binding-a"), NexusNonceRecord("nonce-b", 0L, NEXUS_NONCE_RETENTION_MILLIS, "binding-b")),
+        )
+        val encoded = NexusAuthorityCodec.encode(image)
+        val decoded = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(encoded)).image
+
+        assertTrue(decoded.grants.allows(trustKey, sessionId, Capability.OBSERVE_STATE))
+        assertFalse(decoded.grants.allows(trustKey, sessionId, Capability.OBSERVE_AUDIT))
+        assertEquals(setOf(tokenId), decoded.revokedTokenIds)
+        assertEquals(setOf("idem-restore"), decoded.consumedIdempotencyKeys)
+        assertEquals(setOf("nonce-a", "nonce-b"), decoded.consumedNonces.map { it.value }.toSet())
+    }
+
+    @Test
+    fun revokeDuringAuthoritySaveLinearizesBeforeLaterObservation() {
+        val durableGrants = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE))
+        val port = BlockingPort(
+            PhosphorStoreImage(
+                InitialSnapshots.fortress(10L),
+                authorityPlane = NexusAuthorityCodec.encode(NexusAuthorityImage(grants = durableGrants)),
+            ),
+        )
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val fixture = fixture(
+            capabilities = listOf(Capability.OBSERVE_STATE),
+            grants = durableGrants,
+            store = store,
+        )
+        val projection = fixture.projection(Capability.OBSERVE_STATE)
+        var revoked = false
+        val revoking = thread(start = true) {
+            revoked = fixture.dispatcher.apply(fixture.policy.revokeToken(tokenId, fixture.session, fixture.grants))
+        }
+        assertTrue(port.saveEntered.await(5, TimeUnit.SECONDS))
+        var observed: NexusObservationResult? = null
+        val observing = thread(start = true) { observed = fixture.dispatcher.observe(projection, 50L) }
+        assertThreadState(observing, Thread.State.BLOCKED)
+        port.releaseSave.countDown()
+        revoking.join(5_000L)
+        observing.join(5_000L)
+
+        assertTrue(revoked)
+        assertRefused(requireNotNull(observed), NexusPreAuthRefusalCode.ENTRY_UNAVAILABLE)
+    }
+
+    @Test
+    fun replayAfterRestartUsesPersistedStoreIdempotencyWithinTwentyFourHourRetention() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val fixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE, Capability.CONTROL_DISPLAY), store = store)
+        val first = assertIs<PhosphorDispatchResult.Accepted>(fixture.dispatcher.dispatch(fixture.dispatchProjection("on", "idem-24h"), 50L, 20L))
+        val restarted = PhosphorStateStore(MemoryPort(requireNotNull(port.lastSaved)), InitialSnapshots.fortress(10L))
+        val restartedFixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE, Capability.CONTROL_DISPLAY), store = restarted)
+
+        val replay = assertIs<PhosphorDispatchResult.Replayed>(restartedFixture.dispatcher.dispatch(restartedFixture.dispatchProjection("on", "idem-24h", expected = first.acknowledgement.revision), 60L, 21L))
+
+        assertEquals(first.acknowledgement.receiptId, replay.acknowledgement.receiptId)
+    }
+
+    @Test
+    fun consumedNonceSurvivesHeartbeatTransitionRestartAndStillRefusesReplay() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val fixture = tailnetFixture(capabilities = listOf(Capability.OBSERVE_STATE))
+        fixture.grants.grants.filter { it.scope == NexusGrantScope.PERSISTENT }.forEachIndexed { index, grant ->
+            assertIs<NexusAuthorityTransactionResult.Committed>(
+                NexusAuthorityStoreTransaction.grantPersistent(store, grant, 1L + index),
+            )
+        }
+        val dispatcher = NexusObservationDispatcher(store, fixture.session, fixture.token, fixture.grants, fixture.policy)
+        val consumption = NexusNonceConsumption(
+            value = "nonce-replay",
+            binding = "uid=7|pkg=dev.nexus.mobile|request=req-1|client=client-1|challenge=challenge-1|server=server-1|trust=${trustKey.principalStableId}",
+            issuedWallTimeMillis = 20L,
+            expiresWallTimeMillis = 20L + NEXUS_NONCE_RETENTION_MILLIS,
+        )
+        assertIs<NexusAuthorityTransactionResult.Committed>(
+            NexusAuthorityStoreTransaction.consumeNonce(store, consumption, 20L),
+        )
+
+        assertTrue(dispatcher.recordHeartbeat(requireNotNull(fixture.session.id), fixture.session.generation, 500L))
+        val afterHeartbeat = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(requireNotNull(port.lastSaved).authorityPlane)).image
+        assertEquals(setOf("nonce-replay"), afterHeartbeat.consumedNonces.map { it.value }.toSet())
+
+        val restartedStore = PhosphorStateStore(MemoryPort(requireNotNull(port.lastSaved)), InitialSnapshots.fortress(10L))
+        val replay = assertIs<NexusAuthorityTransactionResult.Refused>(
+            NexusAuthorityStoreTransaction.consumeNonce(restartedStore, consumption, 21L),
+        )
+        assertEquals(RefusalCode.IDEMPOTENCY_CONFLICT, replay.refusal.code)
+    }
+
+    @Test
+    fun storeStateTracksObservingDrivingClosingAndAbsentButRestartClearsTransientProjection() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val fixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE, Capability.CONTROL_DISPLAY), store = store)
+
+        assertEquals(SessionState.OBSERVING, store.snapshot.liveness.state)
+        assertEquals(sessionId.value, store.snapshot.session)
+        assertTrue(store.snapshot.capabilities.keys.any { it.kind == PrincipalKind.NEXUS })
+        assertEquals(SessionState.ABSENT, requireNotNull(port.lastSaved).snapshot.liveness.state)
+        assertEquals(null, port.lastSaved?.snapshot?.session)
+
+        val driving = reflectSession(fixture.session, NexusLifecycle.DRIVING, "active-control")
+        // Re-open a separate driving fixture to assert the projected driving state without relying on private control transitions.
+        val drivingStore = storeWithAuthority(fixture.grants)
+        NexusObservationDispatcher(drivingStore, driving, fixture.token, fixture.grants, fixture.policy)
+        assertEquals(SessionState.DRIVING, drivingStore.snapshot.liveness.state)
+
+        val tailnet = tailnetFixture(capabilities = listOf(Capability.OBSERVE_STATE))
+        val heartbeatPolicy = requireNotNull(tailnet.session.heartbeatPolicy)
+        val lastHeartbeat = requireNotNull(tailnet.session.lastHeartbeatMonotonicMillis)
+        val closing = tailnet.session.evaluateRemoteLiveness(
+            lastHeartbeat + heartbeatPolicy.closingAfterMillis,
+            tailnet.grants,
+        )
+        assertTrue(tailnet.dispatcher.apply(closing))
+        assertEquals(SessionState.CLOSING, tailnet.store.snapshot.liveness.state)
+        val absent = closing.session.evaluateRemoteLiveness(
+            lastHeartbeat + heartbeatPolicy.absentAfterMillis,
+            closing.grants,
+        )
+        assertTrue(tailnet.dispatcher.apply(absent))
+        assertEquals(SessionState.ABSENT, tailnet.store.snapshot.liveness.state)
+
+        val restarted = PhosphorStateStore(MemoryPort(requireNotNull(port.lastSaved)), InitialSnapshots.fortress(10L))
+        assertEquals(SessionState.ABSENT, restarted.snapshot.liveness.state)
+        assertEquals(null, restarted.snapshot.session)
+        assertFalse(restarted.snapshot.capabilities.keys.any { it.kind == PrincipalKind.NEXUS })
+        val durable = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(restarted.authorityPlane)).image
+        assertTrue(durable.grants.allows(trustKey, sessionId, Capability.OBSERVE_STATE))
+    }
+
+    @Test
+    fun authenticationLifecycleAuditAndReceiptCounterPersistWithAuthorityProjection() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+
+        val fixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE), store = store)
+
+        assertIs<NexusSessionAttachResult.Attached>(fixture.dispatcher.attachResult())
+        assertEquals(listOf(AuditKind.GRANT, AuditKind.AUTHENTICATION), store.auditRecords.map { it.kind })
+        assertEquals("hud-2", store.auditRecords.last().receiptId)
+        assertEquals(3L, requireNotNull(port.lastSaved).nextReceiptOrdinal)
+        val restarted = PhosphorStateStore(MemoryPort(requireNotNull(port.lastSaved)), InitialSnapshots.fortress(10L))
+        assertEquals(listOf(AuditKind.GRANT, AuditKind.AUTHENTICATION), restarted.auditRecords.map { it.kind })
+        assertEquals(3L, requireNotNull(port.lastSaved).nextReceiptOrdinal)
+    }
+
+    @Test
+    fun persistentGrantAndRevokeTransactionsPersistAuditAndAuthorityAtomically() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val fixture = fixture(capabilities = listOf(Capability.OBSERVE_STATE), store = store)
+        val grant = NexusCapabilityGrant(trustKey, Capability.OBSERVE_AUDIT, NexusGrantScope.PERSISTENT, null, "grant-audit-receipt")
+
+        assertIs<NexusAuthorityMutationResult.Committed>(fixture.dispatcher.grantPersistent(grant, 30L))
+        var durable = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(requireNotNull(port.lastSaved).authorityPlane)).image
+        assertTrue(durable.grants.allows(trustKey, sessionId, Capability.OBSERVE_AUDIT))
+        assertEquals(listOf(AuditKind.GRANT, AuditKind.AUTHENTICATION, AuditKind.GRANT), store.auditRecords.map { it.kind })
+
+        assertIs<NexusAuthorityMutationResult.Committed>(fixture.dispatcher.revokePersistent(trustKey, Capability.OBSERVE_AUDIT, 31L))
+        durable = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(requireNotNull(port.lastSaved).authorityPlane)).image
+        assertFalse(durable.grants.allows(trustKey, sessionId, Capability.OBSERVE_AUDIT))
+        assertEquals(listOf(AuditKind.GRANT, AuditKind.AUTHENTICATION, AuditKind.GRANT, AuditKind.REVOKE), store.auditRecords.map { it.kind })
+        assertEquals(5L, requireNotNull(port.lastSaved).nextReceiptOrdinal)
+    }
+
+    @Test
+    fun loadedAuthorityDoesNotMergeCallerPersistentGrantsDuringAttach() {
+        val durable = NexusAuthorityCodec.encode(NexusAuthorityImage(grants = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE))))
+        val store = PhosphorStateStore(MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L), authorityPlane = durable)), InitialSnapshots.fortress(10L))
+        val session = observingSession(trustKey, tokenId, sessionId, listOf(Capability.OBSERVE_STATE, Capability.OBSERVE_AUDIT))
+        val token = NexusTokenGrant.of(tokenId, trustKey, listOf(Capability.OBSERVE_STATE, Capability.OBSERVE_AUDIT), 0L, 100L)
+        val callerPersistent = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE, Capability.OBSERVE_AUDIT))
+
+        val dispatcher = NexusObservationDispatcher(store, session, token, callerPersistent, NexusTrustPolicy.of())
+        assertIs<NexusSessionAttachResult.Refused>(dispatcher.attachResult())
+        val restored = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(store.authorityPlane)).image
+        assertFalse(restored.grants.allows(trustKey, sessionId, Capability.OBSERVE_AUDIT))
+    }
+
+    @Test
+    fun freshStoreWithCallerPersistentGrantsRefusesAndLeavesAuthorityAbsent() {
+        val store = store()
+        val session = observingSession(trustKey, tokenId, sessionId, listOf(Capability.OBSERVE_STATE))
+        val token = NexusTokenGrant.of(tokenId, trustKey, listOf(Capability.OBSERVE_STATE), 0L, 100L)
+        val callerGrants = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE))
+
+        val dispatcher = NexusObservationDispatcher(store, session, token, callerGrants, NexusTrustPolicy.of())
+
+        assertIs<NexusSessionAttachResult.Refused>(dispatcher.attachResult())
+        assertRefused(dispatcher.observe(NexusObservationProjection.authorize(session, token, callerGrants, NexusTrustPolicy.of(), Capability.OBSERVE_STATE, 50L), 50L), NexusPreAuthRefusalCode.ENTRY_UNAVAILABLE)
+        assertEquals(null, store.authorityPlane)
+        assertTrue(store.auditRecords.isEmpty())
+        assertEquals(SessionState.ABSENT, store.snapshot.liveness.state)
+    }
+
+    @Test
+    fun storeLevelGrantSeedsFirstDurableAuthorityAndAuditsInSameSave() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val grant = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE)).grants.single()
+
+        assertIs<NexusAuthorityTransactionResult.Committed>(NexusAuthorityStoreTransaction.grantPersistent(store, grant, 30L))
+        val saved = requireNotNull(port.lastSaved)
+        val durable = assertIs<NexusAuthorityDecodeResult.Loaded>(NexusAuthorityCodec.decode(saved.authorityPlane)).image
+        assertTrue(durable.grants.allows(trustKey, sessionId, Capability.OBSERVE_STATE))
+        assertEquals(listOf(AuditKind.GRANT), saved.audit.records.map { it.kind })
+        assertEquals(2L, saved.nextReceiptOrdinal)
+    }
+
+    @Test
+    fun storeLevelGrantSaveFailureLeavesAuthorityAuditAndCounterAbsent() {
+        val failure = Refusal(RefusalCode.SYSTEM_UNAVAILABLE, "Fix authority storage.", 0L)
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)), failSaves = true, failure = failure)
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val grant = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE)).grants.single()
+
+        val result = assertIs<NexusAuthorityTransactionResult.Refused>(NexusAuthorityStoreTransaction.grantPersistent(store, grant, 30L))
+
+        assertSame(failure, result.refusal)
+        assertEquals(null, store.authorityPlane)
+        assertTrue(store.auditRecords.isEmpty())
+        assertEquals(1L, requireNotNull(port.lastSaved).nextReceiptOrdinal)
+    }
+
+    @Test
+    fun revokedDurableGrantBetweenNonceConsumeAndAttachRefusesWithoutAuthenticationAudit() {
+        val port = MemoryPort(PhosphorStoreImage(InitialSnapshots.fortress(10L)))
+        val store = PhosphorStateStore(port, InitialSnapshots.fortress(10L))
+        val grant = grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE)).grants.single()
+        assertIs<NexusAuthorityTransactionResult.Committed>(NexusAuthorityStoreTransaction.grantPersistent(store, grant, 30L))
+        assertIs<NexusAuthorityTransactionResult.Committed>(NexusAuthorityStoreTransaction.consumeNonce(store, NexusNonceConsumption("nonce-before-revoke", "binding-before-revoke", 31L, 31L + NEXUS_NONCE_RETENTION_MILLIS), 31L))
+        assertIs<NexusAuthorityTransactionResult.Committed>(NexusAuthorityStoreTransaction.revokePersistent(store, trustKey, Capability.OBSERVE_STATE, 32L))
+
+        val session = observingSession(trustKey, tokenId, sessionId, listOf(Capability.OBSERVE_STATE))
+        val token = NexusTokenGrant.of(tokenId, trustKey, listOf(Capability.OBSERVE_STATE), 0L, 100L)
+        val dispatcher = NexusObservationDispatcher(store, session, token, grants(trustKey, sessionId, listOf(Capability.OBSERVE_STATE)), NexusTrustPolicy.of())
+
+        assertIs<NexusSessionAttachResult.Refused>(dispatcher.attachResult())
+        assertEquals(listOf(AuditKind.GRANT, AuditKind.REVOKE), store.auditRecords.map { it.kind })
+    }
+
     private fun fixture(
         session: NexusSession = observingSession(trustKey, tokenId, sessionId, listOf(Capability.OBSERVE_STATE)),
         token: NexusTokenGrant = NexusTokenGrant.of(tokenId, requireNotNull(session.trustKey), session.authenticatedCapabilityCeiling, 0L, 100L),
         grants: NexusGrantLedger = grants(requireNotNull(session.trustKey), requireNotNull(session.id), session.authenticatedCapabilityCeiling),
         policy: NexusTrustPolicy = NexusTrustPolicy.of(),
         capabilities: Collection<Capability>,
-        store: PhosphorStateStore = store(),
+        store: PhosphorStateStore? = null,
     ): Fixture {
         val effectiveSession = if (session.capabilities.containsAll(capabilities)) session else observingSession(
             requireNotNull(session.trustKey),
@@ -386,13 +735,19 @@ class NexusObservationDispatcherTest {
             0L,
             100L,
         )
+        val effectiveStore = store ?: storeWithAuthority(effectiveGrants)
+        if (store != null && effectiveStore.authorityPlane == null) {
+            effectiveGrants.grants.filter { it.scope == NexusGrantScope.PERSISTENT }.forEachIndexed { index, grant ->
+                assertIs<NexusAuthorityTransactionResult.Committed>(NexusAuthorityStoreTransaction.grantPersistent(effectiveStore, grant, 1L + index))
+            }
+        }
         return Fixture(
             session = effectiveSession,
             token = effectiveToken,
             grants = effectiveGrants,
             policy = policy,
-            store = store,
-            dispatcher = NexusObservationDispatcher(store, effectiveSession, effectiveToken, effectiveGrants, policy),
+            store = effectiveStore,
+            dispatcher = NexusObservationDispatcher(effectiveStore, effectiveSession, effectiveToken, effectiveGrants, policy),
         )
     }
 
@@ -406,7 +761,7 @@ class NexusObservationDispatcherTest {
         )
         val grants = grants(trustKey, sessionId, capabilities)
         val token = NexusTokenGrant.of(tokenId, trustKey, capabilities, 0L, 100L)
-        val store = store()
+        val store = storeWithAuthority(grants)
         return Fixture(
             driving,
             token,
@@ -427,7 +782,7 @@ class NexusObservationDispatcherTest {
         val session = observingSession(key, tokenId, sessionId, capabilities, NexusReachPath.TAILNET)
         val grants = grants(key, sessionId, capabilities)
         val token = NexusTokenGrant.of(tokenId, key, capabilities, 0L, 10_000L)
-        val store = store()
+        val store = storeWithAuthority(grants)
         return Fixture(
             session,
             token,
@@ -465,8 +820,29 @@ class NexusObservationDispatcherTest {
         nowMonotonicMillis = 50L,
     )
 
+    private fun Fixture.dispatchProjection(mode: String, key: String, expected: Long = 0L): NexusDispatchProjection = NexusDispatchProjection.authorize(
+        session = session,
+        token = token,
+        grants = grants,
+        trustPolicy = policy,
+        action = SetDisplayHud(mode),
+        request = ActionRequest(
+            principal = PrincipalId(PrincipalKind.NEXUS, requireNotNull(session.trustKey).principalStableId),
+            idempotencyKey = key,
+            expectedRevision = expected,
+            reason = "test nexus dispatch",
+            requestedCapability = Capability.CONTROL_DISPLAY,
+            transport = Transport.BINDER,
+            sessionId = requireNotNull(session.id).value,
+        ),
+        nowMonotonicMillis = 50L,
+    )
+
     private fun store(snapshot: PhosphorStateSnapshot = InitialSnapshots.fortress(10L)): PhosphorStateStore =
         PhosphorStateStore(MemoryPort(PhosphorStoreImage(snapshot)), snapshot)
+
+    private fun storeWithAuthority(grants: NexusGrantLedger, snapshot: PhosphorStateSnapshot = InitialSnapshots.fortress(10L)): PhosphorStateStore =
+        PhosphorStateStore(MemoryPort(PhosphorStoreImage(snapshot, authorityPlane = NexusAuthorityCodec.encode(NexusAuthorityImage(grants = grants)))), snapshot)
 
     private fun assertRefused(result: NexusObservationResult, code: NexusPreAuthRefusalCode) {
         val refused = assertIs<NexusObservationResult.Refused>(result)
@@ -562,16 +938,40 @@ class NexusObservationDispatcherTest {
         return constructor.newInstance(trustKey, reachPath, sessionId.value, tokenId.value, capabilities, 1_000L) as NexusAuthenticatedIdentity
     }
 
-    private open class MemoryPort(image: PhosphorStoreImage) : PhosphorStatePersistencePort {
+    private open class MemoryPort(
+        image: PhosphorStoreImage,
+        private val failSaves: Boolean = false,
+        private val failSavesAfter: Int? = null,
+        private val failure: Refusal = Refusal(RefusalCode.SYSTEM_UNAVAILABLE, "Fix persistence.", 0L),
+    ) : PhosphorStatePersistencePort {
         private var image: PhosphorStoreImage = image
         var saves: Int = 0
             private set
+        val lastSaved: PhosphorStoreImage? get() = image
 
         override fun load(): PhosphorStoreLoadResult = PhosphorStoreLoadResult.CausalImage(image)
         override fun save(image: PhosphorStoreImage): PhosphorStorePersistenceResult {
             saves += 1
+            if (failSaves || (failSavesAfter != null && saves > failSavesAfter)) return PhosphorStorePersistenceResult.Failed(failure)
             this.image = image
             return PhosphorStorePersistenceResult.Saved
+        }
+    }
+
+    private class BlockingPort(
+        image: PhosphorStoreImage,
+        private val blockOnAttempt: Int = 2,
+    ) : MemoryPort(image) {
+        val saveEntered = CountDownLatch(1)
+        val releaseSave = CountDownLatch(1)
+        private var attempts = 0
+        override fun save(image: PhosphorStoreImage): PhosphorStorePersistenceResult {
+            attempts += 1
+            if (attempts >= blockOnAttempt) {
+                saveEntered.countDown()
+                assertTrue(releaseSave.await(5, TimeUnit.SECONDS))
+            }
+            return super.save(image)
         }
     }
 }

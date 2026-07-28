@@ -1,6 +1,5 @@
 package dev.phosphor.mobil3.ui
 
-import android.os.Build
 import android.view.RoundedCorner
 import android.view.View
 import androidx.compose.foundation.layout.WindowInsets
@@ -96,7 +95,6 @@ fun chromeSafeDrawingInsets(horizontalPadding: Dp, verticalPadding: Dp): WindowI
 }
 
 private fun View.cornerRadii(): CornerRadii {
-    if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S) return CornerRadii()
     val insets = rootWindowInsets ?: return CornerRadii()
     return CornerRadii(
         topLeft = insets.getRoundedCorner(RoundedCorner.POSITION_TOP_LEFT)?.radius ?: 0,

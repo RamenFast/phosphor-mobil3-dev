@@ -50,6 +50,7 @@ data class PhosphorStoreImage(
     ),
     val nextReceiptOrdinal: Long = 1L,
     val nextIdempotencyOrdinal: Long = 1L,
+    val authorityPlane: String? = null,
 ) {
     init {
         require(nextReceiptOrdinal > 0L) { "next receipt ordinal must be positive" }

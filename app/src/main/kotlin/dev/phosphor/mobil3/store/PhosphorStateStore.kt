@@ -3,6 +3,7 @@ package dev.phosphor.mobil3.store
 import dev.phosphor.mobil3.state.AcceptedActionRecord
 import dev.phosphor.mobil3.state.ActionAcknowledgement
 import dev.phosphor.mobil3.state.ActionRequest
+import dev.phosphor.mobil3.state.AuditKind
 import dev.phosphor.mobil3.state.AuditRecord
 import dev.phosphor.mobil3.state.Capability
 import dev.phosphor.mobil3.state.FrozenList
@@ -40,6 +41,14 @@ data class PhosphorStoreObservation(
 const val LOCAL_HUMAN_PRINCIPAL_ID: String = "local-human"
 const val LOCAL_HUD_MIGRATION_PRINCIPAL_ID: String = "local-hud-preferences"
 
+internal val NEXUS_LIFECYCLE_AUDIT_KINDS: Set<AuditKind> = setOf(
+    AuditKind.AUTHENTICATION,
+    AuditKind.HEARTBEAT_EXPIRY,
+    AuditKind.BINDER_DEATH,
+    AuditKind.GRANT,
+    AuditKind.REVOKE,
+)
+
 class PhosphorStateStore(
     private val port: PhosphorStatePersistencePort,
     private val initialSnapshot: PhosphorStateSnapshot,
@@ -64,6 +73,64 @@ class PhosphorStateStore(
     val health: StoreHealth get() = runtimeHealth
     val auditRecords: List<AuditRecord> get() = image.audit.records.toList()
     val idempotencyRecords: List<IdempotencyRecord> get() = image.idempotency.records.toList()
+    internal val authorityPlane: String? get() = image.authorityPlane
+
+    internal fun commitAuthorityPlane(
+        update: (PhosphorStoreImage) -> PhosphorStoreImage,
+        persisted: (PhosphorStoreImage) -> PhosphorStoreImage = { it },
+        lifecycleAuditKind: AuditKind? = null,
+        wallTimeMillis: Long? = null,
+    ): Refusal? {
+        val result = synchronized(this) {
+            runtimeHealth.fix?.let { return@synchronized it }
+            val updatedImage = update(image)
+            if (updatedImage == image) return@synchronized null
+            val nextImage = if (lifecycleAuditKind != null && updatedImage != image) {
+                withLifecycleAuditLocked(updatedImage, lifecycleAuditKind, wallTimeMillis) ?: return@synchronized counterOverflow()
+            } else {
+                updatedImage
+            }
+            when (val saved = port.save(persisted(nextImage))) {
+            PhosphorStorePersistenceResult.Saved -> {
+                val changed = image.snapshot != nextImage.snapshot
+                image = nextImage
+                if (changed) {
+                    val listeners = listeners.toList()
+                    if (listeners.isNotEmpty()) pendingStateNotifications.addLast(StateNotification(nextImage.snapshot, listeners))
+                }
+                null
+            }
+            is PhosphorStorePersistenceResult.Failed -> {
+                publishHealth(StoreHealth(readable = true, writable = false, fix = saved.refusal))
+                saved.refusal
+            }
+            }
+        }
+        drainHealthNotifications()
+        drainStateNotifications()
+        return result
+    }
+
+    private fun withLifecycleAuditLocked(
+        current: PhosphorStoreImage,
+        kind: AuditKind?,
+        wallTimeMillis: Long?,
+    ): PhosphorStoreImage? {
+        if (kind == null) return current
+        require(kind in NEXUS_LIFECYCLE_AUDIT_KINDS) { "unsupported Nexus lifecycle audit kind" }
+        val observedWallTimeMillis = maxOf(wallTimeMillis ?: current.snapshot.wallTimeMillis, current.snapshot.wallTimeMillis, current.audit.observedWallTimeMillis)
+        val receiptOrdinal = nextOrdinalOrFailure(current.nextReceiptOrdinal) ?: return null
+        val nextReceipt = checkedAdd(receiptOrdinal, 1L) ?: return null
+        val record = AuditRecord(
+            receiptId = "hud-$receiptOrdinal",
+            kind = kind,
+            wallTimeMillis = observedWallTimeMillis,
+        )
+        return current.copy(
+            audit = reducer.appendAudit(current.audit.records, record, observedWallTimeMillis),
+            nextReceiptOrdinal = nextReceipt,
+        )
+    }
 
     fun observe(): PhosphorStoreObservation = synchronized(this) {
         PhosphorStoreObservation(
@@ -96,9 +163,37 @@ class PhosphorStateStore(
         request: ActionRequest,
         monotonicMillis: Long,
         wallTimeMillis: Long,
+    ): PhosphorDispatchResult = dispatchInternal(
+        action = action,
+        request = request,
+        monotonicMillis = monotonicMillis,
+        wallTimeMillis = wallTimeMillis,
+        authorizationFence = null,
+    )
+
+    internal fun dispatchAuthorized(
+        action: PhosphorAction,
+        request: ActionRequest,
+        monotonicMillis: Long,
+        wallTimeMillis: Long,
+        authorizationFence: CommitAuthorizationFence,
+    ): PhosphorDispatchResult = dispatchInternal(
+        action = action,
+        request = request,
+        monotonicMillis = monotonicMillis,
+        wallTimeMillis = wallTimeMillis,
+        authorizationFence = authorizationFence,
+    )
+
+    private fun dispatchInternal(
+        action: PhosphorAction,
+        request: ActionRequest,
+        monotonicMillis: Long,
+        wallTimeMillis: Long,
+        authorizationFence: CommitAuthorizationFence?,
     ): PhosphorDispatchResult {
         val result = synchronized(this) {
-            dispatchLocked(action, request, monotonicMillis, wallTimeMillis)
+            dispatchLocked(action, request, monotonicMillis, wallTimeMillis, authorizationFence)
         }
         drainHealthNotifications()
         drainStateNotifications()
@@ -110,6 +205,7 @@ class PhosphorStateStore(
         request: ActionRequest,
         monotonicMillis: Long,
         wallTimeMillis: Long,
+        authorizationFence: CommitAuthorizationFence?,
     ): PhosphorDispatchResult {
         runtimeHealth.fix?.let { return PhosphorDispatchResult.Failed(it) }
         val earliestWallTime = maxOf(image.snapshot.wallTimeMillis, image.audit.observedWallTimeMillis)
@@ -128,7 +224,46 @@ class PhosphorStateStore(
         // if an accepted action actually needs to advance the exhausted counter.
         val idempotencyOrdinal = image.nextIdempotencyOrdinal
         val receiptId = "hud-$receiptOrdinal"
-        return when (val reduction = reducer.reduce(action, request, image, monotonicMillis, wallTimeMillis, receiptId, idempotencyOrdinal)) {
+        val authorization = authorizationFence?.let { fence ->
+            runCatching {
+                fence.authorize(action, request, image.snapshot, monotonicMillis, wallTimeMillis)
+            }.getOrElse {
+                CommitAuthorizationDecision.Refused(
+                    Refusal(
+                        RefusalCode.AUTHORITY_UNAVAILABLE,
+                        "Re-establish the authenticated session and retry through the shared Nexus dispatcher.",
+                        image.snapshot.revision,
+                    ),
+                )
+            }
+        }
+        val authorized = when (authorization) {
+            null -> null
+            is CommitAuthorizationDecision.Authorized -> authorization.takeIf {
+                it.matches(action, request, image.snapshot)
+            }
+            is CommitAuthorizationDecision.Refused -> null
+        }
+        val authorizationRefusal = when {
+            authorization is CommitAuthorizationDecision.Refused -> authorization.refusal
+            authorization is CommitAuthorizationDecision.Authorized && authorized == null -> Refusal(
+                RefusalCode.INVALID_REQUEST,
+                "Retry through the current shared Nexus dispatcher; the commit authorization did not match this exact action and snapshot.",
+                image.snapshot.revision,
+            )
+            else -> null
+        }
+        return when (val reduction = reducer.reduce(
+            action,
+            request,
+            image,
+            monotonicMillis,
+            wallTimeMillis,
+            receiptId,
+            idempotencyOrdinal,
+            authorized,
+            authorizationRefusal,
+        )) {
             is DisplayHudReduction.Accepted -> commitAccepted(reduction, wallTimeMillis, receiptOrdinal, idempotencyOrdinal)
             is DisplayHudReduction.Replayed -> commitAuditOnly(reduction.audit, wallTimeMillis, receiptOrdinal, replay = reduction.acknowledgement)
             is DisplayHudReduction.Refused -> commitAuditOnly(reduction.audit, wallTimeMillis, receiptOrdinal, refusal = reduction.refusal)
