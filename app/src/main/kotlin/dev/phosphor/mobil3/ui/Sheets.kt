@@ -194,7 +194,7 @@ fun SheetHost(
     // Unlocked landscape: the console is centred (Console.kt uses BottomCenter), so a
     // card arriving from the right edge has no relationship to what was touched. Centre
     // it and let it rise, exactly like portrait.
-    val slidesSideways = landscape && uiLocked
+    val slidesSideways = SheetEntryPolicy.animatesHorizontally(landscape, uiLocked)
     val sheetAlignment = when {
         slidesSideways -> Alignment.BottomEnd
         else -> Alignment.BottomCenter
@@ -362,7 +362,9 @@ fun SheetHost(
                             // on, so a sideways card is not asked to cover a screen's
                             // height before it arrives.
                             entryReveal?.setTravelPx(
-                                (if (slidesSideways) it.width else it.height).toFloat(),
+                                SheetEntryPolicy.travelPx(
+                                    landscape, uiLocked, it.width, it.height,
+                                ).toFloat(),
                             )
                         }
                         .graphicsLayer {
