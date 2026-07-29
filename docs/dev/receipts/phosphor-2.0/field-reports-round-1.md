@@ -144,3 +144,37 @@ liability. That reasoning is a code comment now rather than something to redisco
 - **560** app tests · **34** engine · **27** relay
 - every new test verified failable by breaking the code first
 - v1.0.7's `firstInstallTime` unchanged through every install this session
+
+## Found while verifying: pm3 refused on a cold process
+
+Not one of the nine. Found while trying to read UI state *without* touching Ben's
+screen, which is the only reason it surfaced at all.
+
+```
+pm3 state-get → provider_refused
+                "lateinit property causalStore has not been initialized"
+```
+
+A ContentProvider's `onCreate` runs **before** `Application.onCreate`.
+`Pm3AdminProvider` reaches for `app.causalStore`, which was a `lateinit` assigned in
+`onCreate`, so any pm3 call that *woke* the process rather than finding it already
+running hit an unset field. It looked like a broken provider; it was an early one.
+
+`causalStore` is `by lazy` now — synchronised by default, so the one-store-per-process
+invariant holds under a race — and `onCreate` still touches it so a normal launch pays
+the migration cost up front exactly as before.
+
+Verified on the S25: force-stop the package, then `pm3 state-get` answers from cold. It
+failed the same way every time before the change.
+
+This would have made operator tooling look unreliable for reasons nobody could reproduce
+while the app happened to be open.
+
+## What is NOT proven
+
+The landscape animation was not filmed mid-gesture. Ben picked the phone up during
+verification and was still using it, and driving his UI further would have been rude for
+a screenshot. The geometry is proven by `SheetEntryPolicy`'s tests, which fail on the old
+behaviour; what remains unwitnessed is the animation itself on his screen.
+
+Everything else above was checked on the device or by a command quoted with it.
