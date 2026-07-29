@@ -32,7 +32,7 @@ toggles. v1 detection: first byte `A`/`M` instead of `W` → the peer is v1.
 | `L` 0x4C | JSON `{root, path, dirs:[], files:[{name,size}]}` |
 | `R` 0x52 | `[u16 BE header_len][{id,mime} JSON][raw image bytes]` |
 | `E` 0x45 | JSON `{error, fix, context}` — every error carries `fix` |
-| `K` 0x4B | JSON `{ts_ms, tx_a, tx_g, dropped_a}` every 1 s |
+| `K` 0x4B | JSON `{ts_ms, tx_a, tx_g, dropped_a, rms?, rms_peak?}` every 1 s |
 
 ## Client → server
 
@@ -53,6 +53,14 @@ pause state; EOF auto-advances through the sorted directory. Source ids mirror d
 targets.rs: `device:<node.name>.monitor`, `app:<application.name>` (+`+` dedup). The
 `audio` toggle governs live capture; `P` file playback streams regardless. Bandwidth:
 A ≈ 1.54 Mb/s · G ≈ 0.5–1 Mb/s · M+K ≈ 100 B/s.
+
+`K.rms`/`K.rms_peak` (added 2026-07-29, both **optional**) report the loudness of the
+audio written to the wire since the previous `K`, normalised 0.0–1.0, and are present only
+while the `audio` stream is on. They exist so a client can tell **a silent source from a
+dead link** — both draw nothing, but only one is still receiving frames. Each `K` drains
+its own window, so a source that just went quiet reads quiet immediately rather than being
+masked by a session-long average. A client that predates the fields simply skips them, and
+one that receives them absent must treat that as "cannot tell", never as measured silence.
 
 ## Lifecycle & hardening (2026-07-18, the service-bench session — relay 2.1.0)
 

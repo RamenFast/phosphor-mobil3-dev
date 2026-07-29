@@ -61,7 +61,7 @@ These mattered enough to name. Each cost, or would have cost, real time.
 | Link state: dialing / greeted / connected | `works` | `RemoteLinkTruth` + 9 tests. `greeted` is new and stops the app claiming a live link before any frame arrives |
 | Link state: stalled | `partial` | Logic and tests exist and it no longer masquerades as `reconnecting`, but the forcing action needs shell on the relay host, which I lack. **Unproven on device.** |
 | Link state: backoff / error | `partial` | Same: unit-tested, not device-proven |
-| Link state: silent | `absent` | No RMS anywhere on the remote path. **Demonstrated live:** relay streaming 97 frames/sec at `rms 0.0` while the beam drew nothing, indistinguishable from a broken link. **Gate: RMS on the `K` frame.** |
+| Link state: silent | `works` | Relay K frame now carries `rms`/`rms_peak`; engine reports `remote_rms` (null when the relay cannot say); band reads `remote · <host> · no sound`. Proven against a live relay: silence 0.0, sine 0.565686 vs theoretical 0.565685. 12 tests across relay and app, both verified failable. **Requires relays rebuilt from `a7beb5f`; against 2.2.0 it degrades to the prior behaviour.** |
 | Link state: authenticated | `not applicable` | Protocol v2 has no authentication. L-04 borrowed the word from the Nexus session plane. **Ask: amend L-04.** |
 | Error `fix` text surfaced | `works` | Engine and relay both guarantee a fix; it was built and discarded. Now shown in the REMOTE sheet |
 

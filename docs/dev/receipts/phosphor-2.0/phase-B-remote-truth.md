@@ -124,9 +124,45 @@ cannot tell "connected and silent" from "connected and loud"**, because there is
 anywhere on the remote path. A user seeing a black screen here has no way to know whether
 the link is fine or broken.
 
-That makes the deferred `silent` work concrete rather than theoretical. The relay already
-computes RMS for its own `probe --rms`; carrying it on the existing `K` frame would close
-the gap. **Gate unchanged: implement RMS on the `K` frame before claiming L-04 `silent`.**
+That makes the deferred `silent` work concrete rather than theoretical. **This is now
+closed** (commit `a7beb5f`), see below.
+
+## `silent` closed, 2026-07-29
+
+The gap above was fixed rather than filed, because it is the one a user actually hits.
+
+**Relay:** the `K` frame carries `rms` and `rms_peak` for the window since the previous
+`K`. Measured in the writer thread, so the number describes bytes that genuinely left the
+machine. Each `K` drains its window, so a source that just went quiet reads quiet
+immediately rather than being masked by a session-long average. Both fields are optional,
+so older clients skip them.
+
+**Engine:** `remote.rs` folds them into atomics and `remoteStatus()` reports
+`remote_rms` / `remote_rms_peak` as **null**, not `0.0`, when the relay never sent them.
+"Cannot tell" must stay distinct from "measured silence".
+
+**App:** `RemoteLinkTruth` gains `SILENT`; the band reads `remote · <host> · no sound`.
+A silent link stays `STATE_READY` and never counts against the give-up clock, because it
+is healthy and simply has nothing to draw.
+
+Measured against a real relay on loopback:
+
+| source | rms | peak |
+|---|---|---|
+| silence | 0.0 | 0.0 |
+| `Front_Center.wav` | 0.00393 | 0.026245 |
+| 440 Hz sine | 0.565686 | 0.800018 |
+
+The sine is the proof the maths is right: a 0.8-amplitude sine has a theoretical RMS of
+`0.8/√2 = 0.565685`, and the wire reported `0.565686`.
+
+Twelve tests cover it, six in the relay and six in the app, including a quiet passage that
+must **not** be called silent, an older relay with no field, and an explicit null. Both
+suites were verified failable by breaking the code and watching the right test go red.
+
+**Deployment note:** the running relays are still 2.2.0 without this field. The app
+degrades to the prior behaviour against them, so nothing breaks; the state stays dormant
+until they are rebuilt from `a7beb5f`.
 
 ### Still unproven live
 
