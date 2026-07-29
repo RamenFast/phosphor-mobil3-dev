@@ -23,14 +23,20 @@ Both estate relays are live and carrying the new loudness field:
 
 ## The one open item
 
-**Play commerce.** Blocked on two things only Ben can produce:
+**Play commerce, the billing half.** The decision layer is built and tested:
+`EntitlementPolicy` and `TrialClock`, 26 tests, both verified failable by breaking them.
+That part needed no keystore, so it is done.
+
+What remains genuinely needs Ben:
 
 - a Play upload keystore (`~/.secrets/` holds only the Fortress JKS)
 - a published HTTPS privacy policy URL
 
-The entitlement machine, billing wiring, trial storage and paywall are specified and
-costed in `docs/plans/V2-FEATURE-LEDGER.md`. None of it can be validated end to end
-without a Play Console entry, so building it first would be building blind.
+Those unlock a Play Console entry, without which `BillingClient` wiring cannot be
+validated at all: the purchase, acknowledge, restore and pending paths have no observable
+responses to test against. Building it blind would produce untestable code. The paywall
+sheet and trial storage are costed line by line in `docs/plans/V2-FEATURE-LEDGER.md`,
+each naming the existing pattern to copy.
 
 ## The link states are done
 
