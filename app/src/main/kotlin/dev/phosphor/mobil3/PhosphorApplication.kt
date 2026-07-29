@@ -24,18 +24,35 @@ import dev.phosphor.mobil3.store.PhosphorStateStore
  * audit, idempotency, and authority histories.
  */
 class PhosphorApplication : Application() {
-    lateinit var causalStore: PhosphorStateStore
-        private set
+    /**
+     * The one causal store for this process, built on first use.
+     *
+     * Lazy rather than assigned in [onCreate] because a ContentProvider's `onCreate`
+     * runs BEFORE `Application.onCreate`. A cold process reached through the pm3
+     * provider therefore hit an uninitialised `lateinit` and refused with a stack trace
+     * instead of answering, which looked like the provider was broken rather than early.
+     *
+     * `by lazy` is synchronised by default, so two threads racing here still get one
+     * store, which is the invariant that matters: a second store over the same
+     * preferences would fork the revision, audit and authority histories.
+     */
+    val causalStore: PhosphorStateStore by lazy { buildCausalStore() }
 
     override fun onCreate() {
         super.onCreate()
+        // Touch it so a normal app launch pays the cost up front, exactly as before.
+        // The provider path can still build it earlier without crashing.
+        causalStore
+    }
+
+    private fun buildCausalStore(): PhosphorStateStore {
         val base = compiledCausalBaseSnapshot(System.currentTimeMillis())
         val portablePreferences = getSharedPreferences(PREFERENCES_NAME, MODE_PRIVATE)
         val runtimePreferences = getSharedPreferences(RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)
         val causalPreferences = getSharedPreferences(CausalStatePreferences.PREFERENCES_NAME, MODE_PRIVATE)
         migrateLegacyRuntimePreferences(portablePreferences, runtimePreferences)
         migrateLegacyCausalEnvelope(portablePreferences, causalPreferences)
-        causalStore = PhosphorStateStore(
+        return PhosphorStateStore(
             port = CausalStatePreferences(
                 causalPreferences,
                 portablePreferences,
