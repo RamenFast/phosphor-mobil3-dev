@@ -196,12 +196,34 @@ Not confirmed on the phone's own screen: the S25 sat behind its PIN lock for thi
 I will not guess or ask for it. What remains unverified is the pixel rendering of a
 string, not the logic that chooses it.
 
+### Forcing actions reproduced against a sacrificial relay, 2026-07-29
+
+The earlier note said these were held back to avoid breaking a relay Ben might be using.
+That framing was a false choice: a throwaway relay on a spare port breaks just as well and
+costs him nothing. Run on port 45998 with both estate relays left alone and verified
+healthy before and after (91.33 and 96.33 A-frames/sec, both services still `active`).
+
+| state | forcing action | observed |
+|---|---|---|
+| baseline | connect, let frames flow | K frames at a steady 1000 ms cadence |
+| **stalled** | `kill -STOP` the relay pid mid-stream | frames stop for **5974 ms** while the TCP socket stays open, then resume on `SIGCONT`. This is the frozen-but-alive case that used to be mislabelled "reconnecting" |
+| **backoff** | `kill -KILL` the relay mid-stream | reader sees EOF; the port then refuses, proving the peer is genuinely gone rather than quiet |
+| **error** | connect to a closed port | connection refused immediately, which is the engine's terminal-failure path |
+
+The 5974 ms gap is the load-bearing number: a stalled link is defined by frames stopping
+while the socket survives, and that is exactly what the timestamps show. A dropped link
+looks different (EOF, then refusal), and the two are now distinguishable in evidence as
+well as in code.
+
+**Still not proven on the phone's own screen.** The S25 was dozing behind its PIN, and I
+will not guess or request it. What these runs establish is that the wire-level conditions
+are reproducible on demand and that `RemoteLinkTruth` maps them correctly; what remains
+unverified is the pixel rendering of the resulting band strings. That is a smaller and
+more honest claim than "stalled/backoff/error are proven".
+
 ### Still unproven live
 
-The forcing actions for `stalled`, `backoff`, and `error` need `iptables` or `SIGSTOP`
-against a relay while the phone watches. Both hosts are reachable (SSH to `thinkcenter`
-works; `interserve-linux` is this workstation), so the access exists. The reason to hold
-off is judgement, not capability: deliberately breaking a relay Ben may be listening to,
-unannounced, is not a good trade for a receipt. They pass as host-side unit tests
-(`RemoteLinkTruthTest`) and are **not** proven end to end on device. Recorded as unproven
-rather than assumed.
+Only one thing: the band strings themselves rendered on the S25 display, for `stalled`,
+`backoff`, `error` and `SILENT`. Every input that drives them is now reproducible on
+demand via the sacrificial-relay recipe above, and the logic mapping input to string has
+host tests that were each verified failable. Needs a moment with the phone unlocked.
