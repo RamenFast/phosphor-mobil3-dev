@@ -21,19 +21,9 @@ and v1.0.7's `firstInstallTime` was verified byte-identical through every instal
 Both estate relays are live and carrying the new loudness field:
 `interserve-linux` 100.114.165.77 and `thinkcenter` 100.66.109.56.
 
-## The two open items, and why they are open
+## The one open item
 
-**1. Device-proving `stalled` / `backoff` / `error`.**
-Not blocked on access. Both relay hosts are reachable, and the forcing actions are written
-down in `docs/dev/receipts/phosphor-2.0/phase-B-remote-truth.md`: `iptables -j DROP` for
-dialing and backoff, `kill -STOP` for stalled, a v1-shaped first frame for error.
-
-It is blocked on **judgement**. Each one means deliberately breaking a relay Ben may be
-listening to at that moment, and the payoff is a receipt for logic that already has host
-tests behind it. Worth doing when he says the relays are free, not unannounced.
-
-**2. Play commerce.**
-Blocked on two things only Ben can produce:
+**Play commerce.** Blocked on two things only Ben can produce:
 
 - a Play upload keystore (`~/.secrets/` holds only the Fortress JKS)
 - a published HTTPS privacy policy URL
@@ -41,6 +31,24 @@ Blocked on two things only Ben can produce:
 The entitlement machine, billing wiring, trial storage and paywall are specified and
 costed in `docs/plans/V2-FEATURE-LEDGER.md`. None of it can be validated end to end
 without a Play Console entry, so building it first would be building blind.
+
+## The link states are done
+
+All five reachable states have device evidence, read straight off the S25 with
+`dumpsys media_session`, which needs no unlocked screen:
+
+| forced condition | what the phone said |
+|---|---|
+| relay up, desktop idle | `connected, no sound · interserve-linux` |
+| 440 Hz sine playing | `remote · interserve-linux` |
+| `kill -STOP` the relay | `signal stalled · interserve-linux` |
+| `kill -CONT` to recover | `connected, no sound · interserve-linux` |
+| closed port | `reconnecting · deadport` |
+
+`scripts/force-link-states.sh` reproduces the wire conditions on demand against a
+sacrificial relay, so this is repeatable rather than a one-off. `authenticated` stays
+not-applicable: protocol v2 has no authentication, which is a defect in acceptance L-04
+rather than in the code.
 
 ## Where the truth lives
 

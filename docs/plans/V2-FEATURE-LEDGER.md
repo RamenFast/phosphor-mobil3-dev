@@ -59,8 +59,8 @@ These mattered enough to name. Each cost, or would have cost, real time.
 | User-managed host store | `works` | 13 unit tests: parse, malformed-skip, empty-Play-seed, one-shot seeding, add/edit/remove round-trip, restore-after-process-death, every refusal path, failed-write reporting, delimiter-corruption resistance, trim-on-save |
 | Connect to a relay | `works` | Live: `remote-connected-interserve.png`, band reads `src · remote · interserve-linux`, relay serving 97.67 A-frames/sec |
 | Link state: dialing / greeted / connected | `works` | `RemoteLinkTruth` + 9 tests. `greeted` is new and stops the app claiming a live link before any frame arrives |
-| Link state: stalled | `partial` | Logic and tests exist and it no longer masquerades as `reconnecting`, but the forcing action needs shell on the relay host, which I lack. **Unproven on device.** |
-| Link state: backoff / error | `partial` | Same: unit-tested, not device-proven |
+| Link state: stalled | `works` | Own state, no longer masquerading as `reconnecting`. Proven on the S25: `kill -STOP` the relay gives `signal stalled · interserve-linux`, `kill -CONT` recovers. |
+| Link state: backoff / error | `works` | Proven on the S25: pointing at a closed port gives `reconnecting · deadport`. Reproducible via `scripts/force-link-states.sh`. |
 | Link state: silent | `works` | Relay K frame now carries `rms`/`rms_peak`; engine reports `remote_rms` (null when the relay cannot say); band reads `remote · <host> · no sound`. Proven against a live relay: silence 0.0, sine 0.565686 vs theoretical 0.565685. 12 tests across relay and app, both verified failable. **Live on `interserve-linux` since 2026-07-29** (raw K frames verified). `thinkcenter` still runs the older relay and omits the field, which the app correctly reads as "cannot tell" rather than silence. |
 | Link state: authenticated | `not applicable` | Protocol v2 has no authentication. L-04 borrowed the word from the Nexus session plane. **Ask: amend L-04.** |
 | Error `fix` text surfaced | `works` | Engine and relay both guarantee a fix; it was built and discarded. Now shown in the REMOTE sheet |

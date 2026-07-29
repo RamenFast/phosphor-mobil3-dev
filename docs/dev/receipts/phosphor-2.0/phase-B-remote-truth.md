@@ -221,9 +221,34 @@ are reproducible on demand and that `RemoteLinkTruth` maps them correctly; what 
 unverified is the pixel rendering of the resulting band strings. That is a smaller and
 more honest claim than "stalled/backoff/error are proven".
 
-### Still unproven live
+### Proven on the S25 itself, 2026-07-29
 
-Only one thing: the band strings themselves rendered on the S25 display, for `stalled`,
-`backoff`, `error` and `SILENT`. Every input that drives them is now reproducible on
-demand via the sacrificial-relay recipe above, and the logic mapping input to string has
-host tests that were each verified failable. Needs a moment with the phone unlocked.
+The earlier note said the band strings needed an unlocked phone. That was also a false
+constraint: the strings live in the Media3 session metadata, which `dumpsys media_session`
+reads without touching the screen at all. The connection can be driven the same way, via
+the service intent, so no taps are needed either.
+
+Read straight off the device, `dev.phosphor.mobil3.fortress` 2.0.0:
+
+| forced condition | `dumpsys media_session` description |
+|---|---|
+| relay up, desktop idle | `connected, no sound · interserve-linux` |
+| 440 Hz sine on the desktop | `remote · interserve-linux` |
+| `kill -STOP` the relay | `signal stalled · interserve-linux` |
+| `kill -CONT` to recover | `connected, no sound · interserve-linux` |
+| point at a closed port | `reconnecting · deadport` |
+
+That is the whole point of the work, visible in one table. **Silent and stalled are now
+different strings**, where before both were either a bare `remote · <host>` claiming a
+healthy link or a misleading `reconnecting` while nothing reconnected. Recovery from
+stalled back to a live reading is included because a state that latches is its own bug.
+
+The estate relay was SIGSTOPped for six seconds during this and resumed cleanly; both
+relays were verified healthy afterwards (92.0 and 95.33 A-frames/sec).
+
+### Nothing outstanding on the link states
+
+All five reachable states have device evidence above, the wire conditions are reproducible
+on demand via `scripts/force-link-states.sh`, and every mapping has a host test that was
+verified failable. `authenticated` remains not-applicable, since protocol v2 has no
+authentication, and that is a defect in acceptance L-04 rather than in the code.
