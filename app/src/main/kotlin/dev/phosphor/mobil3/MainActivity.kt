@@ -1500,11 +1500,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    // Runs whenever (scopeRotationLocked || uiPlacementLocked). A single sensor; the
-    // per-mode routing lives in routeOrientation.
+    // Runs ALWAYS, not only under a lock. The detent governs plain rotation too: with
+    // no lock the Activity used to be SCREEN_ORIENTATION_UNSPECIFIED, which hands the
+    // decision to Android's own (very twitchy) sensor logic, so the detent was dead code
+    // for anyone who had not turned a lock on — which is the default. Ben reported
+    // rotation "still super sensitive" for exactly this reason.
     private fun updateOrientationSensor() {
-        val needed = scopeRotationLockState || uiPlacementLockState
-        if (needed) {
+        run {
             if (gravityListener == null) {
                 val sm = getSystemService(android.hardware.SensorManager::class.java)
                 val accel = sm?.getDefaultSensor(android.hardware.Sensor.TYPE_ACCELEROMETER)
@@ -1547,23 +1549,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
             // A mode toggle re-routes the last known gravity now: the sensor only fires
             // on CHANGE, so a stationary phone would otherwise keep the prior mode's fields.
             routeOrientation(force = true)
-        } else {
-            gravityListener?.let {
-                getSystemService(android.hardware.SensorManager::class.java)
-                    ?.unregisterListener(it)
-            }
-            gravityListener = null
-            lastRoutedQ = -1
-            ui.uprightQuadrant = 0
-            ui.chromeQuadrant = 0
-            PhosphorNative.setViewRotation(0)
         }
     }
 
     // The single routing point — the asks-#4 matrix. q = CCW quadrants from the
     // pinned display to gravity-up (same figure the beam-rotation verb consumes).
     private fun routeOrientation(force: Boolean = false) {
-        if (!(scopeRotationLockState || uiPlacementLockState)) return
         val degrees = lastSensorDeg
         if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN) return
         val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
@@ -1589,6 +1580,44 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.uprightQuadrant = 0
                 PhosphorNative.setViewRotation(0)
             }
+            else -> {
+                // NO LOCK — the common case, and the one that was broken. Rotation used
+                // to be handed wholesale to Android via SCREEN_ORIENTATION_UNSPECIFIED,
+                // so the detent never ran and a small tilt reoriented the app. Now the
+                // detent decides, and the Activity is pinned to what it decided.
+                ui.uprightQuadrant = 0
+                ui.chromeQuadrant = 0
+                PhosphorNative.setViewRotation(0)
+                applyDetentedOrientation()
+            }
+        }
+    }
+
+    /**
+     * Pin the Activity to the orientation the detent has committed to.
+     *
+     * Respecting the user's OS rotation lock matters here: if they have locked their
+     * phone to portrait system-wide, an app that rotates anyway is broken, however good
+     * its detent is.
+     */
+    private fun applyDetentedOrientation() {
+        if (scopeRotationLockState || uiPlacementLockState) return
+        val systemAutoRotate = android.provider.Settings.System.getInt(
+            contentResolver,
+            android.provider.Settings.System.ACCELEROMETER_ROTATION,
+            0,
+        ) == 1
+        if (!systemAutoRotate) {
+            // The user asked their phone not to rotate. Honour that.
+            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            return
+        }
+        requestedOrientation = when (committedCardinal) {
+            90 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            180 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            270 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+            0 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
     }
 
