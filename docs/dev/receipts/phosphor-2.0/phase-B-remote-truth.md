@@ -168,28 +168,29 @@ with the new relay, verified by reading raw K frames off port 45777:
 {"ts_ms":...,"tx_a":192,"tx_g":0,"dropped_a":0,"rms":0.0,"rms_peak":0.0}
 ```
 
-`thinkcenter` (100.66.109.56) is reachable but still runs the older relay, and its K
-frames confirm it:
+Before `thinkcenter` (100.66.109.56) was upgraded, its K frames proved the
+backward-compatibility path in production rather than only in tests:
 
 ```
 {"ts_ms":...,"tx_a":89,"tx_g":0,"dropped_a":0}
 ```
 
-That is the backward-compatibility path proven in production rather than only in tests:
-the field is simply absent, so the app reports STREAMING and never claims silence it
-cannot measure. thinkcenter picks the feature up whenever it is next rebuilt, and nothing
-breaks in the meantime.
+The field is simply absent, so the app reports STREAMING and never claims silence it
+cannot measure. That path still protects any relay not yet rebuilt. **`thinkcenter` has
+since been upgraded** (see below), so both estate relays now carry the field.
 
 ### Live verification of the SILENT rule, 2026-07-29
 
-`interserve-linux` (100.114.165.77) now runs the new build via
-`scripts/relay-install.sh`, with its systemd user service active. Checked against the
-live production relay rather than a test port, using the app's exact threshold:
+**Both relays now run the new build** via `scripts/relay-install.sh`, each with an active
+systemd user service. Checked against the live production relays rather than a test port,
+using the app's exact threshold. The two hosts happened to be in opposite states, which
+exercised both branches without staging anything:
 
-| desktop | live `K.rms` | app rule resolves to |
+| relay | live `K.rms` | app rule resolves to |
 |---|---|---|
-| silent | `0.0` | **SILENT** → `remote · <host> · no sound` |
-| 440 Hz sine | `0.565686` | **STREAMING** → `remote · <host>` |
+| `interserve-linux` 100.114.165.77 (idle desktop) | `0.0` | **SILENT** → `remote · <host> · no sound` |
+| `interserve-linux` with a 440 Hz sine | `0.565686` | **STREAMING** → `remote · <host>` |
+| `thinkcenter` 100.66.109.56 (something playing) | `0.094532` | **STREAMING** → `remote · <host>` |
 
 Not confirmed on the phone's own screen: the S25 sat behind its PIN lock for this run and
 I will not guess or ask for it. What remains unverified is the pixel rendering of a
@@ -198,7 +199,9 @@ string, not the logic that chooses it.
 ### Still unproven live
 
 The forcing actions for `stalled`, `backoff`, and `error` need `iptables` or `SIGSTOP`
-against a relay while the phone watches. `interserve-linux` is this workstation, so the
-shell is available, but deliberately breaking the relay Ben uses is not something to do
-while he may be listening. They pass as host-side unit tests (`RemoteLinkTruthTest`) and
-are **not** proven end to end on device. Recorded as unproven rather than assumed.
+against a relay while the phone watches. Both hosts are reachable (SSH to `thinkcenter`
+works; `interserve-linux` is this workstation), so the access exists. The reason to hold
+off is judgement, not capability: deliberately breaking a relay Ben may be listening to,
+unannounced, is not a good trade for a receipt. They pass as host-side unit tests
+(`RemoteLinkTruthTest`) and are **not** proven end to end on device. Recorded as unproven
+rather than assumed.
