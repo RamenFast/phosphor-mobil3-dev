@@ -214,19 +214,4 @@ class RemoteHostStoreTest {
         assertEquals("remote_hosts", RemoteHostStore.PREFERENCES_NAME)
     }
 
-    private class InMemoryHostPrefs : HostPrefs {
-        private val values = linkedMapOf<String, String>()
-        var failNextWrite: Boolean = false
-
-        override fun read(key: String): String? = values[key]
-
-        override fun write(values: Map<String, String>): Boolean {
-            if (failNextWrite) {
-                failNextWrite = false
-                return false
-            }
-            this.values.putAll(values)
-            return true
-        }
-    }
 }
