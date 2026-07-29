@@ -180,9 +180,25 @@ the field is simply absent, so the app reports STREAMING and never claims silenc
 cannot measure. thinkcenter picks the feature up whenever it is next rebuilt, and nothing
 breaks in the meantime.
 
+### Live verification of the SILENT rule, 2026-07-29
+
+`interserve-linux` (100.114.165.77) now runs the new build via
+`scripts/relay-install.sh`, with its systemd user service active. Checked against the
+live production relay rather than a test port, using the app's exact threshold:
+
+| desktop | live `K.rms` | app rule resolves to |
+|---|---|---|
+| silent | `0.0` | **SILENT** → `remote · <host> · no sound` |
+| 440 Hz sine | `0.565686` | **STREAMING** → `remote · <host>` |
+
+Not confirmed on the phone's own screen: the S25 sat behind its PIN lock for this run and
+I will not guess or ask for it. What remains unverified is the pixel rendering of a
+string, not the logic that chooses it.
+
 ### Still unproven live
 
-The forcing actions for `stalled`, `backoff`, and `error` need `iptables`/`SIGSTOP` on the
-relay host, and I have no shell on `interserve-linux` (SSH refused: publickey). They pass
-as host-side unit tests (`RemoteLinkTruthTest`, 9 tests) but are **not** proven end to end
-on device. Recorded as unproven rather than assumed.
+The forcing actions for `stalled`, `backoff`, and `error` need `iptables` or `SIGSTOP`
+against a relay while the phone watches. `interserve-linux` is this workstation, so the
+shell is available, but deliberately breaking the relay Ben uses is not something to do
+while he may be listening. They pass as host-side unit tests (`RemoteLinkTruthTest`) and
+are **not** proven end to end on device. Recorded as unproven rather than assumed.
