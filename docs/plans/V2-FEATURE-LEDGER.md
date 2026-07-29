@@ -133,8 +133,8 @@ Three further findings are **gates, not blockers**, recorded here rather than fi
 | Lint dispositions | `works` | 48 → 41 warnings; every survivor has a written disposition in `docs/dev/LINT-DISPOSITIONS.md` |
 | **Play upload keystore** | **`absent`** | `~/.secrets/` holds only the Fortress JKS. **Ben must mint this.** Blocks the Play AAB only, not testing. |
 | **Privacy policy URL** | **`absent`** | Play-required. **Ben must publish it.** |
-| **Billing / Pro unlock** | **`absent`** | No `BillingClient` anywhere. See cost estimate below. |
-| **7-day trial state machine** | **`absent`** | No trial code exists. |
+| **Billing / Pro unlock** | `partial` | The decision layer is built and tested: `EntitlementPolicy` (15 tests) covers buy-during-trial, refund revocation, pending purchases, and the rule that an unreachable Play never relocks a paying user. `BillingClient` wiring is still absent and needs a Play Console entry to validate. |
+| **7-day trial state machine** | `works` | `EntitlementPolicy` + `TrialClock`, 26 tests, both verified failable by breaking the code. 168 elapsed hours from an explicit start; installing is not consent; expiry gates paid use without touching settings. Clock defence keeps a monotonic floor, so winding back freezes the trial rather than rewinding it, and a leap forward cannot burn it down, while reboots, timezone shifts and NTP nudges pass through untouched. |
 | First-run commercial/privacy setup | `absent` | No OOBE flow found |
 
 ### Cost estimate for the Play commerce work (not started)
@@ -143,10 +143,11 @@ Sequenced *after* the Fortress prerelease, per Ben's 2026-07-28 decision.
 
 | Piece | Shape | Rough size |
 |---|---|---|
-| Entitlement state machine | Pure Kotlin, no Android deps, exhaustively unit-tested. States per publishing plan §5.1. Must handle clock rollback, offline, refund, revocation. | ~300 LOC + ~400 LOC tests |
-| Billing integration | `BillingClient` wiring behind the state machine: connect, query, purchase, acknowledge, restore, pending. | ~400 LOC |
-| Trial storage | Dedicated no-backup prefs; wall-clock + elapsed-realtime anchor to survive reboot without punishing travel. | ~150 LOC |
-| Paywall + first-run sheets | In Phosphor's existing sheet language. No dark patterns (publishing plan §5.3). | ~500 LOC |
+| ~~Entitlement state machine~~ | **DONE.** `EntitlementPolicy.kt`, pure Kotlin, no Android or Play imports, 15 tests | ~150 LOC + ~190 LOC tests |
+| ~~Trial clock~~ | **DONE.** `TrialClock.kt`, monotonic floor against rollback, 11 tests | ~100 LOC + ~160 LOC tests |
+| Trial storage | Dedicated no-backup prefs holding `TrialClockState` and the start instant. The `remote_hosts` store is the pattern to copy. Backup exclusion for `entitlement` is already written. | ~120 LOC |
+| Billing integration | `BillingClient` feeding `PlayOwnership` into the tested policy: connect, query, purchase, acknowledge, restore, pending. **Needs the Play Console entry to validate.** | ~400 LOC |
+| Paywall + first-run sheets | In the existing sheet language, reusing the `RemoteHostEditor` hairline parts. No dark patterns (publishing plan §5.3). | ~500 LOC |
 | Play Console setup | Human gate: account, product `phosphor_pro`, Data safety, content rating. | Ben |
 
 **Hard prerequisites:** the upload keystore and the privacy policy URL. Both are Ben's.
