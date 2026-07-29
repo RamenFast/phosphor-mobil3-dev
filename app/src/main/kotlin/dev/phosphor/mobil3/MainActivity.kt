@@ -1494,9 +1494,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
             if (lockedUiOrientation != ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED)
                 lockedUiOrientation else exactCurrentOrientation()
         } else {
-            // Return rotation ownership to Android. This follows the sensor when the
-            // system allows rotation and respects the user's OS-level rotation lock.
-            ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+            // NO LOCK — the detent owns rotation here, not Android. Returning
+            // SCREEN_ORIENTATION_UNSPECIFIED at this point is what kept undoing the
+            // detent: this runs on resume, on config change and after settings imports,
+            // so whatever the detent had pinned was overwritten moments later and
+            // Android's twitchy sensor logic took the wheel again.
+            applyDetentedOrientation()
+            return
         }
     }
 
@@ -1534,12 +1538,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
                             // orientation is easy, taking a new one needs a real turn.
                             // Lives in RotationDetent so it can be tested on the host.
                             if (!RotationDetent.shouldCommit(committedCardinal, degrees)) return
+                            val previousCardinal = committedCardinal
                             committedCardinal = RotationDetent.nearestCardinal(degrees)
-                            if (degrees == lastSensorDeg) return
                             lastSensorDeg = degrees
-                            routeOrientation()
+                            // Route when the COMMITTED ORIENTATION changes, not when the
+                            // raw angle does. Gating on the raw degree meant a phone held
+                            // steady at one angle stopped routing entirely (the reading
+                            // repeats), while a phone jittering by a degree routed
+                            // constantly. The orientation is the thing that matters.
+                            if (previousCardinal != committedCardinal) routeOrientation()
                         }
                     }.also {
+                        android.util.Log.i("PhosphorRotation", "gravity sensor registered")
                         sm.registerListener(
                             it, accel, android.hardware.SensorManager.SENSOR_DELAY_UI
                         )
@@ -1557,6 +1567,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun routeOrientation(force: Boolean = false) {
         val degrees = lastSensorDeg
         if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN) return
+        // NO LOCK is handled first and WITHOUT display.rotation. Once we pin the
+        // Activity the display stops rotating by definition, so a delta against it
+        // would collapse to zero and the detent could never see the phone turn again —
+        // it would latch on the first orientation and stay there. Gravity alone decides.
+        if (!scopeRotationLockState && !uiPlacementLockState) {
+            ui.uprightQuadrant = 0
+            ui.chromeQuadrant = 0
+            PhosphorNative.setViewRotation(0)
+            applyDetentedOrientation()
+            return
+        }
         val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
         val displayQ = display?.rotation ?: Surface.ROTATION_0
         // Sign fixed by Ben's field receipt ("right way if they weren't upside down —
@@ -1580,16 +1601,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.uprightQuadrant = 0
                 PhosphorNative.setViewRotation(0)
             }
-            else -> {
-                // NO LOCK — the common case, and the one that was broken. Rotation used
-                // to be handed wholesale to Android via SCREEN_ORIENTATION_UNSPECIFIED,
-                // so the detent never ran and a small tilt reoriented the app. Now the
-                // detent decides, and the Activity is pinned to what it decided.
-                ui.uprightQuadrant = 0
-                ui.chromeQuadrant = 0
-                PhosphorNative.setViewRotation(0)
-                applyDetentedOrientation()
-            }
         }
     }
 
@@ -1612,12 +1623,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             return
         }
-        requestedOrientation = when (committedCardinal) {
+        val target = when (committedCardinal) {
             90 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
             180 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
             270 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
             0 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        }
+        if (requestedOrientation != target) {
+            // Logged because this decision is otherwise invisible: a claim that the
+            // detent "works" is only checkable if its choices can be read back off the
+            // device while the phone is being turned.
+            android.util.Log.i(
+                "PhosphorRotation",
+                "detent commit=$committedCardinal deg=$lastSensorDeg -> $target",
+            )
+            requestedOrientation = target
         }
     }
 
