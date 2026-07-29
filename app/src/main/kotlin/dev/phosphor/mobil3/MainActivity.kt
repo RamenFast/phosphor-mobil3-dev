@@ -12,6 +12,7 @@ import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
 import android.graphics.Rect
+import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
 import android.os.Bundle
@@ -43,6 +44,7 @@ import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
 import dev.phosphor.mobil3.ui.Palette
 import dev.phosphor.mobil3.ui.PhosphorScreen
+import dev.phosphor.mobil3.ui.RotationDetent
 import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
 import dev.phosphor.mobil3.ui.readReducedMotion
@@ -106,6 +108,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var gravityListener: android.hardware.SensorEventListener? = null
     private var lastSourceReopened = false
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
+
+    /**
+     * The cardinal the chrome is currently committed to, or -1 before the first reading.
+     *
+     * Paired with the two tolerances below to give rotation a detent: once an
+     * orientation is taken it holds through a wide sloppy range, and only a decisive
+     * turn close to the next cardinal takes it away. A single symmetric window instead
+     * flipped the chrome the instant the phone crossed 45°, which is what made rotation
+     * feel twitchy.
+     */
+    private var committedCardinal = RotationDetent.NONE
     private var lastRoutedQ = -1
     private var captureStatusReceiverRegistered = false
     private var pendingHudMarkerListenerRegistered = false
@@ -857,7 +870,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.captureStatus = "waiting for Android capture permission"
         ui.captureFix = "Approve the prompt to connect playback audio"
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        captureConsent.launch(mpm.createScreenCaptureIntent())
+        // Ask for the whole display, not a single app. The row this comes from says
+        // "everything playing"; with no config Android 14+ preselects "Share one app",
+        // so the dialog contradicted its own label and quietly captured one app's audio.
+        // The user can still narrow it in the dialog — we just stop defaulting to the
+        // opposite of what we promised.
+        captureConsent.launch(
+            mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()),
+        )
     }
 
     override fun stopLive() {
@@ -1484,8 +1504,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
                             // Low-pass to gravity, then two gates before any quadrant
                             // moves: (1) FLATNESS — a phone within ~20° of lying flat has
                             // no meaningful "up"; a desk phone must never rotate its
-                            // chrome (Ben: "rotations are messed up"). (2) CARDINAL ±30°
-                            // hysteresis — diagonal holds keep the last orientation.
+                            // chrome (Ben: "rotations are messed up"). (2) A DETENT —
+                            // see below.
                             gx = 0.8f * gx + 0.2f * e.values[0]
                             gy = 0.8f * gy + 0.2f * e.values[1]
                             gz = 0.8f * gz + 0.2f * e.values[2]
@@ -1494,9 +1514,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
                             val degrees = ((Math.toDegrees(
                                 kotlin.math.atan2(-gx.toDouble(), gy.toDouble())
                             ) + 360.0) % 360.0).toInt()
-                            val toCardinal = ((degrees + 45) / 90) % 4 * 90
-                            val delta = ((degrees - toCardinal + 540) % 360) - 180
-                            if (delta !in -30..30) return
+                            // The detent (Ben: "you have to really rotate it and then
+                            // it's set"). Not a timer — a timer makes a correct turn feel
+                            // laggy. The rule is asymmetric instead: keeping the current
+                            // orientation is easy, taking a new one needs a real turn.
+                            // Lives in RotationDetent so it can be tested on the host.
+                            if (!RotationDetent.shouldCommit(committedCardinal, degrees)) return
+                            committedCardinal = RotationDetent.nearestCardinal(degrees)
                             if (degrees == lastSensorDeg) return
                             lastSensorDeg = degrees
                             routeOrientation()

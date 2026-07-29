@@ -53,6 +53,17 @@ object Dim {
 // orientation when UI PLACEMENT is locked. Text itself is never rotated.
 val LocalChromeLandscape = staticCompositionLocalOf { false }
 
+/**
+ * True when UI placement lock is on.
+ *
+ * Sheets need this because the two landscape modes want opposite motion. Locked, the
+ * card is anchored to an edge and should slide in sideways from the transport bar the
+ * finger is on. Unlocked, the console sits centred, so the card should rise from the
+ * centre to match. Without this the sheet cannot tell the two apart and always animated
+ * upward from the screen bottom.
+ */
+val LocalUiPlacementLocked = staticCompositionLocalOf { false }
+
 // Device-upright quadrant while UI PLACEMENT is locked: key labels and glyphs
 // counter-rotate so they read from the edge the user is actually viewing from.
 val LocalUiUpright = staticCompositionLocalOf { 0 }

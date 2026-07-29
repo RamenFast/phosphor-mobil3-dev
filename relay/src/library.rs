@@ -31,8 +31,20 @@ fn is_audio(name: &str) -> bool {
         .unwrap_or(false)
 }
 
+/// Normalise a client-supplied relative path.
+///
+/// Rejects any `..` component. That is what actually stops a client from walking out
+/// of the library, and it is a different question from whether a symlink INSIDE the
+/// library may point elsewhere. Symlinks are the user's own deliberate structure and
+/// are followed (Ben's ~/Music/"WAV versions" lives on another drive); a crafted
+/// `../../etc` from the wire is not, and never reaches the filesystem.
 fn clean_rel(rel: &str) -> String {
     rel.trim_matches('/').to_string()
+}
+
+/// True when a relative path tries to climb out of its root.
+fn escapes_root(rel: &str) -> bool {
+    rel.split('/').any(|part| part == "..")
 }
 
 fn split_rel(rel: &str) -> (String, String) {
@@ -58,10 +70,15 @@ fn list_local(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
     let base = std::fs::canonicalize(base)
         .map_err(|_| ("library root is unreadable".into(), format!("check the path exists: {base}")))?;
     let rel_clean = clean_rel(rel);
-    let target = std::fs::canonicalize(base.join(&rel_clean))
-        .map_err(|_| ("no such folder".into(), "browse a folder that exists".into()))?;
-    if !target.starts_with(&base) {
+    if escapes_root(&rel_clean) {
         return Err(("path escapes the library root".into(), "browse within the library".into()));
+    }
+    // NOT canonicalized: canonicalize() resolves symlinks, and the resulting real path
+    // legitimately lands outside the root when the user symlinked another drive in. The
+    // `..` check above is what keeps the wire honest.
+    let target = base.join(&rel_clean);
+    if !target.is_dir() {
+        return Err(("no such folder".into(), "browse a folder that exists".into()));
     }
     let mut dirs = Vec::new();
     let mut files = Vec::new();
@@ -72,11 +89,23 @@ fn list_local(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
         if name.starts_with('.') {
             continue;
         }
-        let ft = ent.file_type().ok();
-        if ft.map(|t| t.is_dir()).unwrap_or(false) {
+        // metadata() FOLLOWS symlinks; file_type() does not. With file_type a symlinked
+        // folder is neither dir nor audio file, so it silently vanished from the
+        // listing — Ben's ~/Music/"WAV versions" -> /media/.../wav-versions was
+        // invisible. A symlink the user made in their own library is deliberate, so it
+        // is served like the thing it points at.
+        //
+        // A broken link has no metadata; fall back to the link's own type so it is
+        // skipped quietly rather than aborting the whole listing.
+        let meta = std::fs::metadata(ent.path());
+        let is_dir = match &meta {
+            Ok(m) => m.is_dir(),
+            Err(_) => continue, // dangling symlink: nothing to offer
+        };
+        if is_dir {
             dirs.push(name);
         } else if is_audio(&name) {
-            let size = ent.metadata().map(|m| m.len()).unwrap_or(0);
+            let size = meta.map(|m| m.len()).unwrap_or(0);
             files.push(proto::FileEntry { name, size });
         }
     }
@@ -148,10 +177,16 @@ fn resolve_abs(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<Pat
     } else {
         let base = std::fs::canonicalize(root.path.as_deref().unwrap_or_default())
             .map_err(|_| ("library root is unreadable".into(), "check the path".into()))?;
-        let target = std::fs::canonicalize(base.join(clean_rel(rel)))
-            .map_err(|_| ("no such file".into(), "pick a file that exists".into()))?;
-        if !target.starts_with(&base) {
+        let rel_clean = clean_rel(rel);
+        if escapes_root(&rel_clean) {
             return Err(("path escapes the library root".into(), "play within the library".into()));
+        }
+        // Same reasoning as list_local: a symlink the user placed in their own library
+        // resolves outside the root by design, so the guard is on the requested path
+        // rather than on where the filesystem ends up.
+        let target = base.join(&rel_clean);
+        if !target.is_file() {
+            return Err(("no such file".into(), "pick a file that exists".into()));
         }
         Ok(target)
     }
@@ -542,5 +577,123 @@ impl FileSession {
 impl Drop for FileSession {
     fn drop(&mut self) {
         self.stop_pump();
+    }
+}
+
+#[cfg(test)]
+mod tests {
+    use super::{escapes_root, list_local};
+    use crate::config::LibraryRoot;
+    use std::fs;
+
+    /// A library root with one real folder, one audio file, and one SYMLINKED folder
+    /// pointing OUTSIDE the root — the exact shape of Ben's ~/Music/"WAV versions".
+    fn fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, LibraryRoot) {
+        let tmp = std::env::temp_dir().join(format!("phosphor-lib-{name}-{}", std::process::id()));
+        let root = tmp.join("music");
+        let outside = tmp.join("elsewhere");
+        let _ = fs::remove_dir_all(&tmp);
+        fs::create_dir_all(root.join("albums")).unwrap();
+        fs::create_dir_all(&outside).unwrap();
+        fs::write(root.join("albums").join("track.flac"), b"x").unwrap();
+        fs::write(outside.join("remote.flac"), b"yy").unwrap();
+        #[cfg(unix)]
+        std::os::unix::fs::symlink(&outside, root.join("WAV versions")).unwrap();
+        let lib = LibraryRoot {
+            id: "music0".into(),
+            label: "Music".into(),
+            path: Some(root.to_string_lossy().into_owned()),
+            rclone: None,
+        };
+        (tmp, root, lib)
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_symlinked_folder_is_listed_rather_than_silently_dropped() {
+        // The reported bug: file_type() does not follow links, so a symlinked folder was
+        // neither dir nor audio and vanished from the listing entirely.
+        let (tmp, _root, lib) = fixture("listed");
+        let listing = list_local(&lib, "").ok().expect("root should list");
+        assert!(
+            listing.dirs.contains(&"WAV versions".to_string()),
+            "symlinked folder missing from {:?}",
+            listing.dirs,
+        );
+        assert!(listing.dirs.contains(&"albums".to_string()));
+        let _ = fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn entering_a_symlink_serves_what_it_points_at() {
+        // Listing it is useless if opening it refuses. The old canonicalize+starts_with
+        // guard resolved the link and then rejected its real location.
+        let (tmp, _root, lib) = fixture("enter");
+        let listing = list_local(&lib, "WAV versions").ok().expect("symlink should be browsable");
+        assert_eq!(
+            vec!["remote.flac".to_string()],
+            listing.files.iter().map(|f| f.name.clone()).collect::<Vec<_>>(),
+        );
+        let _ = fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    fn a_dot_dot_path_is_still_refused() {
+        // Following symlinks must not become a way to walk the whole filesystem. A
+        // crafted relative path from the wire is a different thing from a symlink the
+        // user placed in their own library.
+        assert!(escapes_root("../etc"));
+        assert!(escapes_root("albums/../../etc"));
+        assert!(escapes_root(".."));
+        assert!(!escapes_root("albums"));
+        assert!(!escapes_root("WAV versions"));
+        // A filename that merely CONTAINS dots is fine.
+        assert!(!escapes_root("a..b"));
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_dot_dot_request_is_rejected_by_the_lister_itself() {
+        let (tmp, _root, lib) = fixture("escape");
+        let err = list_local(&lib, "../elsewhere").err().expect("must refuse to climb out");
+        assert!(err.0.contains("escapes"), "unexpected error: {}", err.0);
+        assert!(!err.1.is_empty(), "refusal must carry a fix");
+        let _ = fs::remove_dir_all(tmp);
+    }
+
+    #[test]
+    #[cfg(unix)]
+    fn a_dangling_symlink_is_skipped_without_breaking_the_listing() {
+        // A link to a deleted drive must not take the whole folder down with it.
+        let (tmp, root, lib) = fixture("dangling");
+        std::os::unix::fs::symlink(tmp.join("gone"), root.join("missing")).unwrap();
+        let listing = list_local(&lib, "").ok().expect("listing should survive a broken link");
+        assert!(!listing.dirs.contains(&"missing".to_string()));
+        assert!(listing.dirs.contains(&"albums".to_string()));
+        let _ = fs::remove_dir_all(tmp);
+    }
+    #[test]
+    #[cfg(unix)]
+    fn bens_real_music_folder_shows_its_symlink() {
+        // Not a fixture: the actual library root on this machine. Skips cleanly on any
+        // machine where that symlink does not exist.
+        let home = std::env::var("HOME").unwrap_or_default();
+        let music = std::path::Path::new(&home).join("Music");
+        if !music.join("WAV versions").exists() {
+            return;
+        }
+        let lib = LibraryRoot {
+            id: "music0".into(),
+            label: "Music".into(),
+            path: Some(music.to_string_lossy().into_owned()),
+            rclone: None,
+        };
+        let listing = list_local(&lib, "").ok().expect("real Music should list");
+        assert!(
+            listing.dirs.contains(&"WAV versions".to_string()),
+            "the real symlink is still invisible: {:?}",
+            listing.dirs,
+        );
     }
 }

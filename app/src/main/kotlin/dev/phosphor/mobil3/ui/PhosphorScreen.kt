@@ -168,6 +168,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     var settingsPullActive by remember { mutableStateOf(false) }
     var bottomEdgePullActive by remember { mutableStateOf(false) }
     var rootHeightPx by remember { mutableStateOf(0) }
+    // Width matters as well as height now: a locked-landscape sheet slides in sideways,
+    // so its pull travel is measured across the screen rather than up it.
+    var rootWidthPx by remember { mutableStateOf(0) }
     var consoleHeightPx by remember { mutableStateOf(0) }
     var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
@@ -301,7 +304,13 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     overflowGestureActive.value
                 if (ignored) return
                 settingsReveal.setTravelPx(
-                    if (rootHeightPx > 0) rootHeightPx * 0.82f
+                    // Locked landscape slides the card in sideways, so the travel is a
+                    // width. Using height there made the drag feel like it had to cover
+                    // the whole screen before the card appeared.
+                    if (chromeLandscape && uiLocked) {
+                        if (rootWidthPx > 0) rootWidthPx * 0.82f
+                        else with(density) { 560.dp.toPx() }
+                    } else if (rootHeightPx > 0) rootHeightPx * 0.82f
                     else with(density) { 560.dp.toPx() }
                 )
                 settingsReveal.begin(resetClosed = true)
@@ -387,6 +396,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         LocalRoomStyle provides style,
         LocalBloomPull provides bloom,
         LocalChromeLandscape provides chromeLandscape,
+        LocalUiPlacementLocked provides uiLocked,
         LocalUiUpright provides state.uprightQuadrant,
     ) {
         Box(Modifier.fillMaxSize()) {
@@ -406,7 +416,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             Box(
                 Modifier
                     .fillMaxSize()
-                    .onSizeChanged { rootHeightPx = it.height }
+                    .onSizeChanged { rootHeightPx = it.height; rootWidthPx = it.width }
             ) {
             // Layer 0.5: the stage — gesture arbiter (drags/pinches) + tap layer.
             // Sits BELOW the console so console controls win hit-testing in their bounds.
@@ -607,6 +617,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             val sheetLandscape = chromeLandscape != (sheetQuadrant % 2 != 0)
             CompositionLocalProvider(
                 LocalChromeLandscape provides sheetLandscape,
+                LocalUiPlacementLocked provides uiLocked,
                 LocalUiUpright provides 0, // content is already facing the viewer
             ) {
                 Box(Modifier.uprightRotate(sheetQuadrant)) {

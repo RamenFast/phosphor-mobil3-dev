@@ -14,7 +14,9 @@ import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
+import androidx.compose.animation.slideInHorizontally
 import androidx.compose.animation.slideInVertically
+import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -180,13 +182,22 @@ fun SheetHost(
 ) {
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
-    // "For each respective side" (Ben's ask): in landscape the card anchors to the
-    // edge nearest the user's reach — the phone's chin. ROTATION_90 puts the chin on
-    // the right, ROTATION_270 on the left; ROTATION_0/180/null keep the historical
-    // right so the common landscape is unchanged.
-    val landscapeSide = when (LocalView.current.display?.rotation) {
-        Surface.ROTATION_270 -> Alignment.BottomStart
-        else -> Alignment.BottomEnd
+    val uiLocked = LocalUiPlacementLocked.current
+    // Where the card lives, and therefore where it must come FROM.
+    //
+    // Locked landscape: the phone is held sideways and the transport bar is at one
+    // edge, so the card anchors there and slides in horizontally — it should look like
+    // it came out of the bar the finger is on. One fixed edge in BOTH rotations: the
+    // side used to flip with ROTATION_270, so the same gesture behaved differently
+    // depending which way the phone had been turned.
+    //
+    // Unlocked landscape: the console is centred (Console.kt uses BottomCenter), so a
+    // card arriving from the right edge has no relationship to what was touched. Centre
+    // it and let it rise, exactly like portrait.
+    val slidesSideways = landscape && uiLocked
+    val sheetAlignment = when {
+        slidesSideways -> Alignment.BottomEnd
+        else -> Alignment.BottomCenter
     }
     val bloom = LocalBloomPull.current
     val density = LocalDensity.current
@@ -195,6 +206,7 @@ fun SheetHost(
     val bloomOffsetPx = -(bloom?.visualPull ?: 0f) * bloomTravelPx
     var availableHeightPx by remember { mutableIntStateOf(0) }
     var sheetHeightPx by remember { mutableIntStateOf(0) }
+    var sheetWidthPx by remember { mutableIntStateOf(0) }
     val fillFraction = if (availableHeightPx > 0) {
         sheetHeightPx.toFloat() / availableHeightPx
     } else 0f
@@ -301,11 +313,15 @@ fun SheetHost(
                 )
                 .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
                 .onSizeChanged { availableHeightPx = it.height },
-            contentAlignment = if (landscape) landscapeSide else Alignment.BottomCenter,
+            contentAlignment = sheetAlignment,
         ) {
             AnimatedVisibility(
                 visibleState = openState,
-                enter = if (reduced) fadeIn() else if (style.motion == MotionFeel.Springy)
+                enter = if (reduced) fadeIn() else if (slidesSideways)
+                // Edge-anchored: enter along the edge, not up the screen.
+                    slideInHorizontally(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
+                        fadeIn(styleSpec(false, style, Motion.sheet))
+                else if (style.motion == MotionFeel.Springy)
                 // The one room that bounces (glass): a gentle spring settle.
                     slideInVertically(
                         spring(dampingRatio = 0.72f, stiffness = 380f,
@@ -314,7 +330,10 @@ fun SheetHost(
                 else
                     slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
                         fadeIn(styleSpec(false, style, Motion.sheet)),
-                exit = if (reduced) fadeOut() else
+                exit = if (reduced) fadeOut() else if (slidesSideways)
+                    slideOutHorizontally(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
+                        fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate))
+                else
                     slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
                         fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate)),
             ) {
@@ -327,19 +346,38 @@ fun SheetHost(
                             )
                         }
                         .then(
-                            if (landscape) Modifier.widthIn(max = Dim.landscapeSheetMaxWidth)
+                            // Centred landscape matches the console's own max width, so
+                            // the card reads as the same object growing out of the bar
+                            // rather than a differently-sized panel arriving beside it.
+                            if (slidesSideways) Modifier.widthIn(max = Dim.landscapeSheetMaxWidth)
+                                .fillMaxWidth()
+                            else if (landscape) Modifier.widthIn(max = Dim.landscapeConsoleMaxWidth)
                                 .fillMaxWidth()
                             else Modifier.fillMaxWidth()
                         )
                         .onSizeChanged {
                             sheetHeightPx = it.height
-                            entryReveal?.setTravelPx(it.height.toFloat())
+                            sheetWidthPx = it.width
+                            // The reveal travels along whichever axis the card enters
+                            // on, so a sideways card is not asked to cover a screen's
+                            // height before it arrives.
+                            entryReveal?.setTravelPx(
+                                (if (slidesSideways) it.width else it.height).toFloat(),
+                            )
                         }
                         .graphicsLayer {
                             entryReveal?.let { reveal ->
                                 val progress = reveal.progress
                                 alpha = progress
-                                translationY = (1f - progress) * sheetHeightPx
+                                // Anchored to an edge: come in from that edge. Centred:
+                                // rise. Animating Y for an edge-anchored card is what
+                                // made it appear from the screen bottom instead of from
+                                // the transport bar under the finger.
+                                if (slidesSideways) {
+                                    translationX = (1f - progress) * sheetWidthPx
+                                } else {
+                                    translationY = (1f - progress) * sheetHeightPx
+                                }
                             }
                         }
                         .nestedScroll(dismissNestedScroll)
@@ -1567,6 +1605,42 @@ fun RemoteFlow(
             }
         }
         if (browsing && listingJson.isNotBlank()) {
+            // The relay may serve several roots (Music, another drive, a cloud remote).
+            // Only the first was ever reachable, so a second drive configured on the
+            // desktop was invisible from the phone. Show them when there is a choice.
+            val roots = remember(state.remote, browsing) {
+                runCatching {
+                    org.json.JSONObject(dev.phosphor.mobil3.PhosphorNative.remoteStatus())
+                        .optJSONObject("welcome")?.optJSONArray("libraries")
+                }.getOrNull()?.let { arr ->
+                    (0 until arr.length()).mapNotNull { i ->
+                        arr.optJSONObject(i)?.let { obj ->
+                            val id = obj.optString("id")
+                            if (id.isBlank()) null
+                            else id to obj.optString("label").ifBlank { id }
+                        }
+                    }
+                } ?: emptyList()
+            }
+            if (roots.size > 1) {
+                Row(
+                    Modifier.fillMaxWidth().padding(top = 2.dp),
+                    horizontalArrangement = Arrangement.spacedBy(6.dp),
+                ) {
+                    roots.forEach { (id, label) ->
+                        FlatKey(
+                            label, p, modifier = Modifier.weight(1f),
+                            active = id == browseRoot,
+                        ) {
+                            if (id != browseRoot) {
+                                browseRoot = id
+                                browsePath = ""
+                                dev.phosphor.mobil3.PhosphorNative.remoteBrowse(id, "")
+                            }
+                        }
+                    }
+                }
+            }
             runCatching { org.json.JSONObject(listingJson) }.getOrNull()?.let { l ->
                 val path = l.optString("path")
                 Mono(
