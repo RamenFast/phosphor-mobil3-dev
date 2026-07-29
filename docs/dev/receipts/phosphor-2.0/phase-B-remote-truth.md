@@ -160,9 +160,25 @@ Twelve tests cover it, six in the relay and six in the app, including a quiet pa
 must **not** be called silent, an older relay with no field, and an explicit null. Both
 suites were verified failable by breaking the code and watching the right test go red.
 
-**Deployment note:** the running relays are still 2.2.0 without this field. The app
-degrades to the prior behaviour against them, so nothing breaks; the state stays dormant
-until they are rebuilt from `a7beb5f`.
+**Deployment, 2026-07-29:** `interserve-linux` (100.114.165.77) is **rebuilt and live**
+with the new relay, verified by reading raw K frames off port 45777:
+
+```
+{"ts_ms":...,"tx_a":91,"tx_g":0,"dropped_a":0,"rms":0.237353,"rms_peak":0.800018}
+{"ts_ms":...,"tx_a":192,"tx_g":0,"dropped_a":0,"rms":0.0,"rms_peak":0.0}
+```
+
+`thinkcenter` (100.66.109.56) is reachable but still runs the older relay, and its K
+frames confirm it:
+
+```
+{"ts_ms":...,"tx_a":89,"tx_g":0,"dropped_a":0}
+```
+
+That is the backward-compatibility path proven in production rather than only in tests:
+the field is simply absent, so the app reports STREAMING and never claims silence it
+cannot measure. thinkcenter picks the feature up whenever it is next rebuilt, and nothing
+breaks in the meantime.
 
 ### Still unproven live
 
