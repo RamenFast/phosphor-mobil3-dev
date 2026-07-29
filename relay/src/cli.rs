@@ -248,6 +248,131 @@ pub fn config(args: &[String]) -> ! {
     std::process::exit(0);
 }
 
+// ── library (add / remove / list the folders the phone can browse) ─────────────
+
+/// Manage library roots without hand-editing config.json.
+///
+/// Adding a second drive was previously a text-editor job, which is a poor answer for
+/// something the phone surfaces as a first-class picker. Verbs mirror the rest of the
+/// CLI: an envelope on success, a fix-bearing error and a distinct exit code on failure.
+pub fn library(args: &[String]) -> ! {
+    let flags = parse_flags(args);
+    let action = args.first().map(String::as_str).unwrap_or("list");
+    let mut cfg = load_config(&flags);
+
+    match action {
+        "list" | "" => {
+            let mut fields = Map::new();
+            fields.insert("path".into(), json!(Config::path().to_string_lossy()));
+            fields.insert(
+                "libraries".into(),
+                serde_json::to_value(&cfg.libraries).unwrap_or(Value::Null),
+            );
+            ok_out(fields, flags.json);
+            std::process::exit(0);
+        }
+        "add" => {
+            let Some(path) = flags.get("path") else {
+                err_out(3, "missing --path", "library add --path /media/you/drive [--label Name]", flags.json)
+            };
+            // Resolve now so a typo fails here rather than silently serving nothing to
+            // the phone later.
+            let canonical = match std::fs::canonicalize(path) {
+                Ok(p) => p,
+                Err(e) => err_out(
+                    3,
+                    &format!("cannot read {path}: {e}"),
+                    "point --path at a folder that exists and is readable",
+                    flags.json,
+                ),
+            };
+            if !canonical.is_dir() {
+                err_out(3, &format!("{path} is not a folder"), "point --path at a folder", flags.json);
+            }
+            let path_str = canonical.to_string_lossy().into_owned();
+            if cfg.libraries.iter().any(|r| r.path.as_deref() == Some(path_str.as_str())) {
+                err_out(
+                    3,
+                    &format!("{path_str} is already a library"),
+                    "run `library list` to see the current roots",
+                    flags.json,
+                );
+            }
+            let label = flags
+                .get("label")
+                .map(str::to_string)
+                .unwrap_or_else(|| {
+                    canonical
+                        .file_name()
+                        .map(|n| n.to_string_lossy().into_owned())
+                        .unwrap_or_else(|| "Library".into())
+                });
+            let id = flags.get("id").map(str::to_string).unwrap_or_else(|| next_library_id(&cfg));
+            if cfg.libraries.iter().any(|r| r.id == id) {
+                err_out(3, &format!("id '{id}' is taken"), "pass a different --id", flags.json);
+            }
+            cfg.libraries.push(crate::config::LibraryRoot {
+                id: id.clone(),
+                label: label.clone(),
+                path: Some(path_str.clone()),
+                rclone: None,
+            });
+            save_or_die(&cfg, flags.json);
+            let mut fields = Map::new();
+            fields.insert("added".into(), json!({ "id": id, "label": label, "path": path_str }));
+            fields.insert("restart_required".into(), json!(true));
+            ok_out(fields, flags.json);
+            std::process::exit(0);
+        }
+        "remove" => {
+            let Some(id) = flags.get("id") else {
+                err_out(3, "missing --id", "library remove --id music0 (see `library list`)", flags.json)
+            };
+            let before = cfg.libraries.len();
+            cfg.libraries.retain(|r| r.id != id);
+            if cfg.libraries.len() == before {
+                err_out(
+                    3,
+                    &format!("no library with id '{id}'"),
+                    "run `library list` to see the current roots",
+                    flags.json,
+                );
+            }
+            save_or_die(&cfg, flags.json);
+            let mut fields = Map::new();
+            fields.insert("removed".into(), json!(id));
+            fields.insert("restart_required".into(), json!(true));
+            ok_out(fields, flags.json);
+            std::process::exit(0);
+        }
+        other => err_out(
+            3,
+            &format!("unknown library action '{other}'"),
+            "use: library list | library add --path P [--label L] | library remove --id ID",
+            flags.json,
+        ),
+    }
+}
+
+/// Lowest unused `libN` id, so ids stay stable and predictable across edits.
+fn next_library_id(cfg: &Config) -> String {
+    (0..)
+        .map(|n| format!("lib{n}"))
+        .find(|candidate| !cfg.libraries.iter().any(|r| &r.id == candidate))
+        .unwrap_or_else(|| "lib0".into())
+}
+
+fn save_or_die(cfg: &Config, json: bool) {
+    if let Err(e) = cfg.save() {
+        err_out(
+            4,
+            &format!("cannot write {}: {e}", Config::path().display()),
+            "check the config directory is writable",
+            json,
+        );
+    }
+}
+
 // ── probe (the end-to-end receipt tool: acts as a v2 client) ───────────────────
 
 pub fn probe(args: &[String]) -> ! {
@@ -397,6 +522,7 @@ pub fn schema(args: &[String]) -> ! {
             "doctor": "environment checks {check,ok,detail|fix} + all_ok",
             "probe": "act as a v2 client [--host --port --seconds --rms] → welcome + frame counts + a_per_sec + rms_peak",
             "config": "print the effective config",
+            "library": "list | add --path P [--label L] [--id ID] | remove --id ID",
             "schema": "this document",
             "--help / --version": "usage / version"
         },
@@ -427,6 +553,7 @@ pub fn help() -> ! {
          \x20 probe --host H [--port N]          connect as a client and report a receipt\n\
          \x20       [--seconds S] [--rms]\n\
          \x20 config                             print the effective config\n\
+         \x20 library <list|add|remove>          manage the folders the phone can browse\n\
          \x20 schema                             full machine contract (frames, verbs, exits)\n\
          \x20 --help | --version\n\
          \n\

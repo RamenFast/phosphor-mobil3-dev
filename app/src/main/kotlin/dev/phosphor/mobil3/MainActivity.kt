@@ -415,6 +415,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
         causalStore = (application as PhosphorApplication).causalStore
         ui = ScopeUiState(causalStore)
         enableEdgeToEdge()
+        // The scope is something you WATCH, so the screen must not dim or lock under it.
+        // This is sufficient on its own: the flag holds a SCREEN_BRIGHT_WAKE_LOCK for as
+        // long as this window is in front (verified on the S25), and Doze/App Standby
+        // only bite once the screen is off, which this prevents. A playback foreground
+        // service covers the audio path when the app is backgrounded. No battery
+        // optimisation exemption is requested, because none is needed and asking for one
+        // is a Play-policy liability for no user benefit.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -867,6 +874,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun startCapture() {
         markConsentSeen()
+        // Already capturing: do NOT ask again. Android issues a single-use projection
+        // token, so a redundant prompt would tear down a working session to rebuild an
+        // identical one, and the user would blame us for the extra dialog. `live` plus a
+        // capture source is the honest signal that a projection is currently held.
+        if (ui.live && ui.sourceLabel.startsWith("capture")) return
         ui.captureStatus = "waiting for Android capture permission"
         ui.captureFix = "Approve the prompt to connect playback audio"
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager

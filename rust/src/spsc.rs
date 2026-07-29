@@ -783,4 +783,42 @@ mod tests {
         assert_eq!(jitter.mode(), LATENCY_MODE_SAFE);
         assert_eq!(jitter.target_frames(), 12_000);
     }
+
+    /// Ben asked me to confirm "tight / balanced / safe" are genuinely three things
+    /// rather than three labels on one behaviour. They are, and this pins it so a
+    /// future refactor cannot quietly collapse them.
+    #[test]
+    fn the_three_latency_modes_are_actually_different() {
+        let rate = 48_000usize;
+        let tight = AdaptiveJitter::floor_frames(rate, LATENCY_MODE_TIGHT);
+        let balanced = AdaptiveJitter::floor_frames(rate, LATENCY_MODE_BALANCED);
+        let safe = AdaptiveJitter::floor_frames(rate, LATENCY_MODE_SAFE);
+
+        // 80 / 150 / 250 ms at 48 kHz.
+        assert_eq!(tight, 3_840);
+        assert_eq!(balanced, 7_200);
+        assert_eq!(safe, 12_000);
+        assert!(tight < balanced && balanced < safe, "modes must stay ordered");
+    }
+
+    /// Safe is deliberately FROZEN: it neither widens after an underrun nor shrinks
+    /// after a clean run. That is what makes it "safe" rather than merely "slower",
+    /// and it is the part most likely to be lost in a refactor.
+    #[test]
+    fn safe_mode_does_not_adapt_while_the_others_do() {
+        let rate = 48_000usize;
+
+        let mut safe = AdaptiveJitter::new(rate, LATENCY_MODE_SAFE, 0);
+        let safe_start = safe.target_frames();
+        safe.observe_underrun();
+        assert_eq!(safe.target_frames(), safe_start, "safe must not widen");
+
+        let mut tight = AdaptiveJitter::new(rate, LATENCY_MODE_TIGHT, 0);
+        let tight_start = tight.target_frames();
+        tight.observe_underrun();
+        assert!(
+            tight.target_frames() > tight_start,
+            "tight must widen after an underrun to protect the audio",
+        );
+    }
 }

@@ -33,6 +33,7 @@ fn main() {
         "doctor" => cli::doctor(rest),
         "probe" => cli::probe(rest),
         "config" => cli::config(rest),
+        "library" => cli::library(rest),
         "schema" | "--schema" => cli::schema(rest),
         "-h" | "--help" | "help" => cli::help(),
         "-V" | "--version" | "version" => cli::version(),

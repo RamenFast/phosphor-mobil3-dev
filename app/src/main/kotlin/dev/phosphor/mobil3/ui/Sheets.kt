@@ -621,8 +621,11 @@ fun SourceSheet(
             SectionHeading("OTHER APPS · LOCAL MUSIC PLAYBACK", p)
             Spacer(Modifier.weight(1f))
             // Compatibility marks, not buttons: the apps known to feed the beam.
+            // SoundCloud is deliberately NOT here. It sets ALLOW_AUDIO_CAPTURE_BY_NONE,
+            // so its audio arrives as silence no matter what we do, and showing its mark
+            // beside apps that work would promise something the app cannot deliver.
             listOf(
-                SettingsGlyph.Spotify, SettingsGlyph.SoundCloud, SettingsGlyph.AppleMusic,
+                SettingsGlyph.Spotify, SettingsGlyph.AppleMusic,
                 SettingsGlyph.Vlc, SettingsGlyph.Mpv,
             ).forEach { mark ->
                 SettingsGlyphIcon(mark, p, 14.dp)
@@ -688,7 +691,8 @@ fun SourceSheet(
         Prose(
             "Remote scopes another machine's audio over Tailscale — it plays here and " +
                 "the transport drives that machine. Local capture hears whatever apps " +
-                "allow it (Spotify currently does; some DRM apps stay silent).",
+                "allow it (Spotify currently does; SoundCloud and some DRM apps opt out " +
+                "and arrive as silence — nothing this app can change).",
             p.muted, modifier = Modifier.padding(top = Dim.gap, bottom = Dim.gapLg),
         )
         StoneToggle(
