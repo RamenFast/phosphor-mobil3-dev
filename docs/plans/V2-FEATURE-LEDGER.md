@@ -43,6 +43,13 @@ These mattered enough to name. Each cost, or would have cost, real time.
 | Microphone source | `works` | `MainActivity.kt:797`; corrects the stale TODO above |
 | Themes / rooms / palettes | `works` | `ui/Palette.kt`, `ui/LightSheet.kt`; device prefs show `room=dark` |
 | Rotation + UI placement lock | `works` | 1.0.7 release notes; device prefs `ui_locked_orientation=1` |
+| Rotation *feel* (detent) | `works` | `RotationDetent`, 9 tests. Was a symmetric ±30° window that flipped the chrome the instant the phone crossed 45°; now asymmetric (hold 38°, commit 18°) so a lean holds and a real turn lands at once. Verified failable by restoring the symmetric window. |
+| Landscape sheet entry | `works` | `SheetEntryPolicy`, 5 tests. Locked landscape slides in from one fixed anchored edge; unlocked rises from centre at the console's own 620dp. Old behaviour (entry keyed on `landscape` alone) fails 3 of the 5. |
+| MediaProjection consent default | `works` | `MediaProjectionConfig.createConfigForDefaultDisplay()`, confirmed in the shipped dex. Previously Android preselected "Share one app" while the row said "everything playing". |
+| Capture re-prompt while live | `works` | `startCapture()` returns early when already capturing. The per-**session** prompt cannot be removed: MediaProjection tokens are single-use by design and Android 16 has no persistent grant. |
+| SoundCloud capture | `not possible` | Sets `ALLOW_AUDIO_CAPTURE_BY_NONE`, so it arrives as silence regardless. Its glyph was removed from the compatibility marks and the prose names it, so the silence explains itself. |
+| Screen stays awake under the scope | `works` | `FLAG_KEEP_SCREEN_ON`; on device `SCREEN_BRIGHT_WAKE_LOCK ws=WorkSource{10435 dev.phosphor.mobil3.fortress}`, standby bucket 10 (ACTIVE), FGS running. No battery-optimisation exemption requested: Doze only applies with the screen off, so it would buy nothing and is a Play-policy liability. |
+| Audio latency modes | `works` | 80 / 150 / 250 ms floors, and safe is deliberately **frozen** while the other two adapt (`spsc.rs`). Verified on request rather than assumed; 2 tests pin it. |
 | Manual / bestiary / OOBE-ish surfaces | `works` | `ui/ManualSheet.kt`; device prefs `bestiary_found=true` |
 | PiP | `works` | `MainActivity.kt:336,418,445` implement and update PiP params |
 | Resting beam / no-signal truth | `works` | `ui/Console.kt:93` |
@@ -52,7 +59,10 @@ These mattered enough to name. Each cost, or would have cost, real time.
 | Feature | State | Evidence |
 |---|---|---|
 | Relay protocol v2 (audio/geometry/meta/transport) | `works` | Both relays live at 2.2.0; `phosphor-relay probe` shows `a_per_sec` 87-94, full caps |
-| Relay crate | `works` | 15/15 tests, `cargo test` in `relay/` |
+| Relay crate | `works` | 27/27 tests, `cargo test` in `relay/` |
+| Desktop library browse | `works` | **Symlinks are followed** (`metadata()`, not `file_type()`), so Ben's real `~/Music/WAV versions → /media/ben/Mass storage/…` lists and opens. Tested against that actual folder, not only a fixture; both tests fail if `file_type()` is restored. The escape guard rejects `..` on the *requested* path rather than resolved locations, which is the real attack and does not punish a user's own symlink. |
+| Multiple library roots | `works` | Root picker in the browse sheet. The phone hardcoded `libraries[0]`, so a second drive configured on the desktop was unreachable. `phosphor-relay library list\|add\|remove` manages them: every error path exits 3 with a `fix`, and the config is byte-identical after an add/remove round trip. |
+| pm3 on a cold process | `works` | Was `UninitializedPropertyAccessException`: a ContentProvider's `onCreate` runs *before* `Application.onCreate`, so `causalStore` as `lateinit` was unset whenever pm3 **woke** the process rather than finding it running. Now `by lazy`. Verified by force-stopping the package and watching `pm3 state-get` answer from cold. |
 | Phone-side remote engine (SPSC ring, supervisor) | `works` | `rust/src/remote.rs`; 32/32 Rust tests |
 | Fortress seeded hosts | `works` | Fortress dex contains 2 private host strings; `ship-check.sh --only=boundary.endpoints` |
 | **Play host list** | `works` | `RemoteHostStore` + `+ ADD RELAY` UI. Play seeds empty, Fortress seeds from BuildConfig, and the Play dex still contains 0 private host strings. Proven live on device: `docs/dev/receipts/phosphor-2.0/v2/remote-sheet-with-add-relay.png` |
