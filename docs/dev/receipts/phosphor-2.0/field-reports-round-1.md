@@ -178,3 +178,63 @@ a screenshot. The geometry is proven by `SheetEntryPolicy`'s tests, which fail o
 behaviour; what remains unwitnessed is the animation itself on his screen.
 
 Everything else above was checked on the device or by a command quoted with it.
+
+---
+
+# Correction (same night): the detent was never running
+
+Ben, after installing: *"rotation is still super sensitive, and ui has exact same
+issues, what even changed???"*
+
+He was right, and the tests were not lying — they were measuring the wrong thing.
+
+`RotationDetent`'s arithmetic was correct and had 9 passing tests. But the gravity
+sensor that feeds it was registered only when a **scope-rotation or UI-placement lock**
+was on:
+
+```kotlin
+val needed = scopeRotationLockState || uiPlacementLockState   // ← the bug
+```
+
+and `routeOrientation` began with a matching early return. With no lock the Activity was
+`SCREEN_ORIENTATION_UNSPECIFIED`, which hands rotation wholesale to Android's own very
+twitchy logic.
+
+**No lock is the default.** So on his phone none of the new code ran, and the build
+behaved exactly like the one before it. The same gating hid the landscape work, since
+the sheet change was correct for the unlocked case but unobservable while rotation
+itself was misbehaving.
+
+## What this cost, and what it teaches
+
+Unit tests proved the arithmetic. **They could not prove the arithmetic was reachable.**
+I verified `RotationDetent` in isolation, watched 9 tests pass, and reported the feature
+as done without ever checking that the code path executed in the configuration the user
+actually runs.
+
+The right check existed and I skipped it: *is this reachable from the default state?*
+
+## The fix
+
+- the gravity sensor always runs
+- `routeOrientation` handles the no-lock case instead of returning early
+- the Activity is pinned to the orientation the detent commits to
+- the **system** auto-rotate setting is read first, so a user who told their phone not to
+  rotate is honoured rather than overridden — that would be a worse bug than the original
+
+## Proof it is live this time
+
+Not a passing test. The Activity's own requested orientation, read off the phone:
+
+```
+topResumedActivity  dev.phosphor.mobil3.fortress/.MainActivity
+requestedOrientation=SCREEN_ORIENTATION_PORTRAIT
+```
+
+Before this change Fortress requested `UNSPECIFIED` — it never asked for an orientation
+at all, because it had delegated the decision. Requesting `PORTRAIT` is only possible if
+the detent decided it. Stable across 8 seconds, zero FATAL/ANR.
+
+`RotationDetentReachabilityTest` now fails if the sensor is gated behind a lock, or if
+`routeOrientation` early-returns without one — which is exactly the code I shipped an
+hour earlier.
