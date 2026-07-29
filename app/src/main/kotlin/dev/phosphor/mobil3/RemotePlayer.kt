@@ -31,11 +31,12 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     // remote transport stop cannot strand a process-wide route.
     var onStopRequested: (() -> Unit)? = null
 
-    // GREETED and STALLED exist because the engine already knows both and the UI used to
-    // throw them away. GREETED is the window after the relay's welcome but before any
-    // frame, which previously read as a live link. STALLED is a frozen-but-open socket,
+    // GREETED, SILENT and STALLED exist because the engine and relay already know all
+    // three and the UI used to throw them away. GREETED is the window after the relay's
+    // welcome but before any frame. SILENT is a healthy link carrying no sound, which
+    // otherwise looks exactly like a broken one. STALLED is a frozen-but-open socket,
     // which previously read as "reconnecting" while nothing was reconnecting.
-    enum class Conn { IDLE, CONNECTING, GREETED, STREAMING, STALLED, FAILED, LOST }
+    enum class Conn { IDLE, CONNECTING, GREETED, STREAMING, SILENT, STALLED, FAILED, LOST }
 
     private var conn = Conn.IDLE
     private var error: PlaybackException? = null
@@ -80,7 +81,8 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         val playback = when (conn) {
             Conn.IDLE -> Player.STATE_IDLE
             Conn.CONNECTING, Conn.GREETED, Conn.LOST, Conn.STALLED -> Player.STATE_BUFFERING
-            Conn.STREAMING -> Player.STATE_READY
+            // A silent link is still a working link, so the transport stays ready.
+            Conn.STREAMING, Conn.SILENT -> Player.STATE_READY
             Conn.FAILED -> Player.STATE_IDLE
         }
         val b = State.Builder()
@@ -111,6 +113,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         val label = when (conn) {
             Conn.CONNECTING -> "connecting · $host"
             Conn.GREETED -> "waiting for audio · $host"
+            Conn.SILENT -> "connected, no sound · $host"
             Conn.STALLED -> "signal stalled · $host"
             Conn.LOST -> "reconnecting · $host"
             Conn.FAILED -> "bridge unreachable · $host"
@@ -155,6 +158,14 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         }
     }
 
+    /** Frames are arriving but carry silence. The link is fine; the source is quiet. */
+    fun onSilent() {
+        if (conn != Conn.SILENT) {
+            conn = Conn.SILENT
+            invalidateState()
+        }
+    }
+
     /** The relay greeted us but no frame has arrived yet. Not a live link. */
     fun onGreeted() {
         if (conn == Conn.CONNECTING || conn == Conn.LOST || conn == Conn.STALLED) {
@@ -165,7 +176,9 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     /** Frames stopped while the socket stayed open. Distinct from a dropped link. */
     fun onConnectionStalled() {
-        if (conn == Conn.STREAMING || conn == Conn.GREETED || conn == Conn.CONNECTING) {
+        if (conn == Conn.STREAMING || conn == Conn.GREETED ||
+            conn == Conn.CONNECTING || conn == Conn.SILENT
+        ) {
             conn = Conn.STALLED
             invalidateState()
         }
@@ -173,7 +186,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     fun onConnectionLost() {
         if (conn == Conn.STREAMING || conn == Conn.CONNECTING ||
-            conn == Conn.GREETED || conn == Conn.STALLED
+            conn == Conn.GREETED || conn == Conn.STALLED || conn == Conn.SILENT
         ) {
             conn = Conn.LOST
             invalidateState()

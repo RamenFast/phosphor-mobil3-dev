@@ -805,10 +805,17 @@ class PlaybackService : MediaSessionService() {
                     // The read is a tested pure function (RemoteLinkTruth) so the rules
                     // about what counts as a live link live in one place and are provable
                     // on the host, rather than being spread through this pump.
-                    when (RemoteLinkTruth.read(status).state) {
-                        RemoteLinkState.STREAMING -> {
+                    val reading = RemoteLinkTruth.read(status)
+                    when (reading.state) {
+                        RemoteLinkState.STREAMING, RemoteLinkState.SILENT -> {
                             failingSinceMs = 0L
-                            remotePlayer.onConnected()
+                            // A silent link is healthy, so it never counts against the
+                            // give-up clock. It just has nothing to draw.
+                            if (reading.state == RemoteLinkState.SILENT) {
+                                remotePlayer.onSilent()
+                            } else {
+                                remotePlayer.onConnected()
+                            }
                             if (!remoteGainApplied) {
                                 val p = prefs()
                                 PhosphorNative.remoteScopeCtl(

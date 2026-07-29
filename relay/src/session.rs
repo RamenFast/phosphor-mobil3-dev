@@ -28,6 +28,72 @@ pub struct Counters {
     pub tx_a: AtomicU64,
     pub tx_g: AtomicU64,
     pub dropped_a: AtomicU64,
+    /// Loudness of the audio actually written to the wire, accumulated between K
+    /// frames and drained by each one.
+    ///
+    /// Why this exists: without it a client cannot tell a silent source from a broken
+    /// link. Both draw nothing, and the user has no way to know whether to check the
+    /// desktop or the network. Measuring here in the writer means the number describes
+    /// bytes that genuinely left the machine, not what a pump hoped to send.
+    ///
+    /// Fixed point (sum of squares scaled by RMS_SCALE) because these are atomics on a
+    /// hot path and f64 has no lock-free add.
+    pub rms_sumsq: AtomicU64,
+    pub rms_samples: AtomicU64,
+    pub rms_peak: AtomicU64,
+}
+
+/// Fixed-point scale for the RMS accumulators. Samples normalise to -1.0..1.0, so a
+/// squared sample is at most 1.0 and this keeps six decimal digits of it.
+pub const RMS_SCALE: f64 = 1_000_000.0;
+
+/// Fold one A-frame payload (s16le) into the loudness accumulators.
+///
+/// Runs on the writer thread for every audio frame, so it stays allocation-free and
+/// lock-free. A trailing odd byte is ignored rather than misread as half a sample.
+pub fn accumulate_rms(counters: &Counters, pcm: &[u8]) {
+    let mut sumsq = 0.0f64;
+    let mut peak = 0.0f64;
+    let mut samples = 0u64;
+    for chunk in pcm.chunks_exact(2) {
+        let raw = i16::from_le_bytes([chunk[0], chunk[1]]);
+        // Scale by 32768 so i16::MIN maps to exactly -1.0 without overflowing.
+        let sample = raw as f64 / 32768.0;
+        sumsq += sample * sample;
+        let magnitude = sample.abs();
+        if magnitude > peak {
+            peak = magnitude;
+        }
+        samples += 1;
+    }
+    if samples == 0 {
+        return;
+    }
+    counters.rms_sumsq.fetch_add((sumsq * RMS_SCALE) as u64, Ordering::Relaxed);
+    counters.rms_samples.fetch_add(samples, Ordering::Relaxed);
+    // Keep the loudest peak seen since the last K frame drained the window.
+    counters.rms_peak.fetch_max((peak * RMS_SCALE) as u64, Ordering::Relaxed);
+}
+
+/// Drain the loudness window and return `(rms, peak)` normalised to 0.0..1.0.
+///
+/// Draining rather than accumulating forever means each K frame describes the second it
+/// covers, so a source that just fell silent reads as silent immediately instead of
+/// being masked by a session-long average.
+pub fn drain_rms(counters: &Counters) -> (f64, f64) {
+    let sumsq = counters.rms_sumsq.swap(0, Ordering::Relaxed) as f64 / RMS_SCALE;
+    let samples = counters.rms_samples.swap(0, Ordering::Relaxed);
+    let peak = counters.rms_peak.swap(0, Ordering::Relaxed) as f64 / RMS_SCALE;
+    if samples == 0 {
+        return (0.0, 0.0);
+    }
+    ((sumsq / samples as f64).sqrt(), peak)
+}
+
+/// Six decimals is plenty for a 0.0..1.0 loudness reading and keeps float noise out of
+/// the K frame.
+fn round6(value: f64) -> f64 {
+    (value * 1_000_000.0).round() / 1_000_000.0
 }
 
 /// Internal control-loop events. Everything that mutates session state funnels
@@ -248,11 +314,22 @@ impl SessionState {
         // auto) rides every K — the phone renders `auto · pc` from truth, not
         // a stale local multiplier (the autogain honesty ask).
         self.scope_state = if self.geometry { crate::scope::status() } else { None };
+        // Drain the loudness window so this K describes the second it covers. Sent only
+        // while audio streams: in a geometry-only session there is no audio to be silent
+        // about, and a hard 0.0 would read as "gone quiet".
+        let (rms_value, peak_value) = drain_rms(&ctx.counters);
+        let (rms, rms_peak) = if self.audio {
+            (Some(round6(rms_value)), Some(round6(peak_value)))
+        } else {
+            (None, None)
+        };
         let body = serde_json::to_vec(&proto::Stats {
             ts_ms: util::now_ms(),
             tx_a: ctx.counters.tx_a.load(Ordering::Relaxed),
             tx_g: ctx.counters.tx_g.load(Ordering::Relaxed),
             dropped_a: ctx.counters.dropped_a.load(Ordering::Relaxed),
+            rms,
+            rms_peak,
             scope: self.scope_state.clone(),
         })
         .unwrap_or_default();
@@ -746,6 +823,7 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
                 // dropped frame no longer inflates the sent metric.
                 if frame.first() == Some(&proto::A) {
                     counters.tx_a.fetch_add(1, Ordering::Relaxed);
+                    accumulate_rms(&counters, &frame[proto::HEADER_LEN..]);
                 }
             }
         })
@@ -908,7 +986,72 @@ pub fn serve_client(stream: TcpStream, cfg: Arc<Config>, caps: proto::Caps, peer
 
 #[cfg(test)]
 mod tests {
-    use super::selected_after_choose;
+    use super::{accumulate_rms, drain_rms, selected_after_choose, Counters};
+
+    /// Build an s16le buffer from normalised samples.
+    fn pcm(samples: &[f64]) -> Vec<u8> {
+        samples
+            .iter()
+            .flat_map(|s| ((s * 32767.0) as i16).to_le_bytes())
+            .collect()
+    }
+
+    #[test]
+    fn silence_reads_as_zero_so_a_quiet_source_differs_from_a_dead_link() {
+        // The whole point: frames are arriving, but there is nothing in them.
+        let counters = Counters::default();
+        accumulate_rms(&counters, &pcm(&[0.0; 128]));
+        assert_eq!(drain_rms(&counters), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_full_scale_square_wave_reads_as_full_scale() {
+        // Every sample at |1.0| means RMS is 1.0, which pins the normalisation.
+        let counters = Counters::default();
+        accumulate_rms(&counters, &pcm(&[1.0, -1.0, 1.0, -1.0]));
+        let (rms, peak) = drain_rms(&counters);
+        assert!((rms - 1.0).abs() < 0.001, "rms was {rms}");
+        assert!((peak - 1.0).abs() < 0.001, "peak was {peak}");
+    }
+
+    #[test]
+    fn one_loud_transient_survives_a_quiet_average() {
+        // A clipping source must not look calm because most samples were quiet.
+        let counters = Counters::default();
+        let mut samples = vec![0.0; 99];
+        samples.push(1.0);
+        accumulate_rms(&counters, &pcm(&samples));
+        let (rms, peak) = drain_rms(&counters);
+        assert!(rms < 0.2, "rms should stay low, was {rms}");
+        assert!((peak - 1.0).abs() < 0.001, "peak should be full scale, was {peak}");
+    }
+
+    #[test]
+    fn draining_resets_the_window_so_each_frame_describes_its_own_second() {
+        // Without the reset, a source that just went quiet would keep reporting the
+        // loudness of everything it had ever played.
+        let counters = Counters::default();
+        accumulate_rms(&counters, &pcm(&[1.0, -1.0, 1.0, -1.0]));
+        assert!(drain_rms(&counters).0 > 0.9);
+
+        accumulate_rms(&counters, &pcm(&[0.0; 64]));
+        assert_eq!(drain_rms(&counters), (0.0, 0.0), "the previous window leaked");
+    }
+
+    #[test]
+    fn an_empty_window_is_zero_rather_than_a_division_by_zero() {
+        assert_eq!(drain_rms(&Counters::default()), (0.0, 0.0));
+    }
+
+    #[test]
+    fn a_trailing_odd_byte_is_ignored_rather_than_read_as_half_a_sample() {
+        let counters = Counters::default();
+        let mut buf = pcm(&[1.0, -1.0]);
+        buf.push(0x7f);
+        accumulate_rms(&counters, &buf);
+        let (rms, _) = drain_rms(&counters);
+        assert!((rms - 1.0).abs() < 0.001, "odd byte skewed rms to {rms}");
+    }
 
     #[test]
     fn failed_choose_keeps_the_last_working_source_for_the_s_echo() {

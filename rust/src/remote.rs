@@ -88,6 +88,12 @@ struct Link {
     rx_a: AtomicU64,
     rx_g: AtomicU64,
     last_rx_ms: AtomicU64,
+    // Loudness the relay reports for the audio it actually sent, fixed point by
+    // RMS_FIXED_POINT. `remote_rms_known` stays false against a relay too old to send
+    // it, so "we cannot tell" stays distinct from "we measured silence".
+    remote_rms: AtomicU64,
+    remote_rms_peak: AtomicU64,
+    remote_rms_known: AtomicBool,
     // Audio-latency instrumentation (mirrored from the ring by the watchdog
     // tick; ask-2 receipts + the Nerd HUD bridge line read these).
     audio_buf_ms: AtomicU64,
@@ -128,6 +134,9 @@ fn link() -> &'static Link {
         rx_a: AtomicU64::new(0),
         rx_g: AtomicU64::new(0),
         last_rx_ms: AtomicU64::new(0),
+        remote_rms: AtomicU64::new(0),
+        remote_rms_peak: AtomicU64::new(0),
+        remote_rms_known: AtomicBool::new(false),
         audio_buf_ms: AtomicU64::new(0),
         audio_skips: AtomicU64::new(0),
         audio_skip_ms: AtomicU64::new(0),
@@ -248,6 +257,9 @@ fn json_str(s: &str) -> String {
 /// until the first audio arrives, and a genuinely starved path can still glitch
 /// before the next wider target has buffer to spend.
 const RING_FRAMES: usize = (RATE as usize) * 2 / 5;
+/// Fixed-point scale for the relay's reported loudness. Atomics have no lock-free f64
+/// add, and six decimals is far finer than anyone can hear a difference in.
+const RMS_FIXED_POINT: f64 = 1_000_000.0;
 const SCOPE_CHUNKS: usize = 64;
 const SCOPE_CHUNK_SAMPLES: usize = 16_384;
 
@@ -709,8 +721,24 @@ pub fn status_json() -> String {
         _ => "safe",
     };
     let audio_target_ms = l.audio_target_frames.load(Ordering::Relaxed) as u64 * 1000 / RATE as u64;
+    // Loudness is null, not zero, against a relay that does not report it. A client must
+    // be able to tell "the source is silent" from "this relay cannot say".
+    let (remote_rms, remote_rms_peak) = if l.remote_rms_known.load(Ordering::Relaxed) {
+        (
+            format!(
+                "{:.6}",
+                l.remote_rms.load(Ordering::Relaxed) as f64 / RMS_FIXED_POINT
+            ),
+            format!(
+                "{:.6}",
+                l.remote_rms_peak.load(Ordering::Relaxed) as f64 / RMS_FIXED_POINT
+            ),
+        )
+    } else {
+        ("null".to_string(), "null".to_string())
+    };
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"scope":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"remote_rms":{},"remote_rms_peak":{},"scope":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -731,6 +759,8 @@ pub fn status_json() -> String {
         json_str(latency_mode_name),
         audio_target_ms,
         l.audio_underruns.load(Ordering::Relaxed),
+        remote_rms,
+        remote_rms_peak,
         if scope.is_empty() {
             "null".to_string()
         } else {
@@ -1408,6 +1438,19 @@ fn reader(
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
                     *plock(&l.slots.scope) =
                         v.get("scope").map(|s| s.to_string()).unwrap_or_default();
+                    // Loudness of what the relay actually sent. This is the only way to
+                    // tell a silent source from a dead link: both draw nothing, but only
+                    // one is still receiving frames. Relays predating this field omit it,
+                    // so absence stays distinct from a genuine zero.
+                    if let Some(rms) = v.get("rms").and_then(|r| r.as_f64()) {
+                        l.remote_rms
+                            .store((rms * RMS_FIXED_POINT) as u64, Ordering::Relaxed);
+                        l.remote_rms_known.store(true, Ordering::Relaxed);
+                    }
+                    if let Some(peak) = v.get("rms_peak").and_then(|p| p.as_f64()) {
+                        l.remote_rms_peak
+                            .store((peak * RMS_FIXED_POINT) as u64, Ordering::Relaxed);
+                    }
                 }
             }
             _ => {} // unknown: skipped (forward compatibility)

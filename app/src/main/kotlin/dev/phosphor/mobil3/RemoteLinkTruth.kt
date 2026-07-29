@@ -30,6 +30,15 @@ enum class RemoteLinkState {
     /** Frames are arriving. This is the only state that means a live link. */
     STREAMING,
 
+    /**
+     * Frames are arriving and carrying silence.
+     *
+     * Reported only when the relay tells us its loudness. Against an older relay the
+     * state stays STREAMING, because "we cannot tell" must not be dressed up as a
+     * measurement.
+     */
+    SILENT,
+
     /** Frames stopped while the socket stayed open. Not a reconnect. */
     STALLED,
 
@@ -56,6 +65,16 @@ object RemoteLinkTruth {
     private const val KEY_LAST_ERROR = "last_error"
     private const val KEY_ERROR = "error"
     private const val KEY_FIX = "fix"
+    private const val KEY_REMOTE_RMS = "remote_rms"
+
+    /**
+     * Below this the window is silence rather than quiet music.
+     *
+     * Full-scale audio reads 1.0 and ordinary listening sits well above 0.001, while a
+     * muted or paused source reads exactly 0.0. The threshold sits just off zero so
+     * dither and a noise floor do not register as sound.
+     */
+    private const val SILENCE_RMS = 0.0005
 
     /**
      * Read one status document.
@@ -72,7 +91,17 @@ object RemoteLinkTruth {
                 // so geometry counts too. Either counter proves media is moving.
                 val frames = status.optInt(KEY_AUDIO_FRAMES) + status.optInt(KEY_GEOMETRY_FRAMES)
                 if (frames > 0) {
-                    RemoteLinkReading(RemoteLinkState.STREAMING, failure)
+                    // The relay reports the loudness of what it actually sent. Without it
+                    // a silent desktop and a broken link look identical: both draw
+                    // nothing. isNull() keeps an older relay's absent field distinct from
+                    // a genuine measured zero.
+                    val silent = !status.isNull(KEY_REMOTE_RMS) &&
+                        status.optDouble(KEY_REMOTE_RMS, -1.0) in 0.0..SILENCE_RMS
+                    if (silent) {
+                        RemoteLinkReading(RemoteLinkState.SILENT, failure)
+                    } else {
+                        RemoteLinkReading(RemoteLinkState.STREAMING, failure)
+                    }
                 } else {
                     RemoteLinkReading(RemoteLinkState.GREETED, failure)
                 }

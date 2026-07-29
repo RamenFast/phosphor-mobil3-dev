@@ -75,6 +75,63 @@ class RemoteLinkTruthTest {
     }
 
     @Test
+    fun aRelayReportingSilenceIsSilentNotJustStreaming() {
+        // The case that made this work necessary: 97 frames/sec arriving at rms 0.0 while
+        // the beam drew nothing, indistinguishable from a dead link.
+        val reading = RemoteLinkTruth.read(
+            status("""{"state":"streaming","rx_a":97,"rx_g":0,"remote_rms":0.0}"""),
+        )
+        assertEquals(RemoteLinkState.SILENT, reading.state)
+    }
+
+    @Test
+    fun audibleSoundIsStreamingRatherThanSilent() {
+        val reading = RemoteLinkTruth.read(
+            status("""{"state":"streaming","rx_a":97,"rx_g":0,"remote_rms":0.565686}"""),
+        )
+        assertEquals(RemoteLinkState.STREAMING, reading.state)
+    }
+
+    @Test
+    fun aVeryQuietPassageIsStillSoundNotSilence() {
+        // Quiet music must not be declared silent, or the state would flicker through
+        // every fade and rest in a track.
+        val reading = RemoteLinkTruth.read(
+            status("""{"state":"streaming","rx_a":97,"rx_g":0,"remote_rms":0.004}"""),
+        )
+        assertEquals(RemoteLinkState.STREAMING, reading.state)
+    }
+
+    @Test
+    fun anOlderRelayThatCannotReportLoudnessIsNeverCalledSilent() {
+        // Absence of the field means "cannot tell", which must not be dressed up as a
+        // measurement of silence. Older relays simply keep the previous behaviour.
+        val reading = RemoteLinkTruth.read(
+            status("""{"state":"streaming","rx_a":97,"rx_g":0}"""),
+        )
+        assertEquals(RemoteLinkState.STREAMING, reading.state)
+    }
+
+    @Test
+    fun anExplicitNullLoudnessIsAlsoTreatedAsCannotTell() {
+        // The engine emits null rather than 0.0 when the relay never reported loudness.
+        val reading = RemoteLinkTruth.read(
+            status("""{"state":"streaming","rx_a":97,"rx_g":0,"remote_rms":null}"""),
+        )
+        assertEquals(RemoteLinkState.STREAMING, reading.state)
+    }
+
+    @Test
+    fun silenceIsOnlyClaimedOnceMediaIsActuallyFlowing() {
+        // Before any frame arrives there is nothing to be silent about; that window is
+        // GREETED, and calling it silent would imply a working link too early.
+        val reading = RemoteLinkTruth.read(
+            status("""{"state":"streaming","rx_a":0,"rx_g":0,"remote_rms":0.0}"""),
+        )
+        assertEquals(RemoteLinkState.GREETED, reading.state)
+    }
+
+    @Test
     fun failureCarriesBothTheErrorAndItsFix() {
         // Every engine and relay error ships a fix. Before this, the fix was built and
         // then discarded, so the user got a dead end.

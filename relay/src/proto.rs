@@ -49,11 +49,14 @@ impl From<io::Error> for ReadErr {
     }
 }
 
+/// Frame header: one tag byte plus a big-endian u32 payload length.
+pub const HEADER_LEN: usize = 5;
+
 /// Assemble one full frame into a single buffer. The single-writer thread sends
 /// these whole — a frame is never split across writes, so mid-frame interleave
 /// (v1's corruption bug) is impossible by construction.
 pub fn encode_frame(tag: u8, payload: &[u8]) -> Vec<u8> {
-    let mut buf = Vec::with_capacity(5 + payload.len());
+    let mut buf = Vec::with_capacity(HEADER_LEN + payload.len());
     buf.push(tag);
     buf.extend_from_slice(&(payload.len() as u32).to_be_bytes());
     buf.extend_from_slice(payload);
@@ -186,6 +189,16 @@ pub struct Stats {
     pub tx_a: u64,
     pub tx_g: u64,
     pub dropped_a: u64,
+    /// Loudness of the audio sent since the previous K frame, 0.0..1.0.
+    ///
+    /// This is what lets a client tell a silent source from a dead link: both draw
+    /// nothing, but only one is still receiving frames. Optional, so a client built
+    /// before this field simply skips it.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rms: Option<f64>,
+    /// Loudest single sample in the same window, 0.0..1.0.
+    #[serde(skip_serializing_if = "Option::is_none")]
+    pub rms_peak: Option<f64>,
     /// Live desktop scope state (probe reply subset) while geometry streams —
     /// the phone's honesty source for mode/gain/auto (`auto · pc`). Absent when
     /// desktop phosphor isn't running. Old phones skip unknown JSON keys.

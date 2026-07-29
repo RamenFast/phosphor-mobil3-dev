@@ -702,6 +702,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     // Greeted but no frame yet. The old code called this connected, which
                     // claimed a live link before anything had flowed.
                     "GREETED" -> "remote · waiting for audio"
+                    // The relay says it is sending silence. Without this the user sees a
+                    // dark scope and cannot tell whether the desktop is quiet or the link
+                    // is broken.
+                    "SILENT" -> "remote · $host · no sound"
                     // Frozen socket, not a dropped one. Acceptance H-04 forbids showing a
                     // frozen live trace, and this is what stops that happening.
                     "STALLED" -> "remote · signal stalled"
