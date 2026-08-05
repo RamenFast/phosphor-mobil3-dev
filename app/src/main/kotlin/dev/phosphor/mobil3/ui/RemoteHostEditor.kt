@@ -175,8 +175,16 @@ fun RemoteHostEditor(
  *
  * This is the first thing a Play user sees, so it has to be honest: Phosphor does not
  * host anything. It explains the one real precondition (a desktop running the relay,
- * reachable on your own network) without pretending a service exists.
+ * reachable through the user's private Tailscale tailnet) without pretending a service
+ * exists or promising LAN addresses that the endpoint validator correctly refuses.
  */
+internal const val RemoteEmptyStateText =
+    "No relay saved.\n\n" +
+        "Phosphor can scope a desktop's audio over your private tailnet. " +
+        "Run phosphor-relay on that machine, connect both devices to Tailscale, " +
+        "then add its tailnet address below.\n\n" +
+        "Nothing is hosted by Phosphor and no audio leaves your tailnet."
+
 @Composable
 fun RemoteEmptyState(p: Palette) {
     Box(
@@ -186,11 +194,7 @@ fun RemoteEmptyState(p: Palette) {
             .padding(Dim.rowPad),
     ) {
         Mono(
-            "No relay saved.\n\n" +
-                "Phosphor can scope a desktop's audio over your own network. " +
-                "Run phosphor-relay on that machine, reach it over a VPN such as " +
-                "Tailscale or your LAN, then add its address below.\n\n" +
-                "Nothing is hosted by Phosphor and no audio leaves your network.",
+            RemoteEmptyStateText,
             p.muted,
             Type.data,
             maxLines = 12,
