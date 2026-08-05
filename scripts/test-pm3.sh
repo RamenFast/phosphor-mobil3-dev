@@ -51,7 +51,7 @@ fi
 [ "${1:-}" = "-s" ] || exit 9
 shift 2
 case "${1:-}" in
-  install) printf 'Success\n' ;;
+  install) printf 'Performing Streamed Install\nSuccess\n' ;;
   exec-out) printf '\211PNG\r\n\032\nfixture' ;;
   pull)
     if [[ "${2:-}" = */base.apk ]]; then cp "$PM3_TEST_APK" "$3"; else printf 'fixture-mp4' >"$3"; fi

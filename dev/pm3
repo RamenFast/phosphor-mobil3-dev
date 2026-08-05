@@ -367,7 +367,8 @@ case "$VERB" in
     output="$(adb_s install -r "$apk" 2>&1)" || fail 4 install_failed \
       "install failed: $output" "check device storage, signing lineage, and install prompts"
     output="${output//$'\r'/}"
-    [ "$output" = Success ] || fail 4 install_failed "install failed: $output" \
+    install_result="$(printf '%s\n' "$output" | awk 'NF { line = $0 } END { print line }')"
+    [ "$install_result" = Success ] || fail 4 install_failed "install failed: $output" \
       "check package signing lineage, device storage, and install prompts"
     package_dump="$(adb_s shell dumpsys package "$(package_id)" 2>&1)" || fail 4 package_query_failed \
       "installed package query failed: $package_dump" "verify the explicit serial remains connected"
