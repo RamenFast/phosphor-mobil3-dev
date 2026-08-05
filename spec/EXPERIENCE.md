@@ -1,329 +1,113 @@
 # Experience specification
 
-**Status:** Binding
-**Design thesis:** Sharp Stone, Living Signal
+## 1. Instrument hierarchy
 
-## 1. Motion grammar
+The signal is the primary surface. Controls must not divide the display into a permanent dashboard.
 
-Motion has four legitimate causes:
+The app uses one activity with a full-bleed scope surface and transient Compose chrome. A visible state must have one clear owner.
 
-1. direct user manipulation;
-2. accepted state transition;
-3. real audio or beam energy;
-4. real connection, agent, or lifecycle state.
+## 2. Motion
 
-An animation without one of these causes is decorative theater and SHOULD be removed.
+Motion must explain where an element came from, who owns the gesture, and what state changed.
 
-### 1.1 Motion roles
+A dragged sheet follows the finger without a delayed catch-up. Release motion continues from the measured position and velocity. Dismissal leaves in the same direction as the controlling gesture.
 
-| Role | Behavior |
-|---|---|
-| Direct manipulation | One-to-one with the finger, no easing while held |
-| Settle | Velocity and distance aware after release |
-| State change | Short transition that names the old and new state |
-| Signal response | Derived from drained audio/beam values, stops on silence |
-| Presence | Derived from attached Nexus session and real commands |
-| Error/recovery | Communicates failure, backoff, retry, or repair |
+Reduced motion must remove decorative travel and repeated effects. It must preserve state feedback and touch ownership.
 
-Room personality may change the settle rail, sound, tint, and dimensional treatment. It MUST NOT fork control logic.
+## 3. Gesture ownership
 
-### 1.2 Reduced motion
+One recognizer owns each pointer sequence.
 
-Reduced motion keeps:
+Priority order:
 
-- direct tracking;
-- visible selected state;
-- provenance;
-- capture/link truth;
-- static signal tint where needed.
+1. An open sheet or popout owns gestures inside its bounds.
+2. A direct control owns a gesture that started on that control.
+3. Edge and console gestures own their documented activation regions.
+4. Scope gain or orbit owns only the remaining stage gesture.
 
-It removes or shortens travel, breathing, overshoot, and parallax. A reduced-motion cut should complete within 80 ms where a transition is necessary.
+A scope adjustment must not activate while the user is opening, moving, or dismissing chrome.
 
-## 2. Sheet behavior
+## 4. Sheets and popouts
 
-### 2.1 Held state
+A sheet must enter from the physical edge associated with its control and current orientation.
 
-`position = pointer displacement`, sampled synchronously. A 200 px finger movement produces 200 px plus or minus 2 px of sheet travel in instrumentation.
+The sheet must respect safe drawing insets, display cutouts, and rounded physical corners. Android 10 and 11 devices without rounded-corner metrics use safe-drawing fallbacks.
 
-Do not call `Animatable.snapTo` through a newly launched coroutine on every pointer delta. Use raw drag state during ownership and hand the final position/velocity to animation only on release.
+Back, scrim, close control, and dismissal gestures must converge on one exit path.
 
-### 2.2 Release state
+## 5. Rotation authority
 
-Open/close is decided by velocity plus a 40 percent travel threshold. Fast intentional flick may win below threshold. Slow release below threshold returns.
+Android system rotation lock has final authority.
 
-Dismiss paths are exactly:
+When system rotation is locked, the app must show its dependent orientation controls as unavailable and explain why. The app must preserve the current usable orientation instead of fighting the system.
 
-- close button;
-- scrim tap;
-- drag past dismiss threshold;
-- system Back.
+On large screens, foldables, desktop windows, and multi-window layouts, the interface must remain usable when Android ignores requested orientation.
 
-Pointer drift outside bounds is not dismissal.
+## 6. Capture consent
 
-### 2.3 Edge and orientation
+The source surface must explain microphone permission before requesting it.
 
-- Portrait primary sheets rise from the bottom.
-- Landscape primary sheets enter from the screen-right edge.
-- Both landscape quadrants use the same screen-relative right side.
-- Insets are transformed into the chrome coordinate space after rotation.
-- Enter and exit use the same edge.
+When playback capture starts:
 
-## 3. Rotation settings
+1. Request microphone permission if playback capture needs it.
+2. Open Android's MediaProjection consent.
+3. Start the typed foreground service.
+4. Publish starting, flowing, silence, revoked, and error states honestly.
 
-The settings model exposes:
+On Android 14 and newer, the capture request selects the complete default display. On Android 10 through 13, the platform prompt already captures the complete display.
 
-```text
-system_rotation = locked | unlocked | unknown
-system_quadrant
-scope_lock.desired
-scope_lock.effective
-ui_lock.desired
-ui_lock.effective
-authority = android | phosphor
-availability
-fix
-```
+The app must not reprompt while a valid capture session is flowing.
 
-When Android is locked, app controls are greyed but readable. Copy example:
+## 7. Source truth
 
-> Android rotation lock is holding this view. Unlock rotation in Quick Settings to let Phosphor change it.
+The interface must distinguish:
 
-The app does not open hidden settings or use sensor authority to silently defeat the system decision.
+- no selected source
+- permission required
+- capture starting
+- capture flowing with audio
+- capture flowing but silent
+- remote connected with no sound
+- remote stalled
+- remote reconnecting
+- unsupported or opted-out content
 
-## 4. Gesture arbitration
+A black beam alone is not enough to communicate these states.
 
-### 4.1 Ownership order
+## 8. Picture-in-picture
 
-1. Android system edges
-2. Active sheet or scrim
-3. Compose/drawing mode
-4. Visible control
-5. Stage
+Picture-in-picture must retain the live scope and current source truth.
 
-Once recognized, ownership cannot transfer. A pinch cannot begin after a one-finger gain action already mutated state. A sheet touch never leaks to the stage.
+Android 12 and newer may use automatic entry. Android 10 and 11 use a compatible manual entry path.
 
-### 4.2 One-finger arm
+The app must update the source rectangle and aspect ratio after configuration changes.
 
-State machine:
+## 9. Themes, beam, and grid
 
-```text
-idle -> candidate -> armed -> adjusting -> completed
-                 \-> cancelled
-```
+Existing rooms and beam controls remain available. The cleanup must not replace them with generic Material surfaces.
 
-- Candidate begins after a stage contact that is not a tap/double-tap decision yet.
-- A 1500 ms ring is centered on the original contact.
-- Movement beyond cancellation slop before completion cancels.
-- Second pointer cancels candidate and transfers to the two-finger recognizer before any one-finger mutation.
-- On arm, haptic and subtle ring completion occur in the same frame.
-- The ring follows room tokens but remains high contrast.
-- View lock disables candidate creation and shows a brief locked indicator instead.
+Theme, beam, grid, glow, motion, and photosensitivity settings must persist without retaining behavioral history.
 
-Sensitivity after arm is density-independent and based on normalized stage distance, not raw pixels.
+Controls must keep sufficient contrast against both black and tinted grounds.
 
-## 5. Living chrome and beam state
+## 10. Haptics and sound
 
-Chrome liveness states:
+Existing haptics remain restrained and purposeful. The cleanup does not introduce a new UI-sound system.
 
-| State | Cause | Visual behavior |
-|---|---|---|
-| `live` | valid source, flowing audio above floor | beam tint and allowed energy response |
-| `hold` | paused or short transient silence | last tint held, no breathing |
-| `no_signal` | connected source silent past window | tint drains to structural accent, resting beam |
-| `absent` | no source/capability | structural chrome only |
-| `stalled` | transport exists but data stopped | still warning state, never live breathing |
+A future sound system requires a separate specification for categories, accessibility, and defaults.
 
-The UI MUST render `no signal · <source>` and a centered resting beam where appropriate. A stale trace is not a valid no-signal face.
+## 11. Accessibility and disclosure
 
-## 6. Grid and ground editor
+Permission copy must name the feature, the data path, and the system surface that opens next.
 
-LIGHT settings add:
+The privacy surface must be reachable in-app. It must state that Phosphor has no analytics, ads, behavior tracking, or silent reporting.
 
-- grid enabled;
-- grid color;
-- grid alpha;
-- grid major/minor balance if renderer supports it;
-- ground/background color;
-- ground alpha;
-- ground tint amount;
-- reset to room default.
+The remote surface must state that the relay belongs on a trusted local network or Tailscale.
 
-On true black, the default grid must pass a visual threshold on the target S25 in a dark room while remaining subordinate to the beam. Theme packs may supply defaults, and user overrides remain separate from room defaults.
+## 12. Performance
 
-## 7. Beam color editor
+The scope should render at the selected supported panel cadence without allocating or crossing JNI per frame.
 
-### 7.1 Model
+Touch feedback must begin in the frame that accepts ownership. Long work must not block the main thread or relay control loop.
 
-```text
-kind = solid | multi_stop | random | spectrum_glide
-stops[1..16+]
-advance = manual | timer | track
-interpolation = direct | full_spectrum
-random.allowed_hues
-random.banned_hues
-random.saturation_range
-random.value_range
-```
-
-Black is excluded from random beam generation. Very low luminance colors are either rejected or raised to a configurable minimum.
-
-### 7.2 Controls
-
-- `+` adds a stop.
-- Reorder is direct and animated.
-- Each stop supports manual entry and color picker.
-- Random is a real checkbox/switch with immediate state feedback.
-- `FULL-SPECTRUM GLIDE` is a separate switch.
-- An undo/revert affordance appears after destructive edits.
-
-## 8. Theme room and packs
-
-### 8.1 Shelf
-
-Six curated room tiles appear first. A separate `PACKS` section contains installed packs and an unambiguous `+` action.
-
-Legacy first-party rooms are not deleted. They are importable as a maintained first-party pack and migrated automatically for a user currently selecting one.
-
-### 8.2 Pack format
-
-Use a ZIP-based `.phostheme` container with a mandatory `theme.json`. Individual rooms MAY export as `.phosroom` JSON.
-
-Required metadata:
-
-```text
-schema
-id
-label
-version
-author
-license
-rooms
-minimum_engine
-assets manifest
-```
-
-Colors support hex or normalized RGBA. Unknown optional fields are skipped and reported. Unknown major schema versions refuse with a fix.
-
-Validation covers:
-
-- archive traversal and size limits;
-- schema and enum values;
-- token completeness/defaulting;
-- contrast and focus visibility;
-- bounded animation/workload;
-- asset type and dimensions;
-- duplicate IDs;
-- license/source metadata.
-
-Low contrast may be previewed with a clear warning but cannot become the default without an explicit user confirmation. Safety and trust surfaces always use protected system tokens that a pack cannot make invisible.
-
-### 8.3 AI authoring
-
-The theme screen includes an AI/star-circuit symbol with the label `MAKE WITH AI`. It opens a local explanation, copyable prompt template, manual schema, and GitHub guide. If Nexus is attached, `ASK NEXUS TO MAKE A ROOM` creates a proposed pack through the normal validation and preview path.
-
-## 9. UI sounds and haptics
-
-Sound categories:
-
-| Category | Examples |
-|---|---|
-| Navigation | open/close sheet, move detent |
-| Controls | mode/source/value detents |
-| Commit | keep theme, confirm source |
-| Live | arm/disarm capture, link established/lost |
-| Theme | room settle |
-| Warning | denial or invalid action |
-
-Rules:
-
-- zero ambient or idle sounds;
-- no sound on high-frequency continuous changes;
-- haptic, visual, and sound occur together for discrete events;
-- volume is capped and routed as assistance sonification;
-- respect system volume, calls, do-not-disturb behavior, and reduced-sound preference;
-- do not request audio focus that interrupts music;
-- suppress sounds from any audio analysis or recording feed.
-
-## 10. OOBE script
-
-### Beat 1, under 8 seconds
-
-Copy:
-
-> This is a vectorscope for your music. Left and right channels pull the beam. The shape is the stereo signal itself.
-
-Play a bundled, quiet, band-limited stereo example and draw it immediately. A short captioned narration speaks the same explanation, starts at a conservative level, and has an always-visible mute action. The beam and geometry act as Phosphor's mouth by changing exactly with the narrated stereo example. Buttons: `MUTE`, `SKIP`, `CONTINUE`.
-
-### Beat 2, under 8 seconds
-
-Show two or three basic hints over the stage:
-
-- tap for controls;
-- choose a source;
-- hold until the ring completes, then drag to adjust.
-
-Offer `QUICK START` and `FULL TOUR`.
-
-### Beat 3, under 10 seconds
-
-Explain source truth:
-
-> Phosphor can play files, use the microphone, connect to your computers, or visualize other apps. Android lets some apps block capture. If a source is silent, Phosphor will tell you what it knows.
-
-Buttons: `PICK A SOURCE`, `ENTER PHOSPHOR`.
-
-The first-run commercial and diagnostics setup may follow as a Phosphor sheet, but it cannot obscure the fact that the trial is free, does not auto-renew, and diagnostics can be off.
-
-## 11. PiP
-
-PiP entry is conditional on the PiP setting and a valid display/source state. It is not unconditional on Home.
-
-Required behavior:
-
-- on/off setting;
-- auto-enter choice;
-- play/pause action when the current source supports it;
-- tap expands;
-- no chrome beyond system PiP affordances and scope status;
-- no-signal face on silence;
-- agent field `display.mode = pip`.
-
-## 12. Transparent overlay
-
-The overlay is a separate user-owned window mode.
-
-Controls:
-
-- enable/disable;
-- center color;
-- center opacity;
-- fade radius and softness;
-- size and aspect;
-- interactive/click-through;
-- show minimal HUD;
-- opacity cap;
-- burn-in shift;
-- quiet-state frame cap.
-
-The overlay notification includes `HIDE`, `INTERACTIVE/CLICK-THROUGH`, and `OPEN PHOSPHOR` actions. Denial or unavailable policy state degrades to PiP without nagging.
-
-## 13. Nexidex respondent
-
-Phosphor HUD states:
-
-- detached: nothing;
-- authenticating: small still eye outline and label;
-- observing: open eye plus session identity;
-- driving: hand/beam interaction linked to the affected control;
-- error/revoked: still, concise fix, then decay.
-
-Nexus-driven controls animate exactly as human-driven controls do because both dispatch the same action. A small `NEXUS` provenance designator remains long enough to be perceived and is available persistently in details/audit.
-
-## 14. Performance budgets
-
-- Direct manipulation: target input-to-visual latency under one display frame, no intentional coroutine delay.
-- Scope: preserve 120 Hz target where currently possible.
-- ProjectM field: 30 or 60 Hz quality tier, never forces true beam below its minimum budget.
-- UI animation: no sustained jank over 1 percent on target-device macrobenchmark.
-- No per-frame JNI introduced by these features.
-- No second audio capture path merely because PiP or overlay is visible.
+Lifecycle transitions must release surfaces, capture sessions, players, callbacks, and network bindings without leaks or overlapping owners.

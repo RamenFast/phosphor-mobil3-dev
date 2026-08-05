@@ -1,79 +1,50 @@
-# Handoff — v2 is installable; two things wait on Ben
+# Handoff: primetime cleanup in progress
 
-**State:** `release/phosphor-2.0.0` at `586f5c7`, working tree clean, 13/13 gates green.
-**Base for rollback:** `62d7d59`, tag `checkpoint/phosphor-2.0.0-phase-05b2`.
+**Scope decision:** `decisions/2026-08-05-product-scope-reset.md`
 
-Run `scripts/ship-check.sh` before trusting anything below. It re-establishes all 13
-gates from scratch and takes about a minute.
+**Rollback tag:** `checkpoint/phosphor-2.0.0-pre-primetime-cleanup`
 
-## What Ben can do right now
+**Protected baseline receipt:** `docs/dev/receipts/primetime-cleanup/phase-00-baseline.md`
 
-Install the prerelease:
+## Current state
 
-```bash
-adb -s 100.102.2.83:5555 install -r \
-  "/media/ben/Mass storage/agenticTinkering/Codex/phosphor-2.0/v2.0.0-fortress-prerelease/phosphor-fortress-2.0.0.apk"
-```
+Ben approved a repository and product reset on 2026-08-05.
 
-It is already installed as of this session. It sits beside v1.0.7 as a separate package,
-and v1.0.7's `firstInstallTime` was verified byte-identical through every install cycle.
+The active target is one Play-safe Android app with Android 10 support. Nexus, product-agent control, tracking-like audit state, Fortress distribution, privileged capture research, ProjectM promises, and dormant commerce scaffolding leave the active product.
 
-Both estate relays are live and carrying the new loudness field:
-`interserve-linux` 100.114.165.77 and `thinkcenter` 100.66.109.56.
+Local playback, microphone and MediaProjection capture, the existing scope interface, Tailscale connectivity, and PC relay playback remain.
 
-## The one open item
+The three pre-existing dirty files are preserved byte-for-byte under `docs/dev/archive/2026-08-05-scope-reset/protected/`. The active working tree no longer depends on them.
 
-**Play commerce, the billing half.** The decision layer is built and tested:
-`EntitlementPolicy` and `TrialClock`, 26 tests, both verified failable by breaking them.
-That part needed no keystore, so it is done.
+## Execution order
 
-What remains genuinely needs Ben:
+1. Replace the active product authority and archive obsolete planning documents.
+2. Remove Nexus, causal authority, audit, and dormant entitlement code.
+3. Collapse Play and Fortress into one debug/release build.
+4. Lower `minSdk` to 29 and add platform compatibility adapters.
+5. Harden capture permission ordering and preserve relay behavior.
+6. Run the complete Android, Rust, relay, shell, privacy, and artifact gates.
+7. Reconcile Git history into `main`.
+8. Build, verify, and install the canonical release.
 
-- a Play upload keystore (`~/.secrets/` holds only the Fortress JKS)
-- a published HTTPS privacy policy URL
+## Current release truth
 
-Those unlock a Play Console entry, without which `BillingClient` wiring cannot be
-validated at all: the purchase, acknowledge, restore and pending paths have no observable
-responses to test against. Building it blind would produce untestable code. The paywall
-sheet and trial storage are costed line by line in `docs/plans/V2-FEATURE-LEDGER.md`,
-each naming the existing pattern to copy.
+No existing `2.0.0` APK or AAB is a release candidate. Several differently hashed artifacts share the same version identity.
 
-## The link states are done
+The next release must be rebuilt from the final tagged source. Its build manifest must bind the commit, package, version, signer, and hashes.
 
-All five reachable states have device evidence, read straight off the S25 with
-`dumpsys media_session`, which needs no unlocked screen:
+## Human gates
 
-| forced condition | what the phone said |
-|---|---|
-| relay up, desktop idle | `connected, no sound · interserve-linux` |
-| 440 Hz sine playing | `remote · interserve-linux` |
-| `kill -STOP` the relay | `signal stalled · interserve-linux` |
-| `kill -CONT` to recover | `connected, no sound · interserve-linux` |
-| closed port | `reconnecting · deadport` |
+- Push to private or public `main`.
+- Production signing-key custody and Play upload-key provisioning.
+- Publishing the HTTPS privacy policy.
+- Any uninstall required by an incompatible production signer.
+- Final GitHub publication and Play Console submission.
 
-`scripts/force-link-states.sh` reproduces the wire conditions on demand against a
-sacrificial relay, so this is repeatable rather than a one-off. `authenticated` stays
-not-applicable: protocol v2 has no authentication, which is a defect in acceptance L-04
-rather than in the code.
+## Durable boundaries
 
-## Where the truth lives
-
-| question | file |
-|---|---|
-| what actually works, with the command that proves each row | `docs/plans/V2-FEATURE-LEDGER.md` |
-| the relay link's honest state model | `docs/dev/receipts/phosphor-2.0/phase-B-remote-truth.md` |
-| what Play still needs | `docs/dev/GOOGLE-PLAY-PUBLISHING-PLAN.md` §4.2 |
-| the wire contract, including `K.rms` | `docs/BRIDGE.md` |
-| the way back to v1 | `.../phosphor-2.0/v1-rollback-safety-net/RESTORE.md` |
-
-## Two habits worth keeping
-
-**Docs drift, and stale docs cost more than missing ones.** The publishing plan listed
-three blockers that were already fixed and omitted two that were real. Every row in the
-ledger now cites a re-runnable command precisely so the next reader can re-measure rather
-than inherit an old belief.
-
-**Twice this session I wrote down a blocker that was really an untested assumption**, and
-both times the error pointed toward doing less work: "no shell on interserve-linux" (it is
-this workstation) and "thinkcenter unreachable" (an unaccepted host key). Both are
-corrected in the commit history. When a blocker appears, test it before recording it.
+- Do not author or invoke Python.
+- Use explicit S25 serial `100.102.2.83:5555` for every ADB action.
+- Keep protocol v2 inside a trusted local network or Tailscale.
+- Do not redesign relay authentication during this cleanup.
+- Do not infer the next two core features from archived plans.

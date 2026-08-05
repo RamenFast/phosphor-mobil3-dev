@@ -1,58 +1,47 @@
 # Phosphor specification cabinet
 
-**Status:** Source of truth for Phosphor `2.0.0`
-
-This directory is the normative Ti specification for the next Phosphor Mobile build. Read the Fi source first:
-
-1. [`../vision/PHOSPHOR-LIVING-INSTRUMENT.md`](../vision/PHOSPHOR-LIVING-INSTRUMENT.md)
-2. [`PRODUCT.md`](PRODUCT.md)
-3. [`EXPERIENCE.md`](EXPERIENCE.md)
-4. [`NEXIDEX-PROTOCOL.md`](NEXIDEX-PROTOCOL.md)
-5. [`NEXUS-RULINGS-2026-07-22.md`](NEXUS-RULINGS-2026-07-22.md)
-6. [`AUDIO-CONNECTIVITY-AND-PROJECTM.md`](AUDIO-CONNECTIVITY-AND-PROJECTM.md)
-7. [`DISTRIBUTION-PERMISSIONS-AND-SIGNING.md`](DISTRIBUTION-PERMISSIONS-AND-SIGNING.md)
-8. [`ACCEPTANCE.md`](ACCEPTANCE.md)
-9. [`../docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md`](../docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md)
-10. [`../decisions/2026-07-25-phosphor-2.0-release-contracts.md`](../decisions/2026-07-25-phosphor-2.0-release-contracts.md)
+The vision and specification are the product source. The implementation compiles from them and must not introduce a hidden product decision.
 
 ## Authority order
 
-When documents disagree, use this order:
+Use the first applicable source:
 
-1. Ben's latest explicit instruction.
-2. The Fi vision.
-3. This spec cabinet.
-4. The ratified decision record in `decisions/`.
-5. The implementation handoff.
-6. Existing `docs/UX-SPEC.md`, `docs/ARCHITECTURE.md`, and `docs/BRIDGE.md` where not superseded.
-7. Current implementation behavior.
+1. Ben's current direction.
+2. The newest accepted file in `decisions/`.
+3. `vision/PHOSPHOR-LIVING-INSTRUMENT.md`.
+4. The active files in `spec/`.
+5. `README.md`, `docs/ARCHITECTURE.md`, `docs/REMOTE.md`, and `docs/BRIDGE.md`.
+6. Living ledgers in `docs/`.
+7. Implementation and tests.
+8. Historical documents under `docs/dev/archive/`, old decisions, and receipts.
 
-Current behavior is evidence, not authority, when this cabinet deliberately changes it.
+Historical material can explain why code exists. It cannot restore removed scope.
 
-## Requirement labels
+## Active specifications
 
-- **MUST:** release or architecture invariant.
-- **SHOULD:** expected unless a documented measurement or policy fact justifies deviation.
-- **MAY:** compatible option.
-- **PLAY:** applies to the Google Play artifact.
-- **FORTRESS:** applies to the Ben-signed development artifact.
-- **BOTH:** applies to both artifacts.
-- **SPIKE:** must be empirically proven before implementation is treated as available.
-- **LATER:** designed now, not required to reach the first Play release.
+- `PRODUCT.md`: product boundary, state, privacy, and supported capabilities.
+- `EXPERIENCE.md`: interaction, motion, rotation, and visible-state rules.
+- `AUDIO-AND-CONNECTIVITY.md`: local, capture, microphone, and PC relay contracts.
+- `DISTRIBUTION-PERMISSIONS-AND-SIGNING.md`: package, build, permissions, signing, and release identity.
+- `ACCEPTANCE.md`: observable release gates.
 
-## Definition of done for a feature
+## Requirement terms
 
-A feature is not complete until it has:
+- **Must:** release-blocking invariant.
+- **Should:** expected behavior that needs a recorded disposition if absent.
+- **May:** optional behavior that cannot weaken a must-level rule.
+- **Deferred:** excluded from this development stage and not promised by the active product.
 
-1. one causal state model;
-2. a human surface;
-3. an agent surface where applicable;
-4. provenance for mutations;
-5. an honest unavailable/error state with a fix;
-6. reduced-motion and accessibility behavior;
-7. performance and lifecycle tests;
-8. an acceptance receipt named in `ACCEPTANCE.md`.
+## Definition of done
 
-## Current implementation status
+A change is done when:
 
-The Phosphor 2.0 release program is active on `release/phosphor-2.0.0`. Phase 00 commit `70c8e2860bfe22310dd41bb341b19202580fef56` changed documentation and evidence only. The application remains the 1.0.7 implementation until later phase receipts name compiled behavior. Specifications are requirements, never proof that a feature is live.
+1. The active source documents describe the behavior.
+2. The implementation contains no conflicting legacy path.
+3. Automated tests cover deterministic contracts.
+4. Device checks cover Android-owned consent and lifecycle behavior.
+5. Privacy, package, artifact, and network scans pass.
+6. The result has a rollback point and a receipt.
+7. Public documentation describes only measured product truth.
+
+Compilation alone is not acceptance.
