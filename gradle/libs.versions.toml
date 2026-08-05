@@ -7,16 +7,24 @@ composeBom = "2026.06.01"
 activityCompose = "1.13.0"
 coreKtx = "1.17.0"
 lifecycle = "2.10.0"
+documentFile = "1.1.0"
+junit4 = "4.13.2"
+json = "20240303"
+bundletool = "1.18.3"
 
 [libraries]
 androidx-core-ktx = { group = "androidx.core", name = "core-ktx", version.ref = "coreKtx" }
 androidx-activity-compose = { group = "androidx.activity", name = "activity-compose", version.ref = "activityCompose" }
 androidx-lifecycle-runtime-compose = { group = "androidx.lifecycle", name = "lifecycle-runtime-compose", version.ref = "lifecycle" }
+androidx-documentfile = { group = "androidx.documentfile", name = "documentfile", version.ref = "documentFile" }
 compose-bom = { group = "androidx.compose", name = "compose-bom", version.ref = "composeBom" }
 compose-ui = { group = "androidx.compose.ui", name = "ui" }
 compose-foundation = { group = "androidx.compose.foundation", name = "foundation" }
 media3-session = { group = "androidx.media3", name = "media3-session", version.ref = "media3" }
 media3-common = { group = "androidx.media3", name = "media3-common", version.ref = "media3" }
+junit4 = { group = "junit", name = "junit", version.ref = "junit4" }
+json = { group = "org.json", name = "json", version.ref = "json" }
+bundletool = { group = "com.android.tools.build", name = "bundletool", version.ref = "bundletool" }
 
 [plugins]
 android-application = { id = "com.android.application", version.ref = "agp" }

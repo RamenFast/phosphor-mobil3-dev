@@ -23,6 +23,7 @@ class SettingsArchiveTest {
             "gain" to 1.25f,
             "grid" to true,
             "mode" to 4,
+            "remote_network_mode" to 2,
             "host" to "private-host",
             "consent_seen" to true,
         )
@@ -30,7 +31,7 @@ class SettingsArchiveTest {
         val second = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], preferences.toSortedMap())
         assertEquals(first.contentSha256, second.contentSha256)
         assertEquals(listOf("gain", "grid", "mode", "room"), first.exportedKeys)
-        assertEquals(listOf("consent_seen", "host"), first.skippedKeys)
+        assertEquals(listOf("consent_seen", "host", "remote_network_mode"), first.skippedKeys)
         assertFalse(first.json.contains("private-host"))
 
         val imported = SettingsArchive.decode(first.json)

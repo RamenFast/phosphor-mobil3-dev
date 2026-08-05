@@ -1,176 +1,94 @@
-# Phosphor Mobile v2 — feature ledger
+# Phosphor Mobile v2 feature ledger
 
-**Purpose:** one place holding the *true* state of every feature, so nobody rebuilds
-something that works or ships something that only looks finished.
+**Measured:** 2026-08-05
 
-**The law of this file:** a state is set from a **real check**, never inferred from a
-commit message, a plan, or another document. Every row names the command or file:line
-that established it. A row without a citation is a defect, not a row.
+Status values:
 
-**States:** `works` (verified running) · `partial` (real but incomplete) ·
-`stub` (shape exists, no behavior) · `absent` (not built)
+- `implemented`: present in source and covered by an automated check.
+- `device-check`: implemented but still needs field evidence.
+- `deferred`: intentionally left for a later stage.
+- `blocked`: requires an external human or credential gate.
 
-**Why this exists:** `docs/PLAN-GAP.md` diagnosed the problem precisely — *"a plan
-written from commit messages inherits their optimism."* Several documents in this repo
-had already drifted from the code. Three examples caught on 2026-07-28 alone are in the
-"corrections" section below.
+## Core instrument
 
-Last full verification: **2026-07-28**, via `scripts/ship-check.sh` (13/13 gates green).
-
----
-
-## Corrections made 2026-07-28 (docs that were wrong)
-
-These mattered enough to name. Each cost, or would have cost, real time.
-
-| Claim | Where | Reality | Command that proved it |
-|---|---|---|---|
-| "126 lint errors, including 125 Media3 opt-in errors" is a release blocker | `docs/dev/GOOGLE-PLAY-PUBLISHING-PLAN.md` §4.2 | **0 errors**, 48 warnings, 30 hints. Already fixed by `@OptIn` annotations on `master`. | `./gradlew :app:lintPlayRelease` then read `app/build/reports/lint-results-playRelease.txt` |
-| "Release signing silently falls back to the debug key" | same, §4.2 | Already fails closed. The task refuses to run without complete inputs. | `./gradlew :app:lintPlayRelease` fails at `:app:verifyPlayReleaseSigning` |
-| "Resting-beam dot not yet on mobile (M5)" | `docs/SERIOUS-TODOS.md` | Implemented and wired. | `ui/ScopeUiState.kt:79`, `ui/Console.kt:93` |
-| "M4 remainder: mic source" pending | `docs/SERIOUS-TODOS.md` | Implemented via `startMic()` and a permission flow. | `MainActivity.kt:797-804` |
-| ">120 oversampling lever" needs wiring | `docs/SERIOUS-TODOS.md` | Shipped; the live device prefs show `oversample=2`. | `MainActivity.kt:1089`, device `phosphor.prefs.xml` |
-
----
-
-## Core instrument (the v1 product)
-
-| Feature | State | Evidence |
+| Capability | Status | Evidence or next check |
 |---|---|---|
-| Beam renderer, scope modes, GPU path | `works` | v1.0.7 released and in daily use; 32/32 Rust tests via `cargo test` in `rust/` |
-| Local file/folder playback deck | `works` | `PhosphorPlayer.kt`; shipped since 1.0.0 |
-| MediaProjection playback capture | `works` | `CaptureService.kt`; consent flow at `MainActivity.kt:806-812` |
-| Microphone source | `works` | `MainActivity.kt:797`; corrects the stale TODO above |
-| Themes / rooms / palettes | `works` | `ui/Palette.kt`, `ui/LightSheet.kt`; device prefs show `room=dark` |
-| Rotation + UI placement lock | `works` | 1.0.7 release notes; device prefs `ui_locked_orientation=1` |
-| Rotation *feel* (detent) | `works` | `RotationDetent`, 9 tests. Was a symmetric ±30° window that flipped the chrome the instant the phone crossed 45°; now asymmetric (hold 38°, commit 18°) so a lean holds and a real turn lands at once. Verified failable by restoring the symmetric window. |
-| Landscape sheet entry | `works` | `SheetEntryPolicy`, 5 tests. Locked landscape slides in from one fixed anchored edge; unlocked rises from centre at the console's own 620dp. Old behaviour (entry keyed on `landscape` alone) fails 3 of the 5. |
-| MediaProjection consent default | `works` | `MediaProjectionConfig.createConfigForDefaultDisplay()`, confirmed in the shipped dex. Previously Android preselected "Share one app" while the row said "everything playing". |
-| Capture re-prompt while live | `works` | `startCapture()` returns early when already capturing. The per-**session** prompt cannot be removed: MediaProjection tokens are single-use by design and Android 16 has no persistent grant. |
-| SoundCloud capture | `not possible` | Sets `ALLOW_AUDIO_CAPTURE_BY_NONE`, so it arrives as silence regardless. Its glyph was removed from the compatibility marks and the prose names it, so the silence explains itself. |
-| Screen stays awake under the scope | `works` | `FLAG_KEEP_SCREEN_ON`; on device `SCREEN_BRIGHT_WAKE_LOCK ws=WorkSource{10435 dev.phosphor.mobil3.fortress}`, standby bucket 10 (ACTIVE), FGS running. No battery-optimisation exemption requested: Doze only applies with the screen off, so it would buy nothing and is a Play-policy liability. |
-| Audio latency modes | `works` | 80 / 150 / 250 ms floors, and safe is deliberately **frozen** while the other two adapt (`spsc.rs`). Verified on request rather than assumed; 2 tests pin it. |
-| Manual / bestiary / OOBE-ish surfaces | `works` | `ui/ManualSheet.kt`; device prefs `bestiary_found=true` |
-| PiP | `works` | `MainActivity.kt:336,418,445` implement and update PiP params |
-| Resting beam / no-signal truth | `works` | `ui/Console.kt:93` |
+| Full-screen native beam renderer | implemented | Clean debug compilation, 74 Android tests, and 34 native tests |
+| Eleven scope views | implemented | Existing renderer tests and S25 receipts |
+| Geometry effects | implemented | Existing renderer tests and S25 receipts |
+| Thirteen interface rooms | implemented | Compose source and saved-setting behavior |
+| File playback | implemented | Playback service and player tests |
+| Folder queue | implemented | Document picker flow and queue state |
+| Android media controls | implemented | Media3 session service |
+| Microphone source | implemented | Permission-first activity flow |
+| Playback capture | implemented | API 29 to 36 compatibility branches and lint |
+| Track metadata and artwork | device-check | Optional notification-listener path; recheck grant and denial |
+| Picture-in-picture | device-check | API 29 to 31 manual entry, API 31+ auto-entry |
+| Rotation and placement locks | device-check | Unit logic exists; turning-phone and large-screen receipts remain |
+| HUD on, auto, off | implemented | Direct UI state and migration tests |
+| Settings export and import | implemented | Strict archive validation and atomic preference commit |
 
-## Tailscale relay link (v2 focus)
+## PC relay
 
-| Feature | State | Evidence |
+| Capability | Status | Evidence or next check |
 |---|---|---|
-| Relay protocol v2 (audio/geometry/meta/transport) | `works` | Both relays live at 2.2.0; `phosphor-relay probe` shows `a_per_sec` 87-94, full caps |
-| Relay crate | `works` | 27/27 tests, `cargo test` in `relay/` |
-| Desktop library browse | `works` | **Symlinks are followed** (`metadata()`, not `file_type()`), so Ben's real `~/Music/WAV versions → /media/ben/Mass storage/…` lists and opens. Tested against that actual folder, not only a fixture; both tests fail if `file_type()` is restored. The escape guard rejects `..` on the *requested* path rather than resolved locations, which is the real attack and does not punish a user's own symlink. |
-| Multiple library roots | `works` | Root picker in the browse sheet. The phone hardcoded `libraries[0]`, so a second drive configured on the desktop was unreachable. `phosphor-relay library list\|add\|remove` manages them: every error path exits 3 with a `fix`, and the config is byte-identical after an add/remove round trip. |
-| pm3 on a cold process | `works` | Was `UninitializedPropertyAccessException`: a ContentProvider's `onCreate` runs *before* `Application.onCreate`, so `causalStore` as `lateinit` was unset whenever pm3 **woke** the process rather than finding it running. Now `by lazy`. Verified by force-stopping the package and watching `pm3 state-get` answer from cold. |
-| Phone-side remote engine (SPSC ring, supervisor) | `works` | `rust/src/remote.rs`; 32/32 Rust tests |
-| Fortress seeded hosts | `works` | Fortress dex contains 2 private host strings; `ship-check.sh --only=boundary.endpoints` |
-| **Play host list** | `works` | `RemoteHostStore` + `+ ADD RELAY` UI. Play seeds empty, Fortress seeds from BuildConfig, and the Play dex still contains 0 private host strings. Proven live on device: `docs/dev/receipts/phosphor-2.0/v2/remote-sheet-with-add-relay.png` |
-| User-managed host store | `works` | 13 unit tests: parse, malformed-skip, empty-Play-seed, one-shot seeding, add/edit/remove round-trip, restore-after-process-death, every refusal path, failed-write reporting, delimiter-corruption resistance, trim-on-save |
-| Connect to a relay | `works` | Live: `remote-connected-interserve.png`, band reads `src · remote · interserve-linux`, relay serving 97.67 A-frames/sec |
-| Link state: dialing / greeted / connected | `works` | `RemoteLinkTruth` + 9 tests. `greeted` is new and stops the app claiming a live link before any frame arrives |
-| Link state: stalled | `works` | Own state, no longer masquerading as `reconnecting`. Proven on the S25: `kill -STOP` the relay gives `signal stalled · interserve-linux`, `kill -CONT` recovers. |
-| Link state: backoff / error | `works` | Proven on the S25: pointing at a closed port gives `reconnecting · deadport`. Reproducible via `scripts/force-link-states.sh`. |
-| Link state: silent | `works` | Relay K frame now carries `rms`/`rms_peak`; engine reports `remote_rms` (null when the relay cannot say); band reads `remote · <host> · no sound`. Proven against a live relay: silence 0.0, sine 0.565686 vs theoretical 0.565685. 12 tests across relay and app, both verified failable. **Live on `interserve-linux` since 2026-07-29** (raw K frames verified). `thinkcenter` still runs the older relay and omits the field, which the app correctly reads as "cannot tell" rather than silence. |
-| Link state: authenticated | `not applicable` | Protocol v2 has no authentication. L-04 borrowed the word from the Nexus session plane. **Ask: amend L-04.** |
-| Error `fix` text surfaced | `works` | Engine and relay both guarantee a fix; it was built and discarded. Now shown in the REMOTE sheet |
+| Empty first-run host list | implemented | Store initialization tests |
+| User add, edit, and remove | implemented | Store and editor-flow tests |
+| Tailscale-only saved hosts | implemented | MagicDNS, `.ts.net`, and `100.64.0.0/10` tests |
+| Protocol v2 audio | implemented | Relay and native Rust tests |
+| Protocol v2 geometry | implemented | Relay and native Rust tests |
+| Metadata and artwork | device-check | Restart current relay service, then verify end to end |
+| Transport control | device-check | Verify play, pause, next, previous, and seek on the PC |
+| Link state honesty | implemented | `RemoteLinkTruthTest` and force-link-state script |
+| Bind and protocol hardening | deferred | Networking polish stage |
+| Long-session latency tuning | deferred | Networking polish stage |
 
-## Causal store / Nexus machinery (v2 additions)
+## Repository cleanup
 
-| Feature | State | Evidence |
+| Capability | Status | Evidence or next check |
 |---|---|---|
-| Causal store, HUD slice, provenance/audit | `works` | 149 Play + 250 Fortress tests, 0 failures |
-| v1→v2 settings migration | `works` | `CausalStatePreferencesTest` covers legacy v1 envelope, tamper refusal, commit failure, rollback restore. Same prefs file `phosphor.prefs`, so v1 settings are read in place |
-| Fortress Binder / AIDL / tailnet RPC / pm3 provider | `works (inert)` | Compiles, 250 tests pass, manifest is bind-on-demand only. **Not activated in any shipped build.** |
-| Nexus-mobile integration | `absent` — **deliberately** | The companion app is being rewritten from scratch. No integration work will be done against the current one. |
-
-### Gates on the inert Nexus code
-
-If this is ever activated, these must be satisfied first. They are recorded because
-choosing not to do work is only honest when the choice is written down.
-
-1. **Tailnet save-failure tests are NOT written.** The handoff
-   (`handoffclaude.md` §"Highest confidence risk") names save-failure schedules around
-   CLOSING/ABSENT/connection-close/reconnect as the highest remaining risk. They were
-   deliberately skipped this session because the code cannot run in a shipped build, so
-   the tests would guard nothing today. **Gate: write them before any activation.**
-2. **No end-to-end socket→adapter→store test exists.** Socket tests use a recording
-   authority. Same reasoning, same gate.
-3. **Tailnet bootstrap has no truthful runtime status API.** `pm3 tailnet-status`
-   reports stored preferences, not live state. Gate before operator use.
-4. **Binder is host-tested, not live-IPC proven.** No real `PackageManager` signing
-   lineage or death-recipient behavior has been exercised on device.
-
-### Independent seal review, 2026-07-28 (Opus 5, read-only)
-
-The review's verdict was that the Nexus machinery **is genuinely inert and safe to seal**.
-It confirmed: Play dispatch behavior is unchanged (the NEXUS branch always refuses because
-`authorizationFence` is null), no new thread/listener/socket on the normal path, the
-Fortress `NEXUS_*` BuildConfig fields are correctly flavor-scoped, and the Binder service
-is true bind-on-demand behind a signature permission with no auto-start.
-
-It also found two blockers, neither in the Nexus code. Both are resolved:
-
-| id | finding | state |
-|---|---|---|
-| **F1** | `HudCausalEnvelopeCodec.SCHEMA` bumped to `/2` while `migrateLegacyV1` was called from **nothing in production**. Any device holding a v1 envelope loaded `CorruptEnvelope`, so the store latched read-only permanently and the HUD silently fell back, unrecoverable short of clearing app data. | **fixed.** `CausalStatePreferences.load()` now upgrades in place. Proven by disabling the branch and watching `loadUpgradesALegacyV1EnvelopeInPlaceInsteadOfLatchingReadOnly` fail, then pass when restored. Ben's v1.0.7 install was never at risk: it has no envelope (verified on device) and takes the unchanged `LegacyBootstrap` path. |
-| **F2** | The working tree was being edited concurrently, so "the Phase 05b-2 diff" is no longer a clean unit; it now also carries a prefs-file split, backup rules, RemoteHostStore, and the remote editor. | **accepted as scope.** These are this session's intended v2 work, not accidental drift. The commit will stage by explicit pathspec and the seal commit message will name exactly what it covers. |
-
-Three further findings are **gates, not blockers**, recorded here rather than fixed:
-
-5. **`ScopeUiState` leaks two store listeners per Activity recreate** now that the store
-   is application-scoped and outlives the Activity. It holds `artwork: ByteArray?`, so the
-   growth is real, though it needs repeated recreates to matter.
-   **Gate: fix before any long-soak or ProjectM work.**
-6. **`Pm3AdminProvider.onCreate` runs on every Fortress process start** and will latch the
-   tailnet client permanently once an operator has configured it. It is a no-op by default
-   because no secret exists. This is the one honest exception to "bind-on-demand".
-   **Gate: revisit if tailnet is ever activated.**
-7. **`pm3 action-run` sends `Transport.CLI` with a HUMAN principal, which
-   `DisplayHudReducer` always refuses.** The passing pm3 fixture is a canned adb stub, so
-   the green test is not evidence that the verb works.
-   **Gate: prove `action-run` against a real device before claiming pm3 operator parity.**
+| One Android product | implemented | No flavor graph or flavor source sets |
+| Debug package isolation | implemented | `dev.phosphor.mobil3.debug` |
+| Android 10 floor | implemented | `minSdk 29`, unit suite, and lint |
+| Wrapper-only Gradle build | implemented | Bootstrap and environment scripts |
+| Locked native builds | implemented | Cargo NDK tasks use `--locked` |
+| Dormant authority and audit graph removed | implemented | Source boundary and stale-symbol checks |
+| Developer CLI narrowed to local tooling | implemented | `scripts/test-pm3.sh` |
+| Tracking and reporting SDKs absent | implemented | Dependency and source scan |
+| Privacy policy | implemented | `PRIVACY.md` and in-app manual link |
+| Protected starting material preserved | implemented | Archive `SHA256SUMS` gate |
+| Release provenance | implemented | Dirty, unknown, mismatched, untagged, or dirty path-dependency source fails closed |
+| Canonical release package | implemented | Distinct direct-APK and Play-upload signers, bundletool, 16 KiB, exact sources, manifest, and checksum gate; a dual-signer synthetic fixture passes and approved signers remain blocked |
+| Exact device install identity | implemented | `dev/pm3 install` verifies installed APK bytes and signer |
 
 ## Google Play readiness
 
-| Requirement | State | Evidence |
+| Requirement | Status | Evidence or blocker |
 |---|---|---|
-| targetSdk 36 / minSdk 35 / arm64 | `works` | `app/build.gradle.kts:120-127` |
-| Lint clean (0 errors) | `works` | `lint-results-playRelease.txt` |
-| Release signing fails closed | `works` | `verifyPlayReleaseSigning` blocks the build without inputs |
-| Play/Fortress boundary enforced | `works` | `check-play-boundary.sh all` exits 0; Play dex has 0 private strings |
-| Backup policy (`dataExtractionRules`) | `works` | `data_extraction_rules.xml` + `backup_rules.xml`. Causal envelope, runtime state and `remote_hosts` excluded from cloud backup and device transfer; genuine settings still restore. Lint `DataExtractionRules` gone |
-| Lint dispositions | `works` | 48 → 41 warnings; every survivor has a written disposition in `docs/dev/LINT-DISPOSITIONS.md` |
-| **Play upload keystore** | **`absent`** | `~/.secrets/` holds only the Fortress JKS. **Ben must mint this.** Blocks the Play AAB only, not testing. |
-| **Privacy policy URL** | **`absent`** | Play-required. **Ben must publish it.** |
-| **Billing / Pro unlock** | `partial` | The decision layer is built and tested: `EntitlementPolicy` (15 tests) covers buy-during-trial, refund revocation, pending purchases, and the rule that an unreachable Play never relocks a paying user. `BillingClient` wiring is still absent and needs a Play Console entry to validate. |
-| **7-day trial state machine** | `works` | `EntitlementPolicy` + `TrialClock`, 26 tests, both verified failable by breaking the code. 168 elapsed hours from an explicit start; installing is not consent; expiry gates paid use without touching settings. Clock defence keeps a monotonic floor, so winding back freezes the trial rather than rewinding it, and a leap forward cannot burn it down, while reboots, timezone shifts and NTP nudges pass through untouched. |
-| First-run commercial/privacy setup | `absent` | No OOBE flow found |
+| Target API 36 | implemented | Gradle configuration |
+| 16 KiB native compatibility | implemented gate | Dual-signer ephemeral release fixture and fresh debug APK pass ZIP/ELF checks; production-signed evidence remains blocked |
+| Typed foreground services | implemented | Merged manifest and service startup order |
+| Full-display projection default | implemented | API 34+ `MediaProjectionConfig` path |
+| Optional microphone declaration | implemented | Manifest feature marked not required |
+| Notification permission not requested unnecessarily | implemented | Permission removed from manifest |
+| Privacy policy and Data Safety truth | device-check | Policy exists; Console form and final URL remain human gates |
+| Free initial product | implemented | No trial, entitlement, billing, or purchase surface |
+| Upload signing identity | blocked | Play enrollment and approved upload key required |
+| Current signed AAB | blocked | Signing inputs are not provisioned in this workspace |
+| Store listing and declarations | blocked | Play Console access and human submission required |
+| Closed or internal testing | blocked | Tester enrollment and Console workflow required |
 
-### Cost estimate for the Play commerce work (not started)
-
-Sequenced *after* the Fortress prerelease, per Ben's 2026-07-28 decision.
-
-| Piece | Shape | Rough size |
-|---|---|---|
-| ~~Entitlement state machine~~ | **DONE.** `EntitlementPolicy.kt`, pure Kotlin, no Android or Play imports, 15 tests | ~150 LOC + ~190 LOC tests |
-| ~~Trial clock~~ | **DONE.** `TrialClock.kt`, monotonic floor against rollback, 11 tests | ~100 LOC + ~160 LOC tests |
-| Trial storage | Dedicated no-backup prefs holding `TrialClockState` and the start instant. The `remote_hosts` store is the pattern to copy. Backup exclusion for `entitlement` is already written. | ~120 LOC |
-| Billing integration | `BillingClient` feeding `PlayOwnership` into the tested policy: connect, query, purchase, acknowledge, restore, pending. **Needs the Play Console entry to validate.** | ~400 LOC |
-| Paywall + first-run sheets | In the existing sheet language, reusing the `RemoteHostEditor` hairline parts. No dark patterns (publishing plan §5.3). | ~500 LOC |
-| Play Console setup | Human gate: account, product `phosphor_pro`, Data safety, content rating. | Ben |
-
-**Hard prerequisites:** the upload keystore and the privacy policy URL. Both are Ben's.
-
----
-
-## How to re-verify this whole file
+## Re-verify
 
 ```bash
-cd /home/ben/Dev/ClaudeWorkspace/phosphor-mobil3
-scripts/ship-check.sh            # the 13 release gates
-scripts/ship-check.sh --json     # same, machine-readable
+source scripts/env.sh
+./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:checkEngine
+cargo test --manifest-path rust/Cargo.toml --locked
+cargo test --manifest-path relay/Cargo.toml --locked
+scripts/test-pm3.sh
+scripts/test-play-boundary.sh
+scripts/check-play-boundary.sh source --json
+scripts/ship-check.sh --json
 ```
 
-Any row above whose evidence no longer reproduces is a defect in this file. Fix the
-row, do not quietly soften the claim.
+A signed release additionally requires a clean exact tag, both approved signing identities, `scripts/ship-check.sh --only=release.bundle`, and an explicit `dev/pm3 --profile release --serial <serial> install app/build/outputs/release-package/v2.0.0/phosphor-mobil3-2.0.0.apk` on the target phone.

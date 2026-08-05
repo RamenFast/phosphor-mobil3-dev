@@ -236,6 +236,16 @@ fun ManualSheet(
                 "These open in your own browser — the app renders no web content.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
+            SectionHeading("PRIVACY", p)
+            Prose(
+                "phosphor has no account, ads, or tracking. Local audio is processed " +
+                    "in memory and is not recorded or uploaded. A relay connection opens " +
+                    "only after you select a saved Tailscale host.",
+                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
+            )
+            LinkCard("privacy policy", "…/phosphor-mobil3/blob/master/PRIVACY.md", p) {
+                onOpenLink("https://github.com/RamenFast/phosphor-mobil3/blob/master/PRIVACY.md")
+            }
             LinkCard("the source", "github.com/RamenFast/phosphor-mobil3", p) {
                 onOpenLink("https://github.com/RamenFast/phosphor-mobil3")
             }

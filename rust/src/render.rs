@@ -6,9 +6,9 @@
 //! Android invalidates the window the moment the callback returns. The GpuRenderer and
 //! its decay textures survive across surface loss (the beam remembers backgrounding).
 
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
-use std::sync::OnceLock;
 
 use ndk::native_window::NativeWindow;
 use phosphor_dsp::{Computer, Mode};
@@ -235,9 +235,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut geom_phase: f32 = 0.0;
     let mut geom_env: f32 = 0.0;
     let mut geom_last = std::time::Instant::now();
-    // Settings can arrive BEFORE the first surface (restoreTuning at app boot) — mirror
-    // them so renderer creation applies the persisted truth, not defaults (Ben's field
-    // receipt: grid pref needed a manual re-toggle after every install).
+    // Settings can arrive before the first surface. Mirror them so renderer creation uses
+    // persisted values instead of reverting to defaults.
     let mut grid_on = true;
     let mut glow_persistence = defaults.persistence;
     let mut focus_px = defaults.beam_focus;
@@ -325,7 +324,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                                         r.grid_enabled = grid_on;
                                         r.display_scale = density;
                                         r.theme = phosphor_beam::THEME_PRESETS
-                                            [beam_color % phosphor_beam::THEME_PRESETS.len()].1;
+                                            [beam_color % phosphor_beam::THEME_PRESETS.len()]
+                                        .1;
                                         renderer = Some(r);
                                         // Cold start: the cathode warms.
                                         if !reduced_motion {
@@ -407,8 +407,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     log::info!("view rotation: {}°", view_rotation * 90);
                 }
                 Cmd::SetGain(g) => {
-                    // Manual range is 0.1..7 (Ben's ask — one past the desktop's 6);
-                    // AUTO-GAIN still lands inside the desktop-verbatim 0.1..6 law.
+                    // Manual gain reaches 7. Automatic gain stays within the desktop 0.1..6 range.
                     manual_gain = g.clamp(0.1, 7.0);
                     computer.gain = auto_gain.set_manual(manual_gain);
                     GAIN_AUTO.store(false, Ordering::Relaxed);
@@ -603,8 +602,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // deposition. When it returns to zero, energy already in the GPU textures keeps
         // decaying through phosphor-beam's two-layer P7 law.
         brightness *= bloom_energy_multiplier(bloom_pull);
-        let transform_active = scale_xy < 1.0 || scale_y < 1.0 ||
-            (brightness - 1.0).abs() > f32::EPSILON;
+        let transform_active =
+            scale_xy < 1.0 || scale_y < 1.0 || (brightness - 1.0).abs() > f32::EPSILON;
 
         // Custom light: static color, or the cycle lerping slot→slot. Timer mode loops
         // continuously; per-track mode fades one leg per CycleAdvance then holds.
@@ -640,16 +639,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             );
         }
 
-        // The graticule zooms with the figure (Ben's ask): grid spacing rides the live
-        // effective gain so a pinch reads as zooming the WORLD, not just amplifying the
-        // trace. Clamped so the grid never degenerates into stripes or one giant cell.
+        // The graticule follows effective gain so a pinch zooms the scene instead of only
+        // amplifying the trace. Clamping prevents stripes and oversized cells.
         r.grid_spacing_fraction = (0.1125 * computer.gain).clamp(0.035, 0.55);
 
-        // The DSP reconstructs the contiguous 48 kHz tap at the selected factor. One display
-        // frame means one compute + one decay/deposit, matching desktop cadence — splitting
-        // the drained window into N separately decayed deposits was the "2-3 circles out of
-        // sync" defect (accuracy hunt, 2026-07-18), and freezing decay on empty ticks made
-        // 120 Hz read as chunk-rate judder.
+        // The DSP reconstructs the contiguous 48 kHz tap at the selected factor. Each display
+        // frame performs one compute and one decay/deposit. Splitting a drained window into
+        // multiple deposits creates overlapping traces, while skipping empty ticks freezes decay.
         let mut seg_count = 0usize;
         let advance =
             |r: &mut phosphor_render_gpu::GpuRenderer, segs: &[[f32; 5]], count: &mut usize| {
@@ -713,19 +709,31 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         } else {
             // Beam-to-gravity: odd quadrants compute in the swapped space so the figure
             // keeps true aspect, then endpoints map by pure quarter-turns — no scaling.
-            let (cw, ch) = if view_rotation % 2 == 1 { (h, w) } else { (w, h) };
+            let (cw, ch) = if view_rotation % 2 == 1 {
+                (h, w)
+            } else {
+                (w, h)
+            };
             let mut segments = crate::engine::compute_scope_frame(&mut computer, &samples, cw, ch);
             // Geometry FX bends the freshly computed beam BEFORE the quarter-turn remap,
             // so it composes with every mode and every rotation lock. Local beams only —
             // remote geometry frames and the resting dot never reach this branch.
             if geom_fx != 0 && geom_amount > 0.0 {
                 let dt = geom_last.elapsed().as_secs_f32().clamp(0.0, 0.05);
-                geom_phase += dt * match geom_fx {
-                    2 => geom_amount * (0.5 + 5.0 * geom_env.min(1.2)), // audio-whipped spin
-                    _ => 0.6,                                          // tunnel breathing clock
-                };
-                segments =
-                    crate::engine::apply_geom_fx(&segments, cw, ch, geom_fx, geom_amount, geom_phase, geom_env);
+                geom_phase += dt
+                    * match geom_fx {
+                        2 => geom_amount * (0.5 + 5.0 * geom_env.min(1.2)), // audio-whipped spin
+                        _ => 0.6, // tunnel breathing clock
+                    };
+                segments = crate::engine::apply_geom_fx(
+                    &segments,
+                    cw,
+                    ch,
+                    geom_fx,
+                    geom_amount,
+                    geom_phase,
+                    geom_env,
+                );
             }
             geom_last = std::time::Instant::now();
             if view_rotation == 0 {

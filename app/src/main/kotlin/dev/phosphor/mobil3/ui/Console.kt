@@ -102,10 +102,7 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                     Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
                 }
             }
-            // Honesty law (Ben's ask): while the DESKTOP renders the beam
-            // (VISUALIZER), the band shows the desktop's truth — its mode and its
-            // live breathing gain, `auto · pc` under autogain — never a stale
-            // local multiplier that isn't changing the view.
+            // Remote geometry reports the desktop mode and measured gain, not the idle local renderer.
             val rolledMark = if (state.randomModeArmed) " ⚄" else ""
             val right = state.remoteScopeLine?.let { remoteTruth ->
                 if (rolledMark.isEmpty()) remoteTruth
@@ -377,8 +374,7 @@ fun OverflowPopout(
             .clip(shape)
             .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
             .border(Dim.hairline, p.lineStrong, shape)
-            // Ben: "can slide up the right menu, but can't slide it down easy" —
-            // a downward drag anywhere on the open menu tracks the finger back out.
+            // A downward drag anywhere on the open menu tracks the finger back out.
             .pointerInput(reveal) {
                 detectVerticalDragGestures(
                     onDragStart = { reveal.begin(resetClosed = false) },
@@ -394,9 +390,7 @@ fun OverflowPopout(
             }
             .padding(Dim.popoutPad)
     ) {
-        // 2×2 destination grid (Ben's ask: kill the dead space) — each cell is a
-        // glyph over a small mono label, the quick-toggle idiom applied to the four
-        // rooms. The icon+label pair uprights as one unit to the viewing edge.
+        // The 2×2 destination grid keeps each glyph and label upright as one unit.
         val cells = listOf(
             Triple("deck", SettingsGlyph.Deck, onDeck),
             Triple("light", SettingsGlyph.BeamColor, onLight),
@@ -418,8 +412,7 @@ fun OverflowPopout(
         Spacer(Modifier.height(Dim.gap))
         Box(Modifier.fillMaxWidth().height(Dim.hairline).background(p.line))
         Spacer(Modifier.height(Dim.gap))
-        // Quick settings (Ben's ask): the three live toggles, spread evenly across
-        // the width, wearing the SETTINGS glyphs. State reads under each icon.
+        // Live quick settings share the available width and show state beneath each icon.
         Row(
             Modifier.fillMaxWidth(),
             horizontalArrangement = Arrangement.SpaceEvenly,
@@ -429,13 +422,11 @@ fun OverflowPopout(
                 when (state.fpsValue) { 0 -> "120"; -1 -> "unc"; else -> "${state.fpsValue}" },
                 active = true, p = p, onTap = onFps,
             )
-            // HUD quick control is a direct projection of the causal HUD row. The status
-            // band remains an independent legacy control until its own store slice lands.
+            // HUD and status-band visibility are independent display controls.
             QuickToggle(
                 SettingsGlyph.Hud,
                 when (state.hudMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
                 active = state.hudMode != 2,
-                enabled = state.hudControlWritable,
                 p = p,
                 onTap = onHud,
             )

@@ -36,15 +36,15 @@ pub struct ArtEntry {
 /// extraction both fill it; the session's R handler reads it.
 pub type ArtCache = Arc<Mutex<HashMap<String, ArtEntry>>>;
 
-/// Deadline-only guard for local tools (playerctl/curl): a hung MPRIS target
-/// or stalled art fetch dies on its deadline instead of wedging the poller —
-/// which serve_client joins at teardown (audit finding 4's poller tail).
+/// Deadline-only guard for local player and artwork tools. A stalled command
+/// ends at its deadline instead of blocking the poller joined during teardown.
 static NO_CANCEL: std::sync::atomic::AtomicBool = std::sync::atomic::AtomicBool::new(false);
 
 fn run(args: &[&str]) -> Option<String> {
     let mut cmd = Command::new(args[0]);
     cmd.args(&args[1..]);
-    let out = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(5), &NO_CANCEL).ok()?;
+    let out = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(5), &NO_CANCEL)
+        .ok()?;
     if !out.status.success() {
         return None;
     }
@@ -86,12 +86,13 @@ fn percent_decode(s: &str) -> String {
     let mut out = Vec::with_capacity(b.len());
     let mut i = 0;
     while i < b.len() {
-        if b[i] == b'%' && i + 2 < b.len() {
-            if let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16) {
-                out.push(v);
-                i += 3;
-                continue;
-            }
+        if b[i] == b'%'
+            && i + 2 < b.len()
+            && let Ok(v) = u8::from_str_radix(&s[i + 1..i + 3], 16)
+        {
+            out.push(v);
+            i += 3;
+            continue;
         }
         out.push(b[i]);
         i += 1;
@@ -122,8 +123,17 @@ pub fn cache_art(url: &str, cache: &ArtCache) -> Option<String> {
         } else if url.starts_with("http://") || url.starts_with("https://") {
             let mut cmd = Command::new("curl");
             cmd.args(["-sL", "-o", &path.to_string_lossy(), url]);
-            let out = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(10), &NO_CANCEL).ok()?;
-            if !out.status.success() || std::fs::metadata(&path).map(|m| m.len() == 0).unwrap_or(true) {
+            let out = crate::util::run_cancellable(
+                &mut cmd,
+                std::time::Duration::from_secs(10),
+                &NO_CANCEL,
+            )
+            .ok()?;
+            if !out.status.success()
+                || std::fs::metadata(&path)
+                    .map(|m| m.len() == 0)
+                    .unwrap_or(true)
+            {
                 let _ = std::fs::remove_file(&path);
                 return None;
             }
@@ -131,7 +141,10 @@ pub fn cache_art(url: &str, cache: &ArtCache) -> Option<String> {
             return None;
         }
     }
-    cache.lock().unwrap().insert(art_id.clone(), ArtEntry { path, mime });
+    cache
+        .lock()
+        .unwrap()
+        .insert(art_id.clone(), ArtEntry { path, mime });
     Some(art_id)
 }
 
@@ -139,7 +152,13 @@ pub fn cache_art(url: &str, cache: &ArtCache) -> Option<String> {
 /// hash of its source key; returns the art id.
 pub fn register_art(key: &str, path: PathBuf, mime: &str, cache: &ArtCache) -> String {
     let art_id = util::sha256_hex(key.as_bytes())[..16].to_string();
-    cache.lock().unwrap().insert(art_id.clone(), ArtEntry { path, mime: mime.into() });
+    cache.lock().unwrap().insert(
+        art_id.clone(),
+        ArtEntry {
+            path,
+            mime: mime.into(),
+        },
+    );
     art_id
 }
 
@@ -196,7 +215,8 @@ pub fn spawn_poller(
                             "xesam:artist" => artist = v,
                             "xesam:album" => album = v,
                             "mpris:length" => {
-                                duration_ms = v.parse::<u64>().ok().filter(|&n| n > 0).map(|us| us / 1000)
+                                duration_ms =
+                                    v.parse::<u64>().ok().filter(|&n| n > 0).map(|us| us / 1000)
                             }
                             "mpris:artUrl" => art_url = v,
                             _ => {}
@@ -245,7 +265,11 @@ pub fn transport(player: &str, cmd: &str, ms: Option<u64>) {
             let sec = ms.unwrap_or(0) as f64 / 1000.0;
             let mut cmd = Command::new("playerctl");
             cmd.args(["-p", player, "position", &format!("{sec:.3}")]);
-            let _ = crate::util::run_cancellable(&mut cmd, std::time::Duration::from_secs(2), &NO_CANCEL);
+            let _ = crate::util::run_cancellable(
+                &mut cmd,
+                std::time::Duration::from_secs(2),
+                &NO_CANCEL,
+            );
             return;
         }
         _ => return,

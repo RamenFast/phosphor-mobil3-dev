@@ -1,58 +1,51 @@
-# phosphor-mobil3 agent interface
+# phosphor-mobil3 developer interface
 
 ## Project surface
 
-`dev/pm3` is the project developer CLI. The Android APK has no command-line product interface.
+- `./gradlew` owns Android compilation, native packaging, signing verification, and release artifacts.
+- `dev/pm3` is local developer tooling for build, install, launch, diagnostics, screenshots, recordings, and self-test receipts.
+- `relay/` is the retained PC audio and geometry relay.
+- `rust/` is the Android JNI runtime.
 
-The CLI may build, install, run, inspect, capture receipts, and test Phosphor. It must not expose product state mutation, Nexus administration, authority grants, audit export, or agent control.
-
-`dev/pm3 schema` is the contract source. Structured one-shots use the workspace envelope. Errors name a fix and use exit codes 2, 3, or 4. Declared streams keep their documented format.
-
-Debug builds may include self-test components that are absent from release builds.
+Do not add a runtime administration protocol to the app. Device operations always require an explicit adb serial.
 
 ## Repository laws
 
-- Read `vision/`, `spec/`, and the newest decision before changing product behavior.
-- Treat `decisions/` and `docs/dev/receipts/` as immutable history.
-- Treat `docs/dev/archive/` as historical context, not active authority.
-- Keep the desktop engine source in the sibling `../phosphor` repository.
-- Do not fork shared engine crates into this repository.
-- Do not author or invoke Python.
-- Keep the Android toolchain under the gitignored `.toolchain/` directory.
-- Use the Gradle wrapper version as the build authority.
-- Use locked Rust dependencies for release work.
-- Do not push `main` or publish a release without Ben's explicit approval.
+- Read the root governance file and relevant skills before changing code or documentation.
+- Do not use Python.
+- Use `$JCODE_SCRATCH_DIR` or an ignored project directory for temporary files.
+- Keep the Gradle wrapper as the sole Android build runtime.
+- Use locked Cargo resolution in build and test commands.
+- Do not commit credentials, keystores, passwords, private host lists, or generated artifacts.
+- Preserve historical decisions and receipts. Append to append-only ledgers.
+- Preserve `docs/dev/archive/2026-08-05-scope-reset/protected/` byte-for-byte.
+- Do not push, force-push, publish, or submit to a store without explicit approval.
 
 ## Product boundaries
 
-The production app is one Play-safe package, `dev.phosphor.mobil3`. Debug uses `.debug`.
+- One application: debug and release build types only.
+- Debug package: `dev.phosphor.mobil3.debug`.
+- Production package: `dev.phosphor.mobil3`.
+- Minimum SDK 29; target and compile SDK 36.
+- No account, ads, usage tracking, behavior tracking, or automatic reporting service.
+- No first-run relay endpoints or network connection.
+- Saved PC relays must remain inside the supported Tailscale address space.
+- The first public release is free and has no purchase flow.
 
-The active product contains no analytics, behavior tracking, Nexus integration, product-agent transport, Fortress flavor, root capture, Shizuku, or ADB sidecar.
-
-The PC relay remains supported. Protocol v2 belongs on a trusted local network or Tailscale.
-
-## Android validation
-
-The supported floor is Android 10, API 29. Compile and target SDK remain 36.
-
-Compatibility checks cover API 29, 31, 34, and 36. Physical S25 checks always use:
+## Validation
 
 ```bash
-D=100.102.2.83:5555
-adb -s "$D" ...
+source scripts/env.sh
+./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:checkEngine
+cargo test --manifest-path rust/Cargo.toml --locked
+cargo test --manifest-path relay/Cargo.toml --locked
+scripts/test-pm3.sh
+scripts/test-play-boundary.sh
+scripts/test-release-gates.sh
+scripts/check-play-boundary.sh source --json
+scripts/ship-check.sh --json
 ```
 
-Never select an implicit ADB device. Never guess the phone PIN.
+For device work, use the explicit Galaxy S25 serial from the Android skill. `dev/pm3 install` must read back the installed base APK and prove its SHA-256 and signer. Record package, version, signer, device build, commands, observations, and artifact hashes.
 
-## Completion evidence
-
-Each phase records:
-
-1. the intended behavior and boundary;
-2. the exact changed paths;
-3. the commands that passed;
-4. any physical-device evidence;
-5. the rollback point;
-6. remaining human gates.
-
-Compilation is not enough when the requirement concerns consent, audio, networking, signing, or installation.
+A release claim additionally needs approved signing inputs, a clean exact release tag, clean sibling-engine source, `scripts/ship-check.sh --only=release.bundle`, and installation of the exact packaged release APK on the phone.

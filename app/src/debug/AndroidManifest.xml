@@ -2,8 +2,8 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android"
     xmlns:tools="http://schemas.android.com/tools">
     <application>
-        <!-- Debug-only receipts hatch: adb shell am broadcast -a dev.phosphor.mobil3.SELFTEST
-             -n dev.phosphor.mobil3/.SelfTestReceiver. Release builds don't carry it. -->
+        <!-- Developer self-test: adb shell am broadcast -a dev.phosphor.mobil3.SELFTEST
+             -n dev.phosphor.mobil3.debug/dev.phosphor.mobil3.SelfTestReceiver -->
         <receiver
             android:name=".SelfTestReceiver"
             android:exported="true"

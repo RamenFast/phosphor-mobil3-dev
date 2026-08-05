@@ -9,9 +9,8 @@ use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
 use oboe::{
-    AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync,
-    AudioStreamBuilder, DataCallbackResult, Output, PerformanceMode, SharingMode, Stereo,
-    Usage,
+    AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync, AudioStreamBuilder,
+    DataCallbackResult, Output, PerformanceMode, SharingMode, Stereo, Usage,
 };
 use phosphor_audio::playback::{
     AudibleRing, PlayerCommand, PlayerConfig, PlayerSession, spawn_player,
@@ -105,9 +104,18 @@ pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
         vacuum: false,
         pipe_rate: RATE,
     };
-    let session = spawn_player(config, scope_ring().clone(), Some(audible.clone()), events_tx);
+    let session = spawn_player(
+        config,
+        scope_ring().clone(),
+        Some(audible.clone()),
+        events_tx,
+    );
 
-    let callback = DeckOutput { audible, paused: paused.clone(), scratch: Vec::new() };
+    let callback = DeckOutput {
+        audible,
+        paused: paused.clone(),
+        scratch: Vec::new(),
+    };
     let mut stream = AudioStreamBuilder::default()
         .set_performance_mode(PerformanceMode::LowLatency)
         .set_sharing_mode(SharingMode::Shared)
@@ -122,8 +130,13 @@ pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
 
     scope_ring().lock().unwrap().clear_pending();
     DECK_ACTIVE.store(true, Ordering::Relaxed);
-    *DECK.lock().unwrap() =
-        Some(Deck { path: path.to_owned(), session, stream, paused, _events_rx: events_rx });
+    *DECK.lock().unwrap() = Some(Deck {
+        path: path.to_owned(),
+        session,
+        stream,
+        paused,
+        _events_rx: events_rx,
+    });
     log::info!("deck open: {path} @ {seek_seconds}s");
     Ok(())
 }
@@ -138,7 +151,9 @@ pub fn set_paused(paused: bool) {
 pub fn seek_ms(ms: u64) -> Result<(), String> {
     let (path, was_paused) = {
         let guard = DECK.lock().unwrap();
-        let Some(deck) = guard.as_ref() else { return Err("no deck loaded".into()) };
+        let Some(deck) = guard.as_ref() else {
+            return Err("no deck loaded".into());
+        };
         (deck.path.clone(), deck.paused.load(Ordering::Relaxed))
     };
     // The desktop seeks by restarting decode at the offset; same here.
@@ -149,7 +164,9 @@ pub fn seek_ms(ms: u64) -> Result<(), String> {
 
 pub fn metadata_json() -> String {
     let guard = DECK.lock().unwrap();
-    let Some(deck) = guard.as_ref() else { return "{}".into() };
+    let Some(deck) = guard.as_ref() else {
+        return "{}".into();
+    };
     let meta = deck.session.shared.current_metadata.lock().unwrap().clone();
     serde_json::json!({
         "path": deck.path,
@@ -171,7 +188,9 @@ pub fn cover_art() -> Option<Vec<u8>> {
 /// Returns the new playing state (true = playing).
 pub fn toggle() -> bool {
     let guard = DECK.lock().unwrap();
-    let Some(deck) = guard.as_ref() else { return false };
+    let Some(deck) = guard.as_ref() else {
+        return false;
+    };
     let now_paused = !deck.paused.load(Ordering::Relaxed);
     deck.paused.store(now_paused, Ordering::Relaxed);
     log::info!("deck paused: {now_paused}");

@@ -1,44 +1,62 @@
-# REMOTE — the phone as a head for desktop phosphor
+# PC relay setup
 
-The phone can visualize a desktop machine's audio live: the desktop runs
-`phosphor-relay`, the phone connects over your own network (a VPN/overlay like
-Tailscale or WireGuard works great — the relay binds loopback-adjacent and is meant
-to stay inside your walls, never the open internet).
+Phosphor Mobile can act as a remote head for a Linux PC. The PC runs `phosphor-relay`; the phone receives audio or geometry and sends playback commands over Tailscale.
 
-## Desktop side
+The protocol has no application-layer login or encryption. Tailscale is the identity and encryption boundary. Do not expose relay port 45777 to the public internet.
 
-The relay lives in this repo (`relay/`) and installs with one script on any
-PipeWire/PulseAudio Linux box that already runs desktop
-[phosphor](https://github.com/RamenFast/phosphor):
+## Desktop setup
 
-```
-scripts/relay-install.sh <host>      # builds + installs ~/.local/bin/phosphor-relay + systemd user unit
-ssh <host> systemctl --user status phosphor-relay
+The relay lives under `relay/` and requires a PipeWire or PulseAudio Linux machine.
+
+```bash
+scripts/relay-install.sh --host <ssh-host>
+ssh <ssh-host> systemctl --user status phosphor-relay
 ```
 
-Law worth knowing: **installing a new relay binary does not restart the running
-service** — `systemctl --user restart phosphor-relay` is a separate, deliberate step.
+Installing a new binary does not restart an already-running service. Restart deliberately after an upgrade:
 
-The relay serves protocol v2 on port `45777`: audio (Opus), scope geometry, track
-metadata + album art, transport control, and source/output switching, all over one
-connection.
+```bash
+ssh <ssh-host> systemctl --user restart phosphor-relay
+```
 
-## Phone side
+The relay currently listens on `0.0.0.0:45777`. Use the host firewall and Tailscale access controls to prevent non-tailnet access. Binding to an explicit Tailscale address is deferred to the networking polish stage.
 
-Seed your hosts at build time in `local.properties`
-(`phosphor.remoteHosts=label:host:port,label:host:port`), then:
+Useful checks:
 
-SOURCE → REMOTE → pick a host. Toggles for AUDIO / VISUALIZER streams, a LATENCY
-mode (tight ~80 ms · balanced ~150 ms · safe — underruns widen the jitter buffer,
-clean minutes shrink it), and a NETWORK selector (auto / Wi-Fi / mobile).
+```bash
+phosphor-relay doctor
+phosphor-relay sources
+phosphor-relay schema
+```
 
-While VISUALIZER is on, the desktop owns the beam: the status band shows the
-desktop's truth (`swirl · auto · pc`) and the phone's geometry FX stage leaves the
-remote picture untouched.
+## Phone setup
 
-## Honesty notes
+1. Install and connect Tailscale on the phone and PC.
+2. Open **SOURCE**, then **REMOTE**.
+3. Add the PC with one of these host forms:
+   - a single-label Tailscale MagicDNS name, such as `studio-pc`
+   - a full name ending in `.ts.net`
+   - a Tailscale IPv4 address in `100.64.0.0/10`
+4. Keep the default port `45777` unless the relay was configured differently.
+5. Select the saved host.
 
-- The scope draws what the ear hears: A/V sync is tapped at the audio consumer,
-  after the jitter buffer, not at packet receive.
-- The phone's SOURCE picker can switch the desktop's audio output (e.g. HDMI ↔
-  analog); the relay moves the sink and echoes the real result back.
+Phosphor rejects public DNS names, private-LAN IPv4 addresses, and IPv4 addresses outside the Tailscale range. Legacy `.tailnet` names remain accepted for existing installations.
+
+A fresh installation contains no saved host and makes no relay connection. Hosts are stored only after the user saves them.
+
+## Streams and controls
+
+- **AUDIO** receives PC audio for local playback and visualization.
+- **VISUALIZER** receives desktop scope geometry.
+- **LATENCY** selects tight, balanced, or safe buffering.
+- **NETWORK** controls Android network preference. It does not replace the Tailscale endpoint check.
+- Playback controls can play, pause, seek, move between tracks, and select relay sources.
+
+When remote geometry is active, the desktop owns the beam shape. The phone reports the desktop mode and source instead of applying local geometry effects.
+
+## Honest limits
+
+- The scope follows audio after the jitter buffer, not packet arrival.
+- Silence and a dead link are separate states when the relay supplies RMS evidence.
+- Artwork or metadata can remain stale when a relay service was upgraded but not restarted.
+- Long-session recovery, discovery, bind-address hardening, and latency tuning are deferred.

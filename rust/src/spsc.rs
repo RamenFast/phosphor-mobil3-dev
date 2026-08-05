@@ -7,8 +7,8 @@
 //! side `load(Acquire)`s the other — the standard SPSC proof. Two-segment
 //! `copy_from_slice` for wraparound, whole-stereo-frame granularity, and
 //! **no alloc / no lock / no syscall / no logging on either hot path**. The
-//! consumer side is what runs on the oboe real-time callback (audit finding 10:
-//! the Mutex+Condvar AudibleRing priority-inverted there). Backpressure is
+//! consumer side runs on the oboe real-time callback, where a Mutex+Condvar ring
+//! would risk priority inversion. Backpressure is
 //! producer-side `park_timeout` (self-waking — close() needs no unpark);
 //! `skip_to_latest` is the consumer-side catch-up jump (index math only,
 //! RT-legal) that makes accumulated latency structurally impossible.
@@ -798,7 +798,10 @@ mod tests {
         assert_eq!(tight, 3_840);
         assert_eq!(balanced, 7_200);
         assert_eq!(safe, 12_000);
-        assert!(tight < balanced && balanced < safe, "modes must stay ordered");
+        assert!(
+            tight < balanced && balanced < safe,
+            "modes must stay ordered"
+        );
     }
 
     /// Safe is deliberately FROZEN: it neither widens after an underrun nor shrinks

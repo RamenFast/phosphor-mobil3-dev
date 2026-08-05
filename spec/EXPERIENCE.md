@@ -102,7 +102,7 @@ Permission copy must name the feature, the data path, and the system surface tha
 
 The privacy surface must be reachable in-app. It must state that Phosphor has no analytics, ads, behavior tracking, or silent reporting.
 
-The remote surface must state that the relay belongs on a trusted local network or Tailscale.
+The remote surface must state that the relay requires Tailscale and must not be exposed to the public internet.
 
 ## 12. Performance
 
@@ -110,4 +110,4 @@ The scope should render at the selected supported panel cadence without allocati
 
 Touch feedback must begin in the frame that accepts ownership. Long work must not block the main thread or relay control loop.
 
-Lifecycle transitions must release surfaces, capture sessions, players, callbacks, and network bindings without leaks or overlapping owners.
+Lifecycle transitions must release surfaces, capture sessions, players, callbacks, and relay links without leaks or overlapping owners.

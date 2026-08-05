@@ -91,7 +91,6 @@ object SettingsArchive {
         "ui_locked_landscape" to Spec(Kind.BOOLEAN),
         "ui_locked_orientation" to intRange(-1, 14),
         "remote_latency_mode" to intRange(0, 2),
-        "remote_network_mode" to intRange(0, 2),
         "amoled_seen" to Spec(Kind.BOOLEAN),
         "bestiary_found" to Spec(Kind.BOOLEAN),
         "ov_char" to intRange(-1, 3),
@@ -305,7 +304,10 @@ object SettingsArchive {
         if (!pkg.matches(Regex("[a-zA-Z0-9_.-]{1,200}"))) {
             throw ArchiveException("metadata_invalid", "Source package is invalid", "Export settings again from Phosphor")
         }
-        if (version.isBlank() || version.length > 80 || distribution !in setOf("play", "fortress", "local_dev")) {
+        if (
+            version.isBlank() || version.length > 80 ||
+            distribution !in setOf("debug", "release", "play", "fortress", "local_dev")
+        ) {
             throw ArchiveException("metadata_invalid", "Source version or distribution is invalid", "Export settings again from Phosphor")
         }
         if (exportedAt.isBlank() || exportedAt.length > 80 || runCatching { Instant.parse(exportedAt) }.isFailure) {

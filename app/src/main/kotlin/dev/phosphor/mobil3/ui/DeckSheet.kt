@@ -24,8 +24,7 @@ import androidx.compose.ui.graphics.asImageBitmap
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 
-// ── DECK (spec §2.2): now-playing + the queue. The carved play stone that lives here
-//    is the SAME control as the console's — one identity, travelled up. ──
+// Now-playing and queue controls share the same playback state as the console.
 @Composable
 fun DeckSheet(
     state: ScopeUiState,

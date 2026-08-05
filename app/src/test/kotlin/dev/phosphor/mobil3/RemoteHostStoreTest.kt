@@ -27,13 +27,13 @@ class RemoteHostStoreTest {
 
         val parsed = store.parseSeed(
             "good:relay-one:9000,wrong-arity:relay-two,not-number:relay-three:nope," +
-                "too:many:fields:8000,also-good:10.0.0.4:65535",
+                "too:many:fields:8000,also-good:100.100.0.4:65535",
         )
 
         assertEquals(
             listOf(
                 RemoteHost("good", "relay-one", 9000),
-                RemoteHost("also-good", "10.0.0.4", 65535),
+                RemoteHost("also-good", "100.100.0.4", 65535),
             ),
             parsed,
         )
@@ -101,6 +101,26 @@ class RemoteHostStoreTest {
     }
 
     @Test
+    fun tailscaleNamesAreNormalizedAndMalformedSuffixesAreRejected() {
+        val store = RemoteHostStore(InMemoryHostPrefs(), "")
+
+        val saved = assertIs<RemoteHostOutcome.Saved>(
+            store.add("Studio", "STUDIO-DESK.EXAMPLE.TS.NET", 9735),
+        )
+        assertEquals("studio-desk.example.ts.net", saved.hosts.single().host)
+
+        listOf(
+            "bad/path.ts.net",
+            ".ts.net",
+            "-bad.example.ts.net",
+            "bad..example.ts.net",
+            "100.064.0.1",
+        ).forEach { host ->
+            assertIs<RemoteHostOutcome.Refused>(store.add("Invalid", host, 9735), host)
+        }
+    }
+
+    @Test
     fun everyValidationRefusalCarriesANonBlankFix() {
         val store = RemoteHostStore(InMemoryHostPrefs(), "")
         assertIs<RemoteHostOutcome.Saved>(store.add("Existing", "existing-node", 9000))
@@ -114,6 +134,8 @@ class RemoteHostStoreTest {
             store.add("Relay", "relay node", 8000),
             store.add("Relay", "2001:db8::1", 8000),
             store.add("Relay", "relay,node", 8000),
+            store.add("Relay", "192.168.1.5", 8000),
+            store.add("Relay", "example.com", 8000),
             store.add("Relay", "relay", 0),
             store.add("Relay", "relay", 65536),
             store.add("Duplicate", "existing-node", 9000),
@@ -212,6 +234,18 @@ class RemoteHostStoreTest {
     @Test
     fun dedicatedPreferenceFileNameIsStable() {
         assertEquals("remote_hosts", RemoteHostStore.PREFERENCES_NAME)
+    }
+
+    @Test
+    fun relayAddressesStayInsideTheTailscaleBoundary() {
+        val store = RemoteHostStore(InMemoryHostPrefs(), "")
+
+        assertIs<RemoteHostOutcome.Saved>(store.add("MagicDNS", "studio-pc", 45777))
+        assertIs<RemoteHostOutcome.Saved>(store.add("Full DNS", "studio.example.ts.net", 45777))
+        assertIs<RemoteHostOutcome.Saved>(store.add("Tailnet IP", "100.127.255.254", 45777))
+        assertIs<RemoteHostOutcome.Refused>(store.add("Private LAN", "192.168.1.5", 45777))
+        assertIs<RemoteHostOutcome.Refused>(store.add("Public DNS", "example.com", 45777))
+        assertIs<RemoteHostOutcome.Refused>(store.add("Outside range", "100.128.0.1", 45777))
     }
 
 }

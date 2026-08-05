@@ -23,6 +23,9 @@ PORT=45998
 RELAY="relay/target/release/phosphor-relay"
 ESTATE=(100.114.165.77 100.66.109.56)
 JSON=0
+SCRATCH_ROOT="${JCODE_SCRATCH_DIR:-$HOME/.jcode/scratch}"
+mkdir -p "$SCRATCH_ROOT"
+WORK="$(mktemp -d "$SCRATCH_ROOT/phosphor-force-link-states.XXXXXX")"
 
 for arg in "$@"; do
   case "$arg" in
@@ -93,33 +96,42 @@ max_gap_ms() {
     | awk 'NR>1{d=$1-p; if(d>m) m=d} {p=$1} END{print m+0}'
 }
 
-"$RELAY" serve --port "$PORT" >/tmp/force-link-states.log 2>&1 &
+RELAY_LOG="$WORK/relay.log"
+"$RELAY" serve --port "$PORT" >"$RELAY_LOG" 2>&1 &
 SACRIFICIAL=$!
-cleanup() { kill -CONT "$SACRIFICIAL" 2>/dev/null; kill -9 "$SACRIFICIAL" 2>/dev/null; }
+cleanup() {
+  kill -CONT "$SACRIFICIAL" 2>/dev/null
+  kill -9 "$SACRIFICIAL" 2>/dev/null
+  rm -rf "$WORK"
+}
 trap cleanup EXIT
 sleep 3
 
-kill -0 "$SACRIFICIAL" 2>/dev/null || { echo "sacrificial relay would not start; see /tmp/force-link-states.log" >&2; exit 4; }
+kill -0 "$SACRIFICIAL" 2>/dev/null || { echo "sacrificial relay would not start; see $RELAY_LOG" >&2; exit 4; }
 
 # ---- baseline: frames flowing on a healthy link ------------------------------
-read_frames "$PORT" 4 /tmp/fls-base.bin
-BASE=$(frame_count /tmp/fls-base.bin)
-[ "$BASE" -ge 2 ] \
-  && record baseline green "$BASE K frames, steady cadence" \
-  || record baseline red "only $BASE K frames; the relay is not streaming"
+read_frames "$PORT" 4 "$WORK/base.bin"
+BASE=$(frame_count "$WORK/base.bin")
+if [ "$BASE" -ge 2 ]; then
+  record baseline green "$BASE K frames, steady cadence"
+else
+  record baseline red "only $BASE K frames; the relay is not streaming"
+fi
 
 # ---- stalled: frozen process, socket still open ------------------------------
-( read_frames "$PORT" 9 /tmp/fls-stall.bin ) & READER=$!
+( read_frames "$PORT" 9 "$WORK/stall.bin" ) & READER=$!
 sleep 3; kill -STOP "$SACRIFICIAL"; sleep 5; kill -CONT "$SACRIFICIAL"
 wait $READER 2>/dev/null
-GAP=$(max_gap_ms /tmp/fls-stall.bin)
+GAP=$(max_gap_ms "$WORK/stall.bin")
 # A healthy link ticks every ~1000 ms, so anything past 3 s is a genuine freeze.
-[ "$GAP" -ge 3000 ] \
-  && record stalled green "${GAP} ms gap with the socket still open" \
-  || record stalled red "largest gap only ${GAP} ms; the freeze did not take"
+if [ "$GAP" -ge 3000 ]; then
+  record stalled green "${GAP} ms gap with the socket still open"
+else
+  record stalled red "largest gap only ${GAP} ms; the freeze did not take"
+fi
 
 # ---- backoff: peer dies mid-stream -------------------------------------------
-( read_frames "$PORT" 6 /tmp/fls-kill.bin ) & READER=$!
+( read_frames "$PORT" 6 "$WORK/kill.bin" ) & READER=$!
 sleep 2; kill -9 "$SACRIFICIAL" 2>/dev/null
 wait $READER 2>/dev/null
 sleep 1
@@ -130,10 +142,13 @@ else
 fi
 
 # ---- error: nothing listening ------------------------------------------------
-read_frames "$PORT" 2 /tmp/fls-err.bin
-[ $? -eq 7 ] \
-  && record error green "connection refused, the terminal-failure path" \
-  || record error red "a closed port did not refuse"
+read_frames "$PORT" 2 "$WORK/error.bin"
+ERROR_RESULT=$?
+if [ "$ERROR_RESULT" -eq 7 ]; then
+  record error green "connection refused, the terminal-failure path"
+else
+  record error red "a closed port did not refuse"
+fi
 
 # ---- the estate relays must be exactly as we found them ----------------------
 i=0; ESTATE_OK=1
@@ -146,9 +161,11 @@ for h in "${ESTATE[@]}"; do
   fi
   i=$((i+1))
 done
-[ "$ESTATE_OK" -eq 1 ] \
-  && record estate green "both estate relays healthy, untouched" \
-  || record estate red "an estate relay is unreachable; investigate before trusting this run"
+if [ "$ESTATE_OK" -eq 1 ]; then
+  record estate green "both estate relays healthy, untouched"
+else
+  record estate red "an estate relay is unreachable; investigate before trusting this run"
+fi
 
 GREEN=0; RED=0
 for r in "${RESULTS[@]}"; do

@@ -68,7 +68,7 @@ val LocalUiPlacementLocked = staticCompositionLocalOf { false }
 // counter-rotate so they read from the edge the user is actually viewing from.
 val LocalUiUpright = staticCompositionLocalOf { 0 }
 
-// ── The upright primitive (Ben's ask #1) ──────────────────────────────────────
+// Upright layout primitive for quarter-turn UI placement.
 // ONE correct quadrant rotation. The naive `graphicsLayer { rotationZ = q*-90 }`
 // rotated a cell's pixels WITHOUT re-measuring, so at 90°/270° a label clipped and
 // misaligned against its un-rotated bounds. This remeasures the child with SWAPPED

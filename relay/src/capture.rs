@@ -41,12 +41,14 @@ impl Source {
 }
 
 fn str_prop<'a>(props: &'a serde_json::Value, key: &str) -> Option<&'a str> {
-    props.get(key).and_then(|v| v.as_str()).filter(|s| !s.is_empty())
+    props
+        .get(key)
+        .and_then(|v| v.as_str())
+        .filter(|s| !s.is_empty())
 }
 
-/// Deadline-only guard for local, fast tools (pw-dump/pactl): a hung PipeWire
-/// daemon gets its probe killed at 5 s instead of freezing the control loop
-/// forever (audit finding 4's local-tool corner).
+/// Deadline-only guard for local PipeWire probes. A hung daemon is killed after
+/// five seconds instead of freezing the control loop.
 static NO_CANCEL: AtomicBool = AtomicBool::new(false);
 
 /// Parse `pw-dump` once into the ordered source list (apps first in announce
@@ -71,7 +73,9 @@ fn parse_dump(out: &[u8]) -> Vec<Source> {
         Ok(v) => v,
         Err(_) => return Vec::new(),
     };
-    let Some(objs) = dump.as_array() else { return Vec::new() };
+    let Some(objs) = dump.as_array() else {
+        return Vec::new();
+    };
 
     let mut apps: Vec<Source> = Vec::new();
     let mut monitors: Vec<Source> = Vec::new();
@@ -87,9 +91,10 @@ fn parse_dump(out: &[u8]) -> Vec<Source> {
         };
         match str_prop(props, "media.class") {
             Some("Stream/Output/Audio") => {
-                let serial = props
-                    .get("object.serial")
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+                let serial = props.get("object.serial").and_then(|v| {
+                    v.as_u64()
+                        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                });
                 let Some(serial) = serial else { continue };
                 let app_name = str_prop(props, "application.name");
                 let media_name = str_prop(props, "media.name");
@@ -115,17 +120,23 @@ fn parse_dump(out: &[u8]) -> Vec<Source> {
                 });
             }
             Some("Audio/Sink") => {
-                let Some(node_name) = str_prop(props, "node.name") else { continue };
-                let object_id = o
-                    .get("id")
-                    .and_then(|v| v.as_u64().or_else(|| v.as_str().and_then(|s| s.parse().ok())));
+                let Some(node_name) = str_prop(props, "node.name") else {
+                    continue;
+                };
+                let object_id = o.get("id").and_then(|v| {
+                    v.as_u64()
+                        .or_else(|| v.as_str().and_then(|s| s.parse().ok()))
+                });
                 let Some(object_id) = object_id else { continue };
                 let desc = str_prop(props, "node.description").unwrap_or(node_name);
                 monitors.push(Source {
                     id: format!("device:{node_name}.monitor"),
                     kind: "monitor".into(),
                     label: format!("OUT · {desc}"),
-                    spec: ConnectSpec::SinkMonitor { node_name: node_name.to_string(), object_id },
+                    spec: ConnectSpec::SinkMonitor {
+                        node_name: node_name.to_string(),
+                        object_id,
+                    },
                 });
             }
             _ => {}
@@ -184,12 +195,16 @@ fn sink_input_indices(stdout: &[u8]) -> Result<Vec<u32>, String> {
         .collect()
 }
 
-/// Finding 14: choosing an output is an output switch, not merely a monitor
-/// retarget. Make it the PipeWire default, then move every existing PulseAudio
-/// sink-input because pinned/live streams do not follow a default change.
-/// Every child uses the session's deadline+cancellation path (finding 4).
+/// Choosing an output switches the desktop output instead of only retargeting
+/// capture. Set the PipeWire default, then move existing PulseAudio sink inputs
+/// because active streams do not follow a default change. Every subprocess uses
+/// the session deadline and cancellation path.
 pub fn switch_output(spec: &ConnectSpec, cancel: &AtomicBool) -> Result<(), OutputSwitchError> {
-    let ConnectSpec::SinkMonitor { node_name, object_id } = spec else {
+    let ConnectSpec::SinkMonitor {
+        node_name,
+        object_id,
+    } = spec
+    else {
         return Ok(()); // app-stream choices retain their capture-only behavior
     };
 
@@ -241,13 +256,28 @@ fn spawn_child(spec: &ConnectSpec) -> std::io::Result<Child> {
         let mut cmd = Command::new("pw-record");
         match spec {
             ConnectSpec::SinkMonitor { node_name, .. } => {
-                cmd.args(["--target", node_name, "-P", "{ stream.capture.sink = true }"]);
+                cmd.args([
+                    "--target",
+                    node_name,
+                    "-P",
+                    "{ stream.capture.sink = true }",
+                ]);
             }
             ConnectSpec::AppStream { serial } => {
                 cmd.args(["--target", &serial.to_string()]);
             }
         }
-        cmd.args(["--latency", "20ms", "--rate", "48000", "--channels", "2", "--format", "s16", "-"]);
+        cmd.args([
+            "--latency",
+            "20ms",
+            "--rate",
+            "48000",
+            "--channels",
+            "2",
+            "--format",
+            "s16",
+            "-",
+        ]);
         cmd.stdout(Stdio::piped()).stderr(Stdio::null()).spawn()
     } else {
         // Fallback: parec on a sink monitor only (no per-app path).
@@ -276,12 +306,11 @@ fn spawn_child(spec: &ConnectSpec) -> std::io::Result<Child> {
     }
 }
 
-/// A running capture pump. RAII (audit finding 8): DROPPING it — by any path,
-/// including a panic unwind — kills its child and joins its thread, so no
-/// zombie pw-record survives a source switch, a teardown, or a crash.
+/// A running capture pump. Dropping it kills the child and joins the thread, so
+/// no recorder process survives a source switch or session teardown.
 pub struct CapturePump {
-    /// Session-scoped pump identity; EOF events carry it so a stale pump's
-    /// death can never kill its replacement (audit finding 6).
+    /// Session-scoped identity. EOF events carry it so stale pumps cannot stop
+    /// their replacements.
     pub id: u64,
     child: Arc<Mutex<Option<Child>>>,
     stopping: Arc<AtomicBool>,
@@ -324,10 +353,8 @@ pub fn start(
             match stdout.read_exact(&mut buf) {
                 Ok(()) => {
                     let frame = proto::encode_frame(proto::A, &buf);
-                    // Full vs Disconnected split (audit finding 12): a slow
-                    // client drops ONE frame; a gone writer ends the pump —
-                    // it must not spin counting drops against a corpse.
-                    // tx_a is counted at the wire by the writer, not here.
+                    // A slow client drops one frame. A disconnected writer ends the pump
+                    // instead of spinning against a dead channel. The writer counts tx_a.
                     match writer.try_send(frame) {
                         Ok(()) => {}
                         Err(TrySendError::Full(_)) => {
@@ -337,10 +364,8 @@ pub fn start(
                     }
                 }
                 Err(_) => {
-                    // EOF or read error: if we asked to stop, exit silently;
-                    // otherwise the source vanished — signal a fallback,
-                    // tagged with OUR id so a stale EOF can't kill a
-                    // replacement pump (audit finding 6).
+                    // Requested stops exit silently. Unexpected EOF signals fallback with
+                    // this pump's id, so a stale event cannot stop its replacement.
                     if !stopping_t.load(Ordering::SeqCst) {
                         let _ = ctl.send(Ev::CaptureEof(id));
                     }
@@ -354,7 +379,12 @@ pub fn start(
         }
     });
 
-    Ok(CapturePump { id, child, stopping, handle: Some(handle) })
+    Ok(CapturePump {
+        id,
+        child,
+        stopping,
+        handle: Some(handle),
+    })
 }
 
 #[cfg(test)]
@@ -379,7 +409,10 @@ mod tests {
         assert_eq!(sources[0].id, "app:Player");
         assert_eq!(
             sources[1].spec,
-            ConnectSpec::SinkMonitor { node_name: "alsa_output.usb".into(), object_id: 91 }
+            ConnectSpec::SinkMonitor {
+                node_name: "alsa_output.usb".into(),
+                object_id: 91
+            }
         );
     }
 

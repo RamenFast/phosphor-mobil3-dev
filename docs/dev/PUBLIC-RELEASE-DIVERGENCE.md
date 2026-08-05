@@ -105,3 +105,15 @@ Each entry contains:
 - **owner:** Distribution/release phases
 - **receipt:** `docs/dev/receipts/phosphor-2.0/phase-02-distributions-signing-migration.md`; S25 co-install, signed rollback export, Play enrollment, and public sanitizer remain pending.
 - **supersedes:** PRD-0006
+
+## PRD-0008
+
+- **date:** 2026-08-05
+- **capability:** Single public product after the primetime scope reset
+- **fortress_behavior:** Not applicable after Ben's 2026-08-05 direction. The separate Fortress product, its private runtime control paths, seeded endpoints, privileged capture plans, and dormant authority state are removed from the active product and build graph. Historical decisions and receipts remain immutable evidence of the earlier design.
+- **play_blocker:** The retained Android app still requires an approved upload identity, a current signed AAB, final policy declarations, 16 KiB verification, device coverage, listing assets, tester access, and human Play Console submission.
+- **policy_evidence:** `decisions/2026-08-05-product-scope-reset.md`; current `vision/`; current `spec/`; Google Play requirements rechecked during the 2026-08-05 cleanup audit.
+- **required_public_change:** Build one package, `dev.phosphor.mobil3`, from the main source set; isolate debug as `dev.phosphor.mobil3.debug`; keep relay hosts empty until user action; limit relay endpoints to Tailscale; fail closed on release signing; publish the privacy policy; scan source, manifest, dependencies, archive, native runtime, endpoints, and reporting markers.
+- **owner:** Primetime cleanup and release preparation
+- **receipt:** `docs/dev/receipts/primetime-cleanup/phase-00-baseline.md`; `docs/dev/receipts/primetime-cleanup/phase-01-authority-reset.md`; implementation and final validation receipts pending.
+- **supersedes:** PRD-0001, PRD-0002, PRD-0003, PRD-0004, PRD-0005, PRD-0006, PRD-0007

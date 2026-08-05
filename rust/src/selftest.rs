@@ -30,8 +30,9 @@ fn run_inner(files_dir: &str) -> Result<String, String> {
         samples.push(((std::f64::consts::TAU * 660.0 * t).sin() * 0.75) as f32);
         samples.push(((std::f64::consts::TAU * 440.0 * t).sin() * 0.75) as f32);
     }
-    let segments: Vec<[f32; 5]> =
-        computer.compute(&samples, SIZE as f32, SIZE as f32).to_vec();
+    let segments: Vec<[f32; 5]> = computer
+        .compute(&samples, SIZE as f32, SIZE as f32)
+        .to_vec();
     let t_dsp = t0.elapsed();
 
     let mut gpu = phosphor_render_gpu::GpuRenderer::new_offscreen(SIZE, SIZE, 2)?;
@@ -43,7 +44,10 @@ fn run_inner(files_dir: &str) -> Result<String, String> {
     let rgba = gpu.composite_and_read();
     let t_total = t0.elapsed();
 
-    let lit = rgba.chunks_exact(4).filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8).count();
+    let lit = rgba
+        .chunks_exact(4)
+        .filter(|p| p[0] > 8 || p[1] > 8 || p[2] > 8)
+        .count();
     // FNV-1a over the pixels: a stable fingerprint for cross-build comparison.
     let mut hash: u64 = 0xcbf29ce484222325;
     for b in &rgba {
@@ -66,8 +70,8 @@ fn run_inner(files_dir: &str) -> Result<String, String> {
     })
     .to_string();
 
-    let mut f = std::fs::File::create(format!("{files_dir}/selftest.json"))
-        .map_err(|e| e.to_string())?;
+    let mut f =
+        std::fs::File::create(format!("{files_dir}/selftest.json")).map_err(|e| e.to_string())?;
     f.write_all(report.as_bytes()).map_err(|e| e.to_string())?;
     Ok(report)
 }

@@ -7,13 +7,16 @@ mkdir -p "$SCRATCH_ROOT"
 WORK="$(mktemp -d "$SCRATCH_ROOT/phosphor-play-boundary-test.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
-"$REPO/scripts/check-play-boundary.sh" schema --json | jq -e '.status == "ok" and .data.exits["2"] == "required artifact/evidence unavailable"' >/dev/null
-"$REPO/scripts/check-play-boundary.sh" source --json | jq -e '.status == "ok" and .data.source_checks >= 6' >/dev/null
+"$REPO/scripts/check-play-boundary.sh" schema --json | jq -e '.status == "ok" and .data.exits["2"] == "required evidence unavailable"' >/dev/null
+"$REPO/scripts/check-play-boundary.sh" source --json | jq -e '.status == "ok" and .data.source_checks == 11' >/dev/null
 
 printf '<manifest package="dev.phosphor.mobil3"><application/></manifest>\n' > "$WORK/AndroidManifest.xml"
-printf 'playReleaseRuntimeClasspath\n+--- androidx.core:core-ktx\n' > "$WORK/dependencies.txt"
+printf 'releaseRuntimeClasspath\n+--- androidx.core:core-ktx\n' > "$WORK/dependencies.txt"
 mkdir -p "$WORK/clean" "$WORK/split" "$WORK/bad" "$WORK/symlink"
-printf 'clean play payload\n' > "$WORK/clean/classes.dex"
+# These strings legitimately occur in dependency data tables and framework
+# constants. The artifact gate must reject concrete retired identities without
+# treating generic vocabulary as shipped product surface.
+printf 'clean play payload nexus analytics android.permission.POST_NOTIFICATIONS\n' > "$WORK/clean/classes.dex"
 printf '/data/local' > "$WORK/split/first.bin"
 printf '/tmp' > "$WORK/split/second.bin"
 printf 'dev.phosphor.mobil3.fortress Shizuku /data/local/tmp\n' > "$WORK/bad/classes.dex"
@@ -31,11 +34,11 @@ printf '@ classes.dex\n@=/absolute\n' | zipnote -w "$WORK/absolute-path.aab"
 
 "$REPO/scripts/check-play-boundary.sh" artifact --json \
   --artifact "$WORK/clean.aab" --manifest "$WORK/AndroidManifest.xml" --dependencies "$WORK/dependencies.txt" \
-  | jq -e '.status == "ok" and .data.artifact_checks == 4' >/dev/null
+  | jq -e '.status == "ok" and .data.artifact_checks == 5' >/dev/null
 
 "$REPO/scripts/check-play-boundary.sh" artifact --json \
   --artifact "$WORK/split.aab" --manifest "$WORK/AndroidManifest.xml" --dependencies "$WORK/dependencies.txt" \
-  | jq -e '.status == "ok" and .data.artifact_checks == 4' >/dev/null
+  | jq -e '.status == "ok" and .data.artifact_checks == 5' >/dev/null
 
 set +e
 BAD_JSON=$("$REPO/scripts/check-play-boundary.sh" artifact --json \
@@ -86,4 +89,4 @@ set -e
 [ "$BAD_INPUT_EXIT" -eq 3 ]
 printf '%s\n' "$BAD_INPUT_JSON" | jq -e '.status == "error" and .error == "bad_input" and (.fix | length > 0)' >/dev/null
 
-printf 'Play boundary fixtures passed\n'
+printf 'Production boundary fixtures passed\n'

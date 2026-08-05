@@ -162,7 +162,7 @@ class RemoteHostStore(
         // near-duplicate rows that look identical in the sheet. Hosts are trimmed for the
         // same reason, and because a stray space would make the address fail to resolve.
         val label = rawLabel.trim()
-        val host = rawHost.trim()
+        val host = rawHost.trim().lowercase()
         if (label.isBlank()) {
             return invalid(
                 "The relay label is blank.",
@@ -205,6 +205,12 @@ class RemoteHostStore(
                 "Remove ',' from the hostname or address. This character separates stored hosts.",
             )
         }
+        if (!isTailscaleHost(host)) {
+            return invalid(
+                "The relay host is outside the supported Tailscale address space.",
+                "Use a MagicDNS name, a name ending in .ts.net, or a 100.64.0.0/10 Tailscale IPv4 address.",
+            )
+        }
         if (port !in MIN_PORT..MAX_PORT) {
             return invalid(
                 "The relay port is outside the valid TCP range.",
@@ -224,6 +230,26 @@ class RemoteHostStore(
     private fun invalid(message: String, fix: String): Validation.Invalid =
         Validation.Invalid(RemoteHostOutcome.Refused(message, fix))
 
+    private fun isTailscaleHost(host: String): Boolean {
+        if (host.endsWith(".ts.net") || host.endsWith(".tailnet")) return isDnsName(host)
+        if ('.' !in host) return isDnsLabel(host)
+        val rawOctets = host.split('.')
+        if (rawOctets.size != 4 || rawOctets.any { it.isEmpty() || it.any { char -> !char.isDigit() } }) {
+            return false
+        }
+        if (rawOctets.any { it.length > 1 && it.startsWith('0') }) return false
+        val octets = rawOctets.map { it.toIntOrNull() ?: return false }
+        return octets.size == 4 &&
+            octets.all { it in 0..255 } &&
+            octets[0] == 100 &&
+            octets[1] in 64..127
+    }
+
+    private fun isDnsName(host: String): Boolean =
+        host.length <= MAX_DNS_NAME_LENGTH && host.split('.').all(::isDnsLabel)
+
+    private fun isDnsLabel(label: String): Boolean = DNS_LABEL.matches(label)
+
     private sealed interface Validation {
         data class Valid(val host: RemoteHost) : Validation
         data class Invalid(val refusal: RemoteHostOutcome.Refused) : Validation
@@ -237,6 +263,8 @@ class RemoteHostStore(
         private const val MAX_LABEL_LENGTH = 32
         private const val MIN_PORT = 1
         private const val MAX_PORT = 65535
+        private const val MAX_DNS_NAME_LENGTH = 253
+        private val DNS_LABEL = Regex("[a-z0-9](?:[a-z0-9-]{0,61}[a-z0-9])?")
     }
 }
 

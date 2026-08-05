@@ -1,6 +1,6 @@
 //! Library browsing + file playback. Roots come from config (a local `path` or
-//! an `rclone` remote). Browsing is jailed (canonicalise + prefix check). A
-//! played file is decoded by `ffmpeg` into the same 1920-byte A-frames as live
+//! an `rclone` remote). Browsing rejects path traversal and follows deliberate
+//! user-owned symlinks. A played file is decoded by `ffmpeg` into the same A-frames as live
 //! capture; pause is just "stop reading the pipe" (ffmpeg backpressures, so
 //! resume is sample-exact); seek respawns with `-ss`; EOF auto-advances to the
 //! next file in the sorted directory.
@@ -19,7 +19,9 @@ use crate::proto::{self, A_FRAME};
 use crate::session::{Counters, Ev};
 use crate::util;
 
-pub const AUDIO_EXTS: &[&str] = &["wav", "flac", "mp3", "ogg", "opus", "m4a", "aac", "aiff", "wv"];
+pub const AUDIO_EXTS: &[&str] = &[
+    "wav", "flac", "mp3", "ogg", "opus", "m4a", "aac", "aiff", "wv",
+];
 const RCLONE_MAX_BYTES: u64 = 256 * 1024 * 1024;
 
 pub type LibErr = (String, String); // (error, fix)
@@ -35,9 +37,8 @@ fn is_audio(name: &str) -> bool {
 ///
 /// Rejects any `..` component. That is what actually stops a client from walking out
 /// of the library, and it is a different question from whether a symlink INSIDE the
-/// library may point elsewhere. Symlinks are the user's own deliberate structure and
-/// are followed (Ben's ~/Music/"WAV versions" lives on another drive); a crafted
-/// `../../etc` from the wire is not, and never reaches the filesystem.
+/// library may point elsewhere. User-owned symlinks are deliberate structure and are
+/// followed, while a crafted `../../etc` request never reaches the filesystem.
 fn clean_rel(rel: &str) -> String {
     rel.trim_matches('/').to_string()
 }
@@ -67,33 +68,40 @@ pub fn list(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<proto:
 
 fn list_local(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
     let base = root.path.as_deref().unwrap_or_default();
-    let base = std::fs::canonicalize(base)
-        .map_err(|_| ("library root is unreadable".into(), format!("check the path exists: {base}")))?;
+    let base = std::fs::canonicalize(base).map_err(|_| {
+        (
+            "library root is unreadable".into(),
+            format!("check the path exists: {base}"),
+        )
+    })?;
     let rel_clean = clean_rel(rel);
     if escapes_root(&rel_clean) {
-        return Err(("path escapes the library root".into(), "browse within the library".into()));
+        return Err((
+            "path escapes the library root".into(),
+            "browse within the library".into(),
+        ));
     }
     // NOT canonicalized: canonicalize() resolves symlinks, and the resulting real path
     // legitimately lands outside the root when the user symlinked another drive in. The
     // `..` check above is what keeps the wire honest.
     let target = base.join(&rel_clean);
     if !target.is_dir() {
-        return Err(("no such folder".into(), "browse a folder that exists".into()));
+        return Err((
+            "no such folder".into(),
+            "browse a folder that exists".into(),
+        ));
     }
     let mut dirs = Vec::new();
     let mut files = Vec::new();
-    let rd = std::fs::read_dir(&target)
-        .map_err(|e| ("cannot read folder".into(), format!("{e}")))?;
+    let rd =
+        std::fs::read_dir(&target).map_err(|e| ("cannot read folder".into(), format!("{e}")))?;
     for ent in rd.flatten() {
         let name = ent.file_name().to_string_lossy().into_owned();
         if name.starts_with('.') {
             continue;
         }
-        // metadata() FOLLOWS symlinks; file_type() does not. With file_type a symlinked
-        // folder is neither dir nor audio file, so it silently vanished from the
-        // listing — Ben's ~/Music/"WAV versions" -> /media/.../wav-versions was
-        // invisible. A symlink the user made in their own library is deliberate, so it
-        // is served like the thing it points at.
+        // metadata() follows symlinks while file_type() does not. A user-created
+        // symlink is served like the directory or audio file it points at.
         //
         // A broken link has no metadata; fall back to the link's own type so it is
         // skipped quietly rather than aborting the whole listing.
@@ -111,10 +119,19 @@ fn list_local(root: &LibraryRoot, rel: &str) -> Result<proto::Listing, LibErr> {
     }
     dirs.sort();
     files.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(proto::Listing { root: root.id.clone(), path: rel_clean, dirs, files })
+    Ok(proto::Listing {
+        root: root.id.clone(),
+        path: rel_clean,
+        dirs,
+        files,
+    })
 }
 
-fn list_rclone(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<proto::Listing, LibErr> {
+fn list_rclone(
+    root: &LibraryRoot,
+    rel: &str,
+    cancel: &AtomicBool,
+) -> Result<proto::Listing, LibErr> {
     if !util::tool_exists("rclone") {
         return Err((
             "rclone is not installed".into(),
@@ -130,22 +147,30 @@ fn list_rclone(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<pro
     };
     let mut cmd = Command::new("rclone");
     cmd.args(["lsjson", &full]);
-    // Deadline + cancel (audit finding 4): a stalled Drive listing dies in 20 s
-    // or the moment the session ends — never holds the relay hostage.
-    let out = util::run_cancellable(&mut cmd, Duration::from_secs(20), cancel)
-        .map_err(|e| ("rclone failed".into(), format!("{e} — check connectivity, retry")))?;
+    // A stalled remote listing ends after 20 seconds or when the session is cancelled.
+    let out = util::run_cancellable(&mut cmd, Duration::from_secs(20), cancel).map_err(|e| {
+        (
+            "rclone failed".into(),
+            format!("{e} — check connectivity, retry"),
+        )
+    })?;
     if !out.status.success() {
         return Err((
             "rclone could not list that remote path".into(),
             "check the remote name + path (rclone listremotes)".into(),
         ));
     }
-    let arr: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
+    let arr: serde_json::Value =
+        serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
     let mut dirs = Vec::new();
     let mut files = Vec::new();
     if let Some(items) = arr.as_array() {
         for it in items {
-            let name = it.get("Name").and_then(|v| v.as_str()).unwrap_or("").to_string();
+            let name = it
+                .get("Name")
+                .and_then(|v| v.as_str())
+                .unwrap_or("")
+                .to_string();
             if name.is_empty() {
                 continue;
             }
@@ -159,7 +184,12 @@ fn list_rclone(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<pro
     }
     dirs.sort();
     files.sort_by(|a, b| a.name.cmp(&b.name));
-    Ok(proto::Listing { root: root.id.clone(), path: rel_clean, dirs, files })
+    Ok(proto::Listing {
+        root: root.id.clone(),
+        path: rel_clean,
+        dirs,
+        files,
+    })
 }
 
 /// Warm the cache for a file WITHOUT opening a session — the relay's Drive
@@ -179,7 +209,10 @@ fn resolve_abs(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<Pat
             .map_err(|_| ("library root is unreadable".into(), "check the path".into()))?;
         let rel_clean = clean_rel(rel);
         if escapes_root(&rel_clean) {
-            return Err(("path escapes the library root".into(), "play within the library".into()));
+            return Err((
+                "path escapes the library root".into(),
+                "play within the library".into(),
+            ));
         }
         // Same reasoning as list_local: a symlink the user placed in their own library
         // resolves outside the root by design, so the guard is on the requested path
@@ -192,9 +225,16 @@ fn resolve_abs(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<Pat
     }
 }
 
-fn resolve_rclone_file(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Result<PathBuf, LibErr> {
+fn resolve_rclone_file(
+    root: &LibraryRoot,
+    rel: &str,
+    cancel: &AtomicBool,
+) -> Result<PathBuf, LibErr> {
     if !util::tool_exists("rclone") {
-        return Err(("rclone is not installed".into(), "install rclone + run: rclone config".into()));
+        return Err((
+            "rclone is not installed".into(),
+            "install rclone + run: rclone config".into(),
+        ));
     }
     let remote = root.rclone.as_deref().unwrap_or_default();
     let rel_clean = clean_rel(rel);
@@ -210,44 +250,58 @@ fn resolve_rclone_file(root: &LibraryRoot, rel: &str, cancel: &AtomicBool) -> Re
     // size guard via lsjson of the single object (deadline + cancel)
     let mut ls = Command::new("rclone");
     ls.args(["lsjson", &full]);
-    if let Ok(o) = util::run_cancellable(&mut ls, Duration::from_secs(20), cancel) {
-        if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&o.stdout) {
-            if let Some(sz) = v.as_array().and_then(|a| a.first()).and_then(|f| f.get("Size")).and_then(|s| s.as_u64()) {
-                if sz > RCLONE_MAX_BYTES {
-                    return Err(("remote file exceeds the 256 MB cache guard".into(), "pick a smaller file".into()));
-                }
-            }
-        }
+    let remote_size = util::run_cancellable(&mut ls, Duration::from_secs(20), cancel)
+        .ok()
+        .and_then(|output| serde_json::from_slice::<serde_json::Value>(&output.stdout).ok())
+        .and_then(|value| value.as_array().and_then(|items| items.first()).cloned())
+        .and_then(|item| item.get("Size").and_then(|size| size.as_u64()));
+    if remote_size.is_some_and(|size| size > RCLONE_MAX_BYTES) {
+        return Err((
+            "remote file exceeds the 256 MB cache guard".into(),
+            "pick a smaller file".into(),
+        ));
     }
-    // The download: generous deadline (Drive can be slow), but ALWAYS killable —
-    // teardown/cancel reaps it within 25 ms (audit finding 4's biggest offender).
+    // Remote downloads have a generous deadline but remain cancellation-aware.
     let mut cp = Command::new("rclone");
     cp.args(["copyto", &full, &cache.to_string_lossy()]);
     let out = util::run_cancellable(&mut cp, Duration::from_secs(180), cancel)
-        .map_err(|e| ("rclone copy failed".into(), format!("{e}")))?;
+        .map_err(|error| ("rclone copy failed".into(), error.to_string()))?;
     if !out.status.success() {
-        return Err(("rclone could not fetch that file".into(), "check the remote + connectivity".into()));
+        return Err((
+            "rclone could not fetch that file".into(),
+            "check the remote + connectivity".into(),
+        ));
     }
     Ok(cache)
 }
 
 // ── Metadata ─────────────────────────────────────────────────────────────────
 
-fn probe_meta(abs: &Path, fallback_name: &str, cancel: &AtomicBool) -> (String, String, String, Option<u64>) {
+fn probe_meta(
+    abs: &Path,
+    fallback_name: &str,
+    cancel: &AtomicBool,
+) -> (String, String, String, Option<u64>) {
     let stem = Path::new(fallback_name)
         .file_stem()
         .map(|s| s.to_string_lossy().into_owned())
         .unwrap_or_else(|| fallback_name.to_string());
     let mut cmd = Command::new("ffprobe");
     cmd.args([
-        "-v", "error",
-        "-show_entries", "format=duration:format_tags=title,artist,album",
-        "-of", "json",
+        "-v",
+        "error",
+        "-show_entries",
+        "format=duration:format_tags=title,artist,album",
+        "-of",
+        "json",
         &abs.to_string_lossy(),
     ]);
     let out = util::run_cancellable(&mut cmd, Duration::from_secs(10), cancel);
-    let Ok(out) = out else { return (stem, String::new(), String::new(), None) };
-    let v: serde_json::Value = serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
+    let Ok(out) = out else {
+        return (stem, String::new(), String::new(), None);
+    };
+    let v: serde_json::Value =
+        serde_json::from_slice(&out.stdout).unwrap_or(serde_json::Value::Null);
     let fmt = v.get("format");
     let duration_ms = fmt
         .and_then(|f| f.get("duration"))
@@ -255,7 +309,12 @@ fn probe_meta(abs: &Path, fallback_name: &str, cancel: &AtomicBool) -> (String, 
         .and_then(|s| s.parse::<f64>().ok())
         .map(|sec| (sec * 1000.0) as u64);
     let tags = fmt.and_then(|f| f.get("tags"));
-    let tag = |k: &str| tags.and_then(|t| t.get(k)).and_then(|v| v.as_str()).unwrap_or("").to_string();
+    let tag = |k: &str| {
+        tags.and_then(|t| t.get(k))
+            .and_then(|v| v.as_str())
+            .unwrap_or("")
+            .to_string()
+    };
     let title = {
         let t = tag("title");
         if t.is_empty() { stem } else { t }
@@ -266,7 +325,19 @@ fn probe_meta(abs: &Path, fallback_name: &str, cancel: &AtomicBool) -> (String, 
 /// Best-effort embedded cover → art cache. Returns the art id if a frame came out.
 fn extract_art(abs: &Path, art: &ArtCache, cancel: &AtomicBool) -> Option<String> {
     let mut cmd = Command::new("ffmpeg");
-    cmd.args(["-nostdin", "-v", "error", "-i", &abs.to_string_lossy(), "-an", "-c:v", "copy", "-f", "image2pipe", "-"]);
+    cmd.args([
+        "-nostdin",
+        "-v",
+        "error",
+        "-i",
+        &abs.to_string_lossy(),
+        "-an",
+        "-c:v",
+        "copy",
+        "-f",
+        "image2pipe",
+        "-",
+    ]);
     let out = util::run_cancellable(&mut cmd, Duration::from_secs(10), cancel).ok()?;
     if !out.status.success() || out.stdout.is_empty() {
         return None;
@@ -283,8 +354,8 @@ fn extract_art(abs: &Path, art: &ArtCache, cancel: &AtomicBool) -> Option<String
 // ── The ffmpeg pump ──────────────────────────────────────────────────────────
 
 struct FilePump {
-    /// Session-scoped identity: FileEof carries it so a pre-seek/pre-next
-    /// pump's death can never advance its replacement (audit finding 6).
+    /// Session-scoped identity. FileEof carries it so a replaced pump cannot
+    /// advance the new one.
     id: u64,
     child: Arc<Mutex<Option<Child>>>,
     stopping: Arc<AtomicBool>,
@@ -294,8 +365,7 @@ struct FilePump {
     handle: Option<JoinHandle<()>>,
 }
 
-/// RAII (audit finding 8): any drop path — including a panic unwind — kills
-/// ffmpeg and joins the pump thread.
+/// Dropping the pump kills ffmpeg and joins its thread.
 impl Drop for FilePump {
     fn drop(&mut self) {
         self.stopping.store(true, Ordering::SeqCst);
@@ -322,19 +392,39 @@ fn start_pump(
     if base_ms > 0 {
         cmd.args(["-ss", &format!("{:.3}", base_ms as f64 / 1000.0)]);
     }
-    cmd.args(["-i", &abs.to_string_lossy(), "-f", "s16le", "-ar", "48000", "-ac", "2", "-"]);
+    cmd.args([
+        "-i",
+        &abs.to_string_lossy(),
+        "-f",
+        "s16le",
+        "-ar",
+        "48000",
+        "-ac",
+        "2",
+        "-",
+    ]);
     let mut child = cmd
         .stdout(Stdio::piped())
         .stderr(Stdio::null())
         .spawn()
-        .map_err(|e| ("ffmpeg failed to start".into(), format!("install ffmpeg — {e}")))?;
+        .map_err(|e| {
+            (
+                "ffmpeg failed to start".into(),
+                format!("install ffmpeg — {e}"),
+            )
+        })?;
     let mut stdout = child.stdout.take().expect("piped stdout");
     let child = Arc::new(Mutex::new(Some(child)));
     let stopping = Arc::new(AtomicBool::new(false));
     let paused = Arc::new(AtomicBool::new(paused_initial));
     let bytes = Arc::new(AtomicU64::new(0));
 
-    let (st, pz, by, child_t) = (stopping.clone(), paused.clone(), bytes.clone(), child.clone());
+    let (st, pz, by, child_t) = (
+        stopping.clone(),
+        paused.clone(),
+        bytes.clone(),
+        child.clone(),
+    );
     let handle = thread::spawn(move || {
         use std::io::Read;
         use std::time::Instant;
@@ -357,8 +447,8 @@ fn start_pump(
             match stdout.read_exact(&mut buf) {
                 Ok(()) => {
                     let frame = proto::encode_frame(proto::A, &buf);
-                    // Full vs Disconnected split (audit finding 12); tx_a is
-                    // counted at the wire by the writer.
+                    // A full queue drops one frame. A disconnected writer ends the pump.
+                    // The writer counts tx_a at the wire.
                     match writer.try_send(frame) {
                         Ok(()) => {}
                         Err(std::sync::mpsc::TrySendError::Full(_)) => {
@@ -378,7 +468,7 @@ fn start_pump(
                 }
                 Err(_) => {
                     if !st.load(Ordering::SeqCst) {
-                        let _ = ctl.send(Ev::FileEof(id)); // tagged (finding 6)
+                        let _ = ctl.send(Ev::FileEof(id)); // session-scoped pump id
                     }
                     break;
                 }
@@ -390,7 +480,15 @@ fn start_pump(
         }
     });
 
-    Ok(FilePump { id, child, stopping, paused, bytes, base_ms, handle: Some(handle) })
+    Ok(FilePump {
+        id,
+        child,
+        stopping,
+        paused,
+        bytes,
+        base_ms,
+        handle: Some(handle),
+    })
 }
 
 // ── The file session ─────────────────────────────────────────────────────────
@@ -418,25 +516,43 @@ pub struct FileSession {
     pump: Option<FilePump>,
 }
 
+pub(crate) struct FileSessionResources {
+    pub(crate) writer: SyncSender<Vec<u8>>,
+    pub(crate) counters: Arc<Counters>,
+    pub(crate) ctl: Sender<Ev>,
+    pub(crate) art: ArtCache,
+    pub(crate) pump_ids: Arc<AtomicU64>,
+    pub(crate) cancel: Arc<AtomicBool>,
+}
+
 impl FileSession {
     pub fn open(
         root: LibraryRoot,
         rel: &str,
-        writer: SyncSender<Vec<u8>>,
-        counters: Arc<Counters>,
-        ctl: Sender<Ev>,
-        art: ArtCache,
-        pump_ids: Arc<AtomicU64>,
-        cancel: Arc<AtomicBool>,
+        resources: FileSessionResources,
     ) -> Result<FileSession, LibErr> {
+        let FileSessionResources {
+            writer,
+            counters,
+            ctl,
+            art,
+            pump_ids,
+            cancel,
+        } = resources;
         let (dir_rel, filename) = split_rel(rel);
         if !is_audio(&filename) {
-            return Err(("not an audio file".into(), "pick a file with a supported audio extension".into()));
+            return Err((
+                "not an audio file".into(),
+                "pick a file with a supported audio extension".into(),
+            ));
         }
         let listing = list(&root, &dir_rel, &cancel)?;
         let entries: Vec<String> = listing.files.iter().map(|f| f.name.clone()).collect();
         let index = entries.iter().position(|n| n == &filename).ok_or_else(|| {
-            ("file is not in its directory listing".into(), "refresh the folder and pick again".into())
+            (
+                "file is not in its directory listing".into(),
+                "refresh the folder and pick again".into(),
+            )
         })?;
         let mut fs = FileSession {
             root,
@@ -475,7 +591,11 @@ impl FileSession {
     fn play_index(&mut self, base_ms: u64, paused: bool) -> Result<(), LibErr> {
         self.stop_pump();
         let name = self.entries[self.index].clone();
-        let rel = if self.dir_rel.is_empty() { name.clone() } else { format!("{}/{}", self.dir_rel, name) };
+        let rel = if self.dir_rel.is_empty() {
+            name.clone()
+        } else {
+            format!("{}/{}", self.dir_rel, name)
+        };
         self.rel_path = rel.clone();
 
         // rclone roots: announce the download, then cache-then-play (may block).
@@ -522,7 +642,10 @@ impl FileSession {
     }
 
     pub fn is_playing(&self) -> bool {
-        self.pump.as_ref().map(|p| !p.paused.load(Ordering::SeqCst)).unwrap_or(false)
+        self.pump
+            .as_ref()
+            .map(|p| !p.paused.load(Ordering::SeqCst))
+            .unwrap_or(false)
     }
 
     pub fn set_paused(&self, paused: bool) {
@@ -539,7 +662,11 @@ impl FileSession {
     }
 
     pub fn seek(&mut self, ms: u64) -> Result<(), LibErr> {
-        let paused = self.pump.as_ref().map(|p| p.paused.load(Ordering::SeqCst)).unwrap_or(false);
+        let paused = self
+            .pump
+            .as_ref()
+            .map(|p| p.paused.load(Ordering::SeqCst))
+            .unwrap_or(false);
         self.play_index(ms, paused)
     }
 
@@ -569,11 +696,9 @@ impl FileSession {
             path: Some(self.rel_path.clone()),
         }
     }
-
 }
 
-/// RAII (audit finding 8): dropping the session stops its pump; explicit
-/// `.take()` at call sites is the whole stop API now.
+/// Dropping the session stops its pump. Explicit `.take()` is the stop API.
 impl Drop for FileSession {
     fn drop(&mut self) {
         self.stop_pump();
@@ -586,8 +711,8 @@ mod tests {
     use crate::config::LibraryRoot;
     use std::fs;
 
-    /// A library root with one real folder, one audio file, and one SYMLINKED folder
-    /// pointing OUTSIDE the root — the exact shape of Ben's ~/Music/"WAV versions".
+    /// A library root with a real folder, an audio file, and a symlinked folder
+    /// that points outside the root.
     fn fixture(name: &str) -> (std::path::PathBuf, std::path::PathBuf, LibraryRoot) {
         let tmp = std::env::temp_dir().join(format!("phosphor-lib-{name}-{}", std::process::id()));
         let root = tmp.join("music");
@@ -614,7 +739,7 @@ mod tests {
         // The reported bug: file_type() does not follow links, so a symlinked folder was
         // neither dir nor audio and vanished from the listing entirely.
         let (tmp, _root, lib) = fixture("listed");
-        let listing = list_local(&lib, "").ok().expect("root should list");
+        let listing = list_local(&lib, "").expect("root should list");
         assert!(
             listing.dirs.contains(&"WAV versions".to_string()),
             "symlinked folder missing from {:?}",
@@ -630,10 +755,14 @@ mod tests {
         // Listing it is useless if opening it refuses. The old canonicalize+starts_with
         // guard resolved the link and then rejected its real location.
         let (tmp, _root, lib) = fixture("enter");
-        let listing = list_local(&lib, "WAV versions").ok().expect("symlink should be browsable");
+        let listing = list_local(&lib, "WAV versions").expect("symlink should be browsable");
         assert_eq!(
             vec!["remote.flac".to_string()],
-            listing.files.iter().map(|f| f.name.clone()).collect::<Vec<_>>(),
+            listing
+                .files
+                .iter()
+                .map(|f| f.name.clone())
+                .collect::<Vec<_>>(),
         );
         let _ = fs::remove_dir_all(tmp);
     }
@@ -656,7 +785,9 @@ mod tests {
     #[cfg(unix)]
     fn a_dot_dot_request_is_rejected_by_the_lister_itself() {
         let (tmp, _root, lib) = fixture("escape");
-        let err = list_local(&lib, "../elsewhere").err().expect("must refuse to climb out");
+        let err = list_local(&lib, "../elsewhere")
+            .err()
+            .expect("must refuse to climb out");
         assert!(err.0.contains("escapes"), "unexpected error: {}", err.0);
         assert!(!err.1.is_empty(), "refusal must carry a fix");
         let _ = fs::remove_dir_all(tmp);
@@ -668,32 +799,9 @@ mod tests {
         // A link to a deleted drive must not take the whole folder down with it.
         let (tmp, root, lib) = fixture("dangling");
         std::os::unix::fs::symlink(tmp.join("gone"), root.join("missing")).unwrap();
-        let listing = list_local(&lib, "").ok().expect("listing should survive a broken link");
+        let listing = list_local(&lib, "").expect("listing should survive a broken link");
         assert!(!listing.dirs.contains(&"missing".to_string()));
         assert!(listing.dirs.contains(&"albums".to_string()));
         let _ = fs::remove_dir_all(tmp);
-    }
-    #[test]
-    #[cfg(unix)]
-    fn bens_real_music_folder_shows_its_symlink() {
-        // Not a fixture: the actual library root on this machine. Skips cleanly on any
-        // machine where that symlink does not exist.
-        let home = std::env::var("HOME").unwrap_or_default();
-        let music = std::path::Path::new(&home).join("Music");
-        if !music.join("WAV versions").exists() {
-            return;
-        }
-        let lib = LibraryRoot {
-            id: "music0".into(),
-            label: "Music".into(),
-            path: Some(music.to_string_lossy().into_owned()),
-            rclone: None,
-        };
-        let listing = list_local(&lib, "").ok().expect("real Music should list");
-        assert!(
-            listing.dirs.contains(&"WAV versions".to_string()),
-            "the real symlink is still invisible: {:?}",
-            listing.dirs,
-        );
     }
 }

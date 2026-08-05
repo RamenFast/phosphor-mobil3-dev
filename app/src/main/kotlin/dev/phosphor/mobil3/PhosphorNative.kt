@@ -101,7 +101,7 @@ object PhosphorNative {
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
     external fun setRingActive(active: Boolean)
 
-    /** Debug receipts hatch: deterministic offscreen render → selftest.json/png. */
+    /** Deterministic offscreen render used by the debug self-test. */
     external fun selfTest(filesDir: String): String
 
     // Deck: open a local file, drive the transport, read state.

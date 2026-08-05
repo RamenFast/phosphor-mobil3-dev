@@ -26,22 +26,27 @@ pub enum WriterCmd {
     Hello,
 }
 
-/// The dedicated writer loop (audit finding 2): the ONLY place session bytes are
-/// written. H always goes first (the relay's first client frame); K self-
+pub struct WriterControl<'a> {
+    pub cancel: &'a AtomicBool,
+    pub hello_dirty: &'a AtomicBool,
+    pub ping_period: Duration,
+}
+
+/// The dedicated writer loop is the only place session bytes are written. H always
+/// goes first as the relay's first client frame; K self-
 /// generates on `ping_period` and is never queued, so a full command queue can
 /// never starve liveness; any write error/timeout reports through `on_fatal`
 /// exactly once and the loop exits.
 pub fn run_writer<W: Write>(
     mut sink: W,
     rx: Receiver<WriterCmd>,
-    cancel: &AtomicBool,
-    hello_dirty: &AtomicBool,
+    control: WriterControl<'_>,
     mut build_hello: impl FnMut() -> Vec<u8>,
-    ping_period: Duration,
     mut build_ping: impl FnMut() -> Vec<u8>,
     on_fatal: impl FnOnce(String),
 ) {
-    let tick = ping_period
+    let tick = control
+        .ping_period
         .min(Duration::from_millis(250))
         .max(Duration::from_millis(5));
     let result = (|| -> Result<(), String> {
@@ -51,18 +56,18 @@ pub fn run_writer<W: Write>(
                 .map_err(|e| format!("{what} write: {e}"))
         };
         put(&mut sink, &build_hello(), "hello")?;
-        hello_dirty.store(false, Ordering::Relaxed);
-        let mut next_ping = Instant::now() + ping_period;
+        control.hello_dirty.store(false, Ordering::Relaxed);
+        let mut next_ping = Instant::now() + control.ping_period;
         loop {
-            if cancel.load(Ordering::Relaxed) {
+            if control.cancel.load(Ordering::Relaxed) {
                 return Ok(());
             }
-            if hello_dirty.swap(false, Ordering::Relaxed) {
+            if control.hello_dirty.swap(false, Ordering::Relaxed) {
                 put(&mut sink, &build_hello(), "hello")?;
             }
             if Instant::now() >= next_ping {
                 put(&mut sink, &build_ping(), "ping")?;
-                next_ping = Instant::now() + ping_period;
+                next_ping = Instant::now() + control.ping_period;
             }
             match rx.recv_timeout(tick) {
                 Ok(WriterCmd::Frame(buf)) => put(&mut sink, &buf, "frame")?,
@@ -80,12 +85,7 @@ pub fn run_writer<W: Write>(
 /// Join with a deadline: poll `is_finished` every 15 ms; on expiry DETACH (drop
 /// the handle), count the leak, and log — never block a teardown forever on a
 /// thread that is designed to self-exit within one wake period anyway.
-pub fn bounded_join(
-    h: JoinHandle<()>,
-    name: &str,
-    deadline: Duration,
-    leaked: &AtomicU32,
-) -> bool {
+pub fn bounded_join(h: JoinHandle<()>, name: &str, deadline: Duration, leaked: &AtomicU32) -> bool {
     let t0 = Instant::now();
     while t0.elapsed() < deadline {
         if h.is_finished() {
@@ -103,11 +103,7 @@ pub fn bounded_join(
 /// WouldBlock/TimedOut (a naive read_exact would DESYNC the frame stream by
 /// discarding half-read frames), re-checking `cancel` at every timeout.
 /// Ok(true) = buffer filled · Ok(false) = cancelled · Err = real error/EOF.
-pub fn read_fully<R: Read>(
-    r: &mut R,
-    buf: &mut [u8],
-    cancel: &AtomicBool,
-) -> io::Result<bool> {
+pub fn read_fully<R: Read>(r: &mut R, buf: &mut [u8], cancel: &AtomicBool) -> io::Result<bool> {
     let mut done = 0;
     while done < buf.len() {
         if cancel.load(Ordering::Relaxed) {
@@ -119,7 +115,9 @@ pub fn read_fully<R: Read>(
             Err(e)
                 if matches!(
                     e.kind(),
-                    io::ErrorKind::WouldBlock | io::ErrorKind::TimedOut | io::ErrorKind::Interrupted
+                    io::ErrorKind::WouldBlock
+                        | io::ErrorKind::TimedOut
+                        | io::ErrorKind::Interrupted
                 ) =>
             {
                 continue;
@@ -135,8 +133,7 @@ pub fn read_fully<R: Read>(
 pub const QUIET_STALLED_MS: u64 = 3_000;
 pub const QUIET_DEAD_MS: u64 = 10_000;
 
-/// Reconnect ladder: 1 → 2 → 4 → 8 → 15 (cap). A Healthy session end resets to 1
-/// at the call site (audit finding 11's law).
+/// Reconnect ladder: 1 → 2 → 4 → 8 → 15 seconds. A healthy session resets it to 1.
 pub fn next_backoff(prev: u64) -> u64 {
     (prev.max(1) * 2).min(15)
 }
@@ -166,9 +163,9 @@ pub fn watchdog_action(quiet_ms: u64, streaming: bool, stalled: bool) -> Watchdo
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::sync::Arc;
     use std::sync::atomic::AtomicUsize;
     use std::sync::mpsc::sync_channel;
-    use std::sync::Arc;
 
     /// A Write sink that records everything and can fail from the Nth write on.
     struct MockSink {
@@ -178,16 +175,20 @@ mod tests {
     }
     impl MockSink {
         fn new(fail_from: Option<usize>) -> Self {
-            Self { data: Vec::new(), writes: 0, fail_from }
+            Self {
+                data: Vec::new(),
+                writes: 0,
+                fail_from,
+            }
         }
     }
     impl Write for MockSink {
         fn write(&mut self, buf: &[u8]) -> io::Result<usize> {
             self.writes += 1;
-            if let Some(n) = self.fail_from {
-                if self.writes >= n {
-                    return Err(io::Error::new(io::ErrorKind::TimedOut, "blackhole"));
-                }
+            if let Some(n) = self.fail_from
+                && self.writes >= n
+            {
+                return Err(io::Error::new(io::ErrorKind::TimedOut, "blackhole"));
             }
             self.data.extend_from_slice(buf);
             Ok(buf.len())
@@ -230,10 +231,12 @@ mod tests {
         run_writer(
             &mut sink,
             rx,
-            &cancel,
-            &dirty,
+            WriterControl {
+                cancel: &cancel,
+                hello_dirty: &dirty,
+                ping_period: Duration::from_secs(60),
+            },
             || encode_frame(b'H', b"{}"),
-            Duration::from_secs(60),
             || encode_frame(b'K', b"{}"),
             |e| panic!("unexpected fatal: {e}"),
         );
@@ -255,16 +258,22 @@ mod tests {
         run_writer(
             &mut sink,
             rx,
-            &cancel,
-            &dirty,
+            WriterControl {
+                cancel: &cancel,
+                hello_dirty: &dirty,
+                ping_period: Duration::from_secs(60),
+            },
             || encode_frame(b'H', b"{}"),
-            Duration::from_secs(60),
             || encode_frame(b'K', b"{}"),
             |e| panic!("unexpected fatal: {e}"),
         );
         let t = tags(&sink.data);
         assert_eq!(t.first(), Some(&b'H'));
-        assert_eq!(t.iter().filter(|&&x| x == b'H').count(), 1, "dirty cleared before markers drained");
+        assert_eq!(
+            t.iter().filter(|&&x| x == b'H').count(),
+            1,
+            "dirty cleared before markers drained"
+        );
     }
 
     #[test]
@@ -282,15 +291,20 @@ mod tests {
         run_writer(
             &mut sink,
             rx,
-            &cancel,
-            &dirty,
+            WriterControl {
+                cancel: &cancel,
+                hello_dirty: &dirty,
+                ping_period: Duration::from_millis(20),
+            },
             || encode_frame(b'H', b"{}"),
-            Duration::from_millis(20),
             || encode_frame(b'K', b"{}"),
             |e| panic!("unexpected fatal: {e}"),
         );
         let pings = tags(&sink.data).iter().filter(|&&t| t == b'K').count();
-        assert!(pings >= 3, "expected >=3 K in 120 ms at 20 ms cadence, got {pings}");
+        assert!(
+            pings >= 3,
+            "expected >=3 K in 120 ms at 20 ms cadence, got {pings}"
+        );
     }
 
     #[test]
@@ -303,10 +317,12 @@ mod tests {
         run_writer(
             &mut sink,
             rx,
-            &cancel,
-            &dirty,
+            WriterControl {
+                cancel: &cancel,
+                hello_dirty: &dirty,
+                ping_period: Duration::from_secs(60),
+            },
             || encode_frame(b'H', b"{}"),
-            Duration::from_secs(60),
             || encode_frame(b'K', b"{}"),
             |e| {
                 fired.fetch_add(1, Ordering::Relaxed);
@@ -320,10 +336,20 @@ mod tests {
     fn bounded_join_joins_fast_threads_and_detaches_stuck_ones() {
         let leaked = AtomicU32::new(0);
         let quick = std::thread::spawn(|| {});
-        assert!(bounded_join(quick, "quick", Duration::from_secs(1), &leaked));
+        assert!(bounded_join(
+            quick,
+            "quick",
+            Duration::from_secs(1),
+            &leaked
+        ));
         assert_eq!(leaked.load(Ordering::Relaxed), 0);
         let stuck = std::thread::spawn(|| std::thread::sleep(Duration::from_millis(300)));
-        assert!(!bounded_join(stuck, "stuck", Duration::from_millis(40), &leaked));
+        assert!(!bounded_join(
+            stuck,
+            "stuck",
+            Duration::from_millis(40),
+            &leaked
+        ));
         assert_eq!(leaked.load(Ordering::Relaxed), 1);
     }
 
@@ -370,7 +396,11 @@ mod tests {
 
     #[test]
     fn read_fully_observes_cancel_and_reports_eof() {
-        let mut r = DribbleRead { chunks: vec![], timeouts_between: true, gave_timeout: false };
+        let mut r = DribbleRead {
+            chunks: vec![],
+            timeouts_between: true,
+            gave_timeout: false,
+        };
         let cancel = AtomicBool::new(true);
         let mut buf = [0u8; 4];
         assert!(!read_fully(&mut r, &mut buf, &cancel).unwrap());
@@ -397,7 +427,10 @@ mod tests {
         std::thread::sleep(Duration::from_millis(60)); // let it block
         client.shutdown(std::net::Shutdown::Both).unwrap();
         let res = h.join().unwrap();
-        assert!(res.is_err(), "blocked read must wake with EOF/err after shutdown");
+        assert!(
+            res.is_err(),
+            "blocked read must wake with EOF/err after shutdown"
+        );
         drop(server);
     }
 

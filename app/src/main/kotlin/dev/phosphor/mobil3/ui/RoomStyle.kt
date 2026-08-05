@@ -5,13 +5,8 @@ import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 
-// ── RoomStyle: a room is not a palette swap — it is a PERSONALITY ────────────
-// The bundle every composable consults for control character, motion feel and
-// density. Absorbs the old `p.id == "amoled"` discriminators; the amber bench
-// (Annotated) and liquid glass (Glass) souls ride the same rails. House
-// non-negotiables (sharp corners, hairlines, mono data, Obsidian dismiss) hold
-// in every character — EXCEPT Glass's cornerRadius, sanctioned by Ben's
-// explicit ask and scoped to that room alone.
+// Each room defines control character, motion, density, and panel treatment.
+// Glass is the only built-in room that rounds controls.
 
 enum class ChromeCharacter {
     /** Carved stone — bevels, catch-light, dimensional importance (the reference). */
@@ -86,8 +81,7 @@ val Palette.style: RoomStyle
 /** Provided at the PhosphorScreen root from the DISPLAYED room (crossfade-aware). */
 val LocalRoomStyle = compositionLocalOf { CarvedStyle }
 
-// ── User overrides (Ben's ask: customizable UX/UI elements) ──────────────────
-// Null = match the room. Persisted; applied on top of whichever room is live.
+// Null follows the room. Non-null values are persisted user overrides.
 @Immutable
 data class StyleOverride(
     val character: ChromeCharacter? = null,

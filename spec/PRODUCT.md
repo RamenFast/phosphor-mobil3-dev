@@ -35,7 +35,7 @@ The app must not fork desktop engine code into this repository. Shared engine ch
 
 User-facing settings use direct typed persistence. The product has no general command bus, causal authority plane, principal model, mutation authorization layer, or behavioral audit history.
 
-A one-release migration may read the old causal settings envelope only to preserve user-facing values. The migration must then remove obsolete Nexus and audit data.
+A one-release migration may read the old causal settings envelope only to preserve user-facing values. The migration must then remove obsolete authority and audit data.
 
 Remote hosts remain private runtime data. Android backup rules must exclude remote hosts and other connection-specific values.
 
@@ -70,9 +70,9 @@ The product does not request root, Shizuku, ADB, overlay, accessibility, privile
 
 The PC relay remains a first-class source.
 
-The app must retain host editing, file browsing, playback, metadata, artwork, transport control, stream toggles, latency policy, network selection, reconnect truth, and forced link-state diagnostics that already work.
+The app must retain host editing, file browsing, playback, metadata, artwork, transport control, stream toggles, latency policy, Tailscale routing, reconnect truth, and forced link-state diagnostics that already work.
 
-Protocol v2 has no application-layer authentication or encryption. The UI and documentation must restrict it to a trusted local network or Tailscale. Open-internet use is unsupported.
+Protocol v2 has no application-layer authentication or encryption. The UI and documentation must require Tailscale. Open-internet and direct-LAN use are unsupported.
 
 The cleanup must not redesign the relay protocol.
 
@@ -86,7 +86,7 @@ The cleanup must preserve behavior before extracting or consolidating large comp
 
 `dev/pm3` is the project CLI. It may expose build, install, run, logcat, screenshot, record, smoke, doctor, schema, and related development operations.
 
-The CLI must follow the workspace agent CLI standard. It must not expose product state mutation, Nexus administration, audit export, authority grants, or product-agent transport.
+The CLI must follow the workspace developer CLI standard. It must not expose product state mutation, runtime administration, audit export, authority grants, or product automation transport.
 
 ## 10. Distribution and commerce
 

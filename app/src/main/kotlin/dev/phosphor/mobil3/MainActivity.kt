@@ -7,7 +7,6 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.SharedPreferences
 import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
 import android.content.res.Configuration
@@ -15,10 +14,10 @@ import android.graphics.Rect
 import android.media.projection.MediaProjectionConfig
 import android.media.projection.MediaProjectionManager
 import android.net.Uri
+import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
-import android.os.SystemClock
 import android.provider.Settings
 import android.view.OrientationEventListener
 import android.view.Surface
@@ -29,13 +28,15 @@ import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
 import androidx.activity.result.contract.ActivityResultContracts
+import androidx.annotation.RequiresApi
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.setValue
 import androidx.core.content.ContextCompat
+import androidx.core.content.edit
+import androidx.core.net.toUri
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
-import androidx.lifecycle.Lifecycle
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
@@ -49,62 +50,27 @@ import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
 import dev.phosphor.mobil3.ui.readReducedMotion
 import dev.phosphor.mobil3.ui.rollModeExcluding
-import dev.phosphor.mobil3.ui.PENDING_HUD_SETTINGS_IMPORT_KEY
-import dev.phosphor.mobil3.ui.settingsExportPreferences
-import dev.phosphor.mobil3.ui.settingsImportAppliedCount
-import dev.phosphor.mobil3.ui.settingsImportHudOperation
-import dev.phosphor.mobil3.ui.pendingHudCleanupResult
-import dev.phosphor.mobil3.ui.pendingHudMarkerRead
-import dev.phosphor.mobil3.ui.pendingHudMarkerWakeDecision
-import dev.phosphor.mobil3.ui.pendingHudResumeDecision
-import dev.phosphor.mobil3.ui.PreferenceValueSnapshot
-import dev.phosphor.mobil3.ui.PendingHudCleanupResult
-import dev.phosphor.mobil3.ui.PendingHudMarkerTransaction
-import dev.phosphor.mobil3.ui.hudImportStatusWithCleanup
-import dev.phosphor.mobil3.ui.preferenceValueSnapshots
 import dev.phosphor.mobil3.settings.SettingsArchive
-import dev.phosphor.mobil3.settings.CausalStatePreferences
-import dev.phosphor.mobil3.distribution.DistributionCapabilities
-import dev.phosphor.mobil3.state.ActionRequest
-import dev.phosphor.mobil3.state.Capability
-import dev.phosphor.mobil3.state.FrozenMap
-import dev.phosphor.mobil3.state.InitialSnapshots
-import dev.phosphor.mobil3.state.PhosphorStateSnapshot
-import dev.phosphor.mobil3.state.PrincipalId
-import dev.phosphor.mobil3.state.PrincipalKind
-import dev.phosphor.mobil3.state.SetDisplayHud
-import dev.phosphor.mobil3.state.Transport
-import dev.phosphor.mobil3.state.frozenSetOf
-import dev.phosphor.mobil3.store.LOCAL_HUD_MIGRATION_PRINCIPAL_ID
-import dev.phosphor.mobil3.store.LOCAL_HUMAN_PRINCIPAL_ID
-import dev.phosphor.mobil3.store.PhosphorDispatchResult
-import dev.phosphor.mobil3.store.PhosphorStateStore
 import java.io.ByteArrayOutputStream
 import java.io.File
-import java.util.UUID
 
-// M5: the app. Compose chrome over the scope SurfaceView; the loaded deck owns the transport
-// through a MediaController, so console + notification + lock screen never disagree.
+// Compose chrome overlays the scope SurfaceView. The loaded deck owns transport through one
+// MediaController so the console, notification, and lock screen remain consistent.
 class MainActivity : ComponentActivity(), ScopeActions {
 
-    private lateinit var causalStore: PhosphorStateStore
     private lateinit var ui: ScopeUiState
     private val mic = MicController()
+    private var pendingAudioPermission = AudioPermissionPurpose.NONE
     private var controller: MediaController? = null
     private var reduced = false
     private var gainValue = 1.0f
     private var lastRandomTrackTitle: String? = null
-    private var pendingHudResumeAttempted = false
-    @Volatile private var localInFlightPendingHudRaw: String? = null
     private var scopeRotationLockState by mutableStateOf(false)
     private var uiPlacementLockState by mutableStateOf(false)
     private var lockedUiLandscape by mutableStateOf(false)
     private var lockedScopeOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     private var lockedUiOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-    // Orientation sensor (Ben's asks #2–4): the Activity is pinned in three of the
-    // four lock modes; this sensor publishes the gravity quadrant and ROUTES it —
-    // beam-to-gravity (scope free + UI locked), element-upright (any UI locked), or
-    // whole-chrome-to-gravity (scope locked + UI follow). See routeOrientation.
+    // Route gravity to the beam, individual elements, or the whole chrome for the four lock combinations.
     private var gravityListener: android.hardware.SensorEventListener? = null
     private var lastSourceReopened = false
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
@@ -121,27 +87,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var committedCardinal = RotationDetent.NONE
     private var lastRoutedQ = -1
     private var captureStatusReceiverRegistered = false
-    private var pendingHudMarkerListenerRegistered = false
-    private val pendingHudMarkerListener = SharedPreferences.OnSharedPreferenceChangeListener { shared, key ->
-        tick.post {
-            val decision = pendingHudMarkerWakeDecision(
-                changedKey = key,
-                rawMarker = pendingHudMarkerRead(shared.all).raw,
-                localInFlightRawMarker = localInFlightPendingHudRaw,
-                lifecycleStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
-                activityFinishing = isFinishing,
-                activityDestroyed = isDestroyed,
-            )
-            if (!decision.shouldWake) return@post
-            if (decision.reconcileImportedPreferences) reconcileImportedSettingsPreferences()
-            pendingHudResumeAttempted = false
-            resumePendingHudSettingsImport()
-            pendingHudResumeAttempted = decision.keepResumeAttempted || pendingHudResumeAttempted
-        }
-    }
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
-        prefs().edit().putFloat("gain", gainValue).apply()
+        prefs().edit { putFloat("gain", gainValue) }
     }
     private val captureStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -151,13 +99,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
+    private enum class AudioPermissionPurpose {
+        NONE,
+        MICROPHONE,
+        PLAYBACK_CAPTURE,
+    }
+
     private val surfaceCallback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {
-            holder.surface.setFrameRate(120f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                holder.surface.setFrameRate(120f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
+            }
         }
         override fun surfaceChanged(holder: SurfaceHolder, f: Int, w: Int, h: Int) {
             PhosphorNative.surfaceCreatedOrChanged(holder.surface, w, h, resources.displayMetrics.density)
-            // Ben's default: maximum sharpness (0.3). Persisted; the settings rule adjusts.
+            // Restore the persisted focus whenever Android recreates the surface.
             PhosphorNative.setFocus(focusPref)
         }
         override fun surfaceDestroyed(holder: SurfaceHolder) {
@@ -170,8 +126,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             uri?.let { loadUri(it) }
         }
 
-    // Folder → gapless queue (spec §2.2 Full). Persisted permission so the library
-    // survives relaunches; audio files sorted by name = the album order law.
+    // Persist folder access and sort audio files by name for a stable queue.
     private val openFolderLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             uri ?: return@registerForActivityResult
@@ -210,31 +165,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
             uri ?: return@registerForActivityResult
             saveTuning()
-            val causalExportSnapshot = causalStore.snapshot
-            val causalExportWritable = causalStore.health.writable
-            val exportPreferences = settingsExportPreferences(
-                allPreferences = prefs().all,
-                causalHudMode = when (causalExportSnapshot.effective.displayHud) {
-                    "on" -> 0
-                    "auto" -> 1
-                    "off" -> 2
-                    else -> error("unsupported causal display HUD mode ${causalExportSnapshot.effective.displayHud}")
-                },
-                causalStoreWritable = causalExportWritable,
-            )
             ui.settingsTransferStatus = "exporting settings…"
             Thread {
                 runCatching {
                     val result = SettingsArchive.export(
                         sourcePackage = packageName,
                         sourceVersion = BuildConfig.VERSION_NAME,
-                        sourceDistribution = if (BuildConfig.DEBUG) {
-                            "local_dev"
-                        } else {
-                            DistributionCapabilities.profile.distribution.wireName
-                        },
+                        sourceDistribution = if (BuildConfig.DEBUG) "debug" else "release",
                         exportedAt = java.time.Instant.now().toString(),
-                        allPreferences = exportPreferences,
+                        allPreferences = prefs().all,
                     )
                     val output = contentResolver.openOutputStream(uri, "wt")
                         ?: error("Android did not provide a writable document")
@@ -278,86 +217,42 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         output.toString(Charsets.UTF_8.name())
                     }
                     val imported = SettingsArchive.decode(text)
-                    synchronized(PendingHudMarkerTransaction.lock) {
-                        val importedHudMode = imported.values["hud_mode"] as? Int
-                        val pendingHudImport = importedHudMode?.let { mode ->
-                            settingsImportHudOperation(
-                                pendingRaw = pendingHudMarkerRead(prefs().all).raw,
-                                contentSha256 = imported.contentSha256,
-                                hudMode = mode,
-                                newOperationId = UUID.randomUUID().toString(),
-                            )
+                    val priorValues = preferenceValueSnapshots(prefs().all, imported.values.keys)
+                    val editor = prefs().edit()
+                    imported.values.forEach { (key, value) ->
+                        when (value) {
+                            is Boolean -> editor.putBoolean(key, value)
+                            is Int -> editor.putInt(key, value)
+                            is Float -> editor.putFloat(key, value)
+                            is String -> editor.putString(key, value)
+                            else -> error("unsupported imported preference type for $key")
                         }
-                        val importedPreferenceKeys = imported.values.keys.filter { it != "hud_mode" }.toSet()
-                        val compensatedKeys = importedPreferenceKeys + PENDING_HUD_SETTINGS_IMPORT_KEY
-                        val priorValues = preferenceValueSnapshots(prefs().all, compensatedKeys)
-                        val pendingHudRaw = pendingHudImport?.encode()
-                        localInFlightPendingHudRaw = pendingHudRaw
-                        val editor = prefs().edit()
-                        imported.values.forEach { (key, value) ->
-                            if (key == "hud_mode") return@forEach
-                            when (value) {
-                                is Boolean -> editor.putBoolean(key, value)
-                                is Int -> editor.putInt(key, value)
-                                is Float -> editor.putFloat(key, value)
-                                is String -> editor.putString(key, value)
-                                else -> error("unsupported imported preference type for $key")
-                            }
-                        }
-                        pendingHudRaw?.let {
-                            editor.putString(PENDING_HUD_SETTINGS_IMPORT_KEY, it)
-                        }
-                        if (!editor.commit()) {
-                            val restored = restorePreferenceSnapshots(priorValues)
-                            if (localInFlightPendingHudRaw == pendingHudRaw) {
-                                localInFlightPendingHudRaw = null
-                            }
-                            error(
-                                if (restored) {
-                                    "Android could not commit imported settings; restored previous in-memory settings"
-                                } else {
-                                    "Android could not commit imported settings; previous in-memory settings restore was not committed"
-                                },
-                            )
-                        }
-                        Triple(imported, importedHudMode, pendingHudImport)
                     }
-                }.onSuccess { (imported, importedHudMode, pendingHudImport) ->
+                    if (!editor.commit()) {
+                        val restored = restorePreferenceSnapshots(priorValues)
+                        error(
+                            if (restored) {
+                                "Android could not commit imported settings; restored previous settings"
+                            } else {
+                                "Android could not commit imported settings; previous settings restore also failed"
+                            },
+                        )
+                    }
+                    imported
+                }.onSuccess { imported ->
                     runOnUiThread {
-                        if (!lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED) || isFinishing || isDestroyed) {
-                            // The durable marker is the handoff to the next foreground
-                            // Activity/process. Never dispatch through a stale store.
-                            pendingHudResumeAttempted = false
-                            if (localInFlightPendingHudRaw == pendingHudImport?.encode()) {
-                                localInFlightPendingHudRaw = null
-                            }
-                            return@runOnUiThread
-                        }
-                        var hudApplied = importedHudMode == null
-                        val hudStatus = importedHudMode?.let { mode ->
-                            val outcome = applyPendingHudSettingsImport(
-                                pending = requireNotNull(pendingHudImport),
-                                reason = "Apply display HUD from verified settings archive ${imported.contentSha256.take(12)}.",
-                            )
-                            hudApplied = outcome.applied
-                            outcome.status
-                        }
-                        if (localInFlightPendingHudRaw == pendingHudImport?.encode()) {
-                            localInFlightPendingHudRaw = null
-                        }
+                        if (isFinishing || isDestroyed) return@runOnUiThread
                         restoreTuning()
                         applyScopeRotationPreference()
                         applyImmersive()
                         updatePictureInPictureParams()
                         ui.settingsTransferStatus = buildString {
-                            append("imported ")
-                            append(settingsImportAppliedCount(imported.values.size, hudApplied))
+                            append("imported ${imported.values.size}")
                             append(" from ")
                             append(imported.sourceVersion)
                             if (imported.skippedKeys.isNotEmpty()) {
                                 append(" · skipped ${imported.skippedKeys.size} newer fields")
                             }
-                            if (hudStatus != null) append(" · $hudStatus")
                         }
                     }
                 }.onFailure { error ->
@@ -396,7 +291,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 applyCaptureStatus(
                     CaptureService.CaptureStatus.error(
                         "capture service could not start",
-                        "Allow Phosphor notifications and foreground media projection, then retry",
+                        "Return to Phosphor and approve Android's foreground capture prompt again",
                     )
                 )
             }
@@ -404,16 +299,34 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
-            if (granted) {
-                applyLocalGainPolicy()
-                mic.start(); ui.sourceLabel = "mic"; ui.live = true
+            val purpose = pendingAudioPermission
+            pendingAudioPermission = AudioPermissionPurpose.NONE
+            if (!granted) {
+                if (purpose == AudioPermissionPurpose.PLAYBACK_CAPTURE) {
+                    applyCaptureStatus(
+                        CaptureService.CaptureStatus.permissionNeeded(
+                            "microphone permission not granted",
+                            "Grant microphone access so Android can provide playback audio",
+                        )
+                    )
+                }
+                return@registerForActivityResult
+            }
+            when (purpose) {
+                AudioPermissionPurpose.MICROPHONE -> {
+                    applyLocalGainPolicy()
+                    mic.start()
+                    ui.sourceLabel = "mic"
+                    ui.live = true
+                }
+                AudioPermissionPurpose.PLAYBACK_CAPTURE -> launchCaptureConsent()
+                AudioPermissionPurpose.NONE -> Unit
             }
         }
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
-        causalStore = (application as PhosphorApplication).causalStore
-        ui = ScopeUiState(causalStore)
+        ui = ScopeUiState()
         enableEdgeToEdge()
         // The scope is something you WATCH, so the screen must not dim or lock under it.
         // This is sufficient on its own: the flag holds a SCREEN_BRIGHT_WAKE_LOCK for as
@@ -424,7 +337,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
         // is a Play-policy liability for no user benefit.
         window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         window.attributes = window.attributes.apply {
-            layoutInDisplayCutoutMode = WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
+            } else {
+                WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_SHORT_EDGES
+            }
         }
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
@@ -432,27 +349,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         restoreTuning()
         refreshCaptureMetadataAccess()
         applyScopeRotationPreference()
-        // Fullscreen by default (Ben's ask): the scope owns the whole panel;
-        // system bars return transiently on an edge swipe.
+        // The scope starts immersive; an edge swipe can reveal system bars temporarily.
         applyImmersive()
         setContent { PhosphorScreen(ui, this, reduced) }
-        // PiP (spec §3): Home while the beam is live → the scope becomes the floating
-        // window. Post once so the source-rectangle hint uses laid-out content bounds.
+        // Post after layout so picture-in-picture receives a valid source rectangle.
         window.decorView.post { updatePictureInPictureParams() }
         handleIntent(intent)
     }
 
     override fun onResume() {
         super.onResume()
-        if (!pendingHudResumeAttempted) {
-            pendingHudResumeAttempted = true
-            resumePendingHudSettingsImport()
-        }
         refreshCaptureMetadataAccess()
-        // Reopen the last source once per process (Ben's ask): capture re-raises the
-        // system share dialog (only if the in-app consent was already given some day);
-        // mic restarts silently. Deck/remote stay manual — files and networks are
-        // deliberate acts.
+        // Resume only passive live sources once per process. Files and relays remain explicit choices.
         if (!lastSourceReopened) {
             lastSourceReopened = true
             if (!ui.live && ui.sourceLabel == "no source") {
@@ -480,25 +388,32 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun updatePictureInPictureParams() {
+        setPictureInPictureParams(pictureInPictureParams())
+    }
+
+    private fun pictureInPictureParams(): android.app.PictureInPictureParams {
         val landscape = resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE
         val sourceRectHint = Rect()
         val hasSourceRectHint = window.decorView.getGlobalVisibleRect(sourceRectHint)
         val builder = android.app.PictureInPictureParams.Builder()
-            .setAutoEnterEnabled(true)
             .setAspectRatio(
                 if (landscape) android.util.Rational(16, 9)
                 else android.util.Rational(9, 16)
             )
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setAutoEnterEnabled(true)
         if (hasSourceRectHint) builder.setSourceRectHint(sourceRectHint)
-        setPictureInPictureParams(builder.build())
+        return builder.build()
+    }
+
+    override fun onUserLeaveHint() {
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && !isInPictureInPictureMode) {
+            enterPictureInPictureMode(pictureInPictureParams())
+        }
+        super.onUserLeaveHint()
     }
 
     override fun onStart() {
         super.onStart()
-        if (!pendingHudMarkerListenerRegistered) {
-            prefs().registerOnSharedPreferenceChangeListener(pendingHudMarkerListener)
-            pendingHudMarkerListenerRegistered = true
-        }
         if (!captureStatusReceiverRegistered) {
             ContextCompat.registerReceiver(
                 this,
@@ -552,10 +467,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         saveTuning()
         tick.removeCallbacks(uiTick)
         PhosphorNative.setRenderPaused(true)
-        if (pendingHudMarkerListenerRegistered) {
-            prefs().unregisterOnSharedPreferenceChangeListener(pendingHudMarkerListener)
-            pendingHudMarkerListenerRegistered = false
-        }
         if (captureStatusReceiverRegistered) {
             unregisterReceiver(captureStatusReceiver)
             captureStatusReceiverRegistered = false
@@ -584,8 +495,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }.getOrNull() else null
             val remoteScope = rs?.optJSONObject("scope")
             val remoteGain = remoteScope?.optJSONObject("gain")
-            // Gain readouts are receipts, not preference echoes. Local follows the
-            // render-thread glide; remote follows the desktop K/status truth.
+            // Show measured renderer and relay gain rather than saved preference values.
             ui.localAutoGain = PhosphorNative.gainAutoNow()
             if (!ui.remoteGeometry) ui.gain = PhosphorNative.gainNow()
             if (ui.remote) {
@@ -593,8 +503,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             } else {
                 ui.autoGain = ui.localAutoGain
             }
-            // Band honesty (Ben's ask): while the desktop renders the beam, the
-            // band shows ITS mode + live gain — `auto · pc` under autogain.
+            // When the desktop supplies geometry, show its measured mode and gain.
             ui.remoteScopeLine = if (ui.remote && ui.remoteGeometry) {
                 remoteScope?.let { sc ->
                     val mode = sc.optString("mode", "—")
@@ -636,10 +545,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     if (leaked > 0) append(" · LEAK $leaked")
                 } else ""
             }
-            // Every room breathes with the live beam now (Ben's ask: the moving parts
-            // of the chrome — seek, rule fills — glow the trace's phosphor). Rooms with
-            // accent_follows_beam additionally let it take the structural accent
-            // (desktop law: 82% toward the beam hue). Recomputed at 2 Hz.
+            // Moving chrome accents follow the measured beam color; structural accents opt in per room.
             val base = baseRoom ?: ui.room
             run {
                 val rgb = PhosphorNative.beamColorNow()
@@ -668,11 +574,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (intent.getBooleanExtra("remote", false)) startRemote()
     }
 
-    // Copy the picked document into files/staged named after its real display name (so
-    // the deck/session title reads right), then open by path. Staged copies are
-    // transient — earlier singles are deleted before the new one lands, and the service
-    // sweeps the whole staged dir on create/destroy (441 MB leak, Ben's storage audit).
-    // fd-passing to skip the copy is a documented later optimization.
+    // Stage the selected document under its display name. The service removes transient copies on startup and shutdown.
     private fun loadUri(uri: Uri) {
         Thread {
             val name = queryDisplayName(uri) ?: "track.wav"
@@ -719,8 +621,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 val host = metadata.extras?.getString("host") ?: "remote"
                 ui.sourceLabel = when (conn) {
                     "CONNECTING" -> "remote · connecting…"
-                    // Greeted but no frame yet. The old code called this connected, which
-                    // claimed a live link before anything had flowed.
+                    // A welcome frame alone is not a live media link.
                     "GREETED" -> "remote · waiting for audio"
                     // The relay says it is sending silence. Without this the user sees a
                     // dark scope and cannot tell whether the desktop is quiet or the link
@@ -786,7 +687,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // fact, never source) and thereafter owned by the user, so the Play distribution,
     // which compiles an empty seed, can still reach a desktop the user runs.
     private val remoteHostStore by lazy {
-        RemoteHostStore(this, DistributionCapabilities.profile.seededRemoteHosts)
+        RemoteHostStore(this, "")
     }
 
     override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> =
@@ -824,7 +725,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
         mic.stop()
-        prefs().edit().putFloat("gain", gainValue).apply()
+        prefs().edit { putFloat("gain", gainValue) }
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
         ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
         ui.remote = true
@@ -869,28 +770,49 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
         ) { applyLocalGainPolicy(); mic.start(); ui.sourceLabel = "mic"; ui.live = true }
-        else micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        else {
+            pendingAudioPermission = AudioPermissionPurpose.MICROPHONE
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
     }
 
     override fun startCapture() {
-        markConsentSeen()
         // Already capturing: do NOT ask again. Android issues a single-use projection
         // token, so a redundant prompt would tear down a working session to rebuild an
         // identical one, and the user would blame us for the extra dialog. `live` plus a
         // capture source is the honest signal that a projection is currently held.
         if (ui.live && ui.sourceLabel.startsWith("capture")) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
+            != PackageManager.PERMISSION_GRANTED
+        ) {
+            pendingAudioPermission = AudioPermissionPurpose.PLAYBACK_CAPTURE
+            ui.captureStatus = "microphone permission needed for playback capture"
+            ui.captureFix = "Grant microphone access, then approve Android's capture prompt"
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        launchCaptureConsent()
+    }
+
+    private fun launchCaptureConsent() {
+        markConsentSeen()
         ui.captureStatus = "waiting for Android capture permission"
         ui.captureFix = "Approve the prompt to connect playback audio"
         val mpm = getSystemService(MEDIA_PROJECTION_SERVICE) as MediaProjectionManager
-        // Ask for the whole display, not a single app. The row this comes from says
-        // "everything playing"; with no config Android 14+ preselects "Share one app",
-        // so the dialog contradicted its own label and quietly captured one app's audio.
-        // The user can still narrow it in the dialog — we just stop defaulting to the
-        // opposite of what we promised.
-        captureConsent.launch(
-            mpm.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay()),
-        )
+        captureConsent.launch(screenCaptureIntent(mpm))
     }
+
+    private fun screenCaptureIntent(manager: MediaProjectionManager): Intent =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.UPSIDE_DOWN_CAKE) {
+            fullDisplayCaptureIntent(manager)
+        } else {
+            // Android 10 through 13 only offer full-display projection.
+            manager.createScreenCaptureIntent()
+        }
+
+    @RequiresApi(Build.VERSION_CODES.UPSIDE_DOWN_CAKE)
+    private fun fullDisplayCaptureIntent(manager: MediaProjectionManager): Intent =
+        manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
 
     override fun stopLive() {
         mic.stop()
@@ -934,54 +856,54 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    // The consent moment (spec §2.3): one calm card before the system dialog, first time.
+    // Runtime consent state is separate from portable instrument settings.
     private fun prefs() = getSharedPreferences(PhosphorApplication.PREFERENCES_NAME, MODE_PRIVATE)
     private fun runtimePrefs() = getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)
 
     // ── Tuning persistence: the scope remembers its knobs across launches. ──
     private var focusPref = 0.3f
     private fun saveTuning() {
-        prefs().edit()
-            .putInt("mode", ui.modeIndex)
-            .putBoolean("random_mode_armed", ui.randomModeArmed)
-            .putString("random_ban_modes", ui.randomBanModes.sorted().joinToString(","))
-            .putInt("beam", ui.beamIndex)
-            .putInt("fps", ui.fpsValue)
-            .putInt("oversample", ui.oversample)
+        prefs().edit {
+            putInt("mode", ui.modeIndex)
+            putBoolean("random_mode_armed", ui.randomModeArmed)
+            putString("random_ban_modes", ui.randomBanModes.sorted().joinToString(","))
+            putInt("beam", ui.beamIndex)
+            putInt("fps", ui.fpsValue)
+            putInt("oversample", ui.oversample)
             // AUTO-GAIN breathes ui.gain; the manual landing remains the saved knob.
-            .putFloat("gain", gainValue)
-            .putFloat("beam_energy", ui.beamEnergy)
-            .putFloat("glow", ui.glow)
-            .putBoolean("beam_random_armed", ui.beamRandomArmed)
-            .putString("beam_random_range", "${ui.beamRandomLo},${ui.beamRandomHi}")
-            .putBoolean("glow_random_armed", ui.glowRandomArmed)
-            .putString("glow_random_range", "${ui.glowRandomLo},${ui.glowRandomHi}")
-            .putInt("geom_fx", ui.geomFx)
-            .putFloat("geom_amount", ui.geomAmount)
-            .putBoolean("grid", ui.grid)
-            .putFloat("focus", focusPref)
-            .putString("room", ui.room.id)
-            .putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
-            .putInt("band_mode", ui.bandMode)
-            .putBoolean("fullscreen", ui.fullscreen)
-            .putBoolean("scope_rotation_locked", scopeRotationLockState)
-            .putInt("scope_locked_orientation", lockedScopeOrientation)
-            .putBoolean("ui_placement_locked", uiPlacementLockState)
-            .putBoolean("ui_locked_landscape", lockedUiLandscape)
-            .putInt("remote_latency_mode", ui.latencyMode)
-            .putInt("remote_network_mode", ui.networkMode)
-            .putBoolean("amoled_seen", ui.amoledCaptionSeen)
-            .putInt("ov_char", ui.styleOverride.character?.ordinal ?: -1)
-            .putInt("ov_motion", ui.styleOverride.motion?.ordinal ?: -1)
-            .putInt("ov_radius", ui.styleOverride.radiusDp ?: -1)
-            .putInt("ov_desig", when (ui.styleOverride.designators) {
+            putFloat("gain", gainValue)
+            putFloat("beam_energy", ui.beamEnergy)
+            putFloat("glow", ui.glow)
+            putBoolean("beam_random_armed", ui.beamRandomArmed)
+            putString("beam_random_range", "${ui.beamRandomLo},${ui.beamRandomHi}")
+            putBoolean("glow_random_armed", ui.glowRandomArmed)
+            putString("glow_random_range", "${ui.glowRandomLo},${ui.glowRandomHi}")
+            putInt("geom_fx", ui.geomFx)
+            putFloat("geom_amount", ui.geomAmount)
+            putBoolean("grid", ui.grid)
+            putFloat("focus", focusPref)
+            putString("room", ui.room.id)
+            putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
+            putInt("hud_mode", ui.hudMode)
+            putInt("band_mode", ui.bandMode)
+            putBoolean("fullscreen", ui.fullscreen)
+            putBoolean("scope_rotation_locked", scopeRotationLockState)
+            putInt("scope_locked_orientation", lockedScopeOrientation)
+            putBoolean("ui_placement_locked", uiPlacementLockState)
+            putBoolean("ui_locked_landscape", lockedUiLandscape)
+            putInt("remote_latency_mode", ui.latencyMode)
+            putBoolean("amoled_seen", ui.amoledCaptionSeen)
+            putInt("ov_char", ui.styleOverride.character?.ordinal ?: -1)
+            putInt("ov_motion", ui.styleOverride.motion?.ordinal ?: -1)
+            putInt("ov_radius", ui.styleOverride.radiusDp ?: -1)
+            putInt("ov_desig", when (ui.styleOverride.designators) {
                 null -> -1; true -> 1; false -> 0
             })
-            .apply()
-        runtimePrefs().edit()
-            .putString("random_track_title", lastRandomTrackTitle)
+        }
+        runtimePrefs().edit {
+            putString("random_track_title", lastRandomTrackTitle)
             // The remembered input and calibration date are device runtime metadata.
-            .putString(
+            putString(
                 "last_source",
                 when {
                     ui.live && ui.sourceLabel == "capture" -> "capture"
@@ -989,12 +911,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     else -> "none"
                 },
             )
-            .putString(
+            putString(
                 "cal_date",
                 java.text.SimpleDateFormat("yyyy-MM-dd", java.util.Locale.US)
                     .format(java.util.Date()),
             )
-            .apply()
+        }
     }
 
     private fun restoreTuning() {
@@ -1040,6 +962,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .also { PhosphorNative.setGeomAmount(it) }
         ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
         focusPref = p.getFloat("focus", 0.3f)
+        ui.hudMode = p.getInt("hud_mode", 2).coerceIn(0, 2)
         ui.bandMode = p.getInt("band_mode", 0)
         ui.fullscreen = p.getBoolean("fullscreen", true)
         ui.viewLock = p.getBoolean("view_lock", false)
@@ -1058,7 +981,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         )
         ui.latencyMode = p.getInt("remote_latency_mode", 2).coerceIn(0, 2)
             .also { PhosphorNative.remoteSetLatencyMode(it) }
-        ui.networkMode = p.getInt("remote_network_mode", 0).coerceIn(0, 2)
         ui.calDate = runtimePrefs().getString("cal_date", "") ?: ""
         ui.amoledCaptionSeen = p.getBoolean("amoled_seen", false)
         ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride(
@@ -1073,7 +995,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         )
         dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
             .let { baseRoom = it; ui.room = it }
-        // Custom light survives relaunch (persistence-audit gap, Ben's ask).
+        // Restore the custom beam only after validating all nine RGB components.
         val customCount = p.getInt("custom_count", 0).coerceIn(0, 3)
         val customRgb = p.getString("custom_rgb", null)
             ?.split(",")?.mapNotNull { it.toFloatOrNull() }
@@ -1091,18 +1013,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
     override fun captureConsentNeeded(): Boolean = !runtimePrefs().getBoolean("consent_seen", false)
-    private fun markConsentSeen() = runtimePrefs().edit().putBoolean("consent_seen", true).apply()
+    private fun markConsentSeen() = runtimePrefs().edit { putBoolean("consent_seen", true) }
 
     override fun setViewLock(on: Boolean) {
         ui.viewLock = on
-        prefs().edit().putBoolean("view_lock", on).apply()
+        prefs().edit { putBoolean("view_lock", on) }
     }
 
     override fun openCaptureMetadataSettings() {
-        // Land on OUR toggle directly (API 30+): "notification ACCESS" is a different
-        // switch than the app-info "allow notifications" one, and the ambiguity already
-        // cost a round trip with Ben. Fall back to the full access list.
         val component = ComponentName(this, CaptureNotificationListenerService::class.java)
+        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.R) {
+            startActivity(Intent(Settings.ACTION_NOTIFICATION_LISTENER_SETTINGS))
+            return
+        }
         val detail = Intent(Settings.ACTION_NOTIFICATION_LISTENER_DETAIL_SETTINGS)
             .putExtra(
                 Settings.EXTRA_NOTIFICATION_LISTENER_COMPONENT_NAME,
@@ -1115,13 +1038,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun markBestiaryFound() {
         ui.bestiaryFound = true
-        prefs().edit().putBoolean("bestiary_found", true).apply() // found is forever
+        prefs().edit { putBoolean("bestiary_found", true) } // found is forever
     }
 
     override fun openLink(url: String) {
         // Cards leave through the user's own browser — the app renders no web content.
         runCatching {
-            startActivity(Intent(Intent.ACTION_VIEW, android.net.Uri.parse(url)))
+            startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
         }
     }
 
@@ -1150,9 +1073,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun applyMode(index: Int) {
         PhosphorNative.setMode(index); ui.modeIndex = index
-        // Remote-render control (Ben's ask): while the DESKTOP renders the beam,
-        // the mode tap drives the desktop scope over the bridge. ModeTags are the
-        // desktop's own mode names, verbatim.
+        // Remote geometry uses the desktop renderer's mode names.
         if (ui.remote && ui.remoteGeometry) {
             PhosphorNative.remoteScopeCtl("mode", dev.phosphor.mobil3.ui.ModeTags[index])
         }
@@ -1179,7 +1100,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.gain = gainValue
         ui.autoGain = false
         ui.localAutoGain = false
-        prefs().edit().putBoolean("auto_gain", false).apply()
+        prefs().edit { putBoolean("auto_gain", false) }
         tick.removeCallbacks(persistGain)
         tick.postDelayed(persistGain, 250)
         // Pinch drives the DESKTOP's gain while it renders the beam (throttled —
@@ -1195,7 +1116,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var lastRemoteGainMs = 0L
 
     override fun setGainAuto(on: Boolean) {
-        prefs().edit().putBoolean("auto_gain", on).apply()
+        prefs().edit { putBoolean("auto_gain", on) }
         // Keep the local renderer ready for local/captured remote audio, while a
         // remote source also receives the desktop's existing typed gain verb.
         PhosphorNative.setGainAuto(on)
@@ -1210,160 +1131,25 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun setHudMode(mode: Int) {
-        val result = dispatchHudMode(
-            mode = mode,
-            principal = PrincipalId(PrincipalKind.HUMAN, LOCAL_HUMAN_PRINCIPAL_ID),
-            transport = Transport.UI,
-            idempotencyKey = UUID.randomUUID().toString(),
-            reason = "Local user changed display HUD from settings.",
-        )
-        ui.hudControlStatus = hudResultText(result)
-    }
-
-    private fun dispatchHudMode(
-        mode: Int,
-        principal: PrincipalId,
-        transport: Transport,
-        idempotencyKey: String,
-        reason: String,
-    ): PhosphorDispatchResult {
-        val wireMode = when (mode) {
-            0 -> "on"
-            1 -> "auto"
-            2 -> "off"
-            else -> return PhosphorDispatchResult.Failed(
-                dev.phosphor.mobil3.state.Refusal(
-                    dev.phosphor.mobil3.state.RefusalCode.INVALID_VALUE,
-                    "Use HUD mode on, auto, or off.",
-                    causalStore.snapshot.revision,
-                ),
-            )
-        }
-        return causalStore.dispatch(
-            action = SetDisplayHud(wireMode),
-            request = ActionRequest(
-                principal = principal,
-                idempotencyKey = idempotencyKey,
-                expectedRevision = causalStore.snapshot.revision,
-                reason = reason,
-                requestedCapability = Capability.CONTROL_DISPLAY,
-                transport = transport,
-            ),
-            monotonicMillis = SystemClock.elapsedRealtime(),
-            wallTimeMillis = System.currentTimeMillis(),
-        )
-    }
-
-    private fun hudResultText(result: PhosphorDispatchResult): String = when (result) {
-        is PhosphorDispatchResult.Accepted -> if (result.acknowledgement.changed) {
-            "HUD accepted · revision ${result.acknowledgement.revision}"
+        val safeMode = mode.coerceIn(0, 2)
+        if (prefs().edit().putInt("hud_mode", safeMode).commit()) {
+            ui.hudMode = safeMode
+            ui.hudControlStatus = ""
         } else {
-            "HUD already ${ui.hudModeLabel()}"
+            ui.hudControlStatus = "HUD change could not be saved · retry after storage is available"
         }
-        is PhosphorDispatchResult.Replayed -> "HUD import replayed · ${result.acknowledgement.receiptId}"
-        is PhosphorDispatchResult.Refused -> "HUD refused · ${result.refusal.fix}"
-        is PhosphorDispatchResult.Failed -> "HUD unavailable · ${result.refusal.fix}"
     }
 
-    private data class PendingHudApplyOutcome(
-        val applied: Boolean,
-        val status: String,
-    )
+    private data class PreferenceValueSnapshot(val present: Boolean, val value: Any?)
 
-    private fun resumePendingHudSettingsImport() {
-        val marker = pendingHudMarkerRead(prefs().all)
-        if (marker.wrongType) {
-            pendingHudResumeAttempted = true
-            marker.status?.let { ui.settingsTransferStatus = it }
-            return
-        }
-        val raw = marker.raw ?: return
-        val decision = pendingHudResumeDecision(
-            rawMarker = raw,
-            lifecycleStarted = lifecycle.currentState.isAtLeast(Lifecycle.State.STARTED),
-            activityFinishing = isFinishing,
-            activityDestroyed = isDestroyed,
+    private fun preferenceValueSnapshots(
+        allPreferences: Map<String, Any?>,
+        keys: Set<String>,
+    ): Map<String, PreferenceValueSnapshot> = keys.associateWith { key ->
+        PreferenceValueSnapshot(
+            present = allPreferences.containsKey(key),
+            value = allPreferences[key],
         )
-        pendingHudResumeAttempted = decision.attempted
-        if (!decision.shouldDispatch) {
-            decision.status?.let { ui.settingsTransferStatus = it }
-            return
-        }
-        val pending = dev.phosphor.mobil3.ui.PendingHudSettingsImport.decode(raw)
-            ?: return
-        val outcome = applyPendingHudSettingsImport(
-            pending = pending,
-            reason = "Resume verified settings HUD import ${pending.contentSha256.take(12)} after lifecycle recovery.",
-        )
-        ui.settingsTransferStatus = "resumed HUD import · ${outcome.status}"
-    }
-
-    private fun reconcileImportedSettingsPreferences() {
-        restoreTuning()
-        applyScopeRotationPreference()
-        applyImmersive()
-        updatePictureInPictureParams()
-    }
-
-    private fun applyPendingHudSettingsImport(
-        pending: dev.phosphor.mobil3.ui.PendingHudSettingsImport,
-        reason: String,
-    ): PendingHudApplyOutcome {
-        val result = dispatchHudMode(
-            mode = pending.hudMode,
-            principal = PrincipalId(PrincipalKind.MIGRATION, LOCAL_HUD_MIGRATION_PRINCIPAL_ID),
-            transport = Transport.MIGRATION,
-            idempotencyKey = pending.idempotencyKey,
-            reason = reason,
-        )
-        val applied = result is PhosphorDispatchResult.Accepted || result is PhosphorDispatchResult.Replayed
-        if (!applied) return PendingHudApplyOutcome(false, hudResultText(result))
-
-        val status = hudImportStatusWithCleanup(
-            hudStatus = hudResultText(result),
-            cleanup = clearPendingHudImportMarker(pending.encode()),
-        )
-        return PendingHudApplyOutcome(true, status)
-    }
-
-    private fun clearPendingHudImportMarker(expectedRaw: String): PendingHudCleanupResult {
-        synchronized(PendingHudMarkerTransaction.lock) {
-            val allBeforeCleanup = prefs().all
-            val current = pendingHudMarkerRead(allBeforeCleanup).raw
-            if (current != expectedRaw) {
-                val observedMarker = pendingHudMarkerRead(prefs().all)
-                return pendingHudCleanupResult(
-                    expectedRaw = expectedRaw,
-                    currentRaw = current,
-                    observedRawAfterCleanup = observedMarker.raw,
-                    observedWrongTypeAfterCleanup = observedMarker.wrongType,
-                    removeCommitted = false,
-                    restoreCommitted = false,
-                )
-            }
-            val priorValues = preferenceValueSnapshots(
-                allBeforeCleanup,
-                setOf(PENDING_HUD_SETTINGS_IMPORT_KEY),
-            )
-            val removeCommitted = prefs().edit().remove(PENDING_HUD_SETTINGS_IMPORT_KEY).commit()
-            val restoreCommitted = if (!removeCommitted) {
-                // Android SharedPreferences mutates its in-memory map before commit() reports
-                // a disk failure. Restore the durable operation marker in memory as well, so
-                // this process and the next restart agree that cleanup is still pending.
-                restorePreferenceSnapshots(priorValues)
-            } else {
-                false
-            }
-            val observedMarker = pendingHudMarkerRead(prefs().all)
-            return pendingHudCleanupResult(
-                expectedRaw = expectedRaw,
-                currentRaw = current,
-                observedRawAfterCleanup = observedMarker.raw,
-                observedWrongTypeAfterCleanup = observedMarker.wrongType,
-                removeCommitted = removeCommitted,
-                restoreCommitted = restoreCommitted,
-            )
-        }
     }
 
     private fun restorePreferenceSnapshots(
@@ -1392,27 +1178,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         return editor.commit()
     }
 
-    private fun ScopeUiState.hudModeLabel(): String = when (hudMode) {
-        0 -> "on"
-        1 -> "auto"
-        else -> "off"
-    }
-
     override fun setRemoteLatencyMode(mode: Int) {
         ui.latencyMode = mode.coerceIn(0, 2)
-        prefs().edit().putInt("remote_latency_mode", ui.latencyMode).apply()
+        prefs().edit { putInt("remote_latency_mode", ui.latencyMode) }
         PhosphorNative.remoteSetLatencyMode(ui.latencyMode)
-    }
-
-    override fun setRemoteNetworkMode(mode: Int) {
-        ui.networkMode = mode.coerceIn(0, 2)
-        prefs().edit().putInt("remote_network_mode", ui.networkMode).apply()
-        if (ui.remote) {
-            startService(
-                Intent(this, PlaybackService::class.java)
-                    .setAction(PlaybackService.ACTION_REMOTE_POLICY_CHANGED)
-            )
-        }
     }
 
     private fun applyLocalGainPolicy() {
@@ -1439,7 +1208,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun setFullscreen(on: Boolean) {
         ui.fullscreen = on
-        prefs().edit().putBoolean("fullscreen", on).apply()
+        prefs().edit { putBoolean("fullscreen", on) }
         applyImmersive()
     }
 
@@ -1449,10 +1218,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (scopeRotationLockState == locked) return
         scopeRotationLockState = locked
         if (locked) lockedScopeOrientation = exactCurrentOrientation()
-        prefs().edit()
-            .putBoolean("scope_rotation_locked", locked)
-            .putInt("scope_locked_orientation", lockedScopeOrientation)
-            .apply()
+        prefs().edit {
+            putBoolean("scope_rotation_locked", locked)
+            putInt("scope_locked_orientation", lockedScopeOrientation)
+        }
         applyScopeRotationPreference()
         // The sensor must run for scope-locked + UI-follow (chrome-to-gravity) too.
         updateOrientationSensor()
@@ -1471,11 +1240,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
         uiPlacementLockState = locked
         applyScopeRotationPreference()
         updateOrientationSensor()
-        prefs().edit()
-            .putBoolean("ui_placement_locked", locked)
-            .putBoolean("ui_locked_landscape", lockedUiLandscape)
-            .putInt("ui_locked_orientation", lockedUiOrientation)
-            .apply()
+        prefs().edit {
+            putBoolean("ui_placement_locked", locked)
+            putBoolean("ui_locked_landscape", lockedUiLandscape)
+            putInt("ui_locked_orientation", lockedUiOrientation)
+        }
     }
 
     private fun applyScopeRotationPreference() {
@@ -1562,8 +1331,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    // The single routing point — the asks-#4 matrix. q = CCW quadrants from the
-    // pinned display to gravity-up (same figure the beam-rotation verb consumes).
+    // q is the counter-clockwise quadrant from the pinned display to gravity-up.
     private fun routeOrientation(force: Boolean = false) {
         val degrees = lastSensorDeg
         if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN) return
@@ -1579,10 +1347,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             return
         }
         val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
-        val displayQ = display?.rotation ?: Surface.ROTATION_0
-        // Sign fixed by Ben's field receipt ("right way if they weren't upside down —
-        // it thinks it's on the wrong side"): device CW = content CCW on the pinned
-        // screen, i.e. +deviceQ in our CCW quadrant convention, not its inverse.
+        val displayQ = currentDisplayRotation()
+        // Convert clockwise device rotation into the renderer's counter-clockwise quadrant convention.
         val q = ((deviceQ - displayQ) % 4 + 4) % 4
         if (q == lastRoutedQ && !force) return
         lastRoutedQ = q
@@ -1631,9 +1397,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
         if (requestedOrientation != target) {
-            // Logged because this decision is otherwise invisible: a claim that the
-            // detent "works" is only checkable if its choices can be read back off the
-            // device while the phone is being turned.
+            // Keep the detent decision observable during physical rotation tests.
             android.util.Log.i(
                 "PhosphorRotation",
                 "detent commit=$committedCardinal deg=$lastSensorDeg -> $target",
@@ -1643,7 +1407,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun exactCurrentOrientation(): Int {
-        val rotation = display?.rotation ?: Surface.ROTATION_0
+        val rotation = currentDisplayRotation()
         return when (resources.configuration.orientation) {
             Configuration.ORIENTATION_LANDSCAPE ->
                 if (rotation == Surface.ROTATION_270)
@@ -1657,8 +1421,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    // Android can undo an onCreate-time hide when the window (re)gains focus —
-    // the classic immersive pattern re-asserts here (caught by a live receipt).
+    private fun currentDisplayRotation(): Int =
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
+            display?.rotation ?: Surface.ROTATION_0
+        } else {
+            @Suppress("DEPRECATION")
+            windowManager.defaultDisplay.rotation
+        }
+
+    // Android can reveal system bars when focus returns, so restore the selected immersive state.
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) applyImmersive()
@@ -1674,29 +1445,28 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         PhosphorNative.setCustomBeam(rgb, count)
         ui.customCount = count
-        // Persistence-audit gap (Ben's ask): a custom light must survive relaunch —
-        // saved immediately, like the other live-settings setters.
-        prefs().edit()
-            .putString("custom_rgb", rgb.joinToString(","))
-            .putInt("custom_count", count)
-            .apply()
+        // Persist the custom beam immediately because it is edited outside the general save cycle.
+        prefs().edit {
+            putString("custom_rgb", rgb.joinToString(","))
+            putInt("custom_count", count)
+        }
     }
 
     override fun setBeamCycle(seconds: Float, perTrack: Boolean) {
         PhosphorNative.setBeamCycle(seconds, perTrack)
         ui.cycleSeconds = seconds
         ui.cyclePerTrack = perTrack
-        prefs().edit()
-            .putFloat("cycle_seconds", seconds)
-            .putBoolean("cycle_per_track", perTrack)
-            .apply()
+        prefs().edit {
+            putFloat("cycle_seconds", seconds)
+            putBoolean("cycle_per_track", perTrack)
+        }
     }
 
     // Photosensitivity acceptance persists forever, as on desktop.
     override fun epilepsyAcknowledged(): Boolean = runtimePrefs().getBoolean("epilepsy_ack", false)
-    override fun ackEpilepsy() { runtimePrefs().edit().putBoolean("epilepsy_ack", true).apply() }
+    override fun ackEpilepsy() { runtimePrefs().edit { putBoolean("epilepsy_ack", true) } }
 
-    // Desktop-parity tuning verbs (Ben's audit ask): same fields, same clamps.
+    // Keep mobile tuning limits aligned with the desktop engine.
     private fun applyBeamEnergy(e: Float) { PhosphorNative.setBeamEnergy(e); ui.beamEnergy = e.coerceIn(1f, 30f) }
     private fun applyGlow(g: Float) { PhosphorNative.setGlow(g); ui.glow = g.coerceIn(0f, 0.98f) }
     private fun rollIn(lo: Float, hi: Float) = lo + kotlin.random.Random.nextFloat() * (hi - lo)

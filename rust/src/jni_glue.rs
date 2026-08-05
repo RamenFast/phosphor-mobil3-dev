@@ -1,8 +1,8 @@
 //! All JNI entry points. Nothing here contains logic — it converts, delegates, and logs.
 
+use jni::JNIEnv;
 use jni::objects::JClass;
 use jni::sys::jstring;
-use jni::JNIEnv;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
@@ -24,7 +24,7 @@ fn ensure_init() {
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceCreated(
-    mut env: JNIEnv,
+    env: JNIEnv,
     _class: JClass,
     surface: jni::objects::JObject,
     width: jni::sys::jint,
@@ -490,8 +490,9 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setViewRotation(
     _class: JClass,
     quadrant: jni::sys::jint,
 ) {
-    let _ = crate::render::sender()
-        .send(crate::render::Cmd::SetViewRotation((quadrant.rem_euclid(4)) as u8));
+    let _ = crate::render::sender().send(crate::render::Cmd::SetViewRotation(
+        (quadrant.rem_euclid(4)) as u8,
+    ));
 }
 
 #[unsafe(no_mangle)]

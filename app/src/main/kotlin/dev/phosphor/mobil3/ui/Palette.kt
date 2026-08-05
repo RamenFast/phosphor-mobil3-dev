@@ -195,9 +195,7 @@ val CrtAmber = Palette(
     accentFollowsBeam = false,
 )
 
-// Liquid Glass (Ben's ask, mobile-first — desktop backport is a future ask):
-// the instrument dissolved into translucency. Glacial ink over cool near-black;
-// the beam refracts through the accent (follows_beam — glass bends light).
+// Liquid Glass uses translucent cool surfaces and lets the beam tint the accent.
 val LiquidGlass = Palette(
     id = "glass", label = "Liquid Glass", dark = true,
     plane = c(0x05070c), surface = c(0x10131c), surface2 = c(0x181c28),

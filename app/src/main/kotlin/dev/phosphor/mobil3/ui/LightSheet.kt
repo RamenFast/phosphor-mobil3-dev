@@ -22,6 +22,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -35,8 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
-// ── LIGHT v2 (spec §2.5): presets + the custom editor (1–3 slots, gradient ring
-//    preview, advance mode, seconds rule) + the photosensitivity guard. ──
+// Beam presets, custom color cycles, and the photosensitivity guard.
 @Composable
 fun LightSheetV2(
     state: ScopeUiState,
@@ -50,7 +50,7 @@ fun LightSheetV2(
     onDismiss: () -> Unit,
 ) {
     var guardCard by remember { mutableStateOf(false) }
-    var pendingSeconds by remember { mutableStateOf(1.0f) }
+    var pendingSeconds by remember { mutableFloatStateOf(1.0f) }
     var editSlot by remember { mutableIntStateOf(-1) }
 
     SheetHost(p, "LIGHT", reduced, onDismiss, glyph = SettingsGlyph.BeamColor) {
@@ -236,9 +236,9 @@ private fun HsvSquare(current: Color, p: Palette, onPick: (Color) -> Unit) {
             )
         }
     }
-    var hue by remember { mutableStateOf(hsv[0]) }
-    var sat by remember { mutableStateOf(hsv[1]) }
-    var vall by remember { mutableStateOf(hsv[2]) }
+    var hue by remember { mutableFloatStateOf(hsv[0]) }
+    var sat by remember { mutableFloatStateOf(hsv[1]) }
+    var vall by remember { mutableFloatStateOf(hsv[2]) }
     fun emit() = onPick(
         Color(android.graphics.Color.HSVToColor(floatArrayOf(hue, sat, vall)))
     )

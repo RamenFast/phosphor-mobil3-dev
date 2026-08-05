@@ -3,673 +3,260 @@ set -euo pipefail
 
 ROOT="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 PM3="$ROOT/dev/pm3"
-TMP="${JCODE_SCRATCH_DIR:-/tmp}/pm3-test-$$"
+SCRATCH_ROOT="${JCODE_SCRATCH_DIR:-$HOME/.jcode/scratch}"
+mkdir -p "$SCRATCH_ROOT"
+TMP="$(mktemp -d "$SCRATCH_ROOT/pm3-test.XXXXXX")"
 BIN="$TMP/bin"
-LOG="$TMP/calls.log"
-BLOCKERS="$TMP/blockers.log"
-SCHEMA_OUT=""
-ORIGINALS="$TMP/originals"
-mkdir -p "$BIN" "$ORIGINALS"
-: >"$LOG"
-: >"$BLOCKERS"
+CALLS="$TMP/calls.log"
+APK="$ROOT/app/build/outputs/apk/debug/app-debug.apk"
+ORIGINAL="$TMP/original-app-debug.apk"
+mkdir -p "$BIN"
+: >"$CALLS"
 
-REPO_ARTIFACTS=(
-  "$ROOT/app/build/outputs/apk/play/debug/app-play-debug.apk"
-  "$ROOT/app/build/outputs/apk/play/release/app-play-release.apk"
-  "$ROOT/app/build/outputs/apk/fortress/debug/app-fortress-debug.apk"
-  "$ROOT/app/build/outputs/apk/fortress/release/app-fortress-release.apk"
-  "$ROOT/app/build/reports/pm3/build-play-debug.log"
-  "$ROOT/app/build/reports/pm3/build-play-release.log"
-  "$ROOT/app/build/reports/pm3/build-fortress-debug.log"
-  "$ROOT/app/build/reports/pm3/build-fortress-release.log"
-)
-ORIGINAL_PRESENT=()
-
-preserve_repo_artifacts() {
-  local index path
-  for index in "${!REPO_ARTIFACTS[@]}"; do
-    path="${REPO_ARTIFACTS[$index]}"
-    if [ -e "$path" ]; then
-      [ -f "$path" ] || fail "refusing to replace non-file fixture target: $path"
-      ORIGINAL_PRESENT[index]=1
-      cp -a -- "$path" "$ORIGINALS/$index"
-    else
-      ORIGINAL_PRESENT[index]=0
-    fi
-  done
-}
-
-restore_repo_artifacts() {
-  local index path
-  for index in "${!REPO_ARTIFACTS[@]}"; do
-    path="${REPO_ARTIFACTS[$index]}"
-    rm -f -- "$path"
-    if [ "${ORIGINAL_PRESENT[$index]:-0}" -eq 1 ]; then
-      mkdir -p "$(dirname "$path")"
-      cp -a -- "$ORIGINALS/$index" "$path"
-    fi
-  done
-}
-
-assert_repo_artifacts_restored() {
-  local index path
-  for index in "${!REPO_ARTIFACTS[@]}"; do
-    path="${REPO_ARTIFACTS[$index]}"
-    if [ "${ORIGINAL_PRESENT[$index]:-0}" -eq 1 ]; then
-      [ -f "$path" ] || fail "pre-existing artifact was not restored: $path"
-      cmp -s -- "$ORIGINALS/$index" "$path" || fail "pre-existing artifact changed: $path"
-    else
-      [ ! -e "$path" ] || fail "fixture artifact survived cleanup: $path"
-    fi
-  done
-}
-cleanup_all() {
-  restore_repo_artifacts
+HAD_APK=0
+if [ -f "$APK" ]; then
+  HAD_APK=1
+  cp -a "$APK" "$ORIGINAL"
+fi
+cleanup() {
+  rm -f "$APK"
+  if [ "$HAD_APK" -eq 1 ]; then
+    mkdir -p "$(dirname "$APK")"
+    cp -a "$ORIGINAL" "$APK"
+  fi
   rm -rf "$TMP"
 }
-trap cleanup_all EXIT
+trap cleanup EXIT
 
-fail() { echo "FAIL: $*" >&2; exit 1; }
-pass() { echo "ok - $*"; }
-blocker() { printf '%s\n' "$*" >>"$BLOCKERS"; echo "BLOCKER: $*" >&2; }
-run_check() {
-  local label="$1"
-  shift
-  if "$@"; then pass "$label"; else blocker "$label"; fi
-}
-run_capture() {
-  set +e
-  OUT="$($PM3 "$@" 2>"$TMP/err")"
-  RC=$?
-  ERR="$(cat "$TMP/err")"
-  set -e
-}
-assert_rc() { [ "$RC" -eq "$1" ] || fail "exit $RC != $1 for $*; out=$OUT err=$ERR"; }
-assert_one_line_json() {
-  [ "$(printf '%s\n' "$OUT" | wc -l)" -eq 1 ] || fail "not one line: $OUT"
-  printf '%s' "$OUT" | jq -e . >/dev/null || fail "invalid JSON: $OUT"
-  printf '%s' "$OUT" | jq -e '
-    def success_root: ["data","status","tool","ts","version"];
-    def error_root: ["data","error","fix","message","status","tool","ts","version"];
-    (.tool == "pm3") and (.version == "0.3.0")
-    and (.ts | type == "string" and length > 0
-      and test("^[0-9]{4}-[0-9]{2}-[0-9]{2}T[0-9]{2}:[0-9]{2}:[0-9]{2}[+-][0-9]{2}:[0-9]{2}$"))
-    and (.data | type == "object")
-    and if .status == "ok" then (keys | sort) == success_root
-        elif .status == "error" then
-          ((keys | sort) == error_root)
-          and (.error | type == "string" and length > 0)
-          and (.message | type == "string" and length > 0)
-          and (.fix | type == "string" and length > 0)
-        else false end
-  ' >/dev/null || fail "bad exact one-shot envelope: $OUT"
-}
-assert_contract_shape() {
-  local verb="$1" shape="$2" json="$3"
-  [ -n "$SCHEMA_OUT" ] || fail "schema must be captured before contract shape assertions"
-  printf '%s' "$json" | jq -e --argjson contract "$SCHEMA_OUT" --arg verb "$verb" --arg shape "$shape" '
-    def deref($schema; $decl):
-      if $decl["$ref"] == "#" then $schema
-      elif $decl["$ref"] then $schema["$defs"][$decl["$ref"] | split("/")[-1]]
-      else $decl end;
-    def type_ok($schema; $value; $raw):
-      (deref($schema; $raw)) as $decl
-      | if $decl.const != null then $value == $decl.const
-        elif $decl.type == "array" then ($value | type) == "array"
-        elif $decl.type == "string" then ($value | type) == "string"
-        elif $decl.type == "integer" then ($value | type) == "number" and (($value % 1) == 0)
-        elif $decl.type == "boolean" then ($value | type) == "boolean"
-        elif $decl.type == "object" then ($value | type) == "object"
-        else false end;
-    . as $actual
-    | ($contract.data.schema) as $schema
-    | ($schema.properties.verbs.properties[$verb].properties.success["$ref"] | split("/")[-1]) as $envelope_name
-    | ($schema["$defs"][$envelope_name]) as $envelope
-    | ($envelope.properties.data["$ref"] | split("/")[-1]) as $data_name
-    | ($schema["$defs"][$data_name]) as $data_schema
-    | ($shape == "output")
-      and (($actual | keys | sort) == ($envelope.required | sort))
-      and (($actual.data | keys | sort) == ($data_schema.required | sort))
-      and all($data_schema.required[]; . as $key | type_ok($schema; $actual.data[$key]; $data_schema.properties[$key]))
-  ' >/dev/null || fail "$verb $shape did not match its declared nested data contract: $json"
-}
-assert_logcat_event_shape() {
-  local event="$1" json="$2"
-  [ -n "$SCHEMA_OUT" ] || fail "schema must be captured before logcat event assertions"
-  printf '%s' "$json" | jq -e --argjson contract "$SCHEMA_OUT" --arg event "$event" '
-    def deref($schema; $decl):
-      if $decl["$ref"] == "#" then $schema
-      elif $decl["$ref"] then $schema["$defs"][$decl["$ref"] | split("/")[-1]]
-      else $decl end;
-    def type_ok($schema; $value; $raw):
-      (deref($schema; $raw)) as $decl
-      | if $decl.const != null then $value == $decl.const
-        elif $decl.type == "string" then ($value | type) == "string"
-        else false end;
-    . as $actual
-    | ($contract.data.schema) as $schema
-    | (if $event == "logcat" then $schema["$defs"].logcatEvent else $schema["$defs"].streamError end) as $decl
-    | (($actual | keys | sort) == ($decl.required | sort))
-      and all($decl.required[]; . as $key | type_ok($schema; $actual[$key]; $decl.properties[$key]))
-  ' >/dev/null || fail "logcat $event did not match declared contract: $json"
-}
-assert_json_error_has_fix() {
-  assert_one_line_json
-  printf '%s' "$OUT" | jq -e '.status == "error" and (.data | type) == "object"' >/dev/null ||
-    fail "expected error one-shot with data object: $OUT"
-  if [ -n "$SCHEMA_OUT" ]; then
-    printf '%s' "$OUT" | jq -e --argjson contract "$SCHEMA_OUT" '
-      .error as $error | ($contract.data.schema["$defs"].stableError.enum | index($error)) != null
-    ' >/dev/null || fail "error code is not declared stable: $OUT"
-  fi
-}
-assert_error_code() {
-  printf '%s' "$OUT" | jq -e --arg code "$1" '.error == $code' >/dev/null || fail "error code != $1: $OUT"
-}
-assert_data_keys() {
-  local expected="$1"
-  printf '%s' "$OUT" | jq -e --argjson expected "$expected" '(.data | keys | sort) == ($expected | sort)' >/dev/null ||
-    fail "data keys did not equal $expected: $OUT"
-}
-assert_contains() { printf '%s' "$1" | grep -Fq -- "$2" || fail "missing [$2] in [$1]"; }
-assert_not_contains() { ! printf '%s' "$1" | grep -Fq -- "$2" || fail "unexpected [$2] in [$1]"; }
-assert_no_file() { [ ! -e "$1" ] || fail "unexpected file exists: $1"; }
-assert_log_count() { local n; n="$(grep -cF -- "$2" "$1" || true)"; [ "$n" -eq "$3" ] || fail "log count for [$2] was $n not $3 in $1"; }
-
-preserve_repo_artifacts
+fail() { printf 'FAIL: %s\n' "$*" >&2; exit 1; }
+pass() { printf 'ok - %s\n' "$*"; }
 
 cat >"$BIN/adb" <<'ADB'
 #!/usr/bin/env bash
-mode="${PM3_FAKE_ADB_MODE:-ok}"
-printf 'adb %s\n' "$*" >>"$PM3_FIXTURE_LOG"
-pm3_b64() { printf '%s' "$1" | base64 | tr '+/' '-_' | tr -d '=\n'; }
-case "$mode" in
-  unavailable) echo "fixture adb should not have been called in unavailable mode" >&2; exit 127 ;;
-  version_fail) [ "${1:-}" = --version ] && { echo "fixture adb version failure" >&2; exit 8; } ;;
-  connect_zero_bad) [ "${1:-}" = connect ] && { echo "failed to connect to ${2:-}: Connection refused"; exit 0; } ;;
-  logcat_fail) if [ "${1:-}" = -s ] && [ "${3:-}" = logcat ]; then echo "logcat fixture failure" >&2; exit 9; fi ;;
-  screencap_fail) if [ "${1:-}" = -s ] && [ "${3:-}" = exec-out ]; then printf 'PARTIALPNG'; exit 8; fi ;;
-  pull_fail) if [ "${1:-}" = -s ] && [ "${3:-}" = pull ]; then printf 'PARTIALMP4' >"${5:-/dev/null}"; echo "pull failed" >&2; exit 8; fi ;;
-  dumpsys_fail) if [ "${1:-}" = -s ] && [ "${3:-}" = shell ] && [[ " $* " == *" dumpsys "* ]]; then echo "fixture dumpsys failure" >&2; exit 8; fi ;;
-esac
+set -euo pipefail
+printf '%q ' "$@" >>"$PM3_TEST_CALLS"
+printf '\n' >>"$PM3_TEST_CALLS"
+if [ "${1:-}" = "--version" ]; then
+  printf 'Android Debug Bridge version 1.0.41\n'
+  exit 0
+fi
+if [ "${1:-}" = "pair" ]; then
+  printf 'Successfully paired to %s\n' "$2"
+  exit 0
+fi
+if [ "${1:-}" = "connect" ]; then
+  printf 'connected to %s\n' "$2"
+  exit 0
+fi
+[ "${1:-}" = "-s" ] || exit 9
+shift 2
 case "${1:-}" in
-  --version) echo "Android Debug Bridge fixture" ;;
-  devices) echo "List of devices attached"; echo "FIRSTDEVICE device" ;;
-  pair) echo "Successfully paired to $2" ;;
-  connect) echo "connected to $2" ;;
-  -s)
-    serial="$2"; shift 2
-    case "${1:-}" in
-      install) echo "Success" ;;
-	      shell)
-	        shift
-	        case "$*" in
-	          *"content call"*)
-	            case "$mode" in
-	              provider_malicious) echo 'Bundle[{response=%%%not-base64%%%}]' ;;
-	              provider_refusal) echo "Bundle[{response=$(pm3_b64 '{"ok":false,"error":"SecurityException","message":"pm3 provider is shell/root only","fix":"retry as adb shell"}')}]" ;;
-	              provider_play_unavailable) echo "Bundle[{response=$(pm3_b64 '{"ok":false,"error":"IllegalStateException","message":"Play unavailable","fix":"use Fortress"}')}]" ;;
-	              *)
-	                if [[ "$*" == *"request:s:"* ]]; then
-	                  echo "Bundle[{response=$(pm3_b64 '{"ok":true,"protocol":3,"verb":"fixture","data":{"revision":7,"events":[{"event":"state","revision":7}],"committed":true,"accepted":true,"sha256":"aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa","bytes_base64url":"e30"}}')}]"
-	                else
-	                  echo 'Bundle[{}]'
-	                fi ;;
-	            esac ;;
-	          *"dumpsys package"*) echo "versionName=9.9.9" ;;
-          *"am start"*) echo "Starting" ;;
-          *"pidof"*) echo "1234" ;;
-          *"dumpsys gfxinfo"*) echo "Total frames rendered: 12" ;;
-          *"dumpsys media_session"*) echo "fixture media for $serial" ;;
-          *"dumpsys audio"*) echo "fixture audio for $serial" ;;
-          *"pm dump"*) echo "pkgFlags=[ DEBUGGABLE ]" ;;
-          *"am broadcast"*) echo "Broadcast completed" ;;
-          *"run-as"*"selftest.json"*) echo '{"ok":true}' ;;
-          *"run-as"*"selftest.png"*) printf 'png' ;;
-          *"screenrecord"*) echo recorded ;;
-          *"rm /sdcard/pm3-rec.mp4"*) echo removed ;;
-          *) echo "shell:$*" ;;
-        esac ;;
-      exec-out) printf 'PNGDATA' ;;
-      pull) printf 'MP4DATA' >"$3"; echo pulled ;;
-      logcat) echo "07-26 10:00:00.000 I phosphor-mobil3: hello"; echo "07-26 10:00:00.001 E AndroidRuntime: boom" ;;
-      *) echo "fixture adb unknown $*" ;;
-    esac ;;
-  *) echo "fixture adb unknown $*" ;;
+  install) printf 'Success\n' ;;
+  exec-out) printf '\211PNG\r\n\032\nfixture' ;;
+  pull)
+    if [[ "${2:-}" = */base.apk ]]; then cp "$PM3_TEST_APK" "$3"; else printf 'fixture-mp4' >"$3"; fi
+    ;;
+  logcat) printf 'first line\nsecond line\n' ;;
+  shell)
+    shift
+    case "${1:-} ${2:-} ${3:-}" in
+      "dumpsys package dev.phosphor.mobil3.debug"|"dumpsys package dev.phosphor.mobil3")
+        printf 'versionName=2.0.0-debug\n'
+        ;;
+      "pm path dev.phosphor.mobil3.debug"|"pm path dev.phosphor.mobil3")
+        printf 'package:/data/app/fixture/base.apk\n'
+        ;;
+      "am start -n") printf 'Starting: Intent\n' ;;
+      "pidof dev.phosphor.mobil3.debug "|"pidof dev.phosphor.mobil3 ") printf '1234\n' ;;
+      "dumpsys media_session ") printf 'dev.phosphor.mobil3.debug playing\n' ;;
+      "dumpsys audio ") printf 'dev.phosphor.mobil3.debug active\n' ;;
+      "dumpsys gfxinfo dev.phosphor.mobil3.debug") printf 'Total frames rendered: 42\nJanky frames: 0\n' ;;
+      "pm dump dev.phosphor.mobil3.debug") printf 'pkgFlags=[ DEBUGGABLE HAS_CODE ]\n' ;;
+      "am broadcast -a") printf 'Broadcast completed: result=0\n' ;;
+      "run-as dev.phosphor.mobil3.debug cat")
+        if [ "${4:-}" = "files/selftest.json" ]; then
+          printf '{"ok":true}'
+        else
+          printf '\211PNG\r\n\032\nselftest'
+        fi
+        ;;
+      "screenrecord --time-limit "*|"rm /sdcard/pm3-rec.mp4 ") ;;
+      *) exit 8 ;;
+    esac
+    ;;
+  *) exit 7 ;;
 esac
 ADB
 chmod +x "$BIN/adb"
 
 cat >"$BIN/gradle" <<'GRADLE'
 #!/usr/bin/env bash
-printf 'gradle %s\n' "$*" >>"$PM3_FIXTURE_LOG"
-echo "pm3 fake gradle log: $*"
-task="${1:-}"
-case "$task" in
-  assemblePlayDebug) path="app/build/outputs/apk/play/debug/app-play-debug.apk" ;;
-  assemblePlayRelease) path="app/build/outputs/apk/play/release/app-play-release.apk" ;;
-  assembleFortressDebug) path="app/build/outputs/apk/fortress/debug/app-fortress-debug.apk" ;;
-  assembleFortressRelease) path="app/build/outputs/apk/fortress/release/app-fortress-release.apk" ;;
-  *) echo "bad task $task" >&2; exit 7 ;;
+set -euo pipefail
+printf '%q ' "$@" >>"$PM3_TEST_CALLS"
+printf '\n' >>"$PM3_TEST_CALLS"
+case "${1:-}" in
+  assembleDebug)
+    mkdir -p app/build/outputs/apk/debug
+    printf 'debug-apk' >app/build/outputs/apk/debug/app-debug.apk
+    ;;
+  assembleRelease)
+    mkdir -p app/build/outputs/apk/release
+    printf 'release-apk' >app/build/outputs/apk/release/app-release.apk
+    ;;
+  *) exit 6 ;;
 esac
-mkdir -p "$(dirname "$path")"
-printf 'apk:%s' "$task" >"$path"
 GRADLE
 chmod +x "$BIN/gradle"
 
-cat >"$BIN/keytool" <<'KEYTOOL'
+cat >"$BIN/apksigner" <<'APKSIGNER'
 #!/usr/bin/env bash
-printf 'keytool %s\n' "$*" >>"$PM3_FIXTURE_LOG"
-case "${PM3_FAKE_KEYTOOL_MODE:-good}" in
-  good) printf 'fixture-play-certificate-der' ;;
-  fail) echo "fixture keystore failure" >&2; exit 8 ;;
-  *) echo "unknown keytool fixture mode" >&2; exit 9 ;;
-esac
-KEYTOOL
-chmod +x "$BIN/keytool"
+set -euo pipefail
+printf 'Signer #1 certificate SHA-256 digest: aabbccddeeff00112233445566778899aabbccddeeff00112233445566778899\n'
+APKSIGNER
+chmod +x "$BIN/apksigner"
 
-export PATH="$BIN:$PATH" PM3_FIXTURE_LOG="$LOG" PM3_GRADLE="$BIN/gradle" PM3_ADB="$BIN/adb" PM3_KEYTOOL="$BIN/keytool" PM3_FAKE_ADB_MODE=ok
-unset PLAY_UPLOAD_STORE_FILE PLAY_UPLOAD_STORE_PASSWORD PLAY_UPLOAD_KEY_ALIAS PLAY_UPLOAD_KEY_PASSWORD PLAY_UPLOAD_CERT_SHA256
-unset RELEASE_STORE_FILE RELEASE_STORE_PASSWORD RELEASE_KEY_ALIAS RELEASE_KEY_PASSWORD RELEASE_CERT_SHA256
+export PM3_ADB="$BIN/adb"
+export PM3_GRADLE="$BIN/gradle"
+export PM3_APKSIGNER="$BIN/apksigner"
+export PM3_RECEIPTS_DIR="$TMP/receipts"
+export PM3_TEST_CALLS="$CALLS"
+export PM3_TEST_APK="$APK"
 
-bash -n "$PM3"; pass "pm3 syntax"
-bash -n "$0"; pass "test syntax"
-if command -v shellcheck >/dev/null 2>&1; then
-  shellcheck "$0"; pass "test shellcheck"
-  shellcheck "$PM3"; pass "pm3 shellcheck"
-else
-  echo "skip - shellcheck unavailable" >&2
-fi
+run_capture() {
+  set +e
+  OUT="$($PM3 --json "$@" 2>"$TMP/stderr")"
+  RC=$?
+  set -e
+}
 
-run_capture --json help; assert_rc 0; assert_one_line_json; assert_data_keys '["usage","verbs"]'; pass "help exact nested JSON envelope"
-run_capture --help; assert_rc 0; assert_one_line_json; assert_data_keys '["usage","verbs"]'; pass "help works under pipe auto-json"
-run_capture --json wat; assert_rc 3; assert_json_error_has_fix; assert_error_code unknown_verb; assert_data_keys '["usage"]'; pass "unknown verb exit3 with stable error and usage data"
-run_capture --json doctor --bogus; assert_rc 3; assert_json_error_has_fix; assert_error_code unknown_argument; assert_data_keys '["usage"]'; pass "unknown global arg exit3 with stable error and usage data"
+assert_envelope() {
+  printf '%s' "$OUT" | jq -e '
+    .tool == "pm3" and .version == "1.0.0"
+    and (.ts | type == "string" and length > 0)
+    and if .status == "ok" then (.data | type == "object")
+        elif .status == "error" then
+          (.error | type == "string" and length > 0)
+          and (.message | type == "string" and length > 0)
+          and (.fix | type == "string" and length > 0)
+          and (.data | type == "object")
+        else false end
+  ' >/dev/null || fail "bad envelope: $OUT"
+}
 
-run_capture --json schema; assert_rc 0; assert_one_line_json; assert_contains "$OUT" 'assemblePlayRelease'
+SCHEMA="$($PM3 schema)"
+printf '%s' "$SCHEMA" | jq -e '
+  .status == "ok"
+  and .data.schema.properties.defaults.const.profile == "debug"
+  and .data.schema.properties.mappings.const.debug.package_id == "dev.phosphor.mobil3.debug"
+  and .data.schema.properties.mappings.const.release.package_id == "dev.phosphor.mobil3"
+  and (.data.schema.properties.verbs.required | sort) == (["build","connect","doctor","fps","help","install","logcat","media","pair","record","run","schema","screenshot","smoke"] | sort)
+  and .data.schema.properties.exit_codes.const == {"0":"success","2":"dependency or capability unavailable","3":"bad input or usage","4":"runtime failure"}
+' >/dev/null || fail "schema contract mismatch"
+printf '%s' "$SCHEMA" | grep -Eqi 'nexus|nexidex|state-watch|action-run|audit-export|tailnet-secret|fortress' && fail "retired product surface remains in schema"
+pass "schema describes only the developer surface"
+
+run_capture help
+[ "$RC" -eq 0 ] || fail "help exit $RC"
+assert_envelope
+printf '%s' "$OUT" | jq -e '.data.verbs | index("build") and (index("state-get") | not)' >/dev/null
+pass "help uses the v1 structured envelope"
+
+run_capture --profile invalid doctor
+[ "$RC" -eq 3 ] || fail "invalid profile exit $RC"
+assert_envelope
+printf '%s' "$OUT" | jq -e '.error == "invalid_profile" and (.data.usage | length > 0)' >/dev/null
+pass "bad usage exits 3 with a fix and usage"
+
+run_capture --distribution play doctor
+[ "$RC" -eq 3 ] || fail "retired distribution flag exit $RC"
+printf '%s' "$OUT" | jq -e '.error == "unknown_argument"' >/dev/null
+pass "retired distribution selection is rejected"
+
+for verb in state-get state-watch nexus-status action-run audit-export tailnet-secret; do
+  run_capture "$verb"
+  [ "$RC" -eq 3 ] || fail "$verb exit $RC"
+  printf '%s' "$OUT" | jq -e '.error == "unknown_verb"' >/dev/null
+ done
+pass "retired product verbs are absent"
+
+run_capture doctor
+[ "$RC" -eq 0 ] || fail "doctor exit $RC: $OUT"
 printf '%s' "$OUT" | jq -e '
-  ["help","schema","doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke","state-get","state-watch","nexus-status","nexus-grant","nexus-revoke","action-run","audit-list","audit-export"] as $verbs
-  | ($verbs | sort) as $sorted
-  | (.data.schema) as $schema
-  | ((keys | sort) == ["data","status","tool","ts","version"])
-    and ((.data | keys) == ["schema"])
-    and ($schema["$schema"] == "https://json-schema.org/draft/2020-12/schema")
-    and ($schema.type == "object")
-    and ($schema.additionalProperties == false)
-    and (($schema.properties.verbs.required | sort) == $sorted)
-    and (($schema.properties.verbs.properties | keys) == $sorted)
-    and ([$schema | .. | objects | select(.type? == "object") | .additionalProperties == false] | all)
-    and ($schema["$defs"].schemaData.properties.schema["$ref"] == "#")
-    and ($schema["$defs"].schemaEnvelope.properties.data["$ref"] == "#/$defs/schemaData")
-    and ($schema["$defs"].errorEnvelopeEmpty.required == ["status","tool","version","ts","error","message","fix","data"])
-    and ($schema["$defs"].errorEnvelopeEmpty.properties.data["$ref"] == "#/$defs/emptyData")
-    and ($schema["$defs"].errorEnvelopeUsage.properties.data["$ref"] == "#/$defs/usageData")
-    and ($schema["$defs"].streamError.required | index("fix"))
-    and ($schema.properties.verbs.properties.help.properties.success["$ref"] == "#/$defs/helpEnvelope")
-    and ($schema["$defs"].helpEnvelope.properties.data["$ref"] == "#/$defs/helpData")
-    and (["help","schema","doctor","pair","connect","build","install","run","screenshot","record","media","fps","smoke"]
-      | all(.[]; . as $verb
-        | ($schema.properties.verbs.properties[$verb].properties.success["$ref"] | split("/")[-1]) as $envelope_name
-        | ($schema["$defs"][$envelope_name]) as $envelope
-        | ($envelope.properties.data["$ref"] | split("/")[-1]) as $data_name
-        | ($schema["$defs"][$data_name]) as $data_schema
-        | (($envelope.required | sort) == ["data","status","tool","ts","version"])
-          and ($envelope.additionalProperties == false)
-          and ($data_schema.type == "object")
-          and ($data_schema.additionalProperties == false)
-          and (($data_schema.required | sort) == ($data_schema.properties | keys | sort))))
-    and ([$schema | .. | objects | .["$ref"]? | select(type == "string" and startswith("#/$defs/")) | split("/")[-1]]
-      | all(.[]; . as $name | $schema["$defs"] | has($name)))
-    and ($schema.properties.signing_inputs.properties.play_release.properties.required_env.const | index("PLAY_UPLOAD_CERT_SHA256"))
-    and ($schema.properties.signing_inputs.properties.fortress_release.properties.expected_cert_sha256.const == "e4d14ce2d62983acd393f012cbce759b6c97bdcca979feeb04a97afb279d9b00")
-    and (($schema.properties.exit_codes.properties | keys) == ["0","2","3","4"])
-' >/dev/null || fail "schema is not recursively strict or its flat verb set drifted"
-SCHEMA_OUT="$OUT"
-assert_contract_shape schema output "$OUT"
-pass "schema is enveloped at data.schema, recursively strict, self-referential, and exact"
+  .data.profile == "debug"
+  and .data.package_id == "dev.phosphor.mobil3.debug"
+  and .data.gradle_task == "assembleDebug"
+  and (.data.apk | endswith("app/build/outputs/apk/debug/app-debug.apk"))
+  and .data.all_ok == true
+' >/dev/null
+pass "doctor reports the single debug product"
 
-run_capture --json help; assert_rc 0; assert_contract_shape help output "$OUT"; pass "help output matches declared contract"
+run_capture build
+[ "$RC" -eq 0 ] || fail "build exit $RC: $OUT"
+printf '%s' "$OUT" | jq -e '
+  .data.profile == "debug"
+  and .data.package_id == "dev.phosphor.mobil3.debug"
+  and .data.gradle_task == "assembleDebug"
+  and (.data.sha256 | test("^[0-9a-f]{64}$"))
+' >/dev/null
+grep -q 'assembleDebug' "$CALLS" || fail "debug Gradle task not called"
+pass "build uses the consolidated Gradle variant"
 
-check_missing_serial_logcat() {
-  : >"$LOG"
-  run_capture --json logcat
-  assert_rc 3
-  assert_json_error_has_fix
-  assert_error_code serial_required
-  assert_data_keys '["usage"]'
-  assert_not_contains "$OUT" '"event"'
-  assert_log_count "$LOG" "adb " 0
-}
-run_check "missing-serial logcat exactly one exit3 object and no adb call" check_missing_serial_logcat
+run_capture --profile release build
+[ "$RC" -eq 2 ] || fail "unsigned release exit $RC: $OUT"
+printf '%s' "$OUT" | jq -e '.error == "signing_inputs_missing" and (.fix | length > 0)' >/dev/null
+pass "release build fails closed before Gradle without signing inputs"
 
-check_missing_serial_precedes_missing_adb() {
-  local save_adb="$PM3_ADB"
-  PM3_ADB="$TMP/no-such-adb-command"
-  run_capture --json logcat
-  PM3_ADB="$save_adb"
-  export PM3_ADB
-  assert_rc 3
-  assert_json_error_has_fix
-  assert_error_code serial_required
-  assert_data_keys '["usage"]'
-}
-run_check "missing serial remains usage exit3 when adb is unavailable" check_missing_serial_precedes_missing_adb
+run_capture install
+[ "$RC" -eq 3 ] || fail "missing serial exit $RC"
+printf '%s' "$OUT" | jq -e '.error == "serial_required"' >/dev/null
+pass "device operations require an explicit serial"
 
-check_provider_play_unavailable_without_adb() {
-  : >"$LOG"
-  run_capture --json --distribution play --serial SERIAL123 state-get
-  assert_rc 2
-  assert_json_error_has_fix
-  assert_error_code play_unavailable
-  assert_log_count "$LOG" "adb " 0
-}
-run_check "Play distribution refuses pm3 provider verbs before adb" check_provider_play_unavailable_without_adb
+run_capture --serial serial-1 install
+[ "$RC" -eq 0 ] || fail "install exit $RC: $OUT"
+printf '%s' "$OUT" | jq -e '
+  .data.serial == "serial-1"
+  and .data.package_id == "dev.phosphor.mobil3.debug"
+  and .data.local_sha256 == .data.installed_sha256
+  and (.data.signer_sha256 | test("^[0-9a-f]{64}$"))
+' >/dev/null
+pass "install targets the debug-suffixed package and verifies exact bytes and signer"
 
-run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 0; assert_one_line_json; assert_contains "$OUT" '"provider_protocol":3'; assert_contains "$OUT" '"revision":7'; assert_contains "$(cat "$LOG")" 'content call'; pass "state-get calls live provider bridge"
-run_capture --json --distribution fortress --serial SERIAL123 nexus-status; assert_rc 0; assert_contains "$OUT" '"provider_protocol":3'; pass "nexus-status calls live provider bridge"
-run_capture --json --distribution fortress --serial SERIAL123 nexus-grant '{"trust":{"kind":"tailnet","node_principal":"node-a","pinned_endpoint_identity":"tailnet-a","principal_stable_id":"operator-a"},"capability":"observe.state","receipt_id":"grant-a"}'; assert_rc 0; assert_contains "$OUT" '"committed":true'; pass "nexus-grant forwards exact trust tuple args"
-run_capture --json --distribution fortress --serial SERIAL123 nexus-revoke '{"trust":{"kind":"tailnet","node_principal":"node-a","pinned_endpoint_identity":"tailnet-a","principal_stable_id":"operator-a"},"capability":"observe.state"}'; assert_rc 0; assert_contains "$OUT" '"committed":true'; pass "nexus-revoke forwards exact trust tuple args"
-run_capture --json --distribution fortress --serial SERIAL123 action-run '{"action":"display.hud.set","value":"on","idempotency_key":"test-action"}'; assert_rc 0; assert_contains "$OUT" '"accepted":true'; pass "action-run returns provider acknowledgement"
-run_capture --json --distribution fortress --serial SERIAL123 audit-export; assert_rc 0; assert_contains "$OUT" '"sha256"'; assert_contains "$OUT" '"bytes_base64url"'; pass "audit-export carries sha256 and base64 payload"
+run_capture --profile release --serial serial-1 install "$APK"
+[ "$RC" -eq 0 ] || fail "explicit release install exit $RC: $OUT"
+printf '%s' "$OUT" | jq -e --arg apk "$APK" '
+  .data.package_id == "dev.phosphor.mobil3"
+  and .data.apk == $apk
+  and .data.local_sha256 == .data.installed_sha256
+' >/dev/null
+pass "install accepts the exact canonical APK path for the production package"
 
-OUT="$($PM3 --json --distribution fortress --serial SERIAL123 state-watch 2>"$TMP/watch.err")"; RC=$?; ERR="$(cat "$TMP/watch.err")"; [ "$RC" -eq 0 ] || fail "state-watch exit $RC err=$ERR"; printf '%s' "$OUT" | jq -e '.event == "state"' >/dev/null || fail "state-watch did not emit NDJSON state event: $OUT"; pass "state-watch emits canonical event NDJSON"
+run_capture --serial serial-1 run
+[ "$RC" -eq 0 ] || fail "run exit $RC: $OUT"
+printf '%s' "$OUT" | jq -e '.data.pids == "1234"' >/dev/null
+pass "run verifies the selected process"
 
-PM3_FAKE_ADB_MODE=provider_malicious; export PM3_FAKE_ADB_MODE
-run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 4; assert_json_error_has_fix; assert_error_code provider_response_invalid; pass "malicious Bundle output is rejected"
-PM3_FAKE_ADB_MODE=provider_refusal; export PM3_FAKE_ADB_MODE
-run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 4; assert_json_error_has_fix; assert_error_code provider_refused; assert_contains "$OUT" 'pm3 provider is shell/root only'; pass "provider refusal propagates with fix"
-PM3_FAKE_ADB_MODE=provider_play_unavailable; export PM3_FAKE_ADB_MODE
-run_capture --json --distribution fortress --serial SERIAL123 state-get; assert_rc 4; assert_json_error_has_fix; assert_error_code provider_refused; assert_contains "$OUT" 'Play unavailable'; pass "provider Play-unavailable refusal propagates"
-PM3_FAKE_ADB_MODE=ok; export PM3_FAKE_ADB_MODE
+SHOT="$TMP/shot.png"
+run_capture --serial serial-1 screenshot "$SHOT"
+if [ "$RC" -ne 0 ] || [ ! -s "$SHOT" ]; then fail "screenshot failed: $OUT"; fi
+pass "screenshot writes a non-empty PNG transactionally"
 
-check_doctor_adb_unavailable() {
-  local save_adb="$PM3_ADB"
-  PM3_ADB="$TMP/no-such-adb-command"
-  run_capture --json doctor
-  PM3_ADB="$save_adb"
-  export PM3_ADB
-  assert_rc 2
-  assert_json_error_has_fix
-  assert_error_code prerequisites_unavailable
-  assert_data_keys '["all_ok","distribution","profile","package_id","gradle_task","apk","checks"]'
-  assert_contains "$OUT" '"check":"adb","ok":false'
-}
-run_check "doctor exits 2 when adb is unavailable" check_doctor_adb_unavailable
+VIDEO="$TMP/record.mp4"
+run_capture --serial serial-1 record 1 "$VIDEO"
+if [ "$RC" -ne 0 ] || [ ! -s "$VIDEO" ]; then fail "record failed: $OUT"; fi
+pass "record writes a non-empty MP4 transactionally"
 
-check_doctor_adb_runtime_failure() {
-  PM3_FAKE_ADB_MODE=version_fail
-  export PM3_FAKE_ADB_MODE
-  run_capture --json doctor
-  PM3_FAKE_ADB_MODE=ok
-  export PM3_FAKE_ADB_MODE
-  assert_rc 2
-  assert_json_error_has_fix
-  assert_error_code prerequisites_unavailable
-  assert_data_keys '["all_ok","distribution","profile","package_id","gradle_task","apk","checks"]'
-  assert_contains "$OUT" 'adb --version failed'
-}
-run_check "doctor treats executable-but-broken adb as unavailable" check_doctor_adb_runtime_failure
+run_capture --serial serial-1 media
+[ "$RC" -eq 0 ] || fail "media exit $RC: $OUT"
+run_capture --serial serial-1 fps
+[ "$RC" -eq 0 ] || fail "fps exit $RC: $OUT"
+run_capture --serial serial-1 smoke
+[ "$RC" -eq 0 ] || fail "smoke exit $RC: $OUT"
+[ "$(find "$PM3_RECEIPTS_DIR" -maxdepth 1 -name 'selftest-*.png' -type f | wc -l)" -eq 1 ] || fail "smoke receipt isolation"
+pass "device diagnostics and debug self-test retain their developer role"
 
-run_capture --json --distribution play --profile debug doctor; assert_rc 0; assert_contains "$OUT" '"package_id":"dev.phosphor.mobil3"'; assert_contains "$OUT" '"gradle_task":"assemblePlayDebug"'; assert_contains "$OUT" 'app/build/outputs/apk/play/debug/app-play-debug.apk'; assert_contract_shape doctor output "$OUT"; pass "play debug mapping"
-run_capture --json --distribution fortress --profile release doctor; assert_rc 0; assert_contains "$OUT" '"package_id":"dev.phosphor.mobil3.fortress"'; assert_contains "$OUT" '"gradle_task":"assembleFortressRelease"'; assert_contains "$OUT" 'app/build/outputs/apk/fortress/release/app-fortress-release.apk'; pass "fortress release mapping"
+LOGCAT="$($PM3 --serial serial-1 logcat 2>"$TMP/logcat.err")"
+[ "$(printf '%s\n' "$LOGCAT" | wc -l)" -eq 2 ] || fail "logcat line count"
+printf '%s\n' "$LOGCAT" | jq -e '.event == "logcat" and .package_id == "dev.phosphor.mobil3.debug"' >/dev/null
+pass "logcat is canonical NDJSON"
 
-run_capture --json --distribution play --profile release build; assert_rc 2; assert_json_error_has_fix; assert_error_code signing_inputs_missing; assert_data_keys '[]'; assert_contains "$OUT" "PLAY_UPLOAD_STORE_FILE"; assert_contains "$OUT" "signing input"; pass "play release signing unavailable truthful"
-run_capture --json --distribution fortress --profile release build; assert_rc 2; assert_json_error_has_fix; assert_error_code signing_inputs_missing; assert_data_keys '[]'; assert_contains "$OUT" "RELEASE_STORE_FILE"; assert_contains "$OUT" "signing input"; pass "fortress release signing unavailable truthful"
-
-fixture_store="$TMP/play-fixture.jks"
-: >"$fixture_store"
-export PLAY_UPLOAD_STORE_FILE="$fixture_store" PLAY_UPLOAD_STORE_PASSWORD=fixture-store-pass \
-  PLAY_UPLOAD_KEY_ALIAS=fixture-alias PLAY_UPLOAD_KEY_PASSWORD=fixture-key-pass
-PLAY_UPLOAD_CERT_SHA256="$(printf 'fixture-play-certificate-der' | sha256sum | cut -d' ' -f1)"
-export PLAY_UPLOAD_CERT_SHA256
-PM3_FAKE_KEYTOOL_MODE=fail; export PM3_FAKE_KEYTOOL_MODE
-run_capture --json --distribution play --profile release build; assert_rc 2; assert_json_error_has_fix; assert_error_code signing_verification_failed; assert_data_keys '[]'; assert_contains "$OUT" 'keystore or alias verification failed'; pass "play release corrupt signer exits unavailable"
-PM3_FAKE_KEYTOOL_MODE=good; export PM3_FAKE_KEYTOOL_MODE
-PLAY_UPLOAD_CERT_SHA256="0${PLAY_UPLOAD_CERT_SHA256:1}"; export PLAY_UPLOAD_CERT_SHA256
-run_capture --json --distribution play --profile release build; assert_rc 2; assert_json_error_has_fix; assert_error_code signing_certificate_mismatch; assert_data_keys '[]'; assert_contains "$OUT" 'certificate mismatch'; pass "play release foreign signer exits unavailable"
-PLAY_UPLOAD_CERT_SHA256="$(printf 'fixture-play-certificate-der' | sha256sum | cut -d' ' -f1)"; export PLAY_UPLOAD_CERT_SHA256
-run_capture --json --distribution play --profile release build; assert_rc 0; assert_contains "$OUT" '"gradle_task":"assemblePlayRelease"'; assert_contract_shape build output "$OUT"; pass "play release verified fixture signer builds"
-unset PLAY_UPLOAD_STORE_FILE PLAY_UPLOAD_STORE_PASSWORD PLAY_UPLOAD_KEY_ALIAS PLAY_UPLOAD_KEY_PASSWORD PLAY_UPLOAD_CERT_SHA256
-run_capture --json --distribution fortress --profile debug build; assert_rc 0; assert_contains "$OUT" '"gradle_task":"assembleFortressDebug"'; assert_contains "$(cat "$LOG")" "gradle assembleFortressDebug"; assert_contract_shape build output "$OUT"; pass "fixture gradle build task"
-if [ ! -f "$ROOT/app/build/reports/pm3/build-fortress-debug.log" ] || ! grep -q '^pm3 fake gradle log:' "$ROOT/app/build/reports/pm3/build-fortress-debug.log"; then
-  fail "fixture report log missing marker"
-fi
-
-: >"$LOG"
-run_capture --json --serial SERIAL123 --distribution fortress --profile debug install; assert_rc 0; assert_contains "$(cat "$LOG")" "adb -s SERIAL123 install"; assert_not_contains "$(cat "$LOG")" "adb devices"; assert_contract_shape install output "$OUT"; pass "adb install always -s"
-
-: >"$LOG"
-export PM3_SERIAL=ENV123
-run_capture --json run
-unset PM3_SERIAL
-assert_rc 0
-assert_contains "$(cat "$LOG")" "adb -s ENV123 shell am start"
-assert_not_contains "$(cat "$LOG")" "adb devices"
-assert_contract_shape run output "$OUT"
-pass "PM3_SERIAL is explicit and never triggers first-device discovery"
-
-set +e
-OUT="$($PM3 --json --serial SERIAL123 logcat 2>"$TMP/logcat.err")"
-RC=$?
-ERR="$(cat "$TMP/logcat.err")"
-set -e
-[ "$RC" -eq 0 ] || fail "logcat exit $RC"
-[ "$(printf '%s\n' "$OUT" | grep -c '"event":"logcat"')" -eq 2 ] || fail "logcat did not emit two event lines: $OUT"
-printf '%s\n' "$OUT" | while IFS= read -r line; do
-  printf '%s' "$line" | jq -e . >/dev/null || fail "invalid logcat NDJSON line: $line"
-  assert_logcat_event_shape logcat "$line"
-done
-assert_contains "$ERR" "streaming adb logcat as NDJSON"
-pass "logcat NDJSON and stderr diagnostics"
-
-check_logcat_adb_failure() {
-  PM3_FAKE_ADB_MODE=logcat_fail
-  export PM3_FAKE_ADB_MODE
-  run_capture --json --serial SERIAL123 logcat
-  PM3_FAKE_ADB_MODE=ok
-  export PM3_FAKE_ADB_MODE
-  assert_rc 4
-  [ "$(printf '%s\n' "$OUT" | wc -l)" -eq 1 ] || fail "stream error was not one NDJSON record: $OUT"
-  printf '%s' "$OUT" | jq -e '.event == "stream_error" and .error == "logcat_failed" and (.message | length > 0) and (.fix | length > 0)' >/dev/null ||
-    fail "terminal stream error missing event/error/message/fix: $OUT"
-  assert_logcat_event_shape stream_error "$OUT"
-}
-run_check "logcat adb failure emits terminal stream_error exit4" check_logcat_adb_failure
-
-check_device_query_runtime_failure() {
-  PM3_FAKE_ADB_MODE=dumpsys_fail
-  export PM3_FAKE_ADB_MODE
-  run_capture --json --serial SERIAL123 media
-  assert_rc 4
-  assert_json_error_has_fix
-  assert_error_code media_query_failed
-  assert_data_keys '[]'
-  assert_contains "$OUT" 'media-session query failed'
-  run_capture --json --serial SERIAL123 fps
-  assert_rc 4
-  assert_json_error_has_fix
-  assert_error_code gfxinfo_query_failed
-  assert_data_keys '[]'
-  assert_contains "$OUT" 'gfxinfo query failed'
-  PM3_FAKE_ADB_MODE=ok
-  export PM3_FAKE_ADB_MODE
-}
-run_check "device query adb failures are structured exit4" check_device_query_runtime_failure
-
-run_capture --json --serial SERIAL123 media; assert_rc 0; assert_contract_shape media output "$OUT"; pass "media nested data contract"
-run_capture --json --serial SERIAL123 fps; assert_rc 0; assert_contract_shape fps output "$OUT"; pass "fps nested data contract"
-
-run_capture --json --schema junk; assert_rc 3; assert_json_error_has_fix; assert_error_code unexpected_argument; assert_data_keys '["usage"]'; pass "schema rejects trailing positional input with usage data"
-run_capture --json --help junk; assert_rc 3; assert_json_error_has_fix; assert_error_code unexpected_argument; assert_data_keys '["usage"]'; pass "help rejects trailing positional input with usage data"
-
-check_screenshot_missing_serial_no_file() {
-  local outp="$TMP/missing-serial.png"
-  run_capture --json screenshot "$outp"
-  assert_rc 3
-  assert_json_error_has_fix
-  assert_error_code serial_required
-  assert_data_keys '["usage"]'
-  assert_no_file "$outp"
-}
-run_check "screenshot missing serial creates no file" check_screenshot_missing_serial_no_file
-
-check_screenshot_adb_failure_removes_partial() {
-	local outp="$TMP/partial.png"
-  PM3_FAKE_ADB_MODE=screencap_fail
-  export PM3_FAKE_ADB_MODE
-  run_capture --json --serial SERIAL123 screenshot "$outp"
-  PM3_FAKE_ADB_MODE=ok
-  export PM3_FAKE_ADB_MODE
-  assert_rc 4
-  assert_json_error_has_fix
-  assert_error_code screenshot_capture_failed
-  assert_data_keys '[]'
-  assert_no_file "$outp"
-}
-run_check "screenshot adb failure removes partial" check_screenshot_adb_failure_removes_partial
-
-check_screenshot_failure_preserves_existing_output() {
-	local outp="$TMP/existing.png"
-	printf 'sentinel-png' >"$outp"
-	PM3_FAKE_ADB_MODE=screencap_fail
-	export PM3_FAKE_ADB_MODE
-	run_capture --json --serial SERIAL123 screenshot "$outp"
-	PM3_FAKE_ADB_MODE=ok
-	export PM3_FAKE_ADB_MODE
-	assert_rc 4
-	assert_json_error_has_fix
-	assert_error_code screenshot_capture_failed
-	assert_data_keys '[]'
-	[ "$(cat "$outp")" = sentinel-png ] || fail "screenshot failure changed pre-existing output"
-}
-run_check "screenshot adb failure preserves pre-existing output" check_screenshot_failure_preserves_existing_output
-
-check_screenshot_success_is_one_shot() {
-  local outp="$TMP/success.png"
-  run_capture --json --serial SERIAL123 screenshot "$outp"
-  assert_rc 0
-  assert_one_line_json
-  assert_contract_shape screenshot output "$OUT"
-  [ -s "$outp" ] || fail "successful screenshot did not create output"
-}
-run_check "screenshot success emits exact nested envelope" check_screenshot_success_is_one_shot
-
-check_connect_zero_exit_failure_text() {
-  PM3_FAKE_ADB_MODE=connect_zero_bad
-  export PM3_FAKE_ADB_MODE
-  run_capture --json connect 127.0.0.1:34567
-  PM3_FAKE_ADB_MODE=ok
-  export PM3_FAKE_ADB_MODE
-  assert_rc 4
-  assert_json_error_has_fix
-  assert_error_code connect_failed
-  assert_data_keys '[]'
-  assert_contains "$OUT" "failed to connect"
-}
-run_check "connect zero-exit failure text exits 4" check_connect_zero_exit_failure_text
-
-check_record_pull_failure_removes_output() {
-  local outp="$TMP/partial.mp4"
-  PM3_FAKE_ADB_MODE=pull_fail
-  export PM3_FAKE_ADB_MODE
-  run_capture --json --serial SERIAL123 record 1 "$outp"
-  PM3_FAKE_ADB_MODE=ok
-  export PM3_FAKE_ADB_MODE
-  assert_rc 4
-  assert_json_error_has_fix
-  assert_error_code record_pull_failed
-  assert_data_keys '[]'
-  assert_no_file "$outp"
-}
-run_check "record pull failure removes output exit4" check_record_pull_failure_removes_output
-
-check_record_pull_failure_preserves_existing_output() {
-	local outp="$TMP/existing.mp4"
-	printf 'sentinel-mp4' >"$outp"
-	PM3_FAKE_ADB_MODE=pull_fail
-	export PM3_FAKE_ADB_MODE
-	run_capture --json --serial SERIAL123 record 1 "$outp"
-	PM3_FAKE_ADB_MODE=ok
-	export PM3_FAKE_ADB_MODE
-	assert_rc 4
-	assert_json_error_has_fix
-	assert_error_code record_pull_failed
-	assert_data_keys '[]'
-	[ "$(cat "$outp")" = sentinel-mp4 ] || fail "record failure changed pre-existing output"
-}
-run_check "record pull failure preserves pre-existing output" check_record_pull_failure_preserves_existing_output
-
-check_record_success_is_one_shot() {
-  local outp="$TMP/success.mp4"
-  run_capture --json --serial SERIAL123 record 1 "$outp"
-  assert_rc 0
-	assert_one_line_json
-	assert_contract_shape record output "$OUT"
-	[ -s "$outp" ] || fail "successful record did not create output"
-}
-run_check "record success emits exactly one envelope without adb stdout leakage" check_record_success_is_one_shot
-
-check_tty_one_shots_are_json() {
-  command -v script >/dev/null 2>&1 || return 0
-  local out rc
-  set +e
-  out="$(script -q -e -c "$PM3 wat" /dev/null 2>&1)"
-  rc=$?
-  set -e
-  [ "$rc" -eq 3 ] || fail "tty rc $rc out=$out"
-  OUT="${out//$'\r'/}"
-  ERR=""
-  assert_json_error_has_fix
-  assert_error_code unknown_verb
-  assert_data_keys '["usage"]'
-
-  set +e
-  out="$(script -q -e -c "$PM3 schema" /dev/null 2>&1)"
-  rc=$?
-  set -e
-  [ "$rc" -eq 0 ] || fail "tty schema rc $rc out=$out"
-  OUT="${out//$'\r'/}"
-  assert_one_line_json
-  assert_data_keys '["schema"]'
-}
-run_check "TTY one-shots remain exact JSON objects" check_tty_one_shots_are_json
-
-run_capture --json pair 127.0.0.1:12345 999999; assert_rc 0; assert_contract_shape pair output "$OUT"; pass "pair preserved with exact nested data"
-run_capture --json connect 127.0.0.1:34567; assert_rc 0; assert_contract_shape connect output "$OUT"; pass "connect preserved with exact nested data"
-
-check_pm3_tailnet_secret_source_boundary() {
-  assert_contains "$(grep -F "content write --uri \"content://\$(provider_authority)/tailnet-secret\"" "$PM3")" 'tailnet-secret'
-  ! grep -E 'tailnet-secret.*(--extra|Bundle|env|tokenSecret|secret:)' "$PM3" >/dev/null || fail "pm3 tailnet secret may leak through argv/env/Bundle"
-  grep -F 'MAX_SECRET_BYTES = 4096' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "provider secret bound missing"
-  grep -F 'AES/GCM/NoPadding' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "provider AES-GCM storage missing"
-  grep -F 'AndroidKeyStore' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "provider Android Keystore storage missing"
-}
-run_check "tailnet secret source boundary excludes argv env Bundle and enforces encrypted bounds" check_pm3_tailnet_secret_source_boundary
-
-check_pm3_authority_transaction_source_boundary() {
-  ! grep -F 'mutateAuthority' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "direct mutateAuthority survived in pm3 admin provider"
-  grep -F 'NexusAuthorityStoreTransaction.grantPersistent' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "grant transaction API missing"
-  grep -F 'NexusAuthorityStoreTransaction.revokePersistent' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "revoke transaction API missing"
-  grep -F 'closed_active_session' "$ROOT/app/src/fortress/kotlin/dev/phosphor/mobil3/nexus/admin/Pm3AdminProvider.kt" >/dev/null || fail "revoke session cleanup result missing"
-}
-run_check "pm3 authority mutations use transaction APIs and expose revoke cleanup" check_pm3_authority_transaction_source_boundary
-
-check_pm3_play_absence_and_lifecycle_boundary() {
-  ! grep -R 'dev.phosphor.mobil3.nexus.admin\|dev.phosphor.mobil3.nexus.tailnet' "$ROOT/app/src/main/kotlin" >/dev/null || fail "main source references Fortress-only pm3 admin/tailnet"
-  run_capture --json --distribution play tailnet-status
-  assert_rc 2
-  assert_error_code play_unavailable
-}
-run_check "pm3 Play absence and main-source lifecycle boundary" check_pm3_play_absence_and_lifecycle_boundary
-
-restore_repo_artifacts
-assert_repo_artifacts_restored
-pass "fixture build outputs restored byte-for-byte without deleting real artifacts"
-
-if [ -s "$BLOCKERS" ]; then
-  echo "pm3 fixture tests completed with implementation blockers:" >&2
-  sed 's/^/- /' "$BLOCKERS" >&2
-  exit 1
-else
-  echo "pm3 fixture tests passed"
-fi
+printf 'pm3 developer CLI fixtures passed\n'

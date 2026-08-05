@@ -14,6 +14,7 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableLongStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
@@ -271,7 +272,7 @@ class RibbonState {
     var visible by mutableStateOf(false)
     var text by mutableStateOf("")
     var at by mutableStateOf(Offset.Zero)
-    var lastTouchMs by mutableStateOf(0L)
+    var lastTouchMs by mutableLongStateOf(0L)
 }
 
 interface StageGestureHost {
@@ -299,9 +300,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
         val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
-            // Top dead-band (Ben's bug: summoning the system bars from the top edge
-            // was dragging gain): a gesture born in the top band belongs to Android's
-            // transient-bars swipe — the stage ignores the whole sequence.
+            // Reserve the top band for Android's transient system-bar gesture.
             if (first.position.y <= Dim.topGestureBand.toPx()) {
                 while (true) {
                     val e = awaitPointerEvent()
@@ -391,8 +390,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             if (host.is3d()) {
                                 host.dollyBy((1f - zoom) * 2.2f)
                             } else if (host.gainLocked()) {
-                                // Ben's ask: auto-gain locks the viewport — the gesture
-                                // answers at the finger instead of fighting the glide.
+                                // Auto-gain owns the viewport, so explain the lock instead of changing gain.
                                 ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
                             } else {
                                 val old = gain

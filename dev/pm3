@@ -1,31 +1,21 @@
 #!/usr/bin/env bash
-# pm3 - agent-first development CLI for phosphor-mobil3.
+# pm3: agent-first local development CLI for phosphor-mobil3.
 set -uo pipefail
 
 TOOL="pm3"
-VERSION="0.3.0"
+VERSION="1.0.0"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RECEIPTS_DIR="${PM3_RECEIPTS_DIR:-$REPO/docs/dev/receipts}"
 SERIAL="${PM3_SERIAL:-}"
-DISTRIBUTION="fortress"
 PROFILE="debug"
-PROVIDER_METHOD="pm3"
-USAGE_TEXT="pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]"
+JSON_FORCE=0
+USAGE_TEXT="pm3 [--json] [--serial SERIAL] [--profile debug|release] <verb> [args]"
 
 # shellcheck disable=SC1091
 [ -f "$REPO/scripts/env.sh" ] && source "$REPO/scripts/env.sh"
 
-usage() {
-  cat <<EOF
-pm3 $VERSION - phosphor-mobil3 development CLI
-usage: pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]
-verbs: help, schema, doctor, pair, connect, build, install, run, logcat, screenshot, record,
-       media, fps, smoke, state-get, state-watch, nexus-status, nexus-grant, nexus-revoke,
-       action-run, audit-list, audit-export, tailnet-status, tailnet-configure, tailnet-clear,
-       tailnet-start, tailnet-stop, tailnet-secret
-EOF
-}
-
 now() { date +%Y-%m-%dT%H:%M:%S%:z; }
+want_json() { [ "$JSON_FORCE" -eq 1 ] || [ ! -t 1 ]; }
 
 json_escape() {
   local input="$1" output="" char code
@@ -43,9 +33,7 @@ json_escape() {
       $'\t') output+='\t' ;;
       *)
         printf -v code '%d' "'$char"
-        if [ "$code" -lt 32 ]; then
-          printf -v char '\\u%04x' "$code"
-        fi
+        if [ "$code" -lt 32 ]; then printf -v char '\\u%04x' "$code"; fi
         output+="$char"
         ;;
     esac
@@ -54,9 +42,13 @@ json_escape() {
 }
 
 succeed() {
-  local data="${1:-}"
-  printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{%s}}\n' \
-    "$TOOL" "$VERSION" "$(now)" "$data"
+  local data="${1:-}" human="${2:-ok}"
+  if want_json; then
+    printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{%s}}\n' \
+      "$TOOL" "$VERSION" "$(now)" "$data"
+  else
+    printf '%s\n' "$human"
+  fi
   exit 0
 }
 
@@ -65,9 +57,13 @@ fail() {
   if [ "$code" -eq 3 ]; then
     data="\"usage\":\"$(json_escape "$USAGE_TEXT")\"${data:+,$data}"
   fi
-  printf '{"status":"error","tool":"%s","version":"%s","ts":"%s","error":"%s","message":"%s","fix":"%s","data":{%s}}\n' \
-    "$TOOL" "$VERSION" "$(now)" "$(json_escape "$error")" "$(json_escape "$message")" \
-    "$(json_escape "$fix")" "$data"
+  if want_json; then
+    printf '{"status":"error","tool":"%s","version":"%s","ts":"%s","error":"%s","message":"%s","fix":"%s","data":{%s}}\n' \
+      "$TOOL" "$VERSION" "$(now)" "$(json_escape "$error")" "$(json_escape "$message")" \
+      "$(json_escape "$fix")" "$data"
+  else
+    printf 'error: %s\nmessage: %s\nfix: %s\n' "$error" "$message" "$fix" >&2
+  fi
   exit "$code"
 }
 
@@ -84,24 +80,17 @@ stream_fail() {
   exit 4
 }
 
+usage() {
+  cat <<EOF
+pm3 $VERSION - phosphor-mobil3 development CLI
+usage: $USAGE_TEXT
+verbs: help, schema, doctor, pair, connect, build, install, run, logcat,
+       screenshot, record, media, fps, smoke
+EOF
+}
+
 need_command() {
   command -v "$1" >/dev/null 2>&1 || fail 2 dependency_unavailable "$1 not on PATH" "$2"
-}
-
-base64url_encode() { base64 | tr -- '+/' '-_' | tr -d '=\n'; }
-base64url_decode() {
-  local s="$1" pad
-  case "$s" in *[!A-Za-z0-9_-]*|'') return 1 ;; esac
-  pad=$(( (4 - ${#s} % 4) % 4 ))
-  s="$s$(printf '%*s' "$pad" '' | tr ' ' '=')"
-  printf '%s' "$s" | tr -- '-_' '+/' | base64 -d 2>/dev/null
-}
-
-validate_distribution() {
-  case "$DISTRIBUTION" in
-    play|fortress) ;;
-    *) fail 3 invalid_distribution "invalid distribution: $DISTRIBUTION" "use --distribution play or --distribution fortress" ;;
-  esac
 }
 
 validate_profile() {
@@ -117,14 +106,20 @@ capitalize() {
 }
 
 package_id() {
-  if [ "$DISTRIBUTION" = play ]; then printf '%s\n' 'dev.phosphor.mobil3'; else printf '%s\n' 'dev.phosphor.mobil3.fortress'; fi
+  if [ "$PROFILE" = debug ]; then
+    printf '%s\n' 'dev.phosphor.mobil3.debug'
+  else
+    printf '%s\n' 'dev.phosphor.mobil3'
+  fi
 }
 
-gradle_task() { printf 'assemble%s%s\n' "$(capitalize "$DISTRIBUTION")" "$(capitalize "$PROFILE")"; }
-apk_path() { printf '%s/app/build/outputs/apk/%s/%s/app-%s-%s.apk\n' "$REPO" "$DISTRIBUTION" "$PROFILE" "$DISTRIBUTION" "$PROFILE"; }
-
+gradle_task() { printf 'assemble%s\n' "$(capitalize "$PROFILE")"; }
+apk_path() { printf '%s/app/build/outputs/apk/%s/app-%s.apk\n' "$REPO" "$PROFILE" "$PROFILE"; }
 selected_adb() { printf '%s\n' "${PM3_ADB:-adb}"; }
 selected_keytool() { printf '%s\n' "${PM3_KEYTOOL:-keytool}"; }
+selected_apksigner() {
+  printf '%s\n' "${PM3_APKSIGNER:-${ANDROID_HOME:-$REPO/.toolchain/Sdk}/build-tools/36.0.0/apksigner}"
+}
 selected_gradle() {
   if [ -n "${PM3_GRADLE:-}" ]; then
     printf '%s\n' "$PM3_GRADLE"
@@ -136,7 +131,9 @@ selected_gradle() {
 }
 
 need_serial() {
-  [ -n "$SERIAL" ] || fail 3 serial_required "explicit device serial required" "pass --serial SERIAL or set PM3_SERIAL; pm3 never chooses the first adb device"
+  [ -n "$SERIAL" ] || fail 3 serial_required \
+    "explicit device serial required" \
+    "pass --serial SERIAL or set PM3_SERIAL; pm3 never selects the first adb device"
   ADB_CMD="$(selected_adb)"
   need_command "$ADB_CMD" "install Android platform tools and ensure adb is on PATH"
 }
@@ -151,15 +148,11 @@ parse_globals() {
   ARGS=()
   while [ "$#" -gt 0 ]; do
     case "$1" in
-      --json) shift ;;
+      --json) JSON_FORCE=1; shift ;;
       --serial)
         [ "$#" -ge 2 ] || fail 3 missing_argument "--serial requires a value" "use --serial SERIAL"
         SERIAL="$2"; shift 2 ;;
       --serial=*) SERIAL="${1#--serial=}"; shift ;;
-      --distribution)
-        [ "$#" -ge 2 ] || fail 3 missing_argument "--distribution requires a value" "use --distribution play or --distribution fortress"
-        DISTRIBUTION="$2"; shift 2 ;;
-      --distribution=*) DISTRIBUTION="${1#--distribution=}"; shift ;;
       --profile)
         [ "$#" -ge 2 ] || fail 3 missing_argument "--profile requires a value" "use --profile debug or --profile release"
         PROFILE="$2"; shift 2 ;;
@@ -182,12 +175,12 @@ parse_globals() {
     VERB="${ARGS[0]:-help}"
     REST=("${ARGS[@]:1}")
   fi
-  validate_distribution
   validate_profile
 }
 
 no_args() {
-  [ "$#" -eq 0 ] || fail 3 unexpected_argument "unexpected argument for $VERB: $1" "run pm3 schema for exact arguments"
+  [ "$#" -eq 0 ] || fail 3 unexpected_argument \
+    "unexpected argument for $VERB: $1" "run pm3 schema for exact arguments"
 }
 
 schema() {
@@ -195,186 +188,96 @@ schema() {
   contract="$(cat <<'JSON' | tr -d '\n'
 {
   "$schema":"https://json-schema.org/draft/2020-12/schema",
-  "$id":"https://phosphor.dev/schemas/pm3-cli-0.3.0.json",
-  "title":"pm3 CLI contract",
-  "description":"Strict machine-readable contract for pm3 one-shots, streams, commands, capabilities, formats, exits, signing, and explicit device selection.",
+  "$id":"https://phosphor.dev/schemas/pm3-cli-1.0.0.json",
+  "title":"pm3 developer CLI contract",
+  "description":"Machine-readable contract for the local Phosphor Mobile build and explicit-device workflow. It exposes no product control surface.",
   "type":"object",
   "additionalProperties":false,
-  "required":["rendering","globals","defaults","device_selection","mappings","signing_inputs","capabilities","formats","error_codes","verbs","streams","exit_codes"],
+  "required":["rendering","globals","defaults","device_selection","mappings","signing","capabilities","verbs","streams","exit_codes"],
   "properties":{
-    "rendering":{"type":"object","additionalProperties":false,"required":["tty","pipe","schema","streams"],"properties":{"tty":{"const":"exactly one JSON object per one-shot"},"pipe":{"const":"exactly one JSON object per one-shot"},"schema":{"const":"always one JSON object with the schema payload at data.schema"},"streams":{"const":"always NDJSON with canonical event at the root"}}},
-    "globals":{"type":"object","additionalProperties":false,"required":["--json","--serial","--distribution","--profile"],"properties":{"--json":{"const":"compatibility flag; one-shots are always structured"},"--serial":{"type":"string","minLength":1},"--distribution":{"type":"string","enum":["play","fortress"]},"--profile":{"type":"string","enum":["debug","release"]},"--debug":{"const":"alias for --profile debug"},"--release":{"const":"alias for --profile release"},"--help":{"const":"select help"},"--schema":{"const":"select schema"},"PM3_SERIAL":{"const":"default explicit serial"},"PM3_ADB":{"const":"adb executable override"},"PM3_GRADLE":{"const":"Gradle executable override"},"PM3_KEYTOOL":{"const":"keytool executable override"}}},
-    "defaults":{"type":"object","additionalProperties":false,"required":["distribution","profile"],"properties":{"distribution":{"const":"fortress"},"profile":{"const":"debug"}}},
-    "device_selection":{"type":"object","additionalProperties":false,"required":["rule","accepted_sources","discovery"],"properties":{"rule":{"const":"every device operation requires an explicit serial and never selects the first adb devices row"},"accepted_sources":{"const":["--serial SERIAL","PM3_SERIAL"]},"discovery":{"const":"a future discovery verb must return all candidates and require a separate explicit selection"}}},
-    "mappings":{"type":"object","additionalProperties":false,"required":["play","fortress"],"properties":{"play":{"type":"object","additionalProperties":false,"required":["package_id","debug_task","release_task","debug_apk","release_apk"],"properties":{"package_id":{"const":"dev.phosphor.mobil3"},"debug_task":{"const":"assemblePlayDebug"},"release_task":{"const":"assemblePlayRelease"},"debug_apk":{"const":"app/build/outputs/apk/play/debug/app-play-debug.apk"},"release_apk":{"const":"app/build/outputs/apk/play/release/app-play-release.apk"}}},"fortress":{"type":"object","additionalProperties":false,"required":["package_id","debug_task","release_task","debug_apk","release_apk"],"properties":{"package_id":{"const":"dev.phosphor.mobil3.fortress"},"debug_task":{"const":"assembleFortressDebug"},"release_task":{"const":"assembleFortressRelease"},"debug_apk":{"const":"app/build/outputs/apk/fortress/debug/app-fortress-debug.apk"},"release_apk":{"const":"app/build/outputs/apk/fortress/release/app-fortress-release.apk"}}}}},
-    "signing_inputs":{"type":"object","additionalProperties":false,"required":["play_release","fortress_release"],"properties":{"play_release":{"type":"object","additionalProperties":false,"required":["required_env","cert_sha256_env","verification"],"properties":{"required_env":{"const":["PLAY_UPLOAD_STORE_FILE","PLAY_UPLOAD_STORE_PASSWORD","PLAY_UPLOAD_KEY_ALIAS","PLAY_UPLOAD_KEY_PASSWORD","PLAY_UPLOAD_CERT_SHA256"]},"cert_sha256_env":{"const":"PLAY_UPLOAD_CERT_SHA256"},"verification":{"const":"strip colons, lowercase, and compare to keytool -exportcert SHA-256 before assemblePlayRelease"}}},"fortress_release":{"type":"object","additionalProperties":false,"required":["required_env","expected_cert_sha256"],"properties":{"required_env":{"const":["RELEASE_STORE_FILE","RELEASE_STORE_PASSWORD","RELEASE_KEY_ALIAS","RELEASE_KEY_PASSWORD"]},"expected_cert_sha256":{"const":"e4d14ce2d62983acd393f012cbce759b6c97bdcca979feeb04a97afb279d9b00"}}}}},
-    "capabilities":{"type":"object","additionalProperties":false,"required":["local","device","phase05"],"properties":{"local":{"const":["help","schema","doctor","build","pair","connect"]},"device":{"const":["install","run","logcat","screenshot","record","media","fps","smoke"]},"phase05":{"type":"object","additionalProperties":false,"required":["verbs","availability"],"properties":{"verbs":{"const":["state-get","state-watch","nexus-status","nexus-grant","nexus-revoke","action-run","audit-list","audit-export"]},"availability":{"const":"exit 2 and side-effect free until an authenticated Binder/tailnet client is wired"}}}}},
-    "formats":{"type":"object","additionalProperties":false,"required":["one_shot_success","one_shot_error","stream","screenshot","recording","hash","timestamp"],"properties":{"one_shot_success":{"const":"one JSON object with exact root keys status,tool,version,ts,data"},"one_shot_error":{"const":"one JSON object with exact root keys status,tool,version,ts,error,message,fix,data"},"stream":{"const":"NDJSON with canonical event; terminal stream errors include error,message,fix"},"screenshot":{"const":"PNG"},"recording":{"const":"MP4"},"hash":{"const":"lowercase SHA-256 hex"},"timestamp":{"const":"non-empty RFC 3339 date-time"}}},
-    "error_codes":{"type":"array","items":{"$ref":"#/$defs/stableError"},"uniqueItems":true},
-    "verbs":{"type":"object","additionalProperties":false,"required":["help","schema","doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke","state-get","state-watch","nexus-status","nexus-grant","nexus-revoke","action-run","audit-list","audit-export"],"properties":{
-      "help":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","success","errors","exits"],"properties":{"command":{"const":"pm3 help"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"success":{"$ref":"#/$defs/helpEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"}]},"exits":{"const":[0,3]}}},
-      "schema":{"type":"object","additionalProperties":false,"required":["command","aliases","arguments","mode","success","errors","exits"],"properties":{"command":{"const":"pm3 schema"},"aliases":{"const":["pm3 --schema"]},"arguments":{"const":[]},"mode":{"const":"always-json one-shot"},"success":{"$ref":"#/$defs/schemaEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"}]},"exits":{"const":[0,3]}}},
-      "doctor":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","success","errors","exits"],"properties":{"command":{"const":"pm3 doctor"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"success":{"$ref":"#/$defs/doctorEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"},{"$ref":"#/$defs/doctorErrorEnvelope"}]},"exits":{"const":[0,2,3]}}},
-      "pair":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","success","errors","exits"],"properties":{"command":{"const":"pm3 pair <ip:port> <code>"},"arguments":{"const":["ip:port","code"]},"mode":{"const":"one-shot"},"success":{"$ref":"#/$defs/pairEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "connect":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","success","errors","exits"],"properties":{"command":{"const":"pm3 connect <ip:port>"},"arguments":{"const":["ip:port"]},"mode":{"const":"one-shot"},"success":{"$ref":"#/$defs/connectEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "build":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","success","errors","exits"],"properties":{"command":{"const":"pm3 [--distribution play|fortress] [--profile debug|release] build"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"success":{"$ref":"#/$defs/buildEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "install":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> install"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"device_required":{"const":true},"success":{"$ref":"#/$defs/installEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "run":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> run"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"device_required":{"const":true},"success":{"$ref":"#/$defs/runEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "logcat":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","events","exits"],"properties":{"command":{"const":"pm3 --serial <serial> logcat"},"arguments":{"const":[]},"mode":{"const":"NDJSON stream"},"device_required":{"const":true},"events":{"oneOf":[{"$ref":"#/$defs/logcatEvent"},{"$ref":"#/$defs/streamError"}]},"exits":{"const":[0,2,3,4]}}},
-      "screenshot":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","format","transaction","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> screenshot [out.png]"},"arguments":{"const":["optional output path"]},"mode":{"const":"one-shot"},"device_required":{"const":true},"format":{"const":"PNG"},"transaction":{"const":"write a sibling temporary file and atomically replace only after a complete non-empty capture"},"success":{"$ref":"#/$defs/screenshotEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "record":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","format","transaction","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> record [seconds] [out.mp4]"},"arguments":{"const":["seconds integer 1..180","optional output path"]},"mode":{"const":"one-shot"},"device_required":{"const":true},"format":{"const":"MP4"},"transaction":{"const":"pull to a sibling temporary file, remove the remote artifact, then atomically replace the requested output"},"success":{"$ref":"#/$defs/recordEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "media":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> media"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"device_required":{"const":true},"success":{"$ref":"#/$defs/mediaEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "fps":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> fps"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"device_required":{"const":true},"success":{"$ref":"#/$defs/fpsEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "smoke":{"type":"object","additionalProperties":false,"required":["command","arguments","mode","device_required","success","errors","exits"],"properties":{"command":{"const":"pm3 --serial <serial> smoke"},"arguments":{"const":[]},"mode":{"const":"one-shot"},"device_required":{"const":true},"success":{"$ref":"#/$defs/smokeEnvelope"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[0,2,3,4]}}},
-      "state-get":{"$ref":"#/$defs/phase05Verb"},
-      "state-watch":{"$ref":"#/$defs/phase05Verb"},
-      "nexus-status":{"$ref":"#/$defs/phase05Verb"},
-      "nexus-grant":{"$ref":"#/$defs/phase05Verb"},
-      "nexus-revoke":{"$ref":"#/$defs/phase05Verb"},
-      "action-run":{"$ref":"#/$defs/phase05Verb"},
-      "audit-list":{"$ref":"#/$defs/phase05Verb"},
-      "audit-export":{"$ref":"#/$defs/phase05Verb"}
+    "rendering":{"const":{"tty":"human text for one-shots","pipe":"one JSON object for one-shots","schema":"always JSON","streams":"NDJSON with a canonical event field"}},
+    "globals":{"const":["--json","--serial SERIAL","--profile debug|release","--debug","--release","--help","--schema","PM3_SERIAL","PM3_ADB","PM3_GRADLE","PM3_KEYTOOL","PM3_APKSIGNER"]},
+    "defaults":{"const":{"profile":"debug"}},
+    "device_selection":{"const":{"rule":"every device operation requires an explicit serial","accepted_sources":["--serial SERIAL","PM3_SERIAL"]}},
+    "mappings":{"const":{"debug":{"package_id":"dev.phosphor.mobil3.debug","task":"assembleDebug","apk":"app/build/outputs/apk/debug/app-debug.apk"},"release":{"package_id":"dev.phosphor.mobil3","task":"assembleRelease","apk":"app/build/outputs/apk/release/app-release.apk"}}},
+    "signing":{"const":{"profile_selector":"PHOSPHOR_SIGNING_PROFILE=production|play-upload","production_prefix":"RELEASE","play_upload_prefix":"PLAY_UPLOAD","required_suffixes":["STORE_FILE","STORE_PASSWORD","KEY_ALIAS","KEY_PASSWORD","CERT_SHA256"],"verification":"the selected certificate SHA-256 must exactly match before a release build"}},
+    "capabilities":{"const":{"local":["help","schema","doctor","pair","connect","build"],"device":["install","run","logcat","screenshot","record","media","fps","smoke"]}},
+    "verbs":{"type":"object","additionalProperties":false,"required":["help","schema","doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke"],"properties":{
+      "help":{"const":{"command":"pm3 help","mode":"one-shot","exits":[0,3]}},
+      "schema":{"const":{"command":"pm3 schema","aliases":["pm3 --schema"],"mode":"always-json one-shot","exits":[0,3]}},
+      "doctor":{"const":{"command":"pm3 doctor","mode":"one-shot","exits":[0,2,3]}},
+      "pair":{"const":{"command":"pm3 pair <ip:port> <code>","mode":"one-shot","exits":[0,2,3,4]}},
+      "connect":{"const":{"command":"pm3 connect <ip:port>","mode":"one-shot","exits":[0,2,3,4]}},
+      "build":{"const":{"command":"pm3 [--profile debug|release] build","mode":"one-shot","exits":[0,2,3,4]}},
+      "install":{"const":{"command":"pm3 --serial SERIAL install [APK]","device_required":true,"mode":"one-shot","default_apk":"profile Gradle output","exits":[0,2,3,4]}},
+      "run":{"const":{"command":"pm3 --serial SERIAL run","device_required":true,"mode":"one-shot","exits":[0,2,3,4]}},
+      "logcat":{"const":{"command":"pm3 --serial SERIAL logcat","device_required":true,"mode":"NDJSON stream","exits":[0,2,3,4]}},
+      "screenshot":{"const":{"command":"pm3 --serial SERIAL screenshot [out.png]","device_required":true,"format":"PNG","exits":[0,2,3,4]}},
+      "record":{"const":{"command":"pm3 --serial SERIAL record [seconds] [out.mp4]","device_required":true,"format":"MP4","exits":[0,2,3,4]}},
+      "media":{"const":{"command":"pm3 --serial SERIAL media","device_required":true,"mode":"one-shot","exits":[0,2,3,4]}},
+      "fps":{"const":{"command":"pm3 --serial SERIAL fps","device_required":true,"mode":"one-shot","exits":[0,2,3,4]}},
+      "smoke":{"const":{"command":"pm3 --serial SERIAL smoke","device_required":true,"debug_required":true,"mode":"one-shot","exits":[0,2,3,4]}}
     }},
-    "streams":{"type":"object","additionalProperties":false,"required":["logcat"],"properties":{"logcat":{"type":"object","additionalProperties":false,"required":["diagnostics","event","terminal_error"],"properties":{"diagnostics":{"const":"stderr diagnostic line before stream; adb stderr is prefixed with adb: "},"event":{"$ref":"#/$defs/logcatEvent"},"terminal_error":{"$ref":"#/$defs/streamError"}}}}},
-    "exit_codes":{"type":"object","additionalProperties":false,"required":["0","2","3","4"],"properties":{"0":{"const":"success"},"2":{"const":"unavailable dependency or capability"},"3":{"const":"bad input, bad usage, or unknown verb"},"4":{"const":"runtime failure"}}}
-  },
-  "$defs":{
-    "timestamp":{"type":"string","format":"date-time","minLength":1},
-    "stableError":{"type":"string","enum":["dependency_unavailable","invalid_distribution","invalid_profile","serial_required","missing_argument","unknown_argument","unexpected_argument","signing_inputs_missing","signing_keystore_missing","signing_verification_failed","signing_certificate_mismatch","phase_unavailable","prerequisites_unavailable","pair_usage","pair_failed","connect_usage","connect_failed","build_failed","apk_missing","apk_unavailable","install_failed","package_query_failed","version_missing","launch_failed","pid_query_failed","process_missing","screenshot_usage","screenshot_capture_failed","screenshot_save_failed","record_usage","invalid_duration","record_capture_failed","record_pull_failed","record_cleanup_failed","record_save_failed","media_query_failed","audio_query_failed","gfxinfo_query_failed","gfxinfo_unavailable","debuggable_required","broadcast_failed","selftest_timeout","selftest_image_failed","unknown_verb","logcat_failed","play_unavailable","invalid_args","provider_call_failed","provider_response_missing","provider_response_invalid","provider_refused"]},
-    "emptyData":{"type":"object","additionalProperties":false,"required":[],"properties":{}},
-    "usageData":{"type":"object","additionalProperties":false,"required":["usage"],"properties":{"usage":{"type":"string","minLength":1}}},
-    "check":{"type":"object","additionalProperties":false,"required":["check","ok","detail"],"properties":{"check":{"type":"string"},"ok":{"type":"boolean"},"detail":{"type":"string"}}},
-    "helpData":{"type":"object","additionalProperties":false,"required":["usage","verbs"],"properties":{"usage":{"type":"string"},"verbs":{"type":"array","items":{"type":"string"},"uniqueItems":true}}},
-    "schemaData":{"type":"object","additionalProperties":false,"required":["schema"],"properties":{"schema":{"$ref":"#"}}},
-    "doctorData":{"type":"object","additionalProperties":false,"required":["all_ok","distribution","profile","package_id","gradle_task","apk","checks"],"properties":{"all_ok":{"type":"boolean"},"distribution":{"type":"string","enum":["play","fortress"]},"profile":{"type":"string","enum":["debug","release"]},"package_id":{"type":"string"},"gradle_task":{"type":"string"},"apk":{"type":"string"},"checks":{"type":"array","items":{"$ref":"#/$defs/check"}}}},
-    "pairData":{"type":"object","additionalProperties":false,"required":["paired","detail"],"properties":{"paired":{"type":"string"},"detail":{"type":"string"}}},
-    "connectData":{"type":"object","additionalProperties":false,"required":["target","detail"],"properties":{"target":{"type":"string"},"detail":{"type":"string"}}},
-    "buildData":{"type":"object","additionalProperties":false,"required":["distribution","profile","package_id","gradle_task","apk","bytes","sha256"],"properties":{"distribution":{"type":"string","enum":["play","fortress"]},"profile":{"type":"string","enum":["debug","release"]},"package_id":{"type":"string"},"gradle_task":{"type":"string"},"apk":{"type":"string"},"bytes":{"type":"integer","minimum":0},"sha256":{"type":"string","pattern":"^[0-9a-f]{64}$"}}},
-    "installData":{"type":"object","additionalProperties":false,"required":["serial","package_id","installed_version"],"properties":{"serial":{"type":"string","minLength":1},"package_id":{"type":"string"},"installed_version":{"type":"string"}}},
-    "runData":{"type":"object","additionalProperties":false,"required":["serial","package_id","pids"],"properties":{"serial":{"type":"string","minLength":1},"package_id":{"type":"string"},"pids":{"type":"string","minLength":1}}},
-    "screenshotData":{"type":"object","additionalProperties":false,"required":["png","bytes"],"properties":{"png":{"type":"string"},"bytes":{"type":"integer","minimum":1}}},
-    "recordData":{"type":"object","additionalProperties":false,"required":["mp4","bytes","seconds"],"properties":{"mp4":{"type":"string"},"bytes":{"type":"integer","minimum":1},"seconds":{"type":"integer","minimum":1,"maximum":180}}},
-    "mediaData":{"type":"object","additionalProperties":false,"required":["media_session","audio"],"properties":{"media_session":{"type":"string"},"audio":{"type":"string"}}},
-    "fpsData":{"type":"object","additionalProperties":false,"required":["gfxinfo"],"properties":{"gfxinfo":{"type":"string","minLength":1}}},
-    "smokeData":{"type":"object","additionalProperties":false,"required":["report_json","png_pulled"],"properties":{"report_json":{"type":"string"},"png_pulled":{"type":"string"}}},
-    "errorEnvelopeEmpty":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"$ref":"#/$defs/stableError"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/emptyData"}}},
-    "errorEnvelopeUsage":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"$ref":"#/$defs/stableError"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/usageData"}}},
-    "doctorErrorEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","error","message","fix","data"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"error":{"const":"prerequisites_unavailable"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1},"data":{"$ref":"#/$defs/doctorData"}}},
-    "helpEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/helpData"}}},
-    "schemaEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/schemaData"}}},
-    "doctorEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/doctorData"}}},
-    "pairEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/pairData"}}},
-    "connectEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/connectData"}}},
-    "buildEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/buildData"}}},
-    "installEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/installData"}}},
-    "runEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/runData"}}},
-    "screenshotEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/screenshotData"}}},
-    "recordEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/recordData"}}},
-    "mediaEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/mediaData"}}},
-    "fpsEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/fpsData"}}},
-    "smokeEnvelope":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","data"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"data":{"$ref":"#/$defs/smokeData"}}},
-    "logcatEvent":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","event","serial","package_id","line"],"properties":{"status":{"const":"ok"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"event":{"const":"logcat"},"serial":{"type":"string","minLength":1},"package_id":{"type":"string"},"line":{"type":"string"}}},
-    "streamError":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts","event","error","message","fix"],"properties":{"status":{"const":"error"},"tool":{"const":"pm3"},"version":{"const":"0.3.0"},"ts":{"$ref":"#/$defs/timestamp"},"event":{"const":"stream_error"},"error":{"const":"logcat_failed"},"message":{"type":"string","minLength":1},"fix":{"type":"string","minLength":1}}},
-    "phase05Verb":{"type":"object","additionalProperties":false,"required":["arguments","mode","availability","errors","exits"],"properties":{"arguments":{"const":[]},"mode":{"const":"one-shot"},"availability":{"const":"Phase 05a exit 2 and side-effect free until authenticated transport activation"},"errors":{"oneOf":[{"$ref":"#/$defs/errorEnvelopeUsage"},{"$ref":"#/$defs/errorEnvelopeEmpty"}]},"exits":{"const":[2,3]}}}
+    "streams":{"const":{"logcat":{"event":"logcat","terminal_error_event":"stream_error"}}},
+    "exit_codes":{"const":{"0":"success","2":"dependency or capability unavailable","3":"bad input or usage","4":"runtime failure"}}
   }
 }
 JSON
 )"
-  succeed "\"schema\":$contract" ""
+  printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{"schema":%s}}\n' \
+    "$TOOL" "$VERSION" "$(now)" "$contract"
+  exit 0
 }
+
 release_signing_preflight() {
   [ "$PROFILE" = release ] || return 0
-  local prefix name value expected actual export_error export_cert missing=()
-  if [ "$DISTRIBUTION" = play ]; then prefix=PLAY_UPLOAD; else prefix=RELEASE; fi
-  for name in STORE_FILE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD; do
-    name="${prefix}_${name}"
-    value="${!name:-}"
-    [ -n "$value" ] || missing+=("$name")
+  local signing_profile prefix name value store_name alias_name pass_name store_file key_alias
+  local keytool_cmd export_error export_cert actual expected detail
+  local missing=()
+  signing_profile="${PHOSPHOR_SIGNING_PROFILE:-production}"
+  case "$signing_profile" in
+    production) prefix=RELEASE ;;
+    play-upload) prefix=PLAY_UPLOAD ;;
+    *) fail 3 invalid_signing_profile \
+      "invalid PHOSPHOR_SIGNING_PROFILE: $signing_profile" \
+      "use production or play-upload" ;;
+  esac
+  for name in STORE_FILE STORE_PASSWORD KEY_ALIAS KEY_PASSWORD CERT_SHA256; do
+    value="${prefix}_${name}"
+    [ -n "${!value:-}" ] || missing+=("$value")
   done
-  if [ "$DISTRIBUTION" = play ] && [ -z "${PLAY_UPLOAD_CERT_SHA256:-}" ]; then
-    missing+=(PLAY_UPLOAD_CERT_SHA256)
-  fi
   if [ "${#missing[@]}" -gt 0 ]; then
     fail 2 signing_inputs_missing \
-      "$DISTRIBUTION release signing unavailable: missing $(IFS=,; printf '%s' "${missing[*]}")" \
-      "provide every required ${prefix}_* signing input outside the repository, then rerun pm3 --distribution $DISTRIBUTION --profile release build"
+      "$prefix release signing unavailable: missing $(IFS=,; printf '%s' "${missing[*]}")" \
+      "provide every required ${prefix}_* input outside the repository"
   fi
-  local store_name="${prefix}_STORE_FILE"
-  local alias_name="${prefix}_KEY_ALIAS"
-  local pass_name="${prefix}_STORE_PASSWORD"
-  local store_file="${!store_name}"
-  local key_alias="${!alias_name}"
+  store_name="${prefix}_STORE_FILE"
+  alias_name="${prefix}_KEY_ALIAS"
+  pass_name="${prefix}_STORE_PASSWORD"
+  store_file="${!store_name}"
+  key_alias="${!alias_name}"
   [ -f "$store_file" ] || fail 2 signing_keystore_missing \
-    "$DISTRIBUTION release signing unavailable: keystore not found" "correct $store_name and retry"
-  local keytool_cmd
+    "$prefix release signing unavailable: keystore not found" "correct $store_name and retry"
   keytool_cmd="$(selected_keytool)"
-  need_command "$keytool_cmd" "install a JDK containing keytool to verify the release signer"
-  export_error="${TMPDIR:-/tmp}/pm3-keytool-$$.err"
-  export_cert="${TMPDIR:-/tmp}/pm3-keytool-$$.der"
+  need_command "$keytool_cmd" "install a JDK containing keytool"
+  export_error="${JCODE_SCRATCH_DIR:-${TMPDIR:-/tmp}}/pm3-keytool-$$.err"
+  export_cert="${JCODE_SCRATCH_DIR:-${TMPDIR:-/tmp}}/pm3-keytool-$$.der"
   if ! "$keytool_cmd" -exportcert -alias "$key_alias" -keystore "$store_file" \
       -storepass:env "$pass_name" >"$export_cert" 2>"$export_error" || [ ! -s "$export_cert" ]; then
-    local detail
     detail="$(tail -3 "$export_error" 2>/dev/null | tr '\n' ' ')"
     rm -f "$export_error" "$export_cert"
     fail 2 signing_verification_failed \
-      "$DISTRIBUTION release signing unavailable: keystore or alias verification failed: $detail" \
-      "verify $store_name, $alias_name, ${prefix}_STORE_PASSWORD, and keystore format"
+      "$prefix release signing unavailable: certificate export failed: $detail" \
+      "verify the selected keystore, alias, password, and format"
   fi
   actual="$(sha256sum "$export_cert" | cut -d' ' -f1)"
   rm -f "$export_error" "$export_cert"
-  if [ "$DISTRIBUTION" = play ]; then
-    expected="${PLAY_UPLOAD_CERT_SHA256//:/}"
-  else
-    expected="e4d14ce2d62983acd393f012cbce759b6c97bdcca979feeb04a97afb279d9b00"
-  fi
+  name="${prefix}_CERT_SHA256"
+  expected="${!name//:/}"
   expected="${expected,,}"
   [ "$actual" = "$expected" ] || fail 2 signing_certificate_mismatch \
-    "$DISTRIBUTION release signing unavailable: certificate mismatch" \
-    "use the ratified signer whose SHA-256 is $expected"
-  return 0
-}
-
-provider_authority() { printf '%s.pm3\n' "$(package_id)"; }
-
-json_args_or_empty() {
-  if [ "$#" -eq 0 ]; then printf '{}\n'; return 0; fi
-  if [ "$#" -eq 1 ]; then printf '%s' "$1" | jq -e 'type == "object"' >/dev/null || return 1; printf '%s\n' "$1"; return 0; fi
-  return 1
-}
-
-provider_call() {
-  local verb="$1" args_json request encoded raw response decoded ok data
-  shift
-  [ "$DISTRIBUTION" = fortress ] || fail 2 play_unavailable "pm3 provider verbs are Fortress-only" "retry with --distribution fortress on a Fortress build"
-  need_command jq "install jq for strict pm3 JSON construction and response validation"
-  need_serial
-  args_json="$(json_args_or_empty "$@")" || fail 3 invalid_args "usage: pm3 $verb [json-object-args]" "pass one strict JSON object argument or run pm3 schema"
-  request="$(jq -cn --arg verb "$verb" --argjson args "$args_json" '{verb:$verb,args:$args}')"
-  encoded="$(printf '%s' "$request" | base64url_encode)"
-  raw="$(adb_s shell content call --uri "content://$(provider_authority)" --method "$PROVIDER_METHOD" --extra request:s:"$encoded" 2>&1)" || fail 4 provider_call_failed "provider call failed: $raw" "install and start a current Fortress build, then retry"
-  response="$(printf '%s\n' "$raw" | sed -n 's/.*response=//p' | sed 's/[]}].*//' | head -1 | tr -d '\r')"
-  [ -n "$response" ] || fail 4 provider_response_missing "provider returned no response Bundle key: $raw" "check logcat for pm3 provider refusal"
-  decoded="$(base64url_decode "$response")" || fail 4 provider_response_invalid "provider response was not valid base64url" "upgrade Fortress app and retry"
-  printf '%s' "$decoded" | jq -e . >/dev/null || fail 4 provider_response_invalid "provider response decoded to invalid JSON" "upgrade Fortress app and retry"
-  ok="$(printf '%s' "$decoded" | jq -r '.ok')"
-  data="$(printf '%s' "$decoded" | jq -c '.data // {}')"
-  if [ "$ok" = true ]; then
-    succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$(package_id)\",\"provider_protocol\":$(printf '%s' "$decoded" | jq -r '.protocol // 0'),\"result\":$data"
-  else
-    fail 4 provider_refused "$(printf '%s' "$decoded" | jq -r '.message // "provider refused"')" "$(printf '%s' "$decoded" | jq -r '.fix // "inspect app logcat"')" "\"provider_error\":$(printf '%s' "$decoded" | jq -c '{error,message,fix}')"
-  fi
-}
-
-tailnet_secret_write() {
-  [ "$DISTRIBUTION" = fortress ] || fail 2 play_unavailable "pm3 tailnet-secret is Fortress-only" "retry with --distribution fortress on a Fortress build"
-  no_args "$@"
-  need_serial
-  raw="$(adb_s shell content write --uri "content://$(provider_authority)/tailnet-secret" 2>&1)" || fail 4 provider_call_failed "tailnet secret write failed: $raw" "pipe the secret on stdin into pm3 tailnet-secret after installing Fortress"
-  succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$(package_id)\",\"secret_written\":true" "tailnet secret stored via provider pipe"
-}
-
-provider_stream_watch() {
-  provider_call state-watch "$@" | jq -c '.data.result.events[] | {status:"ok",tool:"pm3",version:"'"$VERSION"'",ts:"'"$(now)"'",event:.event,data:.}'
+    "$prefix release signing certificate mismatch" \
+    "use the approved signer whose SHA-256 is $expected"
 }
 
 parse_globals "$@"
@@ -383,7 +286,12 @@ set -- "${REST[@]}"
 case "$VERB" in
   help)
     no_args "$@"
-    succeed '"usage":"pm3 [--json] [--serial SERIAL] [--distribution play|fortress] [--profile debug|release] <verb> [args]","verbs":["doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke","schema","state-get","state-watch","nexus-status","nexus-grant","nexus-revoke","action-run","audit-list","audit-export","tailnet-status","tailnet-configure","tailnet-clear","tailnet-start","tailnet-stop","tailnet-secret"]'
+    if want_json; then
+      succeed '"usage":"pm3 [--json] [--serial SERIAL] [--profile debug|release] <verb> [args]","verbs":["help","schema","doctor","pair","connect","build","install","run","logcat","screenshot","record","media","fps","smoke"]'
+    else
+      usage
+      exit 0
+    fi
     ;;
   schema)
     no_args "$@"
@@ -398,32 +306,20 @@ case "$VERB" in
       [ "$2" = true ] || all_ok=false
     }
     adb_cmd="$(selected_adb)"
-    if command -v "$adb_cmd" >/dev/null 2>&1; then
-      if adb_version="$($adb_cmd --version 2>&1)"; then
-        add_check adb true "$(printf '%s\n' "$adb_version" | head -1)"
-      else
-        add_check adb false "adb --version failed: $(printf '%s' "$adb_version" | tail -1)"
-      fi
+    if command -v "$adb_cmd" >/dev/null 2>&1 && adb_version="$($adb_cmd --version 2>&1)"; then
+      add_check adb true "$(printf '%s\n' "$adb_version" | head -1)"
     else
-      add_check adb false "missing $adb_cmd"
+      add_check adb false "missing or broken $adb_cmd"
     fi
     gradle_cmd="$(selected_gradle)"
-    if command -v "$gradle_cmd" >/dev/null 2>&1; then
-      add_check gradle true "$gradle_cmd"
-    else
-      add_check gradle false "missing $gradle_cmd"
-    fi
-    if command -v cargo >/dev/null 2>&1; then
-      add_check cargo true "$(cargo --version 2>/dev/null)"
-    else
-      add_check cargo false "missing cargo"
-    fi
-    doctor_data="\"all_ok\":$all_ok,\"distribution\":\"$DISTRIBUTION\",\"profile\":\"$PROFILE\",\"package_id\":\"$(package_id)\",\"gradle_task\":\"$(gradle_task)\",\"apk\":\"$(json_escape "$(apk_path)")\",\"checks\":[$checks]"
+    if command -v "$gradle_cmd" >/dev/null 2>&1; then add_check gradle true "$gradle_cmd"; else add_check gradle false "missing $gradle_cmd"; fi
+    if command -v cargo >/dev/null 2>&1; then add_check cargo true "$(cargo --version 2>/dev/null)"; else add_check cargo false "missing cargo"; fi
+    doctor_data="\"all_ok\":$all_ok,\"profile\":\"$PROFILE\",\"package_id\":\"$(package_id)\",\"gradle_task\":\"$(gradle_task)\",\"apk\":\"$(json_escape "$(apk_path)")\",\"checks\":[$checks]"
     if [ "$all_ok" = true ]; then
-      succeed "$doctor_data" "pm3 doctor: all prerequisites ready; distribution=$DISTRIBUTION profile=$PROFILE package=$(package_id)"
+      succeed "$doctor_data" "pm3 doctor: prerequisites ready; profile=$PROFILE package=$(package_id)"
     else
       fail 2 prerequisites_unavailable "pm3 prerequisites are unavailable" \
-        "install or repair every failed doctor check, then retry" "$doctor_data"
+        "install or repair every failed doctor check" "$doctor_data"
     fi
     ;;
   pair)
@@ -431,9 +327,9 @@ case "$VERB" in
     [ "$#" -eq 2 ] || fail 3 pair_usage "usage: pm3 pair <ip:port> <code>" \
       "get both values from Wireless debugging > Pair device with pairing code"
     output="$("$(selected_adb)" pair "$1" "$2" 2>&1)" || fail 4 pair_failed \
-      "pairing failed: $output" "re-open the pairing dialog because codes expire, then retry"
+      "pairing failed: $output" "re-open the pairing dialog because codes expire"
     printf '%s' "$output" | grep -qi 'successfully paired' || fail 4 pair_failed \
-      "pairing failed: $output" "re-open the pairing dialog because codes expire, then retry"
+      "pairing failed: $output" "re-open the pairing dialog because codes expire"
     succeed "\"paired\":\"$(json_escape "$1")\",\"detail\":\"$(json_escape "$output")\"" "paired $1"
     ;;
   connect)
@@ -441,61 +337,81 @@ case "$VERB" in
     [ "$#" -eq 1 ] || fail 3 connect_usage "usage: pm3 connect <ip:port>" \
       "pass the current Wireless debugging connect address explicitly"
     output="$("$(selected_adb)" connect "$1" 2>&1)" || fail 4 connect_failed \
-      "connect failed: $output" "check phone and PC share a network; wireless debugging ports change"
+      "connect failed: $output" "check the explicit address and current Wireless debugging port"
     printf '%s' "$output" | grep -Eqi '(^| )(connected to|already connected to) ' || fail 4 connect_failed \
-      "connect failed: $output" "check the explicit address and current Wireless debugging port, then retry"
+      "connect failed: $output" "check the explicit address and current Wireless debugging port"
     succeed "\"target\":\"$(json_escape "$1")\",\"detail\":\"$(json_escape "$output")\"" "connected to $1"
     ;;
   build)
     no_args "$@"
     release_signing_preflight
     task="$(gradle_task)"
-    log_file="$REPO/app/build/reports/pm3/build-$DISTRIBUTION-$PROFILE.log"
+    log_file="$REPO/app/build/reports/pm3/build-$PROFILE.log"
     mkdir -p "$(dirname "$log_file")"
     gradle_cmd="$(selected_gradle)"
     need_command "$gradle_cmd" "install Gradle or restore ./gradlew"
     if ! (cd "$REPO" && "$gradle_cmd" "$task") >"$log_file" 2>&1; then
-      fail 4 build_failed "gradle $task failed: $(tail -3 "$log_file" 2>/dev/null | tr '\n' ' ')" \
-        "read $log_file"
+      fail 4 build_failed "gradle $task failed: $(tail -3 "$log_file" 2>/dev/null | tr '\n' ' ')" "read $log_file"
     fi
     apk="$(apk_path)"
-    [ -f "$apk" ] || fail 4 apk_missing "build succeeded but APK missing at $apk" \
-      "check Android Gradle output naming for $DISTRIBUTION/$PROFILE"
-    succeed "\"distribution\":\"$DISTRIBUTION\",\"profile\":\"$PROFILE\",\"package_id\":\"$(package_id)\",\"gradle_task\":\"$task\",\"apk\":\"$(json_escape "$apk")\",\"bytes\":$(stat -c%s "$apk"),\"sha256\":\"$(sha256sum "$apk" | cut -d' ' -f1)\"" "built $apk"
+    [ -f "$apk" ] || fail 4 apk_missing "build succeeded but APK is missing at $apk" \
+      "check Android Gradle output naming for $PROFILE"
+    succeed "\"profile\":\"$PROFILE\",\"package_id\":\"$(package_id)\",\"gradle_task\":\"$task\",\"apk\":\"$(json_escape "$apk")\",\"bytes\":$(stat -c%s "$apk"),\"sha256\":\"$(sha256sum "$apk" | cut -d' ' -f1)\"" "built $apk"
     ;;
   install)
-    no_args "$@"
+    [ "$#" -le 1 ] || fail 3 install_usage "usage: pm3 --serial SERIAL install [APK]" "provide zero or one APK path"
     need_serial
-    apk="$(apk_path)"
+    apk="${1:-$(apk_path)}"
     [ -f "$apk" ] || fail 2 apk_unavailable "APK not built: $apk" \
-      "run pm3 --distribution $DISTRIBUTION --profile $PROFILE build first"
+      "run pm3 --profile $PROFILE build first"
     output="$(adb_s install -r "$apk" 2>&1)" || fail 4 install_failed \
       "install failed: $output" "check device storage, signing lineage, and install prompts"
     output="${output//$'\r'/}"
     [ "$output" = Success ] || fail 4 install_failed "install failed: $output" \
       "check package signing lineage, device storage, and install prompts"
-    if ! package_dump="$(adb_s shell dumpsys package "$(package_id)" 2>&1)"; then
-      fail 4 package_query_failed "installed package query failed: $package_dump" \
-        "verify the explicit serial remains connected and authorized"
-    fi
+    package_dump="$(adb_s shell dumpsys package "$(package_id)" 2>&1)" || fail 4 package_query_failed \
+      "installed package query failed: $package_dump" "verify the explicit serial remains connected"
     installed_version="$(printf '%s\n' "$package_dump" | grep -m1 versionName | sed 's/.*versionName=//' | tr -d '\r ')"
-    [ -n "$installed_version" ] || fail 4 version_missing "installed package has no versionName" \
-      "verify the expected package was installed"
-    succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$(package_id)\",\"installed_version\":\"$(json_escape "${installed_version:-unknown}")\"" "installed $(package_id) on $SERIAL"
+    [ -n "$installed_version" ] || fail 4 version_missing "installed package has no versionName" "verify the expected package was installed"
+    device_path_output="$(adb_s shell pm path "$(package_id)" 2>&1)" || fail 4 package_path_failed \
+      "installed package path query failed: $device_path_output" "verify the explicit serial remains connected"
+    device_apk="$(printf '%s\n' "$device_path_output" | sed -n 's/^package://p' | tr -d '\r' | head -1)"
+    [ -n "$device_apk" ] || fail 4 package_path_missing "installed package has no base APK path" "verify the expected package is installed for the current user"
+    verify_dir="${JCODE_SCRATCH_DIR:-${TMPDIR:-/tmp}}"
+    mkdir -p "$verify_dir"
+    installed_copy="$verify_dir/pm3-installed-$(package_id)-$$.apk"
+    if ! adb_s pull "$device_apk" "$installed_copy" >/dev/null 2>&1 || [ ! -s "$installed_copy" ]; then
+      rm -f "$installed_copy"
+      fail 4 installed_apk_pull_failed "could not read back the installed base APK" "verify package visibility and device connectivity"
+    fi
+    local_sha="$(sha256sum "$apk" | cut -d' ' -f1)"
+    installed_sha="$(sha256sum "$installed_copy" | cut -d' ' -f1)"
+    if [ "$local_sha" != "$installed_sha" ]; then
+      rm -f "$installed_copy"
+      fail 4 installed_apk_mismatch "installed APK hash differs from the selected local artifact" "uninstall only with approval if signer lineage blocks exact replacement, then reinstall the named APK"
+    fi
+    apksigner_cmd="$(selected_apksigner)"
+    [ -x "$apksigner_cmd" ] || { rm -f "$installed_copy"; fail 2 dependency_unavailable \
+      "apksigner unavailable at $apksigner_cmd" "run scripts/bootstrap-android.sh or set PM3_APKSIGNER"; }
+    signer_output="$($apksigner_cmd verify --verbose --print-certs "$installed_copy" 2>&1)" || {
+      rm -f "$installed_copy"
+      fail 4 installed_signer_invalid "installed APK signer verification failed: $signer_output" "rebuild and reinstall the selected artifact"
+    }
+    signer_sha="$(printf '%s\n' "$signer_output" | awk -F': ' '/certificate SHA-256 digest:/{print tolower($2); exit}' | tr -d ':[:space:]')"
+    rm -f "$installed_copy"
+    [ -n "$signer_sha" ] || fail 4 installed_signer_missing "installed APK signer fingerprint is unavailable" "inspect the artifact with apksigner"
+    succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$(package_id)\",\"apk\":\"$(json_escape "$apk")\",\"installed_version\":\"$(json_escape "$installed_version")\",\"local_sha256\":\"$local_sha\",\"installed_sha256\":\"$installed_sha\",\"signer_sha256\":\"$signer_sha\"" "installed and verified $(package_id) on $SERIAL"
     ;;
   run)
     no_args "$@"
     need_serial
     package="$(package_id)"
-    adb_s shell am start -n "$package/.MainActivity" >/dev/null 2>&1 || fail 4 launch_failed \
-      "am start failed" "run pm3 install first"
-    if ! pid_output="$(adb_s shell pidof "$package" 2>&1)"; then
-      fail 4 pid_query_failed "pid query failed: $pid_output" \
-        "verify the explicit serial remains connected and authorized"
-    fi
+    adb_s shell am start -n "$package/.MainActivity" >/dev/null 2>&1 || fail 4 launch_failed "am start failed" "run pm3 install first"
+    pid_output="$(adb_s shell pidof "$package" 2>&1)" || fail 4 pid_query_failed \
+      "pid query failed: $pid_output" "verify the explicit serial remains connected"
     pids="$(printf '%s' "$pid_output" | tr -d '\r' | xargs)"
     [ -n "$pids" ] || fail 4 process_missing "app did not stay up" "run pm3 --serial $SERIAL logcat"
-    succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$package\",\"pids\":\"$(json_escape "$pids")\"" "started $package on $SERIAL (pids $pids)"
+    succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$package\",\"pids\":\"$(json_escape "$pids")\"" "started $package on $SERIAL"
     ;;
   logcat)
     no_args "$@"
@@ -509,68 +425,52 @@ case "$VERB" in
       done
     logcat_rc="${PIPESTATUS[0]}"
     [ "$logcat_rc" -eq 0 ] || stream_fail logcat_failed "adb logcat exited $logcat_rc" \
-      "verify the explicit serial remains connected and authorized, then retry"
+      "verify the explicit serial remains connected"
     ;;
   screenshot)
-    [ "$#" -le 1 ] || fail 3 screenshot_usage "usage: pm3 screenshot [out.png]" \
-      "provide zero or one output path"
+    [ "$#" -le 1 ] || fail 3 screenshot_usage "usage: pm3 screenshot [out.png]" "provide zero or one output path"
     need_serial
     output_path="${1:-$REPO/docs/dev/receipts/screen-$(date +%Y%m%d-%H%M%S).png}"
     mkdir -p "$(dirname "$output_path")"
     tmp_output="$(dirname "$output_path")/.pm3-$(basename "$output_path").$$.tmp"
     if ! "$ADB_CMD" -s "$SERIAL" exec-out screencap -p >"$tmp_output" 2>/dev/null || [ ! -s "$tmp_output" ]; then
       rm -f "$tmp_output"
-      fail 4 screenshot_capture_failed "screencap produced no image" \
-        "ensure the explicit device is connected, on, and unlocked"
+      fail 4 screenshot_capture_failed "screencap produced no image" "ensure the explicit device is connected, on, and unlocked"
     fi
-    mv -f "$tmp_output" "$output_path" || { rm -f "$tmp_output"; fail 4 screenshot_save_failed \
-      "screencap save failed" "verify the output directory is writable, then retry"; }
+    mv -f "$tmp_output" "$output_path" || { rm -f "$tmp_output"; fail 4 screenshot_save_failed "screencap save failed" "verify the output directory is writable"; }
     succeed "\"png\":\"$(json_escape "$output_path")\",\"bytes\":$(stat -c%s "$output_path")" "saved $output_path"
     ;;
   record)
-    [ "$#" -le 2 ] || fail 3 record_usage "usage: pm3 record [seconds] [out.mp4]" \
-      "provide a numeric duration and optional output path"
+    [ "$#" -le 2 ] || fail 3 record_usage "usage: pm3 record [seconds] [out.mp4]" "provide a numeric duration and optional output path"
     seconds="${1:-10}"
     case "$seconds" in *[!0-9]*|'') fail 3 invalid_duration "record seconds must be numeric" "use pm3 record 10" ;; esac
-    if [ "$seconds" -lt 1 ] || [ "$seconds" -gt 180 ]; then
-      fail 3 invalid_duration "record seconds must be from 1 through 180" "use pm3 record 10"
-    fi
+    if [ "$seconds" -lt 1 ] || [ "$seconds" -gt 180 ]; then fail 3 invalid_duration "record seconds must be from 1 through 180" "use pm3 record 10"; fi
     need_serial
     output_path="${2:-$REPO/docs/dev/receipts/record-$(date +%Y%m%d-%H%M%S).mp4}"
     mkdir -p "$(dirname "$output_path")"
     tmp_output="$(dirname "$output_path")/.pm3-$(basename "$output_path").$$.tmp"
-    if ! screenrecord_detail="$(adb_s shell screenrecord --time-limit "$seconds" /sdcard/pm3-rec.mp4 2>&1)"; then
+    screenrecord_detail="$(adb_s shell screenrecord --time-limit "$seconds" /sdcard/pm3-rec.mp4 2>&1)" || {
       adb_s shell rm /sdcard/pm3-rec.mp4 >/dev/null 2>&1 || true
-      fail 4 record_capture_failed "screenrecord failed: $screenrecord_detail" \
-        "ensure the screen is on and device storage is available"
-    fi
+      fail 4 record_capture_failed "screenrecord failed: $screenrecord_detail" "ensure the screen is on and device storage is available"
+    }
     if ! adb_s pull /sdcard/pm3-rec.mp4 "$tmp_output" >/dev/null || [ ! -s "$tmp_output" ]; then
       rm -f "$tmp_output"
       adb_s shell rm /sdcard/pm3-rec.mp4 >/dev/null 2>&1 || true
-      fail 4 record_pull_failed "screenrecord pull failed" \
-        "verify device storage and the explicit serial, then retry"
+      fail 4 record_pull_failed "screenrecord pull failed" "verify device storage and the explicit serial"
     fi
     if ! adb_s shell rm /sdcard/pm3-rec.mp4 >/dev/null; then
       rm -f "$tmp_output"
-      fail 4 record_cleanup_failed "record pulled but device cleanup failed" \
-        "remove /sdcard/pm3-rec.mp4 from the explicit device, then retry; the requested local output was not replaced"
+      fail 4 record_cleanup_failed "record pulled but device cleanup failed" "remove /sdcard/pm3-rec.mp4, then retry"
     fi
-    mv -f "$tmp_output" "$output_path" || { rm -f "$tmp_output"; fail 4 record_save_failed \
-      "record save failed" "verify the output directory is writable, then retry"; }
+    mv -f "$tmp_output" "$output_path" || { rm -f "$tmp_output"; fail 4 record_save_failed "record save failed" "verify the output directory is writable"; }
     succeed "\"mp4\":\"$(json_escape "$output_path")\",\"bytes\":$(stat -c%s "$output_path"),\"seconds\":$seconds" "saved $output_path"
     ;;
   media)
     no_args "$@"
     need_serial
     package="$(package_id)"
-    if ! media_dump="$(adb_s shell dumpsys media_session 2>&1)"; then
-      fail 4 media_query_failed "media-session query failed: $media_dump" \
-        "verify the explicit serial remains connected and authorized"
-    fi
-    if ! audio_dump="$(adb_s shell dumpsys audio 2>&1)"; then
-      fail 4 audio_query_failed "audio query failed: $audio_dump" \
-        "verify the explicit serial remains connected and authorized"
-    fi
+    media_dump="$(adb_s shell dumpsys media_session 2>&1)" || fail 4 media_query_failed "media-session query failed: $media_dump" "verify the explicit serial remains connected"
+    audio_dump="$(adb_s shell dumpsys audio 2>&1)" || fail 4 audio_query_failed "audio query failed: $audio_dump" "verify the explicit serial remains connected"
     media_session="$(printf '%s\n' "$media_dump" | grep -iA6 "$package" | head -20 || true)"
     audio="$(printf '%s\n' "$audio_dump" | grep -i "$package" | head -10 || true)"
     succeed "\"media_session\":\"$(json_escape "${media_session:-none}")\",\"audio\":\"$(json_escape "${audio:-none}")\"" "media_session=${media_session:-none}; audio=${audio:-none}"
@@ -578,52 +478,33 @@ case "$VERB" in
   fps)
     no_args "$@"
     need_serial
-    if ! gfx_dump="$(adb_s shell dumpsys gfxinfo "$(package_id)" 2>&1)"; then
-      fail 4 gfxinfo_query_failed "gfxinfo query failed: $gfx_dump" \
-        "verify the explicit serial remains connected and authorized"
-    fi
+    gfx_dump="$(adb_s shell dumpsys gfxinfo "$(package_id)" 2>&1)" || fail 4 gfxinfo_query_failed "gfxinfo query failed: $gfx_dump" "verify the explicit serial remains connected"
     gfx="$(printf '%s\n' "$gfx_dump" | grep -E 'Total frames|Janky|percentile' | head -8 || true)"
-    [ -n "$gfx" ] || fail 2 gfxinfo_unavailable "no gfxinfo for $(package_id)" \
-      "run pm3 run first and render a visible frame"
+    [ -n "$gfx" ] || fail 2 gfxinfo_unavailable "no gfxinfo for $(package_id)" "run pm3 run first and render a visible frame"
     succeed "\"gfxinfo\":\"$(json_escape "$gfx")\"" "$gfx"
     ;;
   smoke)
     no_args "$@"
+    [ "$PROFILE" = debug ] || fail 2 debuggable_required "smoke requires the debug profile" "rerun with --profile debug"
     need_serial
     package="$(package_id)"
-    if ! package_dump="$(adb_s shell pm dump "$package" 2>&1)"; then
-      fail 4 package_query_failed "installed package query failed: $package_dump" \
-        "verify the explicit serial remains connected and authorized"
-    fi
-    printf '%s\n' "$package_dump" | grep -q 'pkgFlags.*DEBUGGABLE' || fail 2 debuggable_required \
-      "installed build is not debuggable" "run pm3 --profile debug build and pm3 --profile debug install"
-    adb_s shell am broadcast -a "$package.SELFTEST" -n "$package/.SelfTestReceiver" >/dev/null 2>&1 || \
-      fail 4 broadcast_failed "broadcast failed" "install a current debug build"
+    package_dump="$(adb_s shell pm dump "$package" 2>&1)" || fail 4 package_query_failed "installed package query failed: $package_dump" "verify the explicit serial remains connected"
+    printf '%s\n' "$package_dump" | grep -q 'pkgFlags.*DEBUGGABLE' || fail 2 debuggable_required "installed build is not debuggable" "build and install the debug profile"
+    adb_s shell am broadcast -a "dev.phosphor.mobil3.SELFTEST" -n "$package/.SelfTestReceiver" >/dev/null 2>&1 || fail 4 broadcast_failed "broadcast failed" "install a current debug build"
     report=""
     for _ in $(seq 1 20); do
       sleep 0.5
       report="$(adb_s shell run-as "$package" cat files/selftest.json 2>/dev/null)"
       [ -n "$report" ] && break
     done
-    [ -n "$report" ] || fail 4 selftest_timeout "selftest.json never appeared" \
-      "run pm3 --serial $SERIAL logcat"
-    output_path="$REPO/docs/dev/receipts/selftest-$(date +%Y%m%d-%H%M%S).png"
+    [ -n "$report" ] || fail 4 selftest_timeout "selftest.json never appeared" "run pm3 --serial $SERIAL logcat"
+    output_path="$RECEIPTS_DIR/selftest-$(date +%Y%m%d-%H%M%S).png"
     mkdir -p "$(dirname "$output_path")"
     if ! "$ADB_CMD" -s "$SERIAL" shell run-as "$package" cat files/selftest.png >"$output_path" 2>/dev/null || [ ! -s "$output_path" ]; then
       rm -f "$output_path"
-      fail 4 selftest_image_failed "selftest image pull failed" \
-        "inspect pm3 logcat on the explicit device"
+      fail 4 selftest_image_failed "selftest image pull failed" "inspect pm3 logcat on the explicit device"
     fi
     succeed "\"report_json\":\"$(json_escape "$report")\",\"png_pulled\":\"$(json_escape "$output_path")\"" "selftest passed; image=$output_path"
-    ;;
-  state-watch)
-    provider_stream_watch "$@"
-    ;;
-  state-get|nexus-status|nexus-grant|nexus-revoke|action-run|audit-list|audit-export|tailnet-status|tailnet-configure|tailnet-clear|tailnet-start|tailnet-stop)
-    provider_call "$VERB" "$@"
-    ;;
-  tailnet-secret)
-    tailnet_secret_write "$@"
     ;;
   *) fail 3 unknown_verb "unknown verb: $VERB" "run pm3 help or pm3 schema" ;;
 esac

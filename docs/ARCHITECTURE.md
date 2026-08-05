@@ -1,75 +1,91 @@
-# phosphor-mobil3 — Architecture
+# phosphor-mobil3 architecture
 
-> **Authority notice, 2026-07-22:** This describes the working MVP baseline. Future architecture is governed by `vision/`, `spec/`, and `docs/dev/PHOSPHOR-NEXIDEX-IMPLEMENTATION-HANDOFF.md`. The binding additions are the Play/Fortress compile-time seam, one causal store with provenance, signature-guarded Binder plus the outbound Nexidex/tailnet gate, the reopened shell-audio spike, and the ProjectM blended scope-view architecture.
+## Product shape
 
-Decisions ratified in the 2026-07-18 planning session (web-verified). The full plan lived
-in the session plan file; this is the standing reference.
+Phosphor Mobile is one Android application with two build types:
 
-## Shape
+- `debug`: package `dev.phosphor.mobil3.debug`, includes the explicit self-test receiver.
+- `release`: package `dev.phosphor.mobil3`, non-debuggable, signed only after certificate verification.
 
-Kotlin + Jetpack Compose chrome (Material-free, house tokens) over ONE `SurfaceView`
-(`setZOrderOnTop(false)`); the Rust core owns every pixel inside it. The desktop engine
-crates are consumed **unmodified** via path deps to the sibling checkout
-(`../phosphor/crates/*`), same pinned rustc — parity by construction.
+The app contains no account system, advertising, usage tracking, behavior tracking, or automatic reporting service.
 
-```
-Kotlin main thread     Compose UI · MediaSession callbacks · SurfaceHolder · consent flows
-Rust render thread     wgpu device/queue/surface · Computer · GpuRenderer (FIFO-paced)
-Rust decode thread     spawn_player (symphonia → rubato → gapless → AudibleRing+SampleRing)
-oboe RT callback       pops AudibleRing — no alloc, no JNI
-Rust event thread      the ONE upward JNI path → GlobalRef'd Kotlin listener
-Kotlin AudioRecord     capture/mic sources → ~10 ms f32 chunks over JNI → SampleRing
-```
+## Runtime layers
 
-**Zero per-frame JNI.** Commands go down (postcard-encoded enum), events come up
-(postcard-encoded enum), cheap atomic reads for position/duration.
+1. **Compose interface** presents the console, sheets, queue, source selection, settings, and status.
+2. **MainActivity** owns Android permissions, system pickers, orientation, picture-in-picture, lifecycle, and JNI intent calls.
+3. **Android services** own local playback, playback capture, and optional media-metadata observation.
+4. **Rust JNI runtime** owns DSP, rendering, remote protocol state, audio buffering, and the native surface.
+5. **PC relay** is a separate Rust program under `relay/` that captures or plays desktop audio and serves protocol v2.
 
-## Render
+The Android interface never performs socket or real-time audio work in Compose callbacks. JNI setters publish bounded intent to the native runtime.
 
-- Process-lifetime wgpu Instance/Adapter/Device; the `wgpu::Surface` is created/dropped
-  with the Android Surface (`ndk NativeWindow::from_surface` → `create_surface_unsafe`).
-- **`surfaceDestroyed` blocks** until the render thread drops Surface + NativeWindow ref
-  (Android invalidates the window when the callback returns — crash class #1). Render
-  thread parks keeping decay textures; beam survives backgrounding. Also honor `onStop`
-  (screen-off does NOT fire surfaceDestroyed).
-- `PresentMode::Fifo`, `desired_maximum_frame_latency = 2` (Adreno guidance; Mailbox burns
-  battery rendering dropped frames).
-- Kotlin must call `surface.setFrameRate(120f)` or Android 15 holds many surfaces at 60.
-  Verify via `dumpsys SurfaceFlinger`; fall back to FRAME_RATE_COMPATIBILITY_FIXED_SOURCE.
-- Prefer the sRGB surface format — `GpuRenderer` derives `hardware_encodes` from it.
-- Supersample 2× default; render-scale + fps caps in settings from v1 (thermal governs).
+## Rendering
 
-## Audio
+A `SurfaceView` is placed below Compose chrome. The native renderer receives surface lifecycle events and display density. Android 11 and newer request a 120 Hz frame rate where supported. Android 10 uses the normal surface cadence.
 
-- **Own deck:** `oboe` crate (AAudio, LowLatency/Shared, f32 stereo 48 kHz, Usage::Media).
-  The oboe callback pops `AudibleRing` exactly where the desktop PipeWire stream did; the
-  scope taps `SampleRing::take_stereo_samples` — sample-locked picture, gapless inherited.
-  AAudio streams die on route change (BT): rebuild-and-resume, ring keeps content.
-- **Upstream (the only desktop changes):** `phosphor-audio` gets a default
-  `pipewire-backend` feature gating `engine.rs`/`mirror.rs`/`targets.rs`; `AudioEvent`
-  moves to lib.rs. Android consumes `default-features = false` for
-  playback.rs/ring.rs/metadata.rs.
-- **MediaSession:** Media3 `MediaSessionService` + `SimpleBasePlayer` bridge. Hand-rolled:
-  AudioFocusRequest (transient loss/duck), BECOMING_NOISY → pause, AudioDeviceCallback.
-  FGS type `mediaPlayback`. **The loaded deck owns the transport** (desktop law); when
-  scoping another app, the deck sheet drives that app's `MediaController`.
-- **Capture:** MediaProjection (consent per session) + FGS `mediaProjection` +
-  `AudioPlaybackCaptureConfiguration`. **Spotify/YT Music/DRM apps opt out — silence;
-  say so honestly.** Android 15+ auto-stops capture on lock. Mic = stereo AudioRecord.
-  Visualizer API permanently rejected (8-bit mono kills XY). Shizuku spike tracked in M4.
+Rendering reuses sibling desktop phosphor crates through pinned path dependencies. Gradle invokes Cargo NDK with the repository lockfile and packages only generated arm64 libraries. There is no unmanaged `app/src/main/jniLibs` fallback.
 
-## Build
+## Audio sources
 
-- AGP 9.x (built-in Kotlin — no kotlin-android plugin) · Gradle 9.3.1 wrapper · minSdk 35 /
-  target+compile 36 · NDK r28c (16 KB ELF alignment by default) · arm64-v8a only.
-- cargo-ndk via a plain Gradle `Exec` task (no plugins, no Python) wired before
-  `mergeJniLibFolders`; `checkEngine` task guards the path-dep seam.
-- `dev/pm3` is the AGENT-CLI-STANDARD conforming surface (the APK has no argv/stdout);
-  ruling recorded in docs/AGENTS.md.
+### Local files
 
-## Risks (ranked, from planning)
+Android's document picker grants access to files and folders. The playback service stages and cleans files as needed, maintains the queue, and publishes Android media controls.
 
-1. "Why is Spotify silent" — certainty; honest labels. 2. Surface lifecycle races.
-3. AAudio disconnects. 4. SimpleBasePlayer state sync. 5. Thermal at 120 Hz.
-6. 60 Hz cap sticking. 7. Consent fatigue + lock auto-stop. 8. JNI GlobalRef leaks on
-config change. 9. Path-dep coupling. 10. NDK/AGP drift (pinned in libs.versions.toml).
+### Microphone
+
+The app requests `RECORD_AUDIO` before starting microphone capture. Denial leaves the current source unchanged and provides a retry path.
+
+### Android playback capture
+
+The user first approves microphone permission because Android's capture audio path requires it. The app then opens the MediaProjection consent flow.
+
+- API 34 and newer request the default display explicitly.
+- API 29 through 33 use the full-display capture intent available on those releases.
+- The capture service enters the typed foreground state before obtaining the projection.
+- Projection revocation, screen lock behavior, permission denial, and service failure are surfaced to the interface.
+
+Playback audio and microphone audio are processed in memory. Phosphor does not record or upload them.
+
+### PC relay
+
+A fresh install has no relay hosts and creates no Phosphor-owned network traffic. The user must save and select a host.
+
+Accepted hosts are Tailscale MagicDNS names, `.ts.net` names, legacy `.tailnet` names, or IPv4 addresses in `100.64.0.0/10`. The app then opens protocol v2 to receive audio or geometry and send playback commands. The protocol relies on Tailscale for identity and encryption. Relay authentication and bind-address polish remain deferred work.
+
+## State and migration
+
+User-facing settings live in ordinary private preferences and are exported only after an explicit user action. Settings import validates the archive before one atomic commit and restores the previous snapshot if the commit fails.
+
+One startup migration preserves the existing HUD mode from older preference layouts. It then deletes obsolete preference files and the old Android Keystore alias. The removed command graph and audit history are not retained at runtime.
+
+Saved relay hosts, consent state, metadata access state, and runtime settings are excluded from Android cloud backup.
+
+## Android compatibility
+
+- Minimum SDK: 29
+- Compile and target SDK: 36
+- ABI: arm64-v8a
+
+Version-specific calls are guarded for frame-rate requests, display rotation, rounded corners, notification-listener settings, picture-in-picture behavior, and MediaProjection configuration. The activity is resizeable and does not depend on orientation locks being honored on large screens.
+
+## Build and release
+
+The Gradle wrapper is the sole Android build authority. `app/build.gradle.kts` owns:
+
+- application version and version code
+- debug and release package identities
+- Rust JNI generation
+- signing selection and certificate verification
+- runtime dependency evidence
+- the production artifact boundary task
+
+Release signing profiles are `production` and `play-upload`. Both require external keystore inputs and an expected SHA-256 certificate. Release compilation fails closed when inputs are incomplete or mismatched.
+
+`scripts/ship-check.sh` is the fixed release scoreboard. `dev/pm3` remains local developer tooling and has no runtime product-control path.
+
+## Known risks
+
+1. The API 29 floor needs a real Android 10 or API 29 emulator receipt.
+2. Large-screen, foldable, desktop-window, and multi-window layouts need a device matrix.
+3. The PC relay binds broadly and depends on the host firewall plus Tailscale. Binding and protocol hardening are deferred to the networking stage.
+4. Google Play enrollment, signing evidence, declarations, listing assets, and submission are human gates.

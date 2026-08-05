@@ -3,22 +3,8 @@ package dev.phosphor.mobil3
 import org.json.JSONObject
 
 /**
- * What the relay link is actually doing, decided from the engine's own status.
- *
- * This exists as a pure function because the decision is the part worth testing and
- * `RemotePlayer` cannot be unit-tested (it needs an Android `Looper`). Keeping the
- * judgment here means the rules below are provable on the host, and the player is left
- * doing only what a player should: holding state and telling Media3 about it.
- *
- * The rules encode two corrections found by the 2026-07-28 connection-truth audit
- * (`docs/dev/receipts/phosphor-2.0/phase-B-remote-truth.md`):
- *
- *  1. The engine stores `ST_STREAMING` the instant the relay's welcome frame lands, before
- *     any media. Reporting that as a live link claims something that has not happened, so
- *     GREETED covers the window until a frame actually arrives.
- *  2. A stalled link (frames stopped, socket still open) used to be reported as
- *     reconnecting, which is a frozen live trace of the kind acceptance H-04 forbids.
- *     STALLED is now its own state.
+ * Maps native relay status to user-facing link states without Android dependencies.
+ * GREETED is not live until a media frame arrives, and STALLED is distinct from reconnecting.
  */
 enum class RemoteLinkState {
     /** Dialing: TCP connect in flight. */

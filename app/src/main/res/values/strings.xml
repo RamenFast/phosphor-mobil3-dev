@@ -1,4 +1,5 @@
 <?xml version="1.0" encoding="utf-8"?>
 <resources>
+    <string name="app_name">Phosphor</string>
     <string name="capture_metadata_label">Phosphor capture metadata</string>
 </resources>

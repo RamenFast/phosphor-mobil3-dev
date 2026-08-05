@@ -71,9 +71,10 @@ struct Link {
     generation: AtomicU64,
     /// The live session's shared handle. POINTER-SWAP-ONLY MUTEX (the law): no
     /// syscall, no I/O, nothing blocking ever runs while this is held — lock,
-    /// clone the Arc, unlock, then act. Violating this recreates finding 2.
+    /// clone the Arc, unlock, then act. Holding it across blocking work can
+    /// deadlock session replacement.
     current: Mutex<Option<Arc<SessionShared>>>,
-    /// Threads that outlived their bounded join (each one is a bug receipt).
+    /// Threads that outlived their bounded join.
     leaked_threads: AtomicU32,
     /// Mailbox to the single long-lived control thread (the sole session
     /// owner). Guarded because std's Sender is !Sync; the lock is held for a
@@ -147,9 +148,8 @@ fn link() -> &'static Link {
     })
 }
 
-/// Wall clock — K payloads and logs ONLY. Liveness math uses monotonic_ms():
-/// a wall-clock step must never kill a live link or immortalize a dead one
-/// (audit finding 13).
+/// Wall clock for K payloads and logs only. Liveness uses monotonic_ms(), so a
+/// wall-clock step cannot kill a live link or preserve a dead one.
 fn now_ms() -> u64 {
     SystemTime::now()
         .duration_since(UNIX_EPOCH)
@@ -163,9 +163,8 @@ fn monotonic_ms() -> u64 {
     EPOCH.get_or_init(Instant::now).elapsed().as_millis() as u64
 }
 
-/// Poison-tolerant lock: panic="abort" is release-only and Ben daily-drives the
-/// debug APK — a panicked session thread must not cascade lock panics onto the
-/// main thread through these mutexes.
+/// Poison-tolerant lock: release builds abort on panic, but debug builds unwind. A
+/// panicked session thread must not cascade lock panics onto the main thread.
 fn plock<T>(m: &Mutex<T>) -> std::sync::MutexGuard<'_, T> {
     m.lock().unwrap_or_else(|p| p.into_inner())
 }
@@ -236,7 +235,7 @@ fn json_str(s: &str) -> String {
     serde_json::to_string(s).unwrap_or_else(|_| "\"\"".into())
 }
 
-// ── The audio path (audit finding 10: lock-free on the RT callback) ──────────
+// ── Lock-free real-time audio path ────────────────────────────────────────────
 // Two opaque endpoints around the SPSC BlockRing (rust/src/spsc.rs — the first
 // implementation of ../phosphor/docs/dev/SPSC-RING-DESIGN.md): the worker
 // pushes through AudioSink (park-timeout backpressure, no Condvar), the RT
@@ -378,9 +377,8 @@ impl AudioOutputCallback for RemoteOutput {
         _s: &mut dyn AudioOutputStreamSafe,
         frames: &mut [(f32, f32)],
     ) -> DataCallbackResult {
-        // RT path law (audit finding 10): no alloc, no lock, no syscall, no
-        // log. Scratch is preallocated at open; a burst beyond it (absurd)
-        // plays silence for the tail rather than allocating.
+        // Real-time callback: no allocation, lock, syscall, or logging. Scratch is
+        // preallocated at open; an oversized burst plays silence for its tail.
         let need = (frames.len() * 2).min(self.scratch.len());
         self.jitter
             .set_mode(self.latency_mode.load(Ordering::Relaxed));
@@ -458,8 +456,8 @@ fn open_output(
         .set_callback(RemoteOutput {
             tap: path.tap(),
             scope: path.scope_sink(),
-            // Preallocated far above any real AAudio burst (8192 frames) — the
-            // callback never resizes it (finding 10's alloc half).
+            // Preallocated above the largest expected AAudio burst. The callback
+            // never resizes this buffer.
             scratch: vec![0.0; 16384],
             jitter: AdaptiveJitter::new(RATE as usize, latency_mode, resume_target),
             latency_mode: &l.latency_mode,
@@ -479,8 +477,8 @@ fn open_output(
 
 // ── Wire helpers ─────────────────────────────────────────────────────────────
 
-/// Fail-fast enqueue onto the current session's writer thread (audit finding 2:
-/// JNI callers NEVER touch a socket). Full queue or no session = drop + log —
+/// Fail-fast enqueue onto the current session's writer thread. JNI callers never
+/// touch a socket. A full queue or absent session drops the optimistic command and
 /// transport is optimistic (the next M frame reconciles), and a full queue only
 /// happens while the writer is already dying inside a bounded write.
 fn enqueue(tag: u8, payload: &[u8]) -> bool {
@@ -664,9 +662,8 @@ pub fn request_art(id: &str) {
     enqueue(b'R', format!(r#"{{"id":{}}}"#, json_str(id)).as_bytes());
 }
 
-/// Drive the DESKTOP scope over the bridge (mode/theme/ui/gain — Ben's
-/// remote-render ask). The relay executes via phosphor's typed ctl grammar;
-/// failures come back as fix-bearing E frames.
+/// Drive the desktop scope over the bridge using mode, theme, UI, or gain. The
+/// relay executes the typed phosphor control grammar; failures return fix-bearing E frames.
 pub fn scope_ctl(verb: &str, value: &str) {
     enqueue(
         b'V',
@@ -780,8 +777,7 @@ pub fn status_json() -> String {
 }
 
 // ── The control thread: ONE owner for every session, forever ─────────────────
-// Sessions are created and destroyed sequentially on this thread; overlap is
-// impossible by construction, which is what actually closes audit finding 1.
+// Sessions are created and destroyed sequentially on this thread, so they cannot overlap.
 
 /// Interruptible wait: sleeps up to `dur` in slices, returning early with the
 /// newest pending command (last-wins) or on quit.
@@ -897,19 +893,16 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         Err(e) => return SessionEnd::Failed(format!("connect {host}:{port}: {e}")),
     };
     stream.set_nodelay(true).ok();
-    // SO_SNDTIMEO 2 s: bounds every write the writer thread makes — a blackholed
-    // peer turns into a writer-fatal within one frame, never an infinite park
-    // (finding 2's other half; the writer thread is the first).
+    // SO_SNDTIMEO bounds every writer operation. A blackholed peer becomes a
+    // writer failure within one frame instead of parking forever.
     stream.set_write_timeout(Some(Duration::from_secs(2))).ok();
     let read_stream = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => return SessionEnd::Failed(format!("clone stream: {e}")),
     };
 
-    // Audio plumbing FIRST (audit finding 9): the full local stack must stand
-    // before the relay ever hears H. An oboe failure here returns with the
-    // socket unpublished and un-greeted — it simply drops (FIN), and the relay
-    // never creates pumps for a half-session.
+    // Build the local audio stack before greeting the relay. An output failure
+    // leaves the socket unpublished, so the relay never starts a partial session.
     let path = AudioPath::new(RATE);
     let muted = Arc::new(AtomicBool::new(l.muted.load(Ordering::Relaxed)));
     let (restart_tx, restart_rx) = std::sync::mpsc::channel::<()>();
@@ -920,11 +913,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let out_slot: Arc<Mutex<Option<AudioStreamAsync<Output, RemoteOutput>>>> =
         Arc::new(Mutex::new(Some(out)));
 
-    // The session's shared handle + its dedicated writer thread (audit finding
-    // 2): from here on, the writer is the ONLY thread that touches the socket's
-    // write half. JNI callers enqueue fail-fast; K self-generates in the writer
-    // on its own 2 s cadence (a full queue can never starve liveness) and H is
-    // coalesced through the dirty flag (unlosable).
+    // From here, the dedicated writer is the only thread that touches the socket's
+    // write half. JNI calls enqueue without blocking; K has its own cadence and H is
+    // coalesced through the dirty flag.
     let shutdown_clone = match stream.try_clone() {
         Ok(s) => s,
         Err(e) => return SessionEnd::Failed(format!("clone shutdown handle: {e}")),
@@ -938,9 +929,8 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         hello_dirty: AtomicBool::new(false),
     });
 
-    // Publish under the generation gate (audit finding 1). A session that lost
-    // the race while blocked in connect_timeout retires itself here instead of
-    // stomping its successor's live link.
+    // Publish under the generation gate. A session that lost the race while
+    // connecting retires itself instead of replacing its successor.
     {
         let mut cur = plock(&l.current);
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
@@ -972,10 +962,12 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                 bridge_core::run_writer(
                     stream,
                     writer_rx,
-                    &shared_w.cancel,
-                    &shared_w.hello_dirty,
+                    bridge_core::WriterControl {
+                        cancel: &shared_w.cancel,
+                        hello_dirty: &shared_w.hello_dirty,
+                        ping_period: Duration::from_secs(2),
+                    },
                     || bridge_core::encode_frame(b'H', hello_json().as_bytes()),
-                    Duration::from_secs(2),
                     || {
                         bridge_core::encode_frame(
                             b'K',
@@ -996,13 +988,10 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         return SessionEnd::Failed("spawn writer thread".into());
     }
 
-    // Route-change supervisor (audit findings 3 + 7): token-cancelled via
-    // recv_timeout (it legitimately owns a restart_tx clone for reopened
-    // streams, so channel-disconnect can never be its exit signal), coalesces
-    // signal bursts, retries reopen on a bounded ladder, installs ONLY under
-    // the slot lock with a post-open cancellation check, and on ladder
-    // exhaustion trips the whole session — one audible reconnect, never
-    // permanent silence behind a "streaming" state.
+    // The route-change supervisor is token-cancelled through recv_timeout. Its restart
+    // sender remains alive across reopened streams, so it cannot use channel closure as an
+    // exit signal. It coalesces bursts, retries on a bounded ladder, and installs only after
+    // a cancellation check under the slot lock. Exhaustion restarts the full session.
     session.parts.oboe = {
         let path = path.clone();
         let muted_flag = muted.clone();
@@ -1045,11 +1034,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                         }
                         match open_output(&path, muted_flag.clone(), restart_tx.clone()) {
                             Ok(new_out) => {
-                                // Install gate UNDER the slot lock (finding 3's
-                                // late-install race): teardown sets cancel BEFORE
-                                // taking the slot, so an install that begins after
-                                // teardown provably observes it; one that raced
-                                // earlier gets taken and dropped by teardown.
+                                // Install under the slot lock. Teardown sets cancellation before
+                                // taking this lock, so a late install loses. An earlier install is
+                                // removed and dropped by teardown.
                                 let mut slot = plock(&out_slot);
                                 if shared_s.cancelled() {
                                     drop(slot);
@@ -1074,11 +1061,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             .ok()
     };
 
-    // Audio worker: bounded, drop-if-behind — audio can glitch, the scope never
-    // stalls. Exits on cancel, on a closed ring (finding 5's waker), or when the
-    // reader drops the sender. Depth 32 ≈ 320 ms: burst headroom so a TCP
-    // batch never drops mid-burst frames (gaps!) — total latency is governed
-    // by the ring's sustained catch-up, not this queue.
+    // The audio worker is bounded and drops when behind. It exits on cancellation, a
+    // closed ring, or a dropped sender. Queue depth provides burst headroom while the
+    // ring's catch-up policy controls accumulated latency.
     let (audio_tx, audio_rx) = std::sync::mpsc::sync_channel::<Vec<f32>>(32);
     session.parts.audio = {
         let mut sink = path.sink();
@@ -1178,8 +1163,8 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             return SessionEnd::V1Relay;
         }
         if reader_done.load(Ordering::Relaxed) {
-            // Audit finding 11: a run that reached streaming resets the backoff ladder
-            // (report Healthy; the manager still reconnects, just without punishment).
+            // A session that reached streaming resets the backoff ladder. The manager
+            // still reconnects, but without carrying failure delay from the old session.
             return if was_streaming {
                 SessionEnd::Healthy
             } else {
@@ -1219,8 +1204,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     }
 }
 
-/// Ordered, idempotent session teardown (audit findings 1, 3, 5). Every step's
-/// position is load-bearing:
+/// Ordered, idempotent session teardown. Every step's position is load-bearing:
 ///   1 cancel+FIN gates all publishes and wakes blocked reads/writes
 ///   2 unpublish only OUR handle (Arc identity — never a successor's)
 ///   3 writer join (already unblocked by the FIN; 3 s > worst 2 s send timeout)
@@ -1332,9 +1316,8 @@ fn reader(
             Ok(true) => {}
             Ok(false) | Err(_) => break,
         }
-        // Post-blocking-read gate (audit finding 1): a frame that arrived for a
-        // retired session must not touch shared state — a reader that passed the
-        // loop guard, then blocked, could otherwise publish one stale frame.
+        // After a blocking read, reject frames from a retired session before they touch
+        // shared state.
         if shared.cancelled() {
             break;
         }

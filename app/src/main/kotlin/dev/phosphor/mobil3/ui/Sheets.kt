@@ -120,10 +120,10 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
 
         moveTo(0f, shoulder)
         if (curl <= 0f) {
-            if (roomRadius > 0f) quadraticBezierTo(0f, 0f, inset, 0f)
+            if (roomRadius > 0f) quadraticTo(0f, 0f, inset, 0f)
             else lineTo(0f, 0f)
         } else when (style.character) {
-            ChromeCharacter.Glass -> quadraticBezierTo(0f, 0f, inset, 0f)
+            ChromeCharacter.Glass -> quadraticTo(0f, 0f, inset, 0f)
             ChromeCharacter.Annotated -> {
                 lineTo(inset * 0.42f, shoulder)
                 lineTo(inset * 0.42f, shoulder * 0.48f)
@@ -139,10 +139,10 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
 
         lineTo(width - inset, 0f)
         if (curl <= 0f) {
-            if (roomRadius > 0f) quadraticBezierTo(width, 0f, width, shoulder)
+            if (roomRadius > 0f) quadraticTo(width, 0f, width, shoulder)
             else lineTo(width, 0f)
         } else when (style.character) {
-            ChromeCharacter.Glass -> quadraticBezierTo(width, 0f, width, shoulder)
+            ChromeCharacter.Glass -> quadraticTo(width, 0f, width, shoulder)
             ChromeCharacter.Annotated -> {
                 lineTo(width - inset, shoulder * 0.48f)
                 lineTo(width - inset * 0.42f, shoulder * 0.48f)
@@ -158,11 +158,11 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
 
         lineTo(width, height - bottomRadius)
         if (bottomRadius > 0f) {
-            quadraticBezierTo(width, height, width - bottomRadius, height)
+            quadraticTo(width, height, width - bottomRadius, height)
         } else lineTo(width, height)
         lineTo(bottomRadius, height)
         if (bottomRadius > 0f) {
-            quadraticBezierTo(0f, height, 0f, height - bottomRadius)
+            quadraticTo(0f, height, 0f, height - bottomRadius)
         } else lineTo(0f, height)
         close()
     }
@@ -214,11 +214,7 @@ fun SheetHost(
     val sheetShape = remember(style, curl, density) {
         sheetCardShape(style, curl, density)
     }
-    // Expressive dismiss (Ben's ask): the old `visible = true` meant the exit
-    // could NEVER play — dismissal was an instant removal. Now the sheet owns a
-    // real open/close state: ✕/scrim/drag/Back play the departure (accelerating
-    // slide DOWN + fade — the motion says where it went) and the composition
-    // leaves only after the choreography finishes.
+    // Keep the sheet composed until its close animation finishes.
     val openState = remember {
         MutableTransitionState(entryReveal != null).apply { targetState = true }
     }
@@ -561,7 +557,7 @@ fun RangeDragRule(
     }
 }
 
-// ── SOURCE (spec §2.3): hierarchy headings, the LIVE stone, the consent moment. ──
+// Source selection, capture disclosure, microphone, and PC relay controls.
 @Composable
 fun SourceSheet(
     state: ScopeUiState,
@@ -711,7 +707,7 @@ fun SourceSheet(
     }
 }
 
-// ── MODE (spec §2.4): grouped hierarchy list, engraved glyphs, live behind glass. ──
+// Grouped scope modes and geometry controls.
 @Composable
 fun ModeSheet(
     state: ScopeUiState,
@@ -932,8 +928,7 @@ fun RoomSheet(
             }
         }
 
-        // ── CUSTOM STYLE (Ben's ask: customizable UX/UI elements): per-user
-        // overrides on top of the active room's personality. `match` = none. ──
+        // Persisted style overrides layer on top of the active room; match clears an override.
         SectionHeading("STYLE", p)
         val ov = state.styleOverride
         Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1083,11 +1078,8 @@ fun SettingsSheet(
     val scroll = rememberScrollState()
     val landscape = LocalChromeLandscape.current
     SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob) {
-        // Each settings group is a self-contained block so the same content lays out
-        // as one portrait column or, in landscape, two side-by-side columns (Ben's
-        // ask: settings is the full view — a real landscape split, not a narrow
-        // portrait column). One shared vertical scroll keeps the fill-driven top-curl
-        // and the nested-scroll dismiss working exactly as before.
+        // Reuse each settings group in one portrait column or two landscape columns.
+        // One shared scroll preserves top-curl and nested-dismiss behavior.
         val signal: @Composable () -> Unit = {
             SettingsSectionHeading(
                 "SIGNAL", SettingsGlyph.Signal, p, Modifier.padding(top = 0.dp),
@@ -1104,7 +1096,7 @@ fun SettingsSheet(
                     ) { actions.setGainAuto(!state.autoGain) }
                 }
                 Box(Modifier.weight(1f)) {
-                    // Ben's ask: pin a chosen zoom level — gestures inform, never move.
+                    // View lock preserves the chosen zoom; gestures report the lock without moving it.
                     ChipCell(
                         "VIEW LOCK · " + if (state.viewLock) "on" else "off",
                         active = state.viewLock, p = p, small = true,
@@ -1244,11 +1236,10 @@ fun SettingsSheet(
                         active = state.hudMode == 0,
                         p = p,
                         small = true,
-                        enabled = state.hudControlWritable,
                     ) { actions.setHudMode((state.hudMode + 1) % 3) }
                 }
                 Box(Modifier.weight(1f)) {
-                    // Status band (Ben's ask): always · rides the console timer · off.
+                    // The status band can stay visible, follow the console timer, or remain hidden.
                     ChipCell(
                         "BAND · " + when (state.bandMode) {
                             1 -> "auto"; 2 -> "off"; else -> "on"
@@ -1258,9 +1249,8 @@ fun SettingsSheet(
                 }
                 Spacer(Modifier.weight(1f))
             }
-            val hudMessage = state.hudControlFix.ifBlank { state.hudControlStatus }
-            if (hudMessage.isNotBlank()) {
-                Prose(hudMessage, p.muted, modifier = Modifier.padding(top = 6.dp))
+            if (state.hudControlStatus.isNotBlank()) {
+                Prose(state.hudControlStatus, p.muted, modifier = Modifier.padding(top = 6.dp))
             }
         }
         val remote: @Composable () -> Unit = {
@@ -1276,28 +1266,14 @@ fun SettingsSheet(
                 }
             }
             Prose(
-                "Tight is for tether or LAN. The bridge widens automatically on underruns; " +
+                "Tight is for a low-latency Tailscale path. The bridge widens automatically on underruns; " +
                     "safe is today's ear-verified behavior.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
-            Mono(
-                "NETWORK", p.muted, Type.dataXs,
-                Modifier.padding(top = Dim.gapLg, bottom = 4.dp),
-            )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("auto" to 0, "wifi" to 1, "mobile" to 2).forEach { (label, mode) ->
-                    Box(Modifier.weight(1f)) {
-                        ChipCell(
-                            label, active = state.networkMode == mode, p = p, small = true,
-                        ) { actions.setRemoteNetworkMode(mode) }
-                    }
-                }
-            }
             Prose(
-                "Auto follows Android's default route. Wi-Fi or mobile binds the remote " +
-                    "session process-wide because the bridge socket lives in Rust, not Java. " +
-                    "There is no both: one TCP stream cannot multipath.",
-                p.muted, modifier = Modifier.padding(top = 6.dp),
+                "Relay traffic follows Android and Tailscale routing. Phosphor never forces the " +
+                    "whole app onto Wi-Fi or mobile data.",
+                p.muted, modifier = Modifier.padding(top = Dim.gapLg),
             )
         }
         val roomLight: @Composable () -> Unit = {
@@ -1426,7 +1402,6 @@ interface SheetActions {
     fun setGrid(on: Boolean)
     fun setHudMode(mode: Int)
     fun setRemoteLatencyMode(mode: Int)
-    fun setRemoteNetworkMode(mode: Int)
     fun openRoom()
     fun openLight()
     fun openManual()

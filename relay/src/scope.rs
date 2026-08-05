@@ -1,8 +1,7 @@
 //! The desktop scope lane: read live state off phosphor's ctl socket (frozen
 //! NDJSON protocol v1 — `{"op":"status"}` is a stable, documented shape) and
-//! drive it via the `phosphor ctl` CLI (the CLI and server share ONE typed
-//! grammar — desktop BUGLOG #16 — so shelling out is correct-by-construction
-//! where hand-built wire args would be guesswork). Every touch is
+//! drive it through the `phosphor ctl` CLI. The CLI and server share one typed
+//! grammar, so this avoids duplicating wire argument construction. Every touch is
 //! deadline-bounded; absence of a running scope degrades to None/E+fix.
 
 use std::io::{BufRead, BufReader, Write};
@@ -41,7 +40,7 @@ pub fn status() -> Option<serde_json::Value> {
             out.insert(key.to_string(), x.clone());
         }
     }
-    (!out.is_empty()).then(|| serde_json::Value::Object(out))
+    (!out.is_empty()).then_some(serde_json::Value::Object(out))
 }
 
 const ALLOWED_VERBS: &[&str] = &["mode", "theme", "ui", "gain"];

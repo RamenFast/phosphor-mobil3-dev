@@ -890,7 +890,7 @@ checksum = "57c0d7b74b563b49d38dae00a0c37d4d6de9b432382b2892f0574ddcae73fd0a"
 
 [[package]]
 name = "phosphor-audio"
-version = "4.7.2"
+version = "4.7.4"
 dependencies = [
  "phosphor-proto",
  "rubato",
@@ -900,11 +900,11 @@ dependencies = [
 
 [[package]]
 name = "phosphor-beam"
-version = "4.7.2"
+version = "4.7.4"
 
 [[package]]
 name = "phosphor-dsp"
-version = "4.7.2"
+version = "4.7.4"
 dependencies = [
  "phosphor-proto",
  "rustfft",
@@ -934,7 +934,7 @@ dependencies = [
 
 [[package]]
 name = "phosphor-proto"
-version = "4.7.2"
+version = "4.7.4"
 dependencies = [
  "serde",
  "serde_json",
@@ -942,7 +942,7 @@ dependencies = [
 
 [[package]]
 name = "phosphor-render-cpu"
-version = "4.7.2"
+version = "4.7.4"
 dependencies = [
  "phosphor-beam",
  "rayon",
@@ -951,7 +951,7 @@ dependencies = [
 
 [[package]]
 name = "phosphor-render-gpu"
-version = "4.7.2"
+version = "4.7.4"
 dependencies = [
  "phosphor-beam",
  "pollster",

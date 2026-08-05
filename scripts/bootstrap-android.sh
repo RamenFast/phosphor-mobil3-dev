@@ -8,33 +8,33 @@ REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 TC="$REPO/.toolchain"
 SDK="$TC/Sdk"
 JDK="$TC/jdk-21"
-GRADLE_DIST="$TC/gradle-9.1.0"
+DOWNLOADS="$TC/downloads"
 NDK_ID="ndk;28.2.13676358"
 PLATFORM="platforms;android-36"
 BUILD_TOOLS="build-tools;36.0.0"
 CT_URL="https://dl.google.com/android/repository/commandlinetools-linux-14742923_latest.zip"
-GRADLE_URL="https://services.gradle.org/distributions/gradle-9.1.0-bin.zip"
 JDK_URL="https://api.adoptium.net/v3/binary/latest/21/ga/linux/x64/jdk/hotspot/normal/eclipse"
 
-mkdir -p "$TC"
+mkdir -p "$TC" "$DOWNLOADS"
 step() { printf '\n== %s\n' "$*"; }
 
 step "JDK 21 (Temurin, in-repo)"
 if [ ! -x "$JDK/bin/javac" ]; then
-  curl -fL "$JDK_URL" -o /tmp/jdk21.tgz
-  mkdir -p "$JDK" && tar xzf /tmp/jdk21.tgz -C "$JDK" --strip-components=1
-  rm -f /tmp/jdk21.tgz
+  curl -fL "$JDK_URL" -o "$DOWNLOADS/jdk21.tgz"
+  mkdir -p "$JDK" && tar xzf "$DOWNLOADS/jdk21.tgz" -C "$JDK" --strip-components=1
+  rm -f "$DOWNLOADS/jdk21.tgz"
 fi
 export JAVA_HOME="$JDK"
+export GRADLE_USER_HOME="$TC/gradle-user-home"
 "$JDK/bin/javac" -version
 
 step "Android cmdline-tools"
 if [ ! -x "$SDK/cmdline-tools/latest/bin/sdkmanager" ]; then
-  curl -fLo /tmp/ct.zip "$CT_URL"
-  mkdir -p "$SDK/cmdline-tools" && unzip -qo /tmp/ct.zip -d "$SDK/cmdline-tools"
+  curl -fLo "$DOWNLOADS/commandline-tools.zip" "$CT_URL"
+  mkdir -p "$SDK/cmdline-tools" && unzip -qo "$DOWNLOADS/commandline-tools.zip" -d "$SDK/cmdline-tools"
   rm -rf "$SDK/cmdline-tools/latest"
   mv "$SDK/cmdline-tools/cmdline-tools" "$SDK/cmdline-tools/latest"
-  rm -f /tmp/ct.zip
+  rm -f "$DOWNLOADS/commandline-tools.zip"
 fi
 SDKM="$SDK/cmdline-tools/latest/bin/sdkmanager"
 
@@ -44,13 +44,9 @@ yes | "$SDKM" --sdk_root="$SDK" --licenses >/dev/null || true
 step "SDK packages: platform-tools, $PLATFORM, $BUILD_TOOLS, $NDK_ID"
 "$SDKM" --sdk_root="$SDK" "platform-tools" "$PLATFORM" "$BUILD_TOOLS" "$NDK_ID"
 
-step "Gradle 9.1.0 distribution (for wrapper generation)"
-if [ ! -x "$GRADLE_DIST/bin/gradle" ]; then
-  curl -fLo /tmp/gradle.zip "$GRADLE_URL"
-  unzip -qo /tmp/gradle.zip -d "$TC"
-  rm -f /tmp/gradle.zip
-fi
-"$GRADLE_DIST/bin/gradle" --version | head -5
+step "Gradle wrapper"
+[ -x "$REPO/gradlew" ] || { printf 'missing executable Gradle wrapper: %s/gradlew\n' "$REPO" >&2; exit 1; }
+"$REPO/gradlew" --version | head -5
 
 step "Rust: aarch64-linux-android target + cargo-ndk"
 rustup target add aarch64-linux-android

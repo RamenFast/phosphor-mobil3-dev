@@ -7,7 +7,7 @@ A release passes only when every applicable must-level check below has evidence.
 - [ ] One production package exists: `dev.phosphor.mobil3`.
 - [ ] Debug uses `.debug` and installs beside production.
 - [ ] The build has no Play/Fortress flavor dimension.
-- [ ] Active source and docs contain no Nexus, Nexidex, product-agent, root, Shizuku, or ProjectM promise.
+- [ ] Active source and docs contain no removed integration or privileged-capture promise.
 - [ ] Historical decisions and receipts remain intact outside the active authority chain.
 
 ## B. Android compatibility
@@ -30,7 +30,7 @@ A release passes only when every applicable must-level check below has evidence.
 ## D. Settings migration
 
 - [ ] Existing user-facing HUD or display settings migrate once.
-- [ ] Nexus principals, sessions, grants, tokens, authorization state, and audit history do not survive migration.
+- [ ] Legacy principals, sessions, grants, tokens, authorization state, and audit history do not survive migration.
 - [ ] Remote hosts remain excluded from Android backup.
 - [ ] A failed or malformed legacy envelope falls back safely without blocking startup.
 
@@ -54,7 +54,7 @@ A release passes only when every applicable must-level check below has evidence.
 
 - [ ] Host add, edit, select, browse, play, stop, seek, next, previous, metadata, and artwork paths pass.
 - [ ] Audio and geometry toggles retain their protocol meaning.
-- [ ] Automatic, Wi-Fi, and mobile routing states remain truthful.
+- [ ] Relay traffic follows Android's Tailscale route without a process-wide physical-network bind.
 - [ ] `scripts/force-link-states.sh` reproduces connected, silent, stalled, recovered, and reconnecting states.
 - [ ] Live playback works over Tailscale.
 - [ ] Documentation warns that protocol v2 is not safe for direct public-internet exposure.
@@ -65,7 +65,7 @@ A release passes only when every applicable must-level check below has evidence.
 - [ ] One-shot output follows the required JSON envelope in structured mode.
 - [ ] Errors carry `error` and `fix` with exit code 2, 3, or 4.
 - [ ] Streams use the declared format.
-- [ ] Product state, Nexus, authority, audit, and agent-control verbs are absent.
+- [ ] Product state mutation, runtime administration, authority, audit, and product automation verbs are absent.
 
 ## I. Automated quality
 

@@ -267,7 +267,12 @@ pub struct ArtReq {
 
 /// Build an E frame body. Every error a user can hit carries a `fix` (house law).
 pub fn error_frame(error: &str, fix: &str, context: serde_json::Value) -> Vec<u8> {
-    serde_json::to_vec(&ErrorFrame { error: error.into(), fix: fix.into(), context }).unwrap_or_default()
+    serde_json::to_vec(&ErrorFrame {
+        error: error.into(),
+        fix: fix.into(),
+        context,
+    })
+    .unwrap_or_default()
 }
 
 #[cfg(test)]

@@ -60,26 +60,22 @@ Protocol v2 uses raw TCP and has no application-layer authentication or encrypti
 
 Supported deployment:
 
-- a trusted local network
 - Tailscale
-- another private encrypted overlay controlled by the user
 
 Unsupported deployment:
 
 - a port exposed to the public internet
-- an untrusted shared network without a secure overlay
+- a local or shared network without Tailscale protection
 
 The app must not seed private estate hosts into production builds. Users add or select their own hosts at runtime.
 
 The app must not dial a host until the user invokes a remote operation.
 
-## 7. Network selection
+## 7. Network routing
 
-The user may select automatic, Wi-Fi, or mobile routing where Android exposes the requested transport.
+Relay traffic follows Android's normal routing through Tailscale. Phosphor must not bind the process to a physical Wi-Fi or mobile network because that can bypass the Tailscale route and reroute unrelated application traffic.
 
-A selected transport must bind only the remote session. It must not silently reroute unrelated application traffic.
-
-Transport loss must produce reconnecting or unavailable state. It must not appear as measured silence.
+Route or peer loss must produce reconnecting or unavailable state. It must not appear as measured silence.
 
 ## 8. Deferred relay polish
 

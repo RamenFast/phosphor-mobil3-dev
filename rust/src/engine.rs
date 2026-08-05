@@ -36,8 +36,7 @@ impl AutoGain {
 
     pub(crate) fn set_manual(&mut self, gain: f32) -> f32 {
         self.enabled = false;
-        // Manual reaches 7 (Ben's ask); the AUTO target law below stays 0.1..6
-        // desktop-verbatim.
+        // Manual gain reaches 7 while automatic gain stays within the desktop 0.1..6 range.
         self.effective = gain.clamp(0.1, 7.0);
         self.effective
     }
@@ -83,8 +82,8 @@ pub fn engine_info() -> String {
     .to_string()
 }
 
-/// Synthetic scope feed for M1: an evolving Lissajous figure, phase-continuous across
-/// frames, sample-domain identical to what a real track would push. Host-testable.
+/// Host-testable synthetic scope feed: an evolving, phase-continuous Lissajous figure
+/// in the same sample domain as a real track.
 pub struct Feeder {
     t0: std::time::Instant,
     last: f64,
@@ -258,16 +257,21 @@ impl Feeder {
     }
 }
 
+impl Default for Feeder {
+    fn default() -> Self {
+        Self::new()
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use phosphor_audio::SampleRing;
     use phosphor_dsp::{Computer, Mode};
 
-    /// The accuracy regression (2026-07-18): a pure 440 Hz quadrature circle, produced in
-    /// 10 ms/100 Hz capture chunks and drained at 120 Hz exactly like the phone, must be
-    /// phase-contiguous across every window boundary AND reconstruct as ONE deposit per
-    /// display frame — the old renderer-side substep loop split it into N separately
-    /// decayed passes (Ben's "2-3 circles out of sync") and froze decay on empty ticks.
+    /// A pure 440 Hz quadrature circle, produced in 10 ms capture chunks and drained at
+    /// 120 Hz, must stay phase-contiguous across window boundaries and reconstruct as one
+    /// deposit per display frame. Renderer-side substeps once created overlapping circles
+    /// and froze decay on empty ticks.
     #[test]
     fn pure_circle_render_path_reconstructs_at_selected_rate() {
         const RATE: usize = 48_000;
@@ -326,7 +330,10 @@ mod tests {
             "phase_discontinuities=0 nonempty_windows={nonempty} pushed_frames={pushed_frames} \
              display_advances={display_advances} first_10ms_segments={first_nonempty_segments}",
         );
-        assert_eq!(display_advances, 60, "active display cadence must never freeze on an empty tap");
+        assert_eq!(
+            display_advances, 60,
+            "active display cadence must never freeze on an empty tap"
+        );
         assert_eq!(
             first_nonempty_segments, 1_919,
             "4x must reconstruct the contiguous 480-frame window to 1,920 points",

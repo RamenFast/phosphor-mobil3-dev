@@ -6,15 +6,15 @@
 
 use std::io::IsTerminal;
 use std::net::{TcpListener, TcpStream};
-use std::sync::mpsc;
 use std::sync::Arc;
+use std::sync::mpsc;
 use std::thread;
 use std::time::{Duration, Instant};
 
-use serde_json::{json, Map, Value};
+use serde_json::{Map, Value, json};
 
 use crate::config::Config;
-use crate::proto::{self, ReadErr};
+use crate::proto;
 use crate::session;
 use crate::util;
 
@@ -24,7 +24,10 @@ fn emit(v: &Value, force_json: bool) {
     if force_json || !std::io::stdout().is_terminal() {
         println!("{v}");
     } else {
-        println!("{}", serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string()));
+        println!(
+            "{}",
+            serde_json::to_string_pretty(v).unwrap_or_else(|_| v.to_string())
+        );
     }
 }
 
@@ -85,7 +88,10 @@ fn parse_flags(args: &[String]) -> Flags {
 
 impl Flags {
     fn get(&self, key: &str) -> Option<&str> {
-        self.map.iter().find(|(k, _)| k == key).and_then(|(_, v)| v.as_deref())
+        self.map
+            .iter()
+            .find(|(k, _)| k == key)
+            .and_then(|(_, v)| v.as_deref())
     }
 }
 
@@ -93,7 +99,12 @@ impl Flags {
 
 fn load_config(flags: &Flags) -> Config {
     let mut cfg = Config::load().unwrap_or_else(|e| {
-        err_out(4, &format!("config is unreadable: {e}"), "fix the JSON or delete it to use defaults", flags.json)
+        err_out(
+            4,
+            &format!("config is unreadable: {e}"),
+            "fix the JSON or delete it to use defaults",
+            flags.json,
+        )
     });
     if let Some(p) = flags.get("port").and_then(|v| v.parse().ok()) {
         cfg.port = p;
@@ -113,7 +124,12 @@ pub fn serve(args: &[String]) -> ! {
 
     let listener = match TcpListener::bind(("0.0.0.0", cfg.port)) {
         Ok(l) => l,
-        Err(e) => err_out(2, &format!("bind :{} failed: {e}", cfg.port), "pick a free --port", flags.json),
+        Err(e) => err_out(
+            2,
+            &format!("bind :{} failed: {e}", cfg.port),
+            "pick a free --port",
+            flags.json,
+        ),
     };
 
     session::serve_event(
@@ -126,18 +142,25 @@ pub fn serve(args: &[String]) -> ! {
         }),
     );
     if std::io::stderr().is_terminal() {
-        eprintln!("phosphor-relay {}: listening on 0.0.0.0:{} · player={}", proto::VERSION, cfg.port, cfg.player);
+        eprintln!(
+            "phosphor-relay {}: listening on 0.0.0.0:{} · player={}",
+            proto::VERSION,
+            cfg.port,
+            cfg.player
+        );
     }
 
     for conn in listener.incoming() {
         match conn {
             Ok(stream) => {
-                let peer = stream.peer_addr().map(|a| a.to_string()).unwrap_or_default();
+                let peer = stream
+                    .peer_addr()
+                    .map(|a| a.to_string())
+                    .unwrap_or_default();
                 let cfg = cfg.clone();
                 thread::spawn(move || {
-                    // catch_unwind is for the LOG LINE only (audit finding 8):
-                    // cleanup is RAII — SessionState/pump Drops + the running
-                    // guard fire during the unwind itself.
+                    // catch_unwind only records the failure. RAII cleanup runs while
+                    // the session unwinds.
                     let p2 = peer.clone();
                     let res = std::panic::catch_unwind(std::panic::AssertUnwindSafe(move || {
                         session::serve_client(stream, cfg, caps, peer)
@@ -150,7 +173,10 @@ pub fn serve(args: &[String]) -> ! {
                     }
                 });
             }
-            Err(e) => session::serve_event("error", json!({ "error": format!("accept: {e}"), "fix": "transient; the listener keeps running" })),
+            Err(e) => session::serve_event(
+                "error",
+                json!({ "error": format!("accept: {e}"), "fix": "transient; the listener keeps running" }),
+            ),
         }
     }
     std::process::exit(0);
@@ -161,14 +187,22 @@ pub fn serve(args: &[String]) -> ! {
 pub fn sources(args: &[String]) -> ! {
     let flags = parse_flags(args);
     if !util::tool_exists("pw-dump") {
-        err_out(2, "pw-dump is not installed", "install pipewire-utils (provides pw-dump)", flags.json);
+        err_out(
+            2,
+            "pw-dump is not installed",
+            "install pipewire-utils (provides pw-dump)",
+            flags.json,
+        );
     }
     let list: Vec<Value> = crate::capture::enumerate()
         .into_iter()
         .map(|s| json!({ "id": s.id, "kind": s.kind, "label": s.label }))
         .collect();
     let mut fields = Map::new();
-    fields.insert("selected".into(), json!(crate::capture::default_monitor_id()));
+    fields.insert(
+        "selected".into(),
+        json!(crate::capture::default_monitor_id()),
+    );
     fields.insert("count".into(), json!(list.len()));
     fields.insert("sources".into(), json!(list));
     ok_out(fields, flags.json);
@@ -190,17 +224,35 @@ pub fn doctor(args: &[String]) -> ! {
     let flags = parse_flags(args);
     let cfg = Config::load().unwrap_or_default();
     let mut checks = vec![
-        tool_check("pw-record", "install pipewire-utils (per-app + monitor capture)"),
+        tool_check(
+            "pw-record",
+            "install pipewire-utils (per-app + monitor capture)",
+        ),
         tool_check("pw-dump", "install pipewire-utils (source enumeration)"),
         tool_check("wpctl", "install wireplumber (desktop output switching)"),
-        tool_check("pactl", "install pulseaudio-utils (move live streams between outputs)"),
-        tool_check("parec", "install pulseaudio-utils (monitor-only capture fallback)"),
-        tool_check("playerctl", "install playerctl (now-playing metadata + transport)"),
+        tool_check(
+            "pactl",
+            "install pulseaudio-utils (move live streams between outputs)",
+        ),
+        tool_check(
+            "parec",
+            "install pulseaudio-utils (monitor-only capture fallback)",
+        ),
+        tool_check(
+            "playerctl",
+            "install playerctl (now-playing metadata + transport)",
+        ),
         tool_check("ffmpeg", "install ffmpeg (library file playback)"),
         tool_check("ffprobe", "install ffmpeg (file metadata)"),
         tool_check("curl", "install curl (remote cover art)"),
-        tool_check("rclone", "install rclone + run: rclone config (cloud library roots)"),
-        tool_check("phosphor", "install phosphor + run: phosphor --background (geometry stream)"),
+        tool_check(
+            "rclone",
+            "install rclone + run: rclone config (cloud library roots)",
+        ),
+        tool_check(
+            "phosphor",
+            "install phosphor + run: phosphor --background (geometry stream)",
+        ),
     ];
 
     // config roots
@@ -228,7 +280,9 @@ pub fn doctor(args: &[String]) -> ! {
         json!({ "check": "port", "ok": false, "fix": format!("port {} is busy — stop the other relay or pick a free --port", cfg.port) })
     });
 
-    let all_ok = checks.iter().all(|c| c.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
+    let all_ok = checks
+        .iter()
+        .all(|c| c.get("ok").and_then(|v| v.as_bool()).unwrap_or(false));
     let mut fields = Map::new();
     fields.insert("all_ok".into(), json!(all_ok));
     fields.insert("checks".into(), json!(checks));
@@ -243,7 +297,10 @@ pub fn config(args: &[String]) -> ! {
     let cfg = load_config(&flags);
     let mut fields = Map::new();
     fields.insert("path".into(), json!(Config::path().to_string_lossy()));
-    fields.insert("config".into(), serde_json::to_value(&cfg).unwrap_or(Value::Null));
+    fields.insert(
+        "config".into(),
+        serde_json::to_value(&cfg).unwrap_or(Value::Null),
+    );
     ok_out(fields, flags.json);
     std::process::exit(0);
 }
@@ -273,7 +330,12 @@ pub fn library(args: &[String]) -> ! {
         }
         "add" => {
             let Some(path) = flags.get("path") else {
-                err_out(3, "missing --path", "library add --path /media/you/drive [--label Name]", flags.json)
+                err_out(
+                    3,
+                    "missing --path",
+                    "library add --path /media/you/drive [--label Name]",
+                    flags.json,
+                )
             };
             // Resolve now so a typo fails here rather than silently serving nothing to
             // the phone later.
@@ -287,10 +349,19 @@ pub fn library(args: &[String]) -> ! {
                 ),
             };
             if !canonical.is_dir() {
-                err_out(3, &format!("{path} is not a folder"), "point --path at a folder", flags.json);
+                err_out(
+                    3,
+                    &format!("{path} is not a folder"),
+                    "point --path at a folder",
+                    flags.json,
+                );
             }
             let path_str = canonical.to_string_lossy().into_owned();
-            if cfg.libraries.iter().any(|r| r.path.as_deref() == Some(path_str.as_str())) {
+            if cfg
+                .libraries
+                .iter()
+                .any(|r| r.path.as_deref() == Some(path_str.as_str()))
+            {
                 err_out(
                     3,
                     &format!("{path_str} is already a library"),
@@ -298,18 +369,23 @@ pub fn library(args: &[String]) -> ! {
                     flags.json,
                 );
             }
-            let label = flags
-                .get("label")
+            let label = flags.get("label").map(str::to_string).unwrap_or_else(|| {
+                canonical
+                    .file_name()
+                    .map(|n| n.to_string_lossy().into_owned())
+                    .unwrap_or_else(|| "Library".into())
+            });
+            let id = flags
+                .get("id")
                 .map(str::to_string)
-                .unwrap_or_else(|| {
-                    canonical
-                        .file_name()
-                        .map(|n| n.to_string_lossy().into_owned())
-                        .unwrap_or_else(|| "Library".into())
-                });
-            let id = flags.get("id").map(str::to_string).unwrap_or_else(|| next_library_id(&cfg));
+                .unwrap_or_else(|| next_library_id(&cfg));
             if cfg.libraries.iter().any(|r| r.id == id) {
-                err_out(3, &format!("id '{id}' is taken"), "pass a different --id", flags.json);
+                err_out(
+                    3,
+                    &format!("id '{id}' is taken"),
+                    "pass a different --id",
+                    flags.json,
+                );
             }
             cfg.libraries.push(crate::config::LibraryRoot {
                 id: id.clone(),
@@ -319,14 +395,22 @@ pub fn library(args: &[String]) -> ! {
             });
             save_or_die(&cfg, flags.json);
             let mut fields = Map::new();
-            fields.insert("added".into(), json!({ "id": id, "label": label, "path": path_str }));
+            fields.insert(
+                "added".into(),
+                json!({ "id": id, "label": label, "path": path_str }),
+            );
             fields.insert("restart_required".into(), json!(true));
             ok_out(fields, flags.json);
             std::process::exit(0);
         }
         "remove" => {
             let Some(id) = flags.get("id") else {
-                err_out(3, "missing --id", "library remove --id music0 (see `library list`)", flags.json)
+                err_out(
+                    3,
+                    "missing --id",
+                    "library remove --id music0 (see `library list`)",
+                    flags.json,
+                )
             };
             let before = cfg.libraries.len();
             cfg.libraries.retain(|r| r.id != id);
@@ -378,20 +462,36 @@ fn save_or_die(cfg: &Config, json: bool) {
 pub fn probe(args: &[String]) -> ! {
     let flags = parse_flags(args);
     let host = flags.get("host").unwrap_or("127.0.0.1").to_string();
-    let port: u16 = flags.get("port").and_then(|v| v.parse().ok()).unwrap_or(45777);
-    let seconds: u64 = flags.get("seconds").and_then(|v| v.parse().ok()).unwrap_or(3);
+    let port: u16 = flags
+        .get("port")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(45777);
+    let seconds: u64 = flags
+        .get("seconds")
+        .and_then(|v| v.parse().ok())
+        .unwrap_or(3);
     let want_rms = flags.map.iter().any(|(k, _)| k == "rms");
 
     let mut stream = match TcpStream::connect((host.as_str(), port)) {
         Ok(s) => s,
-        Err(e) => err_out(2, &format!("connect {host}:{port} failed: {e}"), "is phosphor-relay serving there? check host/port", flags.json),
+        Err(e) => err_out(
+            2,
+            &format!("connect {host}:{port} failed: {e}"),
+            "is phosphor-relay serving there? check host/port",
+            flags.json,
+        ),
     };
     let _ = stream.set_nodelay(true);
 
     // Send H: audio on, geometry off (this is the audio receipt path).
     let hello = json!({ "proto": 2, "client": "probe", "audio": true, "geometry": false, "geometry_fps": 60 });
     if proto::write_frame(&mut stream, proto::H, hello.to_string().as_bytes()).is_err() {
-        err_out(4, "failed to send hello", "the relay closed the connection early", flags.json);
+        err_out(
+            4,
+            "failed to send hello",
+            "the relay closed the connection early",
+            flags.json,
+        );
     }
 
     // Reader thread → channel; main collects until the deadline, pinging K.
@@ -399,14 +499,9 @@ pub fn probe(args: &[String]) -> ! {
     let (tx, rx) = mpsc::channel::<(u8, Vec<u8>)>();
     let reader = thread::spawn(move || {
         let mut r = rstream;
-        loop {
-            match proto::read_frame(&mut r, proto::MAX_S2C) {
-                Ok(f) => {
-                    if tx.send(f).is_err() {
-                        break;
-                    }
-                }
-                Err(ReadErr::Oversize(_)) | Err(ReadErr::Io) => break,
+        while let Ok(frame) = proto::read_frame(&mut r, proto::MAX_S2C) {
+            if tx.send(frame).is_err() {
+                break;
             }
         }
     });
@@ -461,16 +556,26 @@ pub fn probe(args: &[String]) -> ! {
     let _ = reader.join();
 
     let a_per_sec = a as f64 / seconds.max(1) as f64;
-    let rms = if nsamp > 0 { (sumsq / nsamp as f64).sqrt() } else { 0.0 };
+    let rms = if nsamp > 0 {
+        (sumsq / nsamp as f64).sqrt()
+    } else {
+        0.0
+    };
 
     let mut fields = Map::new();
     fields.insert("host".into(), json!(host));
     fields.insert("port".into(), json!(port));
     fields.insert("seconds".into(), json!(seconds));
     fields.insert("welcome".into(), welcome);
-    fields.insert("frames".into(), json!({ "a": a, "g": g, "m": m, "k": k, "other": other }));
+    fields.insert(
+        "frames".into(),
+        json!({ "a": a, "g": g, "m": m, "k": k, "other": other }),
+    );
     fields.insert("bytes".into(), json!(bytes));
-    fields.insert("a_per_sec".into(), json!((a_per_sec * 100.0).round() / 100.0));
+    fields.insert(
+        "a_per_sec".into(),
+        json!((a_per_sec * 100.0).round() / 100.0),
+    );
     if want_rms {
         fields.insert("rms".into(), json!((rms * 10000.0).round() / 10000.0));
         fields.insert("rms_peak".into(), json!((peak * 10000.0).round() / 10000.0));
@@ -570,6 +675,13 @@ pub fn version() -> ! {
 
 pub fn bad_verb(verb: &str) -> ! {
     // usage → stderr, error envelope → stdout, exit 3
-    eprintln!("phosphor-relay: unknown verb '{verb}'. try: serve | sources | doctor | probe | config | schema | --help");
-    err_out(3, &format!("unknown verb '{verb}'"), "run `phosphor-relay --help` for the verb list", false);
+    eprintln!(
+        "phosphor-relay: unknown verb '{verb}'. try: serve | sources | doctor | probe | config | schema | --help"
+    );
+    err_out(
+        3,
+        &format!("unknown verb '{verb}'"),
+        "run `phosphor-relay --help` for the verb list",
+        false,
+    );
 }

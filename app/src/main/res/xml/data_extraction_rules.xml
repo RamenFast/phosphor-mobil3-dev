@@ -1,46 +1,28 @@
 <?xml version="1.0" encoding="utf-8"?>
 <data-extraction-rules>
     <cloud-backup>
-        <!--
-          Restore the user's genuine instrument settings, including theme, beam, grid, gain,
-          HUD, orientation, and similar preferences. Android backup rules operate on whole
-          files, so this is the portable SharedPreferences boundary.
-        -->
         <include domain="sharedpref" path="." />
 
-        <!-- Relay endpoints describe one user's private network and must not move to another device. -->
+        <!-- Remote endpoints and runtime consent belong to one device and network. -->
         <exclude domain="sharedpref" path="remote_hosts.xml" />
-
-        <!--
-          Reserved for the not-yet-built billing work. Trial clocks and entitlement runtime
-          state must come from the billing authority, never from a restored device snapshot.
-        -->
-        <exclude domain="sharedpref" path="entitlement.xml" />
-
-        <!--
-          The causal envelope contains device-local audit, idempotency, receipt, and authority
-          runtime state. Only its portable hud_mode mirror belongs in phosphor.prefs.
-        -->
-        <exclude domain="sharedpref" path="phosphor.causal_state.xml" />
-
-        <!-- Device consent acknowledgements, source memory, and calibration metadata stay local. -->
         <exclude domain="sharedpref" path="phosphor.runtime.xml" />
+
+        <!-- Retired private containers stay excluded if an older install left them behind. -->
+        <exclude domain="sharedpref" path="entitlement.xml" />
+        <exclude domain="sharedpref" path="phosphor.causal_state.xml" />
+        <exclude domain="sharedpref" path="phosphor.pm3.tailnet.xml" />
     </cloud-backup>
 
     <device-transfer>
-        <!-- Device transfer preserves the same genuine instrument settings as cloud restore. -->
         <include domain="sharedpref" path="." />
 
-        <!-- A new device must select endpoints valid for its own user and network. -->
+        <!-- A new device must establish its own endpoints, consent, and runtime state. -->
         <exclude domain="sharedpref" path="remote_hosts.xml" />
-
-        <!-- A device transfer must never carry a trial clock or cached entitlement decision. -->
-        <exclude domain="sharedpref" path="entitlement.xml" />
-
-        <!-- Device-local causal audit and authorization history starts fresh on the new device. -->
-        <exclude domain="sharedpref" path="phosphor.causal_state.xml" />
-
-        <!-- A new device must establish its own consent and runtime source state. -->
         <exclude domain="sharedpref" path="phosphor.runtime.xml" />
+
+        <!-- Retired private containers never transfer to another device. -->
+        <exclude domain="sharedpref" path="entitlement.xml" />
+        <exclude domain="sharedpref" path="phosphor.causal_state.xml" />
+        <exclude domain="sharedpref" path="phosphor.pm3.tailnet.xml" />
     </device-transfer>
 </data-extraction-rules>

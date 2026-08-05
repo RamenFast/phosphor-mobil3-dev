@@ -22,6 +22,7 @@ import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.SideEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
+import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
@@ -85,7 +86,6 @@ interface ScopeActions {
     fun lockedUiLandscape(): Boolean
     fun setUiPlacementLocked(locked: Boolean)
     fun setRemoteLatencyMode(mode: Int)
-    fun setRemoteNetworkMode(mode: Int)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
     /**
      * Add, edit, or remove a saved relay. Returns null on success, or the store's
@@ -117,10 +117,7 @@ interface ScopeActions {
 
 @Composable
 fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean) {
-    // ── The 240 ms whole-chrome crossfade (spec §2.6): switching rooms lerps
-    // every palette slot from what was ON SCREEN to the destination; the
-    // discrete RoomStyle flips at the midpoint. Beam-breathing updates (same
-    // room id) pass straight through un-animated.
+    // Room changes crossfade palette slots; beam-color updates within one room stay immediate.
     val target = state.room
     var fromRoom by remember { mutableStateOf(target) }
     var lastShown by remember { mutableStateOf(target) }
@@ -146,9 +143,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
     val scopeLocked = actions.isScopeRotationLocked()
     val uiLocked = actions.isUiPlacementLocked()
-    // Ben's ask #3 — NEW mode (scope locked + UI follow): the Activity is pinned
-    // (scope must not rotate) but the WHOLE chrome overlay rotates to gravity via a
-    // container-scale uprightRotate. In every other mode the chrome does not rotate.
+    // With a locked scope and following UI, rotate the whole chrome toward gravity.
     val chromeQuadrant = if (scopeLocked && !uiLocked) state.chromeQuadrant else 0
     // The chrome's layout profile follows the EFFECTIVE chrome orientation: activity
     // orientation ⊕ container quadrant. An odd chrome rotation flips portrait↔landscape,
@@ -167,11 +162,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     var overflowPendingSheet by remember { mutableStateOf(Sheet.NONE) }
     var settingsPullActive by remember { mutableStateOf(false) }
     var bottomEdgePullActive by remember { mutableStateOf(false) }
-    var rootHeightPx by remember { mutableStateOf(0) }
+    var rootHeightPx by remember { mutableIntStateOf(0) }
     // Width matters as well as height now: a locked-landscape sheet slides in sideways,
     // so its pull travel is measured across the screen rather than up it.
-    var rootWidthPx by remember { mutableStateOf(0) }
-    var consoleHeightPx by remember { mutableStateOf(0) }
+    var rootWidthPx by remember { mutableIntStateOf(0) }
+    var consoleHeightPx by remember { mutableIntStateOf(0) }
     var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
     val bloomScope = rememberCoroutineScope()
@@ -269,7 +264,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setUiPlacementLocked(locked: Boolean) =
                 actions.setUiPlacementLocked(locked)
             override fun setRemoteLatencyMode(mode: Int) = actions.setRemoteLatencyMode(mode)
-            override fun setRemoteNetworkMode(mode: Int) = actions.setRemoteNetworkMode(mode)
             override fun openRoom() { }
             override fun openLight() { }
             override fun openManual() { }
@@ -404,7 +398,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             // chrome container — the SurfaceView owns its own beam-rotation verb.
             AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
 
-            // PiP is pure scope — zero chrome (spec §3).
+            // Picture-in-picture shows only the scope.
             if (state.pip) return@Box
 
           // The chrome overlay — band, console, popout, sheets, ribbon, stage — as one
@@ -435,7 +429,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     // Only the explicit VIEW LOCK refuses gestures. A pinch
                                     // while AUTO-GAIN is armed is a manual takeover — the
                                     // setGainAbsolute path below disarms auto, same as the
-                                    // GAIN rule in SETTINGS (Ben's ×2: "working too well").
+                                    // Auto-gain owns the viewport and blocks manual gain gestures.
                                     override fun gainLocked() = state.viewLock
                                     override fun gainAutoArmed() = state.autoGain
                                     override fun orbitBy(dyaw: Float, dpitch: Float) =
@@ -520,8 +514,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             GestureRibbon(ribbon, p)
 
             // Layer 1a: read-only status band.
-            // Band visibility (Ben's ask): on = always · auto = rides the
-            // console's timer · off = pure scope. Default on.
+            // Band visibility: on is persistent, auto follows the console timer, and off hides it.
             if (state.bandMode == 0 || (state.bandMode == 1 && consoleVisible)) {
                 StatusBand(
                     state, p, reduced,
@@ -597,10 +590,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                             sheetActions.setFps(next)
                         },
                         onHud = {
-                            // TOP truth is causal: no band pre-mutation, and no action while
-                            // HUD control is degraded. The accepted store snapshot updates HUD.
-                            val hudAction = hudQuickAction(state.hudControlWritable, state.hudMode)
-                            if (hudAction.enabled) sheetActions.setHudMode(hudAction.requestedMode)
+                            sheetActions.setHudMode(nextHudMode(state.hudMode))
                         },
                         onGrid = { sheetActions.setGrid(!state.grid) },
                         onRequestClose = { closeOverflow(Sheet.NONE) },

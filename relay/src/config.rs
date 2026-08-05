@@ -21,7 +21,10 @@ pub struct LibraryRoot {
 impl LibraryRoot {
     /// Human/display path for the W frame (real path, or the rclone remote).
     pub fn display_path(&self) -> String {
-        self.path.clone().or_else(|| self.rclone.clone()).unwrap_or_default()
+        self.path
+            .clone()
+            .or_else(|| self.rclone.clone())
+            .unwrap_or_default()
     }
     pub fn is_rclone(&self) -> bool {
         self.rclone.is_some()
@@ -57,7 +60,11 @@ impl Default for Config {
                 rclone: None,
             });
         }
-        Config { port: default_port(), player: default_player(), libraries }
+        Config {
+            port: default_port(),
+            player: default_player(),
+            libraries,
+        }
     }
 }
 
@@ -71,8 +78,7 @@ impl Config {
     pub fn load() -> Result<Config, String> {
         let p = Self::path();
         match std::fs::read_to_string(&p) {
-            Ok(s) => serde_json::from_str(&s)
-                .map_err(|e| format!("{}: {e}", p.display())),
+            Ok(s) => serde_json::from_str(&s).map_err(|e| format!("{}: {e}", p.display())),
             Err(e) if e.kind() == std::io::ErrorKind::NotFound => Ok(Config::default()),
             Err(e) => Err(format!("{}: {e}", p.display())),
         }

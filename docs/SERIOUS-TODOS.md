@@ -2,34 +2,38 @@
 
 ## Primetime cleanup
 
-- [ ] Remove the Nexus AIDL, Binder, provider, authority, tailnet runtime, and tests.
-- [ ] Remove product-control verbs from `dev/pm3` while keeping the developer CLI conformant.
-- [ ] Replace causal authority and audit persistence with direct user-facing settings.
-- [ ] Migrate the legacy HUD value once, then delete obsolete Nexus and audit state.
-- [ ] Remove dormant trial and entitlement scaffolding.
-- [ ] Collapse Play and Fortress into one debug/release product.
-- [ ] Add `.debug` application ID suffix.
-- [ ] Lower `minSdk` to 29 and add API 29, 31, 34, and 36 compatibility paths.
-- [ ] Request microphone permission before MediaProjection consent.
-- [ ] Remove or contextually request `POST_NOTIFICATIONS`.
-- [ ] Mark microphone hardware optional.
-- [ ] Add an in-app privacy summary and stable HTTPS policy link.
-- [ ] Prove fresh-install network silence until explicit remote use.
-- [ ] Run Android unit, lint, build, bundle, manifest, dex, dependency, and 16 KiB checks.
-- [ ] Run locked Rust core and relay tests, formatting, and clippy.
-- [ ] Run live local playback, capture, PiP, rotation, and Tailscale relay tests.
-- [ ] Build one canonical signed release and verify the exact APK on the S25.
+- [x] Preserve the dirty starting material and create a rollback tag.
+- [x] Reset active vision, specification, and decision authority.
+- [x] Remove the dormant runtime administration and audit graph.
+- [x] Preserve the user-facing HUD value, then scrub obsolete private state.
+- [x] Collapse Android packaging to one debug/release product.
+- [x] Make the Gradle wrapper the sole Android build authority.
+- [x] Set the compatibility floor to Android 10, API 29.
+- [x] Request microphone permission before projection when playback capture needs it.
+- [x] Request full-display projection by default on Android 14 and newer.
+- [x] Limit saved PC relay hosts to Tailscale endpoints.
+- [x] Remove process-wide Wi-Fi/mobile routing that could bypass Tailscale.
+- [x] Add and expose a privacy policy.
+- [x] Make dirty, untagged, mismatched, and unknown release provenance fail closed.
+- [x] Add canonical APK/AAB, bundletool, signer, 16 KiB, source, manifest, and checksum gates.
+- [x] Make device installation verify exact APK bytes and signer.
+- [x] Finish comment cleanup and active-document reconciliation.
+- [x] Run all Android, Rust, relay, CLI, boundary, and shell gates.
+- [ ] Build and install the current debug APK on the Galaxy S25.
+- [ ] Complete the on-device capture, denial, lifecycle, rotation, multi-window, and relay matrix.
+- [ ] Reconcile local branch ancestry without pushing protected branches.
+- [ ] Provision the approved direct-APK and Play-upload signers and build the final APK/AAB.
+- [ ] Verify the production signer, manifest, archive boundary, and 16 KiB native alignment. The same flow passes with an ephemeral fixture signer.
+- [ ] Install the exact packaged production APK on the phone with `dev/pm3 --profile release --serial <serial> install <APK>`.
+- [ ] Preserve wanted Fortress settings and obtain explicit approval before uninstalling `dev.phosphor.mobil3.fortress`.
 
 ## Deferred networking work
 
-- [ ] Add relay authentication, host identity, and application-layer encryption in the later relay-polish stage.
-- [ ] Improve first-run remote setup without changing protocol v2 during cleanup.
-- [ ] Revisit relay geometry decimation, s16 transport precision, and JNI capture allocation after the clean release.
+- [ ] Bind the PC relay to an explicit Tailscale interface or address.
+- [ ] Add protocol-level peer authentication only if Tailscale identity is no longer the boundary.
+- [ ] Polish discovery, connection recovery, latency, and long-session behavior.
+- [ ] Re-run remote artwork, output switching, file playback, and link-state receipts.
 
 ## Deferred product work
 
-- [ ] Define the next two core features with Ben after repository cleanup.
-- [ ] Revisit commerce only through a separate product and Play Billing decision.
-- [ ] Revisit broader ABI support after the arm64 release is stable.
-
-Archived ProjectM, root, Shizuku, ADB, and Nexus plans are not active todos.
+The next two major core features are intentionally absent from this backlog until Ben provides the feature brief. Historical plans are not active todos.

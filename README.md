@@ -1,115 +1,120 @@
 # phosphor-mobil3
 
-Phosphor for Android — a CRT oscilloscope in your pocket. The desktop
-[phosphor](https://github.com/RamenFast/phosphor) engine (P7 beam physics, 11 display
-modes, real polyphase reconstruction), reimagined as a mobile instrument. Built and
-tuned on a Samsung Galaxy S25; runs on arm64 / Android 15+.
+Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop [phosphor](https://github.com/RamenFast/phosphor) beam engine to a full-screen mobile instrument with local playback, Android playback capture, microphone input, and an optional Tailscale PC relay.
 
 <p align="center">
-  <img src="docs/screenshots/kaleido-live.png" width="45%" alt="KALEIDO geometry FX on a live capture">
-  <img src="docs/screenshots/kaleido-dense.png" width="45%" alt="dense kaleido mandala, live music">
+  <img src="docs/screenshots/kaleido-live.png" width="45%" alt="KALEIDO geometry effect on live audio">
+  <img src="docs/screenshots/kaleido-dense.png" width="45%" alt="Dense kaleidoscope pattern from live music">
 </p>
 <p align="center">
-  <img src="docs/screenshots/source-picker.png" width="45%" alt="SOURCE: files, app capture with honest consent, mic, remote machines">
-  <img src="docs/screenshots/settings-sheet.png" width="45%" alt="SETTINGS: focus/gain/beam/glow with randomizer dice, fills tinted by the live beam">
-</p>
-<p align="center">
-  <img src="docs/screenshots/mode-sheet.png" width="45%" alt="MODE sheet: 11 scope views, random die, ban faces, geometry FX">
+  <img src="docs/screenshots/source-picker.png" width="45%" alt="Source picker for files, playback capture, microphone, and remote PC">
+  <img src="docs/screenshots/settings-sheet.png" width="45%" alt="Focus, gain, beam, and glow settings">
 </p>
 
-## What this is
+## What it does
 
-- **The scope is the app**: full-bleed beam, edge-to-edge, chrome summoned by touch.
-  120 Hz panel-locked rendering, one beam deposit per display frame — the same DSP
-  crates as desktop phosphor, not an imitation.
-- **A real media player** (gapless local playback, lock-screen controls) whose picture
-  is sample-locked to what you hear.
-- **A visualizer for other apps' audio** via Android playback capture, with track
-  metadata and album art mirrored from the source app — honestly labeled: some DRM
-  streamers opt out of capture and arrive as silence; games, browsers, and most
-  players work.
-- **A remote head for desktop phosphor**: stream a PC's audio + scope over your own
-  network via the bundled relay (see [docs/REMOTE.md](docs/REMOTE.md)), with adaptive
-  latency (tight/balanced/safe) and A/V sync tapped where the ear actually hears.
-- **11 scope views** (XY family, 3D attractor/helix, waveform, ring, spectrum family) +
-  a **random die ⚄** that re-rolls per track — with a **ban list** so it never lands on
-  faces you're tired of.
-- **Geometry FX**: kaleido / spin / tunnel / pulse — a 2D transform stage that bends
-  the beam after the mode draws it, composing with every view; spin and pulse ride the
-  audio envelope.
-- **Randomizer dice for BEAM and GLOW**: pick a range, tap the die, and the instrument
-  re-rolls itself inside your bounds on every track.
-- **13 chrome rooms**, custom beam colors with 1–3 slot cycles, portrait + landscape
-  with scope-rotation and UI-placement locks, photosensitivity guards on strobe-capable
-  settings.
-- Screen stays awake while you watch; picture-in-picture is the floating window.
+- Renders the shared Rust beam engine edge to edge, with 11 scope views and 13 interface rooms.
+- Plays selected files or folders as a gapless local queue with Android media controls.
+- Converts audio from compatible Android apps into light after the user approves the system playback-capture prompt.
+- Uses the microphone as an optional live source after runtime permission is granted.
+- Connects to a user-selected PC relay over Tailscale for audio, geometry, metadata, artwork, and playback control.
+- Supports portrait, landscape, multi-window, and picture-in-picture layouts.
+- Stores settings locally. It has no account, ads, usage tracking, or behavior tracking. See [PRIVACY.md](PRIVACY.md).
 
-## Installing
+Some protected or DRM-heavy apps prohibit playback capture and arrive as silence. Phosphor reports that limitation rather than claiming universal capture.
 
-Grab the signed APK from [Releases](../../releases), check it, sideload it:
+## Android support
 
-```
-sha256sum -c SHA256SUMS.txt
-adb install phosphor-mobil3-<version>.apk
+- Minimum: Android 10, API 29
+- Target and compile SDK: Android 16, API 36
+- ABI: arm64-v8a
+- Primary field device: Samsung Galaxy S25 on Android 16
+
+The API 29 floor is compile-tested and lint-clean. Final compatibility receipts still require tests on an Android 10 or API 29 emulator and additional large-screen devices.
+
+## Install
+
+A release APK is valid only when it is attached to a release with checksums and signer evidence. Historical local APKs are not release candidates.
+
+```bash
+sha256sum -c SHA256SUMS
+dev/pm3 --profile release --serial <serial> install phosphor-mobil3-<version>.apk
 ```
 
-No Play Store, no F-Droid — sideloaded releases with checksums, by design.
+Google Play publication is planned. Store enrollment, signing, declarations, listing assets, and review remain human gates.
 
-## Building
+## Build
 
-Requires a sibling checkout of [phosphor](https://github.com/RamenFast/phosphor) (the
-engine crates are path deps — source of truth stays there) and the Android toolchain:
+The mobile JNI crate uses path dependencies from a sibling checkout of desktop phosphor.
 
-```
+```bash
 git clone https://github.com/RamenFast/phosphor.git
 git clone https://github.com/RamenFast/phosphor-mobil3.git
 cd phosphor-mobil3
-scripts/bootstrap-android.sh     # one-shot, idempotent; installs in-repo to .toolchain/ (no sudo)
+scripts/bootstrap-android.sh
 source scripts/env.sh
-dev/pm3 build                    # → app/build/outputs/apk/debug/app-debug.apk
+./gradlew :app:testDebugUnitTest :app:lintDebug :app:assembleDebug
 ```
 
-The whole Android toolchain (JDK, SDK, NDK, Gradle) lives under `.toolchain/` in the
-repo — gitignored, self-contained, no home-folder clutter. `env.sh` is self-locating.
-No Python is authored or invoked anywhere, build tooling included.
+The Gradle wrapper is the sole Android build authority. The bootstrap installs JDK 21, Android SDK 36, build tools 36.0.0, NDK 28.2.13676358, and Rust Android support under the ignored `.toolchain/` directory. Native builds use the pinned Rust toolchain and `--locked` Cargo resolution.
 
-Dev loop against a device (wireless adb):
+The debug package is `dev.phosphor.mobil3.debug`. The production package is `dev.phosphor.mobil3`.
 
+### Developer CLI
+
+`dev/pm3` is local developer tooling. It builds, installs, launches, captures receipts, and reads diagnostics. Every device operation requires an explicit serial.
+
+```bash
+dev/pm3 schema
+dev/pm3 doctor --json
+dev/pm3 pair <ip:port> <code>
+dev/pm3 connect <ip:port>
+dev/pm3 build
+dev/pm3 --serial <serial> install
+dev/pm3 --serial <serial> run
 ```
-dev/pm3 pair <ip:port> <code>    # once — phone: Developer options → Wireless debugging
-dev/pm3 connect                  # mdns autodiscovery
-dev/pm3 install && dev/pm3 run
-dev/pm3 doctor --json            # the whole toolchain, checked live
-```
-
-`dev/pm3 schema` describes the full agent contract (JSON envelopes, NDJSON streams,
-errors that name their fix).
-
-### Remote hosts
-
-The REMOTE source list is a build-machine fact, never source. Seed yours in
-`local.properties`:
-
-```
-phosphor.remoteHosts=studio:192.0.2.10:45777,laptop:192.0.2.20:45777
-```
-
-Then run the relay on each desktop — full setup in [docs/REMOTE.md](docs/REMOTE.md).
 
 ### Release signing
 
-`local.properties` (or env) may carry `RELEASE_STORE_FILE` / `RELEASE_STORE_PASSWORD` /
-`RELEASE_KEY_ALIAS` / `RELEASE_KEY_PASSWORD`; without them, release builds fall back to
-debug signing.
+Release builds fail closed. Individual Gradle builds select one profile and provide that profile's five inputs outside the repository. The canonical release gate requires both independent identities at once so the direct APK and Play-upload AAB cannot share a signer:
 
-## Honest ledger
+```bash
+# Ben-controlled direct release
+export PHOSPHOR_SIGNING_PROFILE=production
+export RELEASE_STORE_FILE=...
+export RELEASE_STORE_PASSWORD=...
+export RELEASE_KEY_ALIAS=...
+export RELEASE_KEY_PASSWORD=...
+export RELEASE_CERT_SHA256=...
 
-- arm64 / Android 15+, developed and verified on a Galaxy S25 (120 Hz panel). Other
-  devices should work; they simply haven't been bench-tested.
-- Playback capture requires the system consent dialog per session (Android's rule, not
-  ours), and track metadata needs Notification access (a deep-link in SOURCE walks you
-  there).
-- The engine renders honestly: the panel presents at 120 Hz; "beam rate" reconstructs
-  more points inside each contiguous audio window rather than pretending to more frames.
+# Google Play upload signing
+export PHOSPHOR_SIGNING_PROFILE=play-upload
+export PLAY_UPLOAD_STORE_FILE=...
+export PLAY_UPLOAD_STORE_PASSWORD=...
+export PLAY_UPLOAD_KEY_ALIAS=...
+export PLAY_UPLOAD_KEY_PASSWORD=...
+export PLAY_UPLOAD_CERT_SHA256=...
+```
 
-GPL-3.0-or-later. Ferried by Claude.
+After explicit approval creates the exact `v2.0.0` tag on a clean tree, run:
+
+```bash
+scripts/ship-check.sh --json --only=release.bundle
+```
+
+The release gate verifies the clean mobile and sibling-engine commits, the Ben-controlled APK signer, the Play upload AAB signer, bundletool, production boundary, 16 KiB ZIP and ELF alignment, combined exact-source archive, `BUILD-MANIFEST.json`, and `SHA256SUMS`. Generated release assets land under `app/build/outputs/release-package/v2.0.0/`.
+
+## PC relay
+
+Install the relay on a Linux PC with `scripts/relay-install.sh`. Add the PC in the app with a Tailscale MagicDNS name, a `.ts.net` name, or a Tailscale IPv4 address in `100.64.0.0/10`.
+
+The relay protocol currently relies on Tailscale for peer identity and transport encryption. Do not expose relay port 45777 to the public internet. Setup and protocol details are in [docs/REMOTE.md](docs/REMOTE.md) and [docs/BRIDGE.md](docs/BRIDGE.md).
+
+## Current release ledger
+
+- The repository now has one debug/release Android product.
+- Android 10 compatibility is implemented and lint-clean.
+- Playback capture requests microphone permission before projection consent when required and asks Android for the full display on Android 14 and newer.
+- Saved PC relays are empty on a fresh install and remain dormant until the user selects one.
+- The first public release is free. There is no dormant trial or purchase surface.
+- A current signed APK/AAB, device compatibility matrix, Play Console evidence, and final on-phone release installation are still pending.

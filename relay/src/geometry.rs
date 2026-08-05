@@ -21,8 +21,7 @@ pub struct Geometry {
     supervisor: Option<JoinHandle<()>>,
 }
 
-/// RAII (audit finding 8): any drop path — including a panic unwind — kills
-/// phosphor-tap and joins the supervisor.
+/// Dropping the geometry lane kills phosphor-tap and joins its supervisor.
 impl Drop for Geometry {
     fn drop(&mut self) {
         self.on.store(false, Ordering::SeqCst);
@@ -46,11 +45,7 @@ fn nap(on: &AtomicBool, ms: u64) {
     }
 }
 
-pub fn start(
-    fps: u32,
-    writer: SyncSender<Vec<u8>>,
-    counters: Arc<Counters>,
-) -> Geometry {
+pub fn start(fps: u32, writer: SyncSender<Vec<u8>>, counters: Arc<Counters>) -> Geometry {
     let window = (1000 / fps.clamp(1, 240)).max(1) as u64;
     let on = Arc::new(AtomicBool::new(true));
     let child_slot: Arc<Mutex<Option<Child>>> = Arc::new(Mutex::new(None));
@@ -82,7 +77,11 @@ pub fn start(
                 while let Some(Ok(line)) = lines.next() {
                     let is_frame = serde_json::from_str::<serde_json::Value>(&line)
                         .ok()
-                        .and_then(|v| v.get("event").and_then(|e| e.as_str()).map(|s| s == "frame"))
+                        .and_then(|v| {
+                            v.get("event")
+                                .and_then(|e| e.as_str())
+                                .map(|s| s == "frame")
+                        })
                         .unwrap_or(false);
                     if is_frame {
                         *latest_r.lock().unwrap() = Some(line.into_bytes());
@@ -94,10 +93,12 @@ pub fn start(
             // emitter: latest-wins at the fps window
             while on_t.load(Ordering::SeqCst) && !done.load(Ordering::SeqCst) {
                 thread::sleep(Duration::from_millis(window));
-                if let Some(line) = latest.lock().unwrap().take() {
-                    if writer.try_send(proto::encode_frame(proto::G, &line)).is_ok() {
-                        counters.tx_g.fetch_add(1, Ordering::Relaxed);
-                    }
+                if let Some(line) = latest.lock().unwrap().take()
+                    && writer
+                        .try_send(proto::encode_frame(proto::G, &line))
+                        .is_ok()
+                {
+                    counters.tx_g.fetch_add(1, Ordering::Relaxed);
                 }
             }
 
@@ -115,13 +116,20 @@ pub fn start(
         }
     });
 
-    Geometry { on, child: child_slot, supervisor: Some(supervisor) }
+    Geometry {
+        on,
+        child: child_slot,
+        supervisor: Some(supervisor),
+    }
 }
 
 fn emit_down(writer: &SyncSender<Vec<u8>>) {
     let body = proto::error_frame(
         "phosphor tap is unavailable",
-        &format!("start phosphor on {}: phosphor --background", util::hostname()),
+        &format!(
+            "start phosphor on {}: phosphor --background",
+            util::hostname()
+        ),
         serde_json::json!({}),
     );
     let _ = writer.try_send(proto::encode_frame(proto::E, &body));

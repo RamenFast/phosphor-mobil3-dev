@@ -40,7 +40,6 @@ Allowed manifest permissions must map to a supported feature:
 | Permission or access | Purpose |
 |---|---|
 | `INTERNET` | User-selected PC relay connection |
-| network state and routing | Remote link truth and selected transport |
 | foreground service | Active playback and capture |
 | media playback FGS | Background local or remote playback |
 | media projection FGS | User-approved playback capture |
@@ -55,7 +54,7 @@ Forbidden production access includes Binder authority permissions, package manag
 
 Backup rules must exclude remote hosts, connection state, consent markers, obsolete authority state, and release credentials.
 
-A one-release settings migration may preserve current user-facing display values. It must delete obsolete Nexus, causal audit, principal, token, grant, and session data.
+A one-release settings migration may preserve current user-facing display values. It must delete obsolete audit, principal, token, grant, and session data.
 
 ## 6. Privacy surface
 
@@ -69,11 +68,11 @@ A canonical release contains:
 
 - signed APK
 - signed AAB for Play delivery
-- source archive from the exact tag
+- combined source archive containing the exact mobile tag and exact sibling-engine commit
 - `SHA256SUMS`
 - build manifest with commit, version, package, toolchains, signer fingerprint, and artifact hashes
 
-Artifact filenames, manifest values, Git tag, release notes, and on-device package information must agree.
+Artifact filenames, manifest values, Git tag, sibling-engine commit, release notes, and on-device package information must agree.
 
 ## 8. Play gates
 

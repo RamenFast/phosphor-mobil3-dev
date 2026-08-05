@@ -15,10 +15,10 @@ import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.IBinder
 import android.util.Log
+import androidx.core.content.IntentCompat
 
-// M4: other-app audio -> the beam. MediaProjection consent arrives via the launch intent;
-// FGS type mediaProjection MUST be running before getMediaProjection (API 34+ rule).
-// Honesty law: apps that opt out (Spotify, YT Music, DRM) arrive as silence.
+// The projection foreground service must start before MediaProjection is obtained.
+// Apps that disallow playback capture yield silence.
 class CaptureService : Service() {
 
     private var projection: MediaProjection? = null
@@ -43,7 +43,9 @@ class CaptureService : Service() {
             publishStatus(lastStatus)
             return START_NOT_STICKY
         }
-        val resultData = intent?.getParcelableExtra(EXTRA_RESULT, Intent::class.java)
+        val resultData = intent?.let {
+            IntentCompat.getParcelableExtra(it, EXTRA_RESULT, Intent::class.java)
+        }
         if (resultData == null) {
             Log.e(TAG, "no MediaProjection consent in intent")
             finishCapture(
@@ -70,7 +72,7 @@ class CaptureService : Service() {
                 "foreground service unavailable",
                 CaptureStatus.error(
                     "capture could not start",
-                    "Allow Phosphor notifications and foreground media projection, then retry",
+                    "Return to Phosphor and approve Android's foreground capture prompt again",
                 ),
             )
             return START_NOT_STICKY
