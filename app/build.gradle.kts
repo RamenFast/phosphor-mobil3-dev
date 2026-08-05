@@ -69,10 +69,10 @@ fun gitOutput(vararg arguments: String): String? = runCatching {
     providers.exec {
         workingDir = rootProject.projectDir
         commandLine("git", *arguments)
-    }.standardOutput.asText.get().trim().takeIf(String::isNotEmpty)
+    }.standardOutput.asText.get().trim()
 }.getOrNull()
 
-val gitHead = gitOutput("rev-parse", "--verify", "HEAD")
+val gitHead = gitOutput("rev-parse", "--verify", "HEAD")?.takeIf(String::isNotEmpty)
 val gitCommit = gitHead?.take(12) ?: "unknown"
 val gitDirty = gitOutput("status", "--porcelain", "--untracked-files=normal")
     ?.isNotEmpty() ?: true
