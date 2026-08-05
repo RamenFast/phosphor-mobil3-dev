@@ -3,6 +3,9 @@
 **Date:** 2026-08-05
 **Branch:** `release/phosphor-2.0.0`
 **Rollback tag:** `checkpoint/phosphor-2.0.0-pre-primetime-cleanup`
+**Exact tested implementation commit:** `ba1871a51bfc8c8987f1aba0302d46ac6baebe32`
+
+The final receipt commit is documentation-only. The APK installed and field-tested on the S25 embeds the exact implementation commit above.
 
 ## Current implementation
 
@@ -16,38 +19,42 @@
 - Privacy policy in `PRIVACY.md` and linked from the in-app manual.
 - No advertising, usage tracking, behavior tracking, or automatic reporting dependency.
 - Release provenance rejects dirty, untagged, unknown, mismatched, or dirty path-dependency source.
-- Canonical packaging verifies the APK/AAB signers, bundletool, 16 KiB alignment, exact sources, build manifest, and checksums.
+- Canonical packaging verifies APK/AAB signers, bundletool, 16 KiB alignment, exact sources, build manifest, and checksums.
 - `dev/pm3 install` reads the installed base APK back and verifies its bytes and signer.
 
-## Verified so far
+## Verified
 
-- Clean Android matrix: 74 unit tests, zero failures; debug lint passed at the API 29 floor with the 12 reviewed warnings in `docs/dev/LINT-DISPOSITIONS.md`; debug APK and engine checks passed.
+- Clean Android matrix: 76 unit tests, zero failures or errors; debug compilation, lint, assembly, and engine checks passed.
 - Mobile Rust: 34 tests, formatting, and strict Clippy passed.
 - PC relay: 26 tests, formatting, and strict Clippy passed.
+- Shell syntax and ShellCheck passed for `dev/pm3` and every release script.
 - Settings, routing-boundary, release-provenance, artifact-omission, false-green, and developer-CLI fixtures pass.
-- `scripts/test-pm3.sh`: passed.
-- `scripts/test-play-boundary.sh`: passed.
-- `scripts/check-play-boundary.sh source --json`: 11 checks passed.
-- A clean exact-tag synthetic release used two distinct ephemeral signers and passed APK, AAB, bundletool, 16 KiB ZIP/ELF, exact-source, manifest, and checksum gates. The disposable keys and fixture were removed after recording the result.
-- Pre-commit validation artifact: `dev.phosphor.mobil3.debug`, version `2.0.0-debug` (`2000000`), API 29 to 36, arm64-v8a, SHA-256 `6a0bf180533e0bc5972d29c72459084d99128666e41a30f2fc0d600f49b947a1`; its embedded commit truthfully says `1e05687bc354-dirty`.
+- `scripts/test-pm3.sh`, `scripts/test-play-boundary.sh`, `scripts/check-play-boundary.sh source --json`, and `scripts/test-release-gates.sh` pass.
+- Exact S25 debug APK: package `dev.phosphor.mobil3.debug`, version `2.0.0-debug` (`2000000`), SHA-256 `582c57e5a0e29f9480be45a8832f5f40f114677ad93e14bdb428914562d46bf2`.
+- `dev/pm3` verified that the installed base APK bytes and signer exactly match the local artifact.
+- The S25 matrix passed upright landscape rotation, full-display capture grant, projection denial, microphone-before-projection denial, process death cleanup, true split-screen, relay audio over Tailscale, disconnect cleanup, and dormant-network checks.
+- The native device self-test passed with 3,999 segments and 42,197 lit pixels.
+- The canonical scoreboard is 18 of 21 gates green with zero skipped. Only approved signing, final-tag provenance, and the dependent release bundle are red.
 - Protected starting files still match `docs/dev/archive/2026-08-05-scope-reset/protected/SHA256SUMS`.
+- The public divergence ledger remains append-only relative to the rollback tag.
+- Detailed evidence is in `docs/dev/receipts/primetime-cleanup/phase-03-s25-validation.md`.
 
 ## Next execution order
 
-1. Run the final Android, native Rust, relay, CLI, boundary, shell, protected-file, and stale-scope gates.
-2. Commit the cleanup, then re-run provenance to prove the only remaining source gate is the explicitly unapproved `v2.0.0` tag.
-3. Build and install the current debug APK on the explicit Galaxy S25 serial.
-4. Test capture permission denial and grant, full-display selection, microphone, playback capture, notification denial, process death, rotation, multi-window, and Tailscale relay playback.
+1. Provision both approved release signing identities.
+2. Obtain explicit approval to create the final `v2.0.0` tag.
+3. Run `scripts/ship-check.sh --json --only=release.bundle`, then install and verify the exact signed production APK.
+4. Exercise the true keyguard callback only with explicit approval to manipulate the PIN-protected lock state.
 5. Preserve any wanted settings from `dev.phosphor.mobil3.fortress`, then uninstall it only after Ben explicitly approves the destructive package-data removal.
-6. Provision both approved release signing identities and obtain explicit tag approval.
-7. Run `scripts/ship-check.sh --json --only=release.bundle`, then install and verify the exact signed release APK.
-8. Reconcile branch ancestry locally. Do not push or rewrite the protected remote default branch without Ben's explicit approval.
+6. Add Android 10 and large-screen field coverage on another device or emulator.
+7. Do not push or rewrite a protected remote branch without Ben's explicit approval.
 
 ## External blockers
 
 - Approved direct-release and Play-upload keystore inputs are not available in this workspace.
 - The final `v2.0.0` tag has not been approved or created.
-- The retired `dev.phosphor.mobil3.fortress` package remains installed; its private sandbox cannot be scrubbed by the new package and uninstalling it would delete package data.
+- The retired `dev.phosphor.mobil3.fortress` package remains installed; uninstalling it would delete package data.
+- The S25 has a real PIN, so a true lock-screen callback test requires explicit approval before changing keyguard state.
 - Play Console enrollment, declarations, listing assets, tester access, and submission require Ben.
 - Android 10 and large-screen compatibility need additional devices or emulators beyond the S25.
 
@@ -55,7 +62,7 @@
 
 - The Gradle wrapper is the only Android build authority.
 - Release signing fails closed and verifies the expected certificate SHA-256.
-- Release builds also fail closed on dirty, unknown, mismatched, or untagged source and on dirty sibling-engine source.
+- Release builds fail closed on dirty, unknown, mismatched, or untagged source and on dirty sibling-engine source.
 - A selected required ship gate cannot report success by skipping unavailable evidence.
 - Relay traffic follows Android's Tailscale route and never binds the process to Wi-Fi or mobile data.
 - A fresh install makes no Phosphor-owned network connection until the user selects a saved PC relay.

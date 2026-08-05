@@ -19,9 +19,10 @@
 - [x] Make device installation verify exact APK bytes and signer.
 - [x] Finish comment cleanup and active-document reconciliation.
 - [x] Run all Android, Rust, relay, CLI, boundary, and shell gates.
-- [ ] Build and install the current debug APK on the Galaxy S25.
-- [ ] Complete the on-device capture, denial, lifecycle, rotation, multi-window, and relay matrix.
-- [ ] Reconcile local branch ancestry without pushing protected branches.
+- [x] Build and install the exact current implementation APK on the Galaxy S25 and verify installed bytes and signer.
+- [x] Complete the S25 capture, denial, process-death, rotation, true multi-window, relay, disconnect, and dormant-network matrix.
+- [x] Reconcile local branch ancestry without pushing protected branches.
+- [ ] Exercise the true screen-lock callback after explicit approval to manipulate the PIN-protected keyguard state.
 - [ ] Provision the approved direct-APK and Play-upload signers and build the final APK/AAB.
 - [ ] Verify the production signer, manifest, archive boundary, and 16 KiB native alignment. The same flow passes with an ephemeral fixture signer.
 - [ ] Install the exact packaged production APK on the phone with `dev/pm3 --profile release --serial <serial> install <APK>`.
