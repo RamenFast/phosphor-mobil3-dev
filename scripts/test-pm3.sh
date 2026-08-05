@@ -67,7 +67,13 @@ case "${1:-}" in
         printf 'package:/data/app/fixture/base.apk\n'
         ;;
       "am start -n") printf 'Starting: Intent\n' ;;
-      "pidof dev.phosphor.mobil3.debug "|"pidof dev.phosphor.mobil3 ") printf '1234\n' ;;
+      "pidof dev.phosphor.mobil3.debug "|"pidof dev.phosphor.mobil3 ")
+        if [ "${PM3_TEST_PID_EMPTY_ONCE:-0}" = "1" ] && [ ! -e "$PM3_TEST_PID_STATE" ]; then
+          : >"$PM3_TEST_PID_STATE"
+          exit 1
+        fi
+        printf '1234\n'
+        ;;
       "dumpsys media_session ") printf 'dev.phosphor.mobil3.debug playing\n' ;;
       "dumpsys audio ") printf 'dev.phosphor.mobil3.debug active\n' ;;
       "dumpsys gfxinfo dev.phosphor.mobil3.debug") printf 'Total frames rendered: 42\nJanky frames: 0\n' ;;
@@ -230,12 +236,17 @@ printf '%s' "$OUT" | jq -e --arg apk "$APK" '
 ' >/dev/null
 pass "install accepts the exact canonical APK path for the production package"
 
+export PM3_TEST_PID_EMPTY_ONCE=1
+export PM3_TEST_PID_STATE="$TMP/pid-state"
 run_capture --serial serial-1 run
+unset PM3_TEST_PID_EMPTY_ONCE PM3_TEST_PID_STATE
 [ "$RC" -eq 0 ] || fail "run exit $RC: $OUT"
 printf '%s' "$OUT" | jq -e '.data.pids == "1234"' >/dev/null
+[ "$(grep -Fc -- '-s serial-1 shell pidof dev.phosphor.mobil3.debug' "$CALLS")" -ge 2 ] || \
+  fail "run did not wait through a normal cold-start PID race"
 grep -Fq -- '-s serial-1 shell am start -n dev.phosphor.mobil3.debug/dev.phosphor.mobil3.MainActivity' "$CALLS" || \
   fail "debug launch component did not preserve the application namespace"
-pass "run verifies the selected process"
+pass "run waits for and verifies the selected process"
 
 SHOT="$TMP/shot.png"
 run_capture --serial serial-1 screenshot "$SHOT"

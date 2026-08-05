@@ -411,9 +411,14 @@ case "$VERB" in
     package="$(package_id)"
     component="$package/$(main_activity_class)"
     adb_s shell am start -n "$component" >/dev/null 2>&1 || fail 4 launch_failed "am start failed" "run pm3 install first"
-    pid_output="$(adb_s shell pidof "$package" 2>&1)" || fail 4 pid_query_failed \
-      "pid query failed: $pid_output" "verify the explicit serial remains connected"
-    pids="$(printf '%s' "$pid_output" | tr -d '\r' | xargs)"
+    pids=""
+    for _ in $(seq 1 20); do
+      if pid_output="$(adb_s shell pidof "$package" 2>&1)"; then
+        pids="$(printf '%s' "$pid_output" | tr -d '\r' | xargs)"
+        [ -n "$pids" ] && break
+      fi
+      sleep 0.25
+    done
     [ -n "$pids" ] || fail 4 process_missing "app did not stay up" "run pm3 --serial $SERIAL logcat"
     succeed "\"serial\":\"$(json_escape "$SERIAL")\",\"package_id\":\"$package\",\"pids\":\"$(json_escape "$pids")\"" "started $package on $SERIAL"
     ;;
