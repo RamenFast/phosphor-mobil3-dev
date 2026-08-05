@@ -113,6 +113,8 @@ package_id() {
   fi
 }
 
+main_activity_class() { printf '%s\n' 'dev.phosphor.mobil3.MainActivity'; }
+selftest_receiver_class() { printf '%s\n' 'dev.phosphor.mobil3.SelfTestReceiver'; }
 gradle_task() { printf 'assemble%s\n' "$(capitalize "$PROFILE")"; }
 apk_path() { printf '%s/app/build/outputs/apk/%s/app-%s.apk\n' "$REPO" "$PROFILE" "$PROFILE"; }
 selected_adb() { printf '%s\n' "${PM3_ADB:-adb}"; }
@@ -328,7 +330,7 @@ case "$VERB" in
       "get both values from Wireless debugging > Pair device with pairing code"
     output="$("$(selected_adb)" pair "$1" "$2" 2>&1)" || fail 4 pair_failed \
       "pairing failed: $output" "re-open the pairing dialog because codes expire"
-    printf '%s' "$output" | grep -qi 'successfully paired' || fail 4 pair_failed \
+    grep -qi 'successfully paired' <<<"$output" || fail 4 pair_failed \
       "pairing failed: $output" "re-open the pairing dialog because codes expire"
     succeed "\"paired\":\"$(json_escape "$1")\",\"detail\":\"$(json_escape "$output")\"" "paired $1"
     ;;
@@ -338,7 +340,7 @@ case "$VERB" in
       "pass the current Wireless debugging connect address explicitly"
     output="$("$(selected_adb)" connect "$1" 2>&1)" || fail 4 connect_failed \
       "connect failed: $output" "check the explicit address and current Wireless debugging port"
-    printf '%s' "$output" | grep -Eqi '(^| )(connected to|already connected to) ' || fail 4 connect_failed \
+    grep -Eqi '(^| )(connected to|already connected to) ' <<<"$output" || fail 4 connect_failed \
       "connect failed: $output" "check the explicit address and current Wireless debugging port"
     succeed "\"target\":\"$(json_escape "$1")\",\"detail\":\"$(json_escape "$output")\"" "connected to $1"
     ;;
@@ -407,7 +409,8 @@ case "$VERB" in
     no_args "$@"
     need_serial
     package="$(package_id)"
-    adb_s shell am start -n "$package/.MainActivity" >/dev/null 2>&1 || fail 4 launch_failed "am start failed" "run pm3 install first"
+    component="$package/$(main_activity_class)"
+    adb_s shell am start -n "$component" >/dev/null 2>&1 || fail 4 launch_failed "am start failed" "run pm3 install first"
     pid_output="$(adb_s shell pidof "$package" 2>&1)" || fail 4 pid_query_failed \
       "pid query failed: $pid_output" "verify the explicit serial remains connected"
     pids="$(printf '%s' "$pid_output" | tr -d '\r' | xargs)"
@@ -490,8 +493,9 @@ case "$VERB" in
     need_serial
     package="$(package_id)"
     package_dump="$(adb_s shell pm dump "$package" 2>&1)" || fail 4 package_query_failed "installed package query failed: $package_dump" "verify the explicit serial remains connected"
-    printf '%s\n' "$package_dump" | grep -q 'pkgFlags.*DEBUGGABLE' || fail 2 debuggable_required "installed build is not debuggable" "build and install the debug profile"
-    adb_s shell am broadcast -a "dev.phosphor.mobil3.SELFTEST" -n "$package/.SelfTestReceiver" >/dev/null 2>&1 || fail 4 broadcast_failed "broadcast failed" "install a current debug build"
+    grep -q 'pkgFlags.*DEBUGGABLE' <<<"$package_dump" || fail 2 debuggable_required "installed build is not debuggable" "build and install the debug profile"
+    receiver="$package/$(selftest_receiver_class)"
+    adb_s shell am broadcast -a "dev.phosphor.mobil3.SELFTEST" -n "$receiver" >/dev/null 2>&1 || fail 4 broadcast_failed "broadcast failed" "install a current debug build"
     report=""
     for _ in $(seq 1 20); do
       sleep 0.5

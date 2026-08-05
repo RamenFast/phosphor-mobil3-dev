@@ -9,6 +9,15 @@ package dev.phosphor.mobil3.ui
  */
 object RotationDetent {
 
+    /** Activity orientation selected after a gravity cardinal commits. */
+    enum class ScreenTarget {
+        PORTRAIT,
+        LANDSCAPE,
+        REVERSE_PORTRAIT,
+        REVERSE_LANDSCAPE,
+        UNSPECIFIED,
+    }
+
     /**
      * How close to a NEW cardinal the phone must be turned before the chrome follows.
      * Tight, so leaving the current orientation takes a real turn rather than a lean.
@@ -54,4 +63,19 @@ object RotationDetent {
     /** The orientation after a reading: the new cardinal if it commits, else unchanged. */
     fun next(committed: Int, degrees: Int): Int =
         if (shouldCommit(committed, degrees)) nearestCardinal(degrees) else committed
+
+    /**
+     * Translate the accelerometer cardinal into Android's screen-orientation vocabulary.
+     *
+     * The sensor angle grows in the opposite direction from Android's landscape names.
+     * Keeping this conversion beside the detent makes both landscape quadrants explicit
+     * and host-testable.
+     */
+    fun screenTarget(cardinal: Int): ScreenTarget = when (cardinal) {
+        0 -> ScreenTarget.PORTRAIT
+        90 -> ScreenTarget.REVERSE_LANDSCAPE
+        180 -> ScreenTarget.REVERSE_PORTRAIT
+        270 -> ScreenTarget.LANDSCAPE
+        else -> ScreenTarget.UNSPECIFIED
+    }
 }

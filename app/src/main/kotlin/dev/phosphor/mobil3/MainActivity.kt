@@ -1389,12 +1389,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
             requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
             return
         }
-        val target = when (committedCardinal) {
-            90 -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
-            180 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
-            270 -> ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
-            0 -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
-            else -> ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+        val target = when (RotationDetent.screenTarget(committedCardinal)) {
+            RotationDetent.ScreenTarget.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
+            RotationDetent.ScreenTarget.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
+            RotationDetent.ScreenTarget.REVERSE_PORTRAIT ->
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_PORTRAIT
+            RotationDetent.ScreenTarget.REVERSE_LANDSCAPE ->
+                ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
+            RotationDetent.ScreenTarget.UNSPECIFIED ->
+                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
         }
         if (requestedOrientation != target) {
             // Keep the detent decision observable during physical rotation tests.

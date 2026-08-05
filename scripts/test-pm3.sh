@@ -233,6 +233,8 @@ pass "install accepts the exact canonical APK path for the production package"
 run_capture --serial serial-1 run
 [ "$RC" -eq 0 ] || fail "run exit $RC: $OUT"
 printf '%s' "$OUT" | jq -e '.data.pids == "1234"' >/dev/null
+grep -Fq -- '-s serial-1 shell am start -n dev.phosphor.mobil3.debug/dev.phosphor.mobil3.MainActivity' "$CALLS" || \
+  fail "debug launch component did not preserve the application namespace"
 pass "run verifies the selected process"
 
 SHOT="$TMP/shot.png"
@@ -251,6 +253,8 @@ run_capture --serial serial-1 fps
 [ "$RC" -eq 0 ] || fail "fps exit $RC: $OUT"
 run_capture --serial serial-1 smoke
 [ "$RC" -eq 0 ] || fail "smoke exit $RC: $OUT"
+grep -Fq -- '-s serial-1 shell am broadcast -a dev.phosphor.mobil3.SELFTEST -n dev.phosphor.mobil3.debug/dev.phosphor.mobil3.SelfTestReceiver' "$CALLS" || \
+  fail "debug self-test receiver did not preserve the application namespace"
 [ "$(find "$PM3_RECEIPTS_DIR" -maxdepth 1 -name 'selftest-*.png' -type f | wc -l)" -eq 1 ] || fail "smoke receipt isolation"
 pass "device diagnostics and debug self-test retain their developer role"
 

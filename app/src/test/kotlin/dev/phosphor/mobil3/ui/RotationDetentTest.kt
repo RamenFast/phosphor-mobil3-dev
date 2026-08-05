@@ -107,6 +107,30 @@ class RotationDetentTest {
         assertEquals(0, committed, "a wobble near the boundary must not reorient")
     }
 
+    @Test
+    fun gravityCardinalsMapToTheCorrectAndroidLandscapeQuadrants() {
+        assertEquals(
+            RotationDetent.ScreenTarget.PORTRAIT,
+            RotationDetent.screenTarget(0),
+        )
+        assertEquals(
+            RotationDetent.ScreenTarget.REVERSE_LANDSCAPE,
+            RotationDetent.screenTarget(90),
+        )
+        assertEquals(
+            RotationDetent.ScreenTarget.REVERSE_PORTRAIT,
+            RotationDetent.screenTarget(180),
+        )
+        assertEquals(
+            RotationDetent.ScreenTarget.LANDSCAPE,
+            RotationDetent.screenTarget(270),
+        )
+        assertEquals(
+            RotationDetent.ScreenTarget.UNSPECIFIED,
+            RotationDetent.screenTarget(RotationDetent.NONE),
+        )
+    }
+
     private companion object {
         const val HOLD = RotationDetent.HOLD_TOLERANCE
     }
