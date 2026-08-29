@@ -12,10 +12,10 @@ use oboe::{
     AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync, AudioStreamBuilder,
     DataCallbackResult, Output, PerformanceMode, SharingMode, Stereo, Usage,
 };
-use phosphor_audio::playback::{
-    AudibleRing, PlayerCommand, PlayerConfig, PlayerSession, spawn_player,
-};
+use phosphor_audio::playback::{AudibleRing, PlayerConfig, PlayerSession, spawn_player};
 use phosphor_audio::ring::SampleRing;
+
+use crate::deck_close::close_session;
 
 pub const RATE: u32 = 48_000;
 
@@ -207,11 +207,9 @@ pub fn position_micros() -> u64 {
 
 pub fn close() {
     if let Some(mut deck) = DECK.lock().unwrap().take() {
-        let _ = deck.session.control.send(PlayerCommand::Stop);
-        let _ = deck.stream.stop();
-        if let Some(t) = deck.session.thread.take() {
-            let _ = t.join();
-        }
+        close_session(&mut deck.session, || {
+            let _ = deck.stream.stop();
+        });
     }
     DECK_ACTIVE.store(false, Ordering::Relaxed);
 }

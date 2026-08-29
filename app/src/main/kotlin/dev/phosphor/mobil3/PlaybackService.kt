@@ -18,6 +18,7 @@ import android.media.session.PlaybackState as PlatformPlaybackState
 import android.os.Bundle
 import android.os.Handler
 import android.os.SystemClock
+import android.util.Log
 import android.view.KeyEvent
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
@@ -34,6 +35,7 @@ import com.google.common.util.concurrent.ListenableFuture
 import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.URL
+import java.util.concurrent.Executors
 
 // The deck's Android citizenship: ONE MediaSessionService, ONE MediaSession, TWO players
 // — the local Rust deck (PhosphorPlayer) and the Tailscale bridge deck (RemotePlayer) —
@@ -63,6 +65,33 @@ class PlaybackService : MediaSessionService() {
     private var captureTrackKey: String? = null
     private var captureArtwork: ByteArray? = null
     private var captureArtGeneration = 0
+
+    private sealed interface LocalDeckRequest {
+        data class Play(
+            val index: Int,
+            val positionMs: Long?,
+            val queueUris: MutableList<String?>,
+            val queuePaths: MutableList<String?>,
+        ) : LocalDeckRequest
+
+        data object Close : LocalDeckRequest
+    }
+
+    private val localDeckExecutor = Executors.newSingleThreadExecutor { runnable ->
+        Thread(runnable, "local-deck")
+    }
+    private val localDeckRequests = LatestRequestSlot<LocalDeckRequest>(
+        schedule = { task -> localDeckExecutor.execute(task) },
+        consume = { request, isLatest ->
+            runCatching { runLocalDeckRequest(request, isLatest) }
+                .onFailure { Log.e(TAG, "local deck request failed", it) }
+        },
+    )
+    @Volatile private var destroying = false
+    // These fields belong only to localDeckExecutor.
+    private var openedLocalPath: String? = null
+    private var openedLocalQueuePaths: MutableList<String?>? = null
+    private var openedLocalIndex = -1
 
     private val activePlayer: Player get() = session?.player ?: localPlayer
 
@@ -145,6 +174,8 @@ class PlaybackService : MediaSessionService() {
             seekRouter = { externalCaptureController?.transportControls?.seekTo(it) }
         }
         localPlayer.onSwitchTrack = ::stageAndOpen
+        localPlayer.onSeek = ::seekLocalDeck
+        localPlayer.onStopRequested = ::closeLocalDeck
         remotePlayer.onStopRequested = ::stopRemote
         localPlayer.addListener(focusOnPlay)
         remotePlayer.addListener(focusOnPlay)
@@ -520,7 +551,6 @@ class PlaybackService : MediaSessionService() {
     // Queue documents are staged on demand and removed on startup, shutdown, and track changes.
     private var queueUris: MutableList<String?> = mutableListOf()
     private var queuePaths: MutableList<String?> = mutableListOf()
-    private var stageGen = 0
 
     private fun stagedRoot() = java.io.File(filesDir, "staged").apply { mkdirs() }
 
@@ -545,9 +575,13 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun stagedPath(i: Int): String? {
-        queuePaths.getOrNull(i)?.let { return it }
-        val uriStr = queueUris.getOrNull(i) ?: return null
+    private fun stagedPath(
+        i: Int,
+        requestUris: MutableList<String?>,
+        requestPaths: MutableList<String?>,
+    ): String? {
+        requestPaths.getOrNull(i)?.let { return it }
+        val uriStr = requestUris.getOrNull(i) ?: return null
         val uri = uriStr.toUri()
         val name = "q$i-" + (uri.lastPathSegment ?: "track").substringAfterLast('/')
             .substringAfterLast(':').replace('/', '_')
@@ -557,33 +591,116 @@ class PlaybackService : MediaSessionService() {
             contentResolver.openInputStream(uri)?.use { input ->
                 dst.outputStream().use { input.copyTo(it) }
             }
-            dst.absolutePath.also { queuePaths[i] = it }
+            dst.absolutePath.also { requestPaths[i] = it }
         }.getOrNull()
     }
 
     private fun stageAndOpen(i: Int) {
-        val gen = ++stageGen
-        Thread {
-            val path = stagedPath(i)
-            if (path != null && gen == stageGen && PhosphorNative.deckOpen(path)) {
-                requestFocus()
-                main.post {
-                    if (gen != stageGen) return@post
-                    switchTo(localPlayer)
-                    localPlayer.onTrackOpened()
-                    startEndWatcher()
+        enqueueLocalPlay(i, positionMs = null)
+    }
+
+    private fun seekLocalDeck(i: Int, positionMs: Long) {
+        enqueueLocalPlay(i, positionMs.coerceAtLeast(0L))
+    }
+
+    private fun enqueueLocalPlay(i: Int, positionMs: Long?) {
+        if (destroying) return
+        localDeckRequests.enqueue(
+            LocalDeckRequest.Play(i, positionMs, queueUris, queuePaths)
+        )
+    }
+
+    private fun closeLocalDeck() {
+        if (!destroying) localDeckRequests.enqueue(LocalDeckRequest.Close)
+    }
+
+    private fun runLocalDeckRequest(
+        request: LocalDeckRequest,
+        isLatest: () -> Boolean,
+    ) {
+        when (request) {
+            LocalDeckRequest.Close -> {
+                PhosphorNative.deckClose()
+                openedLocalPath = null
+                openedLocalQueuePaths = null
+                openedLocalIndex = -1
+            }
+            is LocalDeckRequest.Play -> runLocalPlayRequest(request, isLatest)
+        }
+    }
+
+    private fun runLocalPlayRequest(
+        request: LocalDeckRequest.Play,
+        isLatest: () -> Boolean,
+    ) {
+        if (destroying || !isLatest()) return
+        val path = stagedPath(request.index, request.queueUris, request.queuePaths) ?: return
+        if (destroying || !isLatest()) return
+
+        val sameTarget =
+            openedLocalPath == path &&
+                openedLocalQueuePaths === request.queuePaths &&
+                openedLocalIndex == request.index
+        var openedNewTrack = false
+        val succeeded = if (sameTarget && request.positionMs != null) {
+            PhosphorNative.deckSeekMs(request.positionMs).also { success ->
+                if (!success) {
+                    openedLocalPath = null
+                    openedLocalQueuePaths = null
+                    openedLocalIndex = -1
                 }
-                // Prefetch the next entry so the gapless hand-off has a local file ready,
-                // then drop every other staged copy — two tracks is the whole budget.
-                val next = if (i + 1 < queueUris.size) stagedPath(i + 1) else null
-                queuePaths.indices.forEach { j ->
-                    if (j != i && queuePaths[j] != null && queuePaths[j] != next) {
-                        queuePaths[j] = null
+            }
+        } else {
+            openedLocalPath = null
+            openedLocalQueuePaths = null
+            openedLocalIndex = -1
+            openedNewTrack = PhosphorNative.deckOpen(path)
+            if (openedNewTrack) {
+                openedLocalPath = path
+                openedLocalQueuePaths = request.queuePaths
+                openedLocalIndex = request.index
+            }
+            if (openedNewTrack && request.positionMs != null && request.positionMs > 0L) {
+                PhosphorNative.deckSeekMs(request.positionMs).also { success ->
+                    if (!success) {
+                        openedLocalPath = null
+                        openedLocalQueuePaths = null
+                        openedLocalIndex = -1
                     }
                 }
-                pruneStaged(setOfNotNull(path, next))
+            } else {
+                openedNewTrack
             }
-        }.start()
+        }
+        if (!succeeded || destroying || !isLatest()) return
+
+        if (openedNewTrack) {
+            main.post {
+                if (destroying || !isLatest()) return@post
+                requestFocus()
+                switchTo(localPlayer)
+                localPlayer.onTrackOpened()
+                startEndWatcher()
+            }
+
+            // Prefetch the next entry so the gapless hand-off has a local file ready,
+            // then drop every other staged copy — two tracks is the whole budget.
+            val next = if (request.index + 1 < request.queueUris.size) {
+                stagedPath(request.index + 1, request.queueUris, request.queuePaths)
+            } else {
+                null
+            }
+            request.queuePaths.indices.forEach { j ->
+                if (
+                    j != request.index &&
+                    request.queuePaths[j] != null &&
+                    request.queuePaths[j] != next
+                ) {
+                    request.queuePaths[j] = null
+                }
+            }
+            pruneStaged(setOfNotNull(path, next))
+        }
     }
 
     // End-of-track watcher: drives auto-advance through the queue.
@@ -784,6 +901,12 @@ class PlaybackService : MediaSessionService() {
     override fun onGetSession(controllerInfo: MediaSession.ControllerInfo): MediaSession? = session
 
     override fun onDestroy() {
+        destroying = true
+        localPlayer.onSwitchTrack = null
+        localPlayer.onSeek = null
+        localPlayer.onStopRequested = null
+        localDeckRequests.enqueue(LocalDeckRequest.Close)
+        localDeckExecutor.shutdown()
         leaveCaptureMirror()
         remotePolling = false
         remoteEndpoint = null
@@ -795,12 +918,12 @@ class PlaybackService : MediaSessionService() {
         capturePlayer.release()
         session = null
         PhosphorNative.remoteDisconnect()
-        PhosphorNative.deckClose()
         pruneStaged() // exit leaves no transient audio behind
         super.onDestroy()
     }
 
     companion object {
+        private const val TAG = "PhosphorPlayback"
         /**
          * Surface a link that remains non-streaming for 60 seconds.
          *

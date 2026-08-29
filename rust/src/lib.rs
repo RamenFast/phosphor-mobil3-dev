@@ -3,6 +3,8 @@
 //! everything JNI lives behind `cfg(target_os = "android")` in `jni_glue`.
 
 pub mod bridge_core;
+#[cfg(any(target_os = "android", test))]
+mod deck_close;
 pub mod engine;
 pub mod selftest;
 pub mod spsc;

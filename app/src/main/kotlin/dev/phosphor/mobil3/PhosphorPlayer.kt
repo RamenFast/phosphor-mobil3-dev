@@ -28,8 +28,10 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         val durationMs: Long = C.TIME_UNSET,
     )
 
-    /** The service resolves + stages files; the player face asks it to switch tracks. */
+    /** The service resolves + stages files; the player face only enqueues deck work. */
     var onSwitchTrack: ((Int) -> Unit)? = null
+    var onSeek: ((Int, Long) -> Unit)? = null
+    var onStopRequested: (() -> Unit)? = null
 
     override fun getState(): State {
         val commands = Player.Commands.Builder()
@@ -156,7 +158,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
             loadedDurationMs = C.TIME_UNSET
             onSwitchTrack?.invoke(index)
         } else {
-            PhosphorNative.deckSeekMs(positionMs)
+            onSeek?.invoke(index, positionMs)
         }
         invalidateState()
         return Futures.immediateVoidFuture()
@@ -167,7 +169,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         queue = emptyList()
         index = 0
         loadedMeta = null
-        PhosphorNative.deckClose()
+        onStopRequested?.invoke()
         return Futures.immediateVoidFuture()
     }
 }
