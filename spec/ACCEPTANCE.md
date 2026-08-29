@@ -24,6 +24,7 @@ A release passes only when every applicable must-level check below has evidence.
 - [ ] The app stores no behavior or usage history.
 - [ ] Fresh installation produces no Phosphor-owned traffic before explicit remote use.
 - [ ] Every retained permission maps to a visible supported feature.
+- [ ] `WAKE_LOCK` is held only by a visible surface or live playback/capture source and is released after stop.
 - [ ] Microphone hardware is optional.
 - [ ] In-app and HTTPS privacy surfaces agree with measured behavior.
 
@@ -32,6 +33,7 @@ A release passes only when every applicable must-level check below has evidence.
 - [ ] Existing user-facing HUD or display settings migrate once.
 - [ ] Legacy principals, sessions, grants, tokens, authorization state, and audit history do not survive migration.
 - [ ] Remote hosts remain excluded from Android backup.
+- [ ] The five portable settings keys and the legal 0.1-through-60-second cycle range survive archive round trips.
 - [ ] A failed or malformed legacy envelope falls back safely without blocking startup.
 
 ## E. Capture
@@ -44,7 +46,7 @@ A release passes only when every applicable must-level check below has evidence.
 
 ## F. Local playback and interface
 
-- [ ] Single-file and folder playback work.
+- [ ] Single-file and recursive folder-tree playback work, including nested and invalid entries.
 - [ ] MediaSession, notification, lock-screen controls, focus loss, noisy route, seek, and track changes work.
 - [ ] The scope remains sample-locked to audible local playback.
 - [ ] Existing modes, themes, beam controls, geometry effects, rotation, settings transfer, and PiP survive cleanup.
@@ -56,7 +58,7 @@ A release passes only when every applicable must-level check below has evidence.
 - [ ] Audio and geometry toggles retain their protocol meaning.
 - [ ] Relay traffic follows Android's Tailscale route without a process-wide physical-network bind.
 - [ ] `scripts/force-link-states.sh` reproduces connected, silent, stalled, recovered, and reconnecting states.
-- [ ] Live playback works over Tailscale.
+- [ ] Live playback, direct-file playback, and recursive folder-tree playback work over Tailscale.
 - [ ] Documentation warns that protocol v2 is not safe for direct public-internet exposure.
 
 ## H. Developer CLI
@@ -91,6 +93,34 @@ A release passes only when every applicable must-level check below has evidence.
 - [ ] No unique commit remains stranded on an obsolete branch.
 - [ ] The public tree contains no private host, credential, internal receipt, or archived private authority material.
 - [ ] No push to `main` or release publication occurs without Ben's explicit approval.
+
+## L. Pre-v2 B1-B21 lived-repair matrix
+
+Each row requires its named automated gate and an honest live receipt. A visual row remains open until Ben accepts the measured device result.
+
+| Done | ID | Observable acceptance |
+|---|---|---|
+| [ ] | B1 | Console, active-sheet, and overflow bounds block scope pinch and drag through exactly 333ms after movement or dismissal. The 24dp rotated exclusion margin applies to every pointer without blocking chrome reveal or an armed console pull. |
+| [ ] | B2 | Five consecutive capture-to-microphone switches with permission already granted start a moving beam. Only a post-stop idle observation may start the microphone. |
+| [ ] | B3 | The regular app stays network-dormant until relay selection. A fresh Linux relay then proves Tailscale live audio, a direct root file, a whole-folder first item, nested end-of-file advance, disconnect, and reconnect. |
+| [ ] | B4 | A direct control file and a recursive local folder containing nested audio and one invalid entry play in stable order without a freeze, ANR, or dark false-success. |
+| [ ] | B5 | With fixed device brightness, deposited trace luminance and a nondefault beam setting remain stable after chrome motion, settings cycles, and surface recreation. Intentional modal scrim dimming is excluded. |
+| [ ] | B6 | A tagged local folder item and a real captured Spotify session show honest title and artist. Captured controls work, and stale or superseded metadata cannot replace the current face. |
+| [ ] | B7 | A captured session exposes a working in-app seek rule only when the session advertises seek and reports a real duration. A non-seekable session exposes no dead rule. |
+| [ ] | B8 | The capture play/pause glyph and routed action match audible playing, buffering, paused, and resumed states without changing local playback truth. |
+| [ ] | B9 | After a paused local ring fills, repeated scrub, next, and previous actions leave the interface and sound path responsive. Only the latest requested item resumes. |
+| [ ] | B10 | FEEL, MOTION, CORNERS, and LABELS each change visible chrome immediately while STYLE is open and persist after close and reopen. |
+| [ ] | B11 | Main and picture-in-picture scope surfaces remain awake beyond a shortened captured timeout while a source is live. The display becomes sleep-eligible after stop, and the original device timeout is restored. |
+| [ ] | B12 | Quick and full `pip_auto_enter` controls stay synchronized. Off blocks automatic entry only, on restores it, and manual picture-in-picture works in both states. |
+| [ ] | B13 | No DECK destination remains. SOURCE queue jump, console volume, and persisted always-visible controls work, including both the 4-second and tap-to-hide paths. |
+| [ ] | B14 | Seek, tuning, range, and inline volume rules acquire across a 44dp lane and retain sharp 2dp tracks, square thumbs, live beam accent, and direct jump behavior. |
+| [ ] | B15 | A measured S25 grid receipt proves visible, repeatable CPU/GPU grid parity. Left-only and right-only fixtures publish the correct raw amplitude and absolute dBFS side only when `grid_data=true`. |
+| [ ] | B16 | Xy45 rotates both trace and grid by 45 degrees in CPU and GPU paths. Xy, swirl, dots, and other modes restore a Cartesian grid without an alpha change. |
+| [ ] | B17 | Same-package updates preserve edits, the settings archive round-trips all legal values and five new keys, and a clean install gets the accepted defaults with `custom_count=0`. |
+| [ ] | B18 | With always-visible controls off, disabling double tap removes playback toggling and single-tap delay. Enabling it restores double-tap playback. |
+| [ ] | B19 | An Android bottom-edge swipe or pinch with any pointer in the 88dp band never changes scope gain or orbit. The armed one-finger upward console pull still works. |
+| [ ] | B20 | Loud, silent, then loud audio keeps stable framing. Only a proven new local item resets peak tracking; metadata refresh does not. The 6.0 clamp, 0.92 headroom, and 0.05 glide remain unchanged. |
+| [ ] | B21 | With `linger_background=false`, recents removal stops local, relay, capture, and microphone sources and clears capture consent. Linger preserves only sources with a real service owner and never claims unsupported microphone survival. |
 
 ## Release gate
 

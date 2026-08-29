@@ -17,11 +17,19 @@ Local playback uses the shared Phosphor audio engine and Android media-session i
 
 The scope input must be tapped from the same sample stream that reaches the output callback. Gapless playback, seek, pause, next, previous, metadata, artwork, audio focus, and noisy-route behavior must remain coherent.
 
+A selected local folder means its complete supported audio tree. Traversal must use stable name order, reject repeated document identities, and persist the user-granted tree access. Decoder validation must occur before an invalid file can replace the audible source or start the output stream. An invalid entry must report and skip while later valid entries remain available.
+
+Seek, next, previous, and folder-open work must run through one service-owned serial path. A new request replaces pending work. Android media controls and the main looper must return immediately, and only the latest requested item may publish audio or metadata.
+
+Tagged local metadata must follow the item that the decoder actually starts. Blank title falls back to the filename. Blank artist remains absent. Metadata delivery must not block open or compete with folder validation for event ownership.
+
 ## 3. Microphone
 
 Microphone input requires `RECORD_AUDIO`. The app must request permission after an explanatory user action.
 
 Microphone hardware is optional. Devices without a microphone may still install and use local or remote sources.
+
+A capture-to-microphone switch must stop capture first and wait for an idle observation that belongs to that stop request. A stale earlier idle state must not start the microphone. The microphone publishes live state only after `AudioRecord` initializes, recording starts, and the scope input is armed successfully. The handoff must not use a timer.
 
 ## 4. Android playback capture
 
@@ -39,6 +47,8 @@ The capture configuration includes media, game, and unknown audio usages.
 
 Capture works only when the source application and Android policy allow it. Protected or opted-out content may produce silence. Phosphor must report that limitation without claiming a broken connection.
 
+Captured transport and metadata must mirror the active Android MediaSession without scraping notification text. Playing, buffering, paused, and resumed states must drive an honest in-app glyph. Seek is available only when the session advertises `ACTION_SEEK_TO` and supplies a real duration. A failed, absent, or superseded session must not leave a stale title, artist, seek rule, or transport face.
+
 ### 4.1 Version behavior
 
 - API 29 through 33 use `createScreenCaptureIntent()`. These versions capture the complete display.
@@ -53,6 +63,10 @@ The relay streams audio, scope geometry, metadata, artwork, file browsing, and t
 The phone must retain independent audio and geometry stream controls. File playback may stream audio regardless of the live-capture audio toggle.
 
 The app must preserve the established reconnect, jitter-buffer, source-switching, and link-truth behavior.
+
+A direct relay file remains a direct play request. Playing the current relay folder must recursively collect supported audio descendants in stable name order, start the first item, and advance through nested descendants at end of file. Directory-row selection remains browse. Folder playback reuses the existing protocol-v2 play and session path; it must not add a queue protocol, JNI mode, or privileged file path.
+
+Regular-app relay acceptance includes live PC audio, a direct root file, a whole-folder first item, nested end-of-file advance, disconnect, and reconnect. A fresh Linux user installation must prove the relay binary, user service, schema, Tailscale listener boundary, capture dependencies, and readable library root.
 
 ## 6. Network boundary
 
@@ -77,13 +91,19 @@ Relay traffic follows Android's normal routing through Tailscale. Phosphor must 
 
 Route or peer loss must produce reconnecting or unavailable state. It must not appear as measured silence.
 
-## 8. Deferred relay polish
+## 8. Source shutdown
+
+With `linger_background=false`, task removal must stop local and relay playback, release capture, clear the capture session and consent state, and stop the real microphone owner. The next capture start must request consent again.
+
+With `linger_background=true`, only an already service-owned source may continue. The product must not promise background microphone survival while the microphone remains activity-owned.
+
+## 9. Deferred relay polish
 
 Application-layer authentication, host identity, protocol encryption, discovery, and simplified setup remain deferred.
 
 This cleanup may strengthen documentation and boundary tests. It must not replace the working relay architecture.
 
-## 9. Excluded capture paths
+## 10. Excluded capture paths
 
 The product does not use Visualizer API, root, Shizuku, ADB sidecars, privileged permissions, AudioPolicy injection, or DRM bypass.
 

@@ -44,17 +44,22 @@ Allowed manifest permissions must map to a supported feature:
 | media playback FGS | Background local or remote playback |
 | media projection FGS | User-approved playback capture |
 | `RECORD_AUDIO` | Microphone and playback-capture `AudioRecord` |
+| `WAKE_LOCK` | Keep the display awake only while a playback or capture source is live |
 | notification listener | Optional local media metadata, only if retained and disclosed |
 
 `POST_NOTIFICATIONS` remains only if a tested user flow needs a runtime grant.
 
 Forbidden production access includes Binder authority permissions, package management, Shizuku, ADB, overlay, accessibility, root, privileged capture, advertising ID, and installation ID.
 
+`WAKE_LOCK` must not create a general never-sleep mode. The visible scope keeps its surface awake, and each live playback or capture service may own one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. Every stop and destroy path must release that ownership. The deprecated lock requires a narrow suppression at its owner. Picture-in-picture and background linger do not own wake state.
+
 ## 5. Backup and migration
 
 Backup rules must exclude remote hosts, connection state, consent markers, obsolete authority state, and release credentials.
 
 A one-release settings migration may preserve current user-facing display values. It must delete obsolete audit, principal, token, grant, and session data.
+
+Same-package upgrades and the existing settings archive must preserve accepted instrument values and the five portable keys: `pip_auto_enter`, `controls_always_visible`, `grid_data`, `double_tap_playback`, and `linger_background`. The archive accepts the complete legal 0.1-through-60-second cycle range. It must not invent missing custom RGB values.
 
 ## 6. Privacy surface
 

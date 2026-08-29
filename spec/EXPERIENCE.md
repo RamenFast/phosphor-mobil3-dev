@@ -27,6 +27,12 @@ Priority order:
 
 A scope adjustment must not activate while the user is opening, moving, or dismissing chrome.
 
+The stage recognizer owns scope gain and orbit arbitration. It must map the console, active sheet, and overflow bounds through the current rotation, then add a 24dp exclusion margin. Scope pinch and drag remain blocked through exactly 333ms after that chrome moves or dismisses. This block must not consume chrome reveal or an armed mode-6 console pull.
+
+If any pointer enters the existing 88dp Android bottom-edge band, scope gain and orbit must not change. The one-finger armed upward console pull remains available from that band.
+
+When `double_tap_playback=false`, the tap recognizer must have no double-tap handler. Disabled double tap must not delay a single tap.
+
 ## 4. Sheets and popouts
 
 A sheet must enter from the physical edge associated with its control and current orientation.
@@ -74,11 +80,17 @@ The interface must distinguish:
 
 A black beam alone is not enough to communicate these states.
 
+Captured-media title and artist must come from the active Android MediaSession. Generic capture remains `everything playing` when no session metadata exists. The in-app play/pause glyph must match the captured session across playing, buffering, paused, and resumed states.
+
+The capture seek rule appears only when the active session advertises seek, supplies a real duration, and accepts the routed command. A non-seekable session must not show a dead seek rule.
+
 ## 8. Picture-in-picture
 
 Picture-in-picture must retain the live scope and current source truth.
 
 Android 12 and newer may use automatic entry. Android 10 and 11 use a compatible manual entry path.
+
+The `pip_auto_enter` setting defaults to `true` and appears in quick and full settings. It controls automatic entry only. Manual picture-in-picture remains available in either setting state, and picture-in-picture must not depend on `linger_background` or `controls_always_visible`.
 
 The app must update the source rectangle and aspect ratio after configuration changes.
 
@@ -87,6 +99,18 @@ The app must update the source rectangle and aspect ratio after configuration ch
 Existing rooms and beam controls remain available. The cleanup must not replace them with generic Material surfaces.
 
 Theme, beam, grid, glow, motion, and photosensitivity settings must persist without retaining behavioral history.
+
+FEEL, MOTION, CORNERS, and LABELS must change visible chrome immediately while their settings surface is open. The preview must not restyle the CRT beam or grid.
+
+DECK must not remain a destination. Before removal, its existing queue and jump action move to SOURCE, and its volume control moves to the console. `controls_always_visible=false` keeps the current hide behavior. When enabled, it blocks both timed and tap-to-hide paths.
+
+Seek, tuning, range, and inline volume controls must provide a 44dp touch lane, a sharp 2dp track, square thumbs, live beam accent, and tap-to-jump or nearest-thumb behavior.
+
+The grid must remain visible against the tube. When `grid_data=true`, the status surface shows independent raw left and right amplitude with absolute dBFS. A left-only or right-only source must label the correct side. Xy45 rotates both trace and grid by 45 degrees. Other modes restore the Cartesian grid.
+
+Auto-gain must hold its effective gain through raw peaks below 0.02 and release only on sounding frames. Only a proven new local item may reset the tracked peak. Metadata refresh, capture, and microphone input must not invent track boundaries. The 6.0 clamp, 0.92 headroom, and 0.05 glide remain unchanged.
+
+Beam energy must remain stable through chrome motion, settings cycles, and surface recreation. Intentional modal scrim dimming is not a beam-energy change.
 
 Controls must keep sufficient contrast against both black and tinted grounds.
 
@@ -105,6 +129,8 @@ The privacy surface must be reachable in-app. It must state that Phosphor has no
 The remote surface must state that the relay requires Tailscale and must not be exposed to the public internet.
 
 ## 12. Performance
+
+The main scope and picture-in-picture must remain awake while a playback or capture source is live. Wake ownership follows the live source, not picture-in-picture visibility or background linger. After the source stops, the display must become sleep-eligible promptly.
 
 The scope should render at the selected supported panel cadence without allocating or crossing JNI per frame.
 

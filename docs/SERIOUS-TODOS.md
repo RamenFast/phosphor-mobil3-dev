@@ -28,12 +28,27 @@
 - [ ] Install the exact packaged production APK on the phone with `dev/pm3 --profile release --serial <serial> install <APK>`.
 - [ ] Preserve wanted Fortress settings and obtain explicit approval before uninstalling `dev.phosphor.mobil3.fortress`.
 
+## Pre-v2 B1-B21 lived repairs
+
+- [ ] Close the B1-B21 lived-repair matrix before the v2 release path continues. Every card needs its active-spec contract, automated gate, honest live receipt, ledger update, and rollback point. Keep `spec-version: pre-v2-b1-b21` and `drift: 21` until all 21 receipts pass. Track the umbrella in [issue #7](https://github.com/RamenFast/phosphor-mobil3-dev/issues/7).
+
 ## Deferred networking work
 
 - [ ] Bind the PC relay to an explicit Tailscale interface or address.
 - [ ] Add protocol-level peer authentication only if Tailscale identity is no longer the boundary.
 - [ ] Polish discovery, connection recovery, latency, and long-session behavior.
 - [ ] Re-run remote artwork, output switching, file playback, and link-state receipts.
+
+## Post-v2 structure debt
+
+These items remain outside the B1-B21 behavior scope:
+
+- [ ] Reconcile capture-reader lifecycle and raw reader-thread ownership beyond the narrow B2 microphone handoff.
+- [ ] Split oversized Activity, playback/capture service, and RemoteFlow responsibilities only with a separate accepted plan.
+- [ ] Reconcile render, session, and serve-client teardown ownership.
+- [ ] Rework release scoreboard and envelope debt without weakening the exact release reds or CLI contract.
+- [ ] Define the full native playback-event ownership policy after the narrow B6 metadata consumer lands.
+- [ ] Remove duplicated default authority and wake ownership after behavior receipts prove the current contracts.
 
 ## Deferred product work
 

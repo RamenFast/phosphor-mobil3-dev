@@ -16,18 +16,24 @@ The product has no Play/Fortress flavor split.
 
 Phosphor must support:
 
-- local files and folders
+- local files and recursive folder trees
 - microphone input
 - Android playback capture
-- user-selected PC relay hosts
+- user-selected PC relay hosts, files, and recursive folder trees
 
 Each source must publish a clear state: unavailable, waiting for consent, starting, flowing, silent, stalled, reconnecting, or stopped where applicable.
+
+A folder is a tree. Local and relay folder playback must visit supported audio descendants in stable order. An invalid entry must report and skip without freezing the interface, stopping a valid queue, or showing dark false-success.
 
 ## 3. Renderer and playback
 
 The Rust renderer remains the visual authority inside one Android `SurfaceView`. Compose owns surrounding chrome and user interaction.
 
 Local playback must remain sample-locked to the scope input. MediaSession controls, audio focus, noisy-route handling, background playback, and picture-in-picture must remain functional.
+
+Transport state must follow the current source. The product must not show a play, pause, seek, title, artist, or source state that the active local, capture, or relay path cannot support.
+
+Local seek and navigation work must leave the main looper responsive. Superseded local requests and stale metadata must not replace the latest requested item.
 
 The app must not fork desktop engine code into this repository. Shared engine changes belong in the sibling `phosphor` repository.
 
@@ -38,6 +44,22 @@ User-facing settings use direct typed persistence. The product has no general co
 A one-release migration may read the old causal settings envelope only to preserve user-facing values. The migration must then remove obsolete authority and audit data.
 
 Remote hosts remain private runtime data. Android backup rules must exclude remote hosts and other connection-specific values.
+
+The portable settings contract includes these keys and defaults:
+
+| Key | Default | Surface |
+|---|---:|---|
+| `pip_auto_enter` | `true` | Full and quick settings |
+| `controls_always_visible` | `false` | Full settings |
+| `grid_data` | `false` | Full settings |
+| `double_tap_playback` | `true` | Full settings |
+| `linger_background` | `false` | Full settings |
+
+These keys must survive same-package updates and settings archive round trips. Picture-in-picture auto-entry and background linger are independent behaviors.
+
+A clean install must seed the accepted instrument defaults: AMOLED, auto-gain and fullscreen on, grid off, mode 1, beam 7, range 6 through 20, a 3-second cycle, automatic HUD and band, focus 0.3, gain 1.8332275, geometry 0.6, and scope rotation lock. The legal cycle range is 0.1 through 60 seconds. Unknown custom RGB values must remain absent with `custom_count=0`.
+
+Removing Phosphor from recents must stop local, relay, capture, and microphone sources when `linger_background=false`. When linger is enabled, the product may retain only a source that already has a real service owner. It must not claim that an activity-owned microphone remains alive.
 
 ## 5. Privacy
 
