@@ -4,8 +4,10 @@
 
 ### Execution update, 2026-09-05
 
-Execution has reached Phase 2 device verification. Current receipts live in
-`docs/dev/receipts/pre-v2-b1-b21/`. The original planning status above is historical.
+Phase 2 task 2.5 passed with replay-verified S25 logs in receipt commit `73626ad`.
+B9 still requires final regression. Phase 3 implementation is in progress, not accepted.
+Current receipts live in `docs/dev/receipts/pre-v2-b1-b21/`.
+The original planning status above is historical.
 
 Ben replaced this plan's model mapping on 2026-09-05. Use only GPT Astra with supported
 high through max effort, or Grok 4.6 with supported xhigh through max effort.
