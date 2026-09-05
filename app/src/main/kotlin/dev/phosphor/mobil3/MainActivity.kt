@@ -1051,6 +1051,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("hud_mode", ui.hudMode)
             putInt("band_mode", ui.bandMode)
             putBoolean("fullscreen", ui.fullscreen)
+            putBoolean("double_tap_playback", ui.doubleTapPlayback)
             putBoolean("scope_rotation_locked", scopeRotationLockState)
             putInt("scope_locked_orientation", lockedScopeOrientation)
             putBoolean("ui_placement_locked", uiPlacementLockState)
@@ -1086,6 +1087,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun restoreTuning() {
         val p = prefs()
         ui.lingerBackground = BackgroundLifecyclePolicy.linger(p.all)
+        ui.doubleTapPlayback = p.getBoolean("double_tap_playback", true)
         ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
         lastRandomTrackTitle = runtimePrefs().getString("random_track_title", null)
@@ -1190,6 +1192,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setViewLock(on: Boolean) {
         ui.viewLock = on
         prefs().edit { putBoolean("view_lock", on) }
+    }
+
+    override fun setDoubleTapPlayback(on: Boolean) {
+        ui.doubleTapPlayback = on
+        prefs().edit { putBoolean("double_tap_playback", on) }
     }
 
     override fun openCaptureMetadataSettings() {

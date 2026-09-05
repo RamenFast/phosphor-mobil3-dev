@@ -990,6 +990,7 @@ class PlaybackService : MediaSessionService() {
                     main.post {
                         if (!destroying && !stopping && isLatest()) {
                             PhosphorNative.deckPublish(!localPlayer.playWhenReady)
+                            localPlayer.onNativeSeekCompleted()
                             sourceSurvival.published()
                             localQueuePolicy.published()
                             startEndWatcher()

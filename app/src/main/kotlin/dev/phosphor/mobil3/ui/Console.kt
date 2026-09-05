@@ -188,6 +188,7 @@ fun Console(
     moreActive: Boolean,
     overflowPullHost: PullGestureHost,
     onHeightChanged: (Int) -> Unit,
+    chromeMoving: Boolean = false,
 ) {
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
@@ -213,6 +214,7 @@ fun Console(
                         .fillMaxWidth()
                     else Modifier.fillMaxWidth()
                 )
+                .stageChromeBounds(StageChromeBounds.Card.Console, chromeMoving)
                 .clip(cardShape)
                 .background(
                     p.surface.copy(alpha = Dim.consoleAlpha * style.panelAlphaScale)
@@ -374,6 +376,11 @@ fun OverflowPopout(
                 alpha = progress
                 translationY = if (reduced) 0f else (1f - progress) * heightPx
             }
+            .stageChromeBounds(
+                StageChromeBounds.Card.Overflow,
+                reveal.animation.isRunning || progress < 1f,
+                progress,
+            )
             .clip(shape)
             .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
             .border(Dim.hairline, p.lineStrong, shape)

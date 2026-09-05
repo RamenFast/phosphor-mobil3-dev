@@ -1,6 +1,7 @@
 package dev.phosphor.mobil3.ui
 
 import android.view.View
+import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
@@ -20,6 +21,7 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.input.pointer.positionChanged
@@ -276,6 +278,9 @@ class RibbonState {
 }
 
 interface StageGestureHost {
+    fun physicalPosition(local: Offset): Offset?
+    fun physicalBounds(): Rect?
+    fun chromeBlocks(points: List<Offset>, now: Long): Boolean
     fun currentGain(): Float
     fun setGainAbsolute(g: Float)
     /** AUTO-GAIN or VIEW LOCK armed: gain gestures inform, never move. */
@@ -301,7 +306,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
             // Reserve the top band for Android's transient system-bar gesture.
-            if (first.position.y <= Dim.topGestureBand.toPx()) {
+            val physicalOrigin = host.physicalPosition(first.position)
+            val physicalRoot = host.physicalBounds()
+            if (physicalOrigin != null && physicalRoot != null &&
+                physicalOrigin.y <= physicalRoot.top + Dim.topGestureBand.toPx()
+            ) {
                 while (true) {
                     val e = awaitPointerEvent()
                     if (e.changes.none { it.pressed }) break
@@ -309,7 +318,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                 return@awaitEachGesture
             }
             // 0 undecided · 1 drag · 2 pinch · 4 mode-step (fired) · 5 glow swipe
-            // 6 bottom chrome door. It can only win from the physical bottom edge.
+            // 6 bottom chrome door · 7 retired. Pull deltas use physical coordinates.
             var mode = 0
             var gain = host.currentGain()
             var glow = host.currentGlow()
@@ -318,38 +327,103 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
             var twoOrigin = Offset.Zero
             var twoStartDist = 0f
             val bottomCandidate = host.bottomPullArmed() &&
-                first.position.y >= size.height - Dim.bottomGestureBand.toPx()
+                physicalOrigin != null && physicalRoot != null &&
+                StageGesturePolicy.inBottomBand(physicalOrigin, physicalRoot, Dim.bottomGestureBand.toPx())
+            val policy = StageGesturePolicy.Sequence()
+            val firstPoints = listOfNotNull(physicalOrigin)
+            policy.frame(
+                firstPoints, physicalRoot.takeIf { physicalOrigin != null }, Dim.bottomGestureBand.toPx(),
+                host.chromeBlocks(firstPoints, SystemClock.uptimeMillis()),
+            )
             val bloomResistance = 156.dp.toPx()
             var bottomChromeActive = false
             var finishedNormally = false
             val velocity = VelocityTracker().apply {
-                addPosition(first.uptimeMillis, first.position)
+                physicalOrigin?.let { addPosition(first.uptimeMillis, it) }
             }
             try {
               while (true) {
                 val event = awaitPointerEvent()
                 val pressed = event.changes.filter { it.pressed }
                 event.changes.firstOrNull()?.let {
-                    velocity.addPosition(it.uptimeMillis, it.position)
+                    host.physicalPosition(it.position)?.let { position ->
+                        velocity.addPosition(it.uptimeMillis, position)
+                    }
                 }
                 if (pressed.isEmpty()) {
                     finishedNormally = true
                     break
                 }
-                if (pressed.size >= 2) {
+                if (pressed.size >= 2 && (bottomCandidate || mode == 6)) {
                     if (bottomChromeActive) {
                         bottomChromeActive = false
                         host.cancelBottomChromePull()
                     }
-                    if (mode == 0 || mode == 1) {
-                        mode = 2; lastDist = -1f
-                        twoOrigin = Offset(
-                            (pressed[0].position.x + pressed[1].position.x) / 2f,
-                            (pressed[0].position.y + pressed[1].position.y) / 2f,
-                        )
-                        twoStartDist = (pressed[0].position - pressed[1].position).getDistance()
-                        glow = host.currentGlow()
+                    mode = 7
+                }
+                if (pressed.size == 1 && mode in 2..5) mode = 7
+                if (mode == 7) {
+                    pressed.filter { it.positionChanged() }.forEach { it.consume() }
+                    continue
+                }
+
+                val physicalPoints = pressed.mapNotNull { host.physicalPosition(it.position) }
+                val root = host.physicalBounds().takeIf { physicalPoints.size == pressed.size }
+                val scopeFrame = policy.frame(
+                    physicalPoints, root, Dim.bottomGestureBand.toPx(),
+                    host.chromeBlocks(physicalPoints, SystemClock.uptimeMillis()),
+                )
+
+                // This existing door is an exception to scope rejection, not a second owner.
+                if (pressed.size == 1 && bottomCandidate && physicalOrigin != null) {
+                    val ch = pressed[0]
+                    val position = host.physicalPosition(ch.position)
+                    val previous = host.physicalPosition(ch.previousPosition)
+                    if (position != null) {
+                        val travel = position - physicalOrigin
+                        if (mode == 0 && StageGesturePolicy.upwardPull(travel, slop)) {
+                            mode = 6
+                            bottomChromeActive = true
+                            host.beginBottomChromePull(bloomResistance)
+                            host.dragBottomChromePull((-travel.y - slop).coerceAtLeast(0f), bloomResistance)
+                            ch.consume()
+                        } else if (mode == 6 && previous != null && ch.positionChanged()) {
+                            host.dragBottomChromePull(-(position.y - previous.y), bloomResistance)
+                            ch.consume()
+                        } else if (mode == 0 && (
+                                (abs(travel.x) > slop * 2f && abs(travel.x) > abs(travel.y) * 1.6f) ||
+                                    (travel.y > slop * 2f && abs(travel.y) > abs(travel.x) * 1.6f)
+                                )) {
+                            mode = 7
+                        }
                     }
+                    if ((ch.position - first.position).getDistance() > slop) ch.consume()
+                    continue
+                }
+
+                if (pressed.size >= 2 && (mode == 0 || mode == 1)) {
+                    mode = 2
+                    lastDist = -1f
+                    twoOrigin = (pressed[0].position + pressed[1].position) / 2f
+                    twoStartDist = (pressed[0].position - pressed[1].position).getDistance()
+                    glow = host.currentGlow()
+                }
+                if (scopeFrame != StageGesturePolicy.ScopeFrame.Apply) {
+                    // Blocked travel never becomes a deferred pinch, swipe or drag.
+                    gain = host.currentGain()
+                    glow = host.currentGlow()
+                    origin = pressed[0].position
+                    if (pressed.size >= 2) {
+                        lastDist = (pressed[0].position - pressed[1].position).getDistance()
+                        twoStartDist = lastDist
+                        twoOrigin = (pressed[0].position + pressed[1].position) / 2f
+                    } else lastDist = -1f
+                    if (pressed.size >= 2 || (pressed[0].position - first.position).getDistance() > slop) {
+                        pressed.forEach { it.consume() }
+                    }
+                    continue
+                }
+                if (pressed.size >= 2) {
                     val a = pressed[0].position
                     val b = pressed[1].position
                     val dist = (a - b).getDistance()
@@ -410,45 +484,10 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     pressed.forEach { it.consume() }
                 } else if (pressed.size == 1) {
                     val ch = pressed[0]
-                    if (mode in 2..5) {
-                        // Pinch shed a finger — retire the sequence rather than re-owning it.
-                        if (ch.positionChanged()) ch.consume()
-                        continue
-                    }
                     val delta = ch.position - origin
                     if (mode == 0 && (abs(delta.x) > slop || abs(delta.y) > slop)) {
-                        if (bottomCandidate && delta.y < -slop &&
-                            abs(delta.y) > abs(delta.x) * 1.35f
-                        ) {
-                            mode = 6
-                            bottomChromeActive = true
-                            host.beginBottomChromePull(bloomResistance)
-                            host.dragBottomChromePull(
-                                (-delta.y - slop).coerceAtLeast(0f), bloomResistance,
-                            )
-                            ch.consume()
-                        } else if (bottomCandidate && !(
-                                abs(delta.x) > slop * 2f &&
-                                    abs(delta.x) > abs(delta.y) * 1.6f
-                                ) && !(
-                                delta.y > slop * 2f &&
-                                    abs(delta.y) > abs(delta.x) * 1.6f
-                                )
-                        ) {
-                            // A bottom-born gesture stays undecided until upward intent
-                            // or an unmistakable stage drag wins. A diagonal
-                            // system-bars swipe can never leak a few gain/orbit frames.
-                            continue
-                        } else {
-                            mode = 1
-                        }
+                        mode = 1
                         origin = ch.position
-                        continue
-                    }
-                    if (mode == 6 && ch.positionChanged()) {
-                        val d = ch.position - ch.previousPosition
-                        host.dragBottomChromePull(-d.y, bloomResistance)
-                        ch.consume()
                         continue
                     }
                     if (mode == 1 && ch.positionChanged()) {

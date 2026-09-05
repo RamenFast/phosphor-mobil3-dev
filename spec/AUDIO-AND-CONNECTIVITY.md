@@ -21,6 +21,8 @@ A selected local folder means its complete supported audio tree. Traversal must 
 
 Seek, next, previous, and folder-open work must run through one service-owned serial path. A new request replaces pending work. Android media controls and the main looper must return immediately, and only the latest requested item may publish audio or metadata.
 
+After a current native seek succeeds, publish its actual position to the media session even while paused and when metadata is unchanged. A command acknowledgement is not proof of completed native seek. Failed or superseded seeks cannot publish completion, and later state reads cannot replay an old completion.
+
 Tagged local metadata must follow the item that the decoder actually starts. Blank title falls back to the filename. Blank artist remains absent. Metadata delivery must not block open or compete with folder validation for event ownership.
 
 ## 3. Microphone

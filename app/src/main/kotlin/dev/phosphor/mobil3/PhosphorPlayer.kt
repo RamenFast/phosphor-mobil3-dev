@@ -25,6 +25,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         set(value) { transportIntent.publish(value) }
     private var queue: List<QueueEntry> = emptyList()
     private var index = 0
+    private var nativeSeekPosition: Long? = null
 
     internal fun transportRevision(): Long = transportIntent.revision
     internal fun recordTransportIntent(play: Boolean) = transportIntent.record(play)
@@ -78,6 +79,10 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
             b.setPlaylist(queue.mapIndexed { i, e -> itemData(i, e) })
             b.setCurrentMediaItemIndex(index)
             b.setContentPositionMs { PhosphorNative.deckPositionMs() }
+            nativeSeekPosition?.let {
+                b.setPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK, it)
+                nativeSeekPosition = null
+            }
         }
         return b.build()
     }
@@ -110,6 +115,11 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         invalidateState()
     }
 
+    internal fun onNativeSeekCompleted() {
+        nativeSeekPosition = PhosphorNative.deckPositionMs()
+        invalidateState()
+    }
+
     internal fun onTrackMetadata(meta: PlaybackTruth.Metadata) {
         loadedDurationMs = meta.durationMs ?: C.TIME_UNSET
         loadedMeta = MediaMetadata.Builder()
@@ -127,6 +137,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     /** Install a fresh queue (folder play). The service stages + opens entry `start`. */
     fun setQueue(entries: List<QueueEntry>, start: Int) {
+        nativeSeekPosition = null
         queue = entries
         index = start.coerceIn(0, (entries.size - 1).coerceAtLeast(0))
         loadedMeta = null
@@ -176,6 +187,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        nativeSeekPosition = null
         playing = false
         queue = emptyList()
         index = 0

@@ -1,6 +1,7 @@
 package dev.phosphor.mobil3.ui
 
 import android.content.res.Configuration
+import android.os.SystemClock
 import android.view.SurfaceView
 import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
@@ -16,6 +17,7 @@ import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
@@ -29,10 +31,15 @@ import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.runtime.snapshotFlow
+import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.LayoutCoordinates
+import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
@@ -41,6 +48,86 @@ import androidx.compose.ui.viewinterop.AndroidView
 import dev.phosphor.mobil3.PhosphorNative
 import kotlinx.coroutines.delay
 import kotlinx.coroutines.flow.distinctUntilChanged
+
+/** Layout handles stay at this boundary. The arbiter sees only root-space numbers. */
+internal class StageGeometry {
+    var root: LayoutCoordinates? = null
+    var stage: LayoutCoordinates? = null
+    val bounds = StageChromeBounds()
+    class Measurement { var coordinates: LayoutCoordinates? = null }
+    private val cards = arrayOfNulls<Measurement>(StageChromeBounds.Card.entries.size)
+
+    fun rootBounds(): Rect? = root?.takeIf { it.isAttached }?.let {
+        Rect(0f, 0f, it.size.width.toFloat(), it.size.height.toFloat())
+    }
+
+    fun position(coordinates: LayoutCoordinates?, point: Offset): Offset? {
+        val reference = root?.takeIf { it.isAttached } ?: return null
+        val source = coordinates?.takeIf { it.isAttached } ?: return null
+        return reference.localPositionOf(source, point)
+    }
+
+    fun mount(card: StageChromeBounds.Card, measurement: Measurement) {
+        cards[card.ordinal] = measurement
+        bounds.mount(card, measurement, SystemClock.uptimeMillis())
+    }
+
+    fun sample(card: StageChromeBounds.Card, measurement: Measurement, now: Long) {
+        val coordinates = measurement.coordinates?.takeIf { it.isAttached } ?: return
+        val w = coordinates.size.width.toFloat()
+        val h = coordinates.size.height.toFloat()
+        val corners = listOf(Offset.Zero, Offset(w, 0f), Offset(w, h), Offset(0f, h))
+            .map { position(coordinates, it) ?: return }
+        bounds.sample(card, measurement, Rect(
+            corners.minOf { it.x }, corners.minOf { it.y },
+            corners.maxOf { it.x }, corners.maxOf { it.y },
+        ), now)
+    }
+
+    fun refresh(now: Long) {
+        StageChromeBounds.Card.entries.forEach { card ->
+            cards[card.ordinal]?.let { sample(card, it, now) }
+        }
+    }
+
+    fun dismiss(card: StageChromeBounds.Card, measurement: Measurement) {
+        val now = SystemClock.uptimeMillis()
+        sample(card, measurement, now)
+        bounds.dismiss(card, measurement, now)
+        measurement.coordinates = null
+        if (cards[card.ordinal] === measurement) cards[card.ordinal] = null
+    }
+}
+
+internal val LocalStageGeometry = compositionLocalOf<StageGeometry?> { null }
+
+/** Samples layer-only motion during its existing transition, including final placement. */
+@Composable
+internal fun Modifier.stageChromeBounds(
+    card: StageChromeBounds.Card,
+    moving: Boolean,
+    motionValue: Any? = null,
+): Modifier {
+    val geometry = LocalStageGeometry.current ?: return this
+    val measurement = remember(geometry, card) { StageGeometry.Measurement() }
+    val currentMoving by rememberUpdatedState(moving)
+    DisposableEffect(geometry, measurement) {
+        geometry.mount(card, measurement)
+        onDispose { geometry.dismiss(card, measurement) }
+    }
+    SideEffect { geometry.bounds.motion(card, measurement, moving, SystemClock.uptimeMillis()) }
+    LaunchedEffect(geometry, measurement, moving, motionValue) {
+        do {
+            withFrameNanos { geometry.sample(card, measurement, SystemClock.uptimeMillis()) }
+        } while (currentMoving)
+        // Frame callbacks precede layout. One more frame reads the final applied layer.
+        withFrameNanos { geometry.sample(card, measurement, SystemClock.uptimeMillis()) }
+    }
+    return onGloballyPositioned {
+        measurement.coordinates = it
+        geometry.sample(card, measurement, SystemClock.uptimeMillis())
+    }
+}
 
 // What the chrome can ask the host to do. Keeps Compose free of Android service plumbing.
 interface ScopeActions {
@@ -78,6 +165,7 @@ interface ScopeActions {
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
     fun setLingerBackground(on: Boolean)
+    fun setDoubleTapPlayback(on: Boolean)
     fun openCaptureMetadataSettings()
     fun openLink(url: String)
     fun markBestiaryFound()
@@ -170,6 +258,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     var consoleHeightPx by remember { mutableIntStateOf(0) }
     var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
+    val stageGeometry = remember { StageGeometry() }
+    val currentActions by rememberUpdatedState(actions)
     val bloomScope = rememberCoroutineScope()
     val bloom = remember(bloomScope) { BloomPullState(bloomScope) }
     val settingsReveal = remember(bloomScope) { PullRevealState(bloomScope) }
@@ -258,6 +348,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setHudMode(mode: Int) = actions.setHudMode(mode)
             override fun setFullscreen(on: Boolean) = actions.setFullscreen(on)
             override fun setLingerBackground(on: Boolean) = actions.setLingerBackground(on)
+            override fun setDoubleTapPlayback(on: Boolean) = actions.setDoubleTapPlayback(on)
             override fun openCaptureMetadataSettings() = actions.openCaptureMetadataSettings()
             override fun isScopeRotationLocked() = actions.isScopeRotationLocked()
             override fun setScopeRotationLocked(locked: Boolean) =
@@ -394,8 +485,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         LocalChromeLandscape provides chromeLandscape,
         LocalUiPlacementLocked provides uiLocked,
         LocalUiUpright provides state.uprightQuadrant,
+        LocalStageGeometry provides stageGeometry,
     ) {
-        Box(Modifier.fillMaxSize()) {
+        Box(Modifier.fillMaxSize().onGloballyPositioned { stageGeometry.root = it }) {
             // Layer 0: the scope, full-bleed under everything. NEVER rotated by the
             // chrome container — the SurfaceView owns its own beam-rotation verb.
             AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
@@ -420,11 +512,22 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Box(
                     Modifier
                         .fillMaxSize()
+                        .onGloballyPositioned { stageGeometry.stage = it }
                         .stageGestures(
                             remember(actions, state, bloom, style.motion, reduced) {
                                 object : StageGestureHost {
                                     private var edgeTravelPx = 0f
                                     private var settingsHandedOff = false
+
+                                    override fun physicalPosition(local: Offset) =
+                                        stageGeometry.position(stageGeometry.stage, local)
+                                    override fun physicalBounds() = stageGeometry.rootBounds()
+                                    override fun chromeBlocks(points: List<Offset>, now: Long): Boolean {
+                                        stageGeometry.refresh(now)
+                                        return stageGeometry.bounds.blocks(
+                                            points, with(density) { StageGesturePolicy.MARGIN_DP.dp.toPx() }, now,
+                                        )
+                                    }
 
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
@@ -500,13 +603,15 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                             },
                             ribbon,
                         )
-                        .pointerInput(Unit) {
+                        .pointerInput(state.doubleTapPlayback) {
                             detectTapGestures(
                                 onTap = {
                                     if (overflowComposed) closeOverflow(Sheet.NONE)
                                     else consoleVisible = !consoleVisible
                                 },
-                                onDoubleTap = { actions.togglePlay() },
+                                onDoubleTap = if (state.doubleTapPlayback) {
+                                    { currentActions.togglePlay() }
+                                } else null,
                             )
                         },
                 )
@@ -565,6 +670,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     moreActive = overflowComposed,
                     overflowPullHost = overflowPullHost,
                     onHeightChanged = { consoleHeightPx = it },
+                    chromeMoving = transition.isRunning,
                 )
             }
 

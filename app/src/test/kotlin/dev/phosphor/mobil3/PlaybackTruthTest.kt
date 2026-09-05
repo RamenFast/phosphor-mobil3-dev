@@ -176,6 +176,29 @@ class PlaybackTruthTest {
         assertEquals(2, h.reads)
     }
 
+    @Test fun successfulCurrentNativeSeekPublishesOnePositionDiscontinuity() {
+        val base = File("src/main/kotlin/dev/phosphor/mobil3")
+        val service = File(base, "PlaybackService.kt").readText()
+        val player = File(base, "PhosphorPlayer.kt").readText()
+        val seek = service.substringAfter("if (sameTarget && request.positionMs != null)")
+            .substringBefore("if (!releaseReaders(isLatest))")
+        val success = seek.substringAfter("} else {")
+        assertFalse(seek.substringBefore("} else {").contains("onNativeSeekCompleted"))
+        assertTrue(success.contains("if (!destroying && !stopping && isLatest())"))
+        assertTrue(success.indexOf("deckPublish") < success.indexOf("onNativeSeekCompleted"))
+        assertEquals(1, Regex("localPlayer.onNativeSeekCompleted\\(\\)").findAll(service).count())
+        val publish = player.substringAfter("internal fun onNativeSeekCompleted()")
+            .substringBefore("internal fun onTrackMetadata")
+        assertTrue(publish.contains("nativeSeekPosition = PhosphorNative.deckPositionMs()"))
+        assertTrue(publish.contains("invalidateState()"))
+        assertTrue(player.contains("b.setPositionDiscontinuity(Player.DISCONTINUITY_REASON_SEEK, it)"))
+        val consumed = player.substringAfter("nativeSeekPosition?.let {").substringBefore("}")
+        assertTrue(consumed.contains("nativeSeekPosition = null"))
+        assertTrue(player.substringAfter("fun setQueue(").substringBefore("fun queueSize")
+            .contains("nativeSeekPosition = null"))
+        assertTrue(player.substringAfter("override fun handleStop()").contains("nativeSeekPosition = null"))
+    }
+
     @Test fun productionHasOneEventReaderOnExistingWatcherAndNoPlayerMetadataRead() {
         val base = File("src/main/kotlin/dev/phosphor/mobil3")
         val service = File(base, "PlaybackService.kt").readText()

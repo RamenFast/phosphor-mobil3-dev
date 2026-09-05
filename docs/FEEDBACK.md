@@ -327,3 +327,11 @@ Seven actual read-only relay CLI checks and fourteen confined installer groups p
 The independent correction03 receipt inspected the exact source, XML and logs and closed both bounded findings. Original review and failed attempts remain intact.
 Source-string wiring and production-helper tests do not execute Compose. Exact retained debug artifact follow-through remains next.
 Live B3, all original final cards and drift 21 remain open. The quiet-lane exclusions, prior socket-test disclosure and NOT RUN fixtures remain unchanged.
+
+## 2026-09-05 23:42 UTC: gesture ownership and live seek publication
+
+Phase8 now uses the existing stage owner for transformed24dp chrome margins, through333ms settling, physical88dp bottom rejection and preserved one-finger console pull. The dedicated double-tap setting defaults true and supplies a literal null handler when disabled. Focused37 and full271 Android tests passed against unchanged source. Independent review found no concrete source defect but kept actual Compose/phone acceptance open.
+
+Authorized phone checks on the exact installed Phase7 APK verified preference preservation, local direct/folder metadata and beam, microphone handoff, and local/mic recents source cleanup. The marked420-second local log replay matched58579 records with no crash/ANR/panic candidates. Complete lifecycle, captured transport, relay/Linux and later UI/render/default matrices remain open.
+
+A real paused seek exposed stale media-session position despite a native reopen at the requested offset. The existing successful latest-request publication now emits actual native position as a consumed Media3 discontinuity. Root full gate272 passed unchanged inputs. This source correction still needs exact installed recovery evidence. No original final card or drift21 count is closed by these partial results. See the Phase7 live checkpoint and Phase8 receipt.

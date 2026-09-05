@@ -10,6 +10,58 @@ import java.security.MessageDigest
 
 class SettingsArchiveTest {
     @Test
+    fun doubleTapBooleanRoundTripsWithoutRuntimeOrOtherSettings() {
+        for (enabled in listOf(false, true)) {
+            val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3],
+                mapOf("double_tap_playback" to enabled, "consent_seen" to true))
+            assertEquals(listOf("double_tap_playback"), exported.exportedKeys)
+            assertEquals(mapOf("double_tap_playback" to enabled), SettingsArchive.decode(exported.json).values)
+        }
+    }
+
+    @Test
+    fun oldArchiveDoesNotEraseExplicitDoubleTapOff() {
+        val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("grid" to true))
+        val imported = SettingsArchive.decode(exported.json)
+        assertFalse(imported.values.containsKey("double_tap_playback"))
+        val existing = mutableMapOf<String, Any>("double_tap_playback" to false)
+        existing.putAll(imported.values)
+        assertEquals(false, existing["double_tap_playback"])
+    }
+
+    @Test
+    fun doubleTapRejectsNonBooleanExportValues() {
+        for (invalid in listOf<Any>("false", 1, 0, 0.0f)) {
+            val error = assertFailsWith<SettingsArchive.ArchiveException> {
+                SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("double_tap_playback" to invalid))
+            }
+            assertEquals("invalid_setting_type", error.error)
+        }
+    }
+
+    @Test
+    fun doubleTapRejectsNonBooleanImportEvenWithValidChecksum() {
+        for (invalid in listOf<Any>("false", 1, 0)) {
+            val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("double_tap_playback" to true))
+            val root = JSONObject(exported.json)
+            root.getJSONObject("settings").put("double_tap_playback", invalid)
+            val value = if (invalid is String) "\"$invalid\"" else invalid.toString()
+            val canonical = "{" +
+                "\"exported_at\":\"${metadata[3]}\"," +
+                "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+                "\"settings\":{\"double_tap_playback\":$value}," +
+                "\"source_distribution\":\"${metadata[2]}\"," +
+                "\"source_package\":\"${metadata[0]}\"," +
+                "\"source_version\":\"${metadata[1]}\"}"
+            val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+            root.put("content_sha256", digest)
+            val error = assertFailsWith<SettingsArchive.ArchiveException> { SettingsArchive.decode(root.toString()) }
+            assertEquals("invalid_setting_type", error.error)
+        }
+    }
+
+    @Test
     fun lingerDefaultsFalseAndBooleanValuesRoundTripWithoutRuntimeOrPipState() {
         assertFalse(dev.phosphor.mobil3.BackgroundLifecyclePolicy.linger(emptyMap<String, Any>()))
         for (enabled in listOf(false, true)) {

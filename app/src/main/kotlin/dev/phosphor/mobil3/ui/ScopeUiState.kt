@@ -62,6 +62,7 @@ class ScopeUiState {
     var bandMode by mutableIntStateOf(0)
     var fullscreen by mutableStateOf(true)
     var lingerBackground by mutableStateOf(false)
+    var doubleTapPlayback by mutableStateOf(true)
     var uprightQuadrant by mutableIntStateOf(0)
     var chromeQuadrant by mutableIntStateOf(0)
     var viewLock by mutableStateOf(false)

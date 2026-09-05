@@ -379,6 +379,13 @@ fun SheetHost(
                                 }
                             }
                         }
+                        .stageChromeBounds(
+                            StageChromeBounds.Card.Sheet,
+                            !openState.isIdle || dismissOffset.isRunning ||
+                                entryReveal?.animation?.isRunning == true ||
+                                (entryReveal != null && entryReveal.progress < 1f),
+                            entryReveal?.progress,
+                        )
                         .nestedScroll(dismissNestedScroll)
                         .clip(sheetShape)
                         .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
@@ -1137,6 +1144,10 @@ fun SettingsSheet(
         val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
             ChipCell(
+                "DOUBLE TAP PLAYBACK · " + if (state.doubleTapPlayback) "on" else "off",
+                active = state.doubleTapPlayback, p = p, small = true,
+            ) { actions.setDoubleTapPlayback(!state.doubleTapPlayback) }
+            ChipCell(
                 "BACKGROUND LINGER · " + if (state.lingerBackground) "on" else "off",
                 active = state.lingerBackground, p = p, small = true,
             ) { actions.setLingerBackground(!state.lingerBackground) }
@@ -1384,6 +1395,7 @@ fun SettingsSheet(
 
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
+    fun setDoubleTapPlayback(on: Boolean)
     fun setFullscreen(on: Boolean)
     fun setLingerBackground(on: Boolean)
     fun setViewLock(on: Boolean)
