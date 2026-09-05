@@ -7,7 +7,7 @@
 - `relay/` is the retained PC audio and geometry relay.
 - `rust/` is the Android JNI runtime.
 
-Do not add a runtime administration protocol to the app. Device operations always require an explicit adb serial.
+Do not add an app runtime administration protocol. Device operations always require an explicit adb serial.
 
 ## Repository laws
 
@@ -30,7 +30,7 @@ Do not add a runtime administration protocol to the app. Device operations alway
 - No account, ads, usage tracking, behavior tracking, or automatic reporting service.
 - No first-run relay endpoints or network connection.
 - Saved PC relays must remain inside the supported Tailscale address space.
-- The first public release is free and has no purchase flow.
+- The first public release is free, with no purchase flow.
 
 ## Validation
 
@@ -46,6 +46,6 @@ scripts/check-play-boundary.sh source --json
 scripts/ship-check.sh --json
 ```
 
-For device work, use the explicit Galaxy S25 serial from the Android skill. `dev/pm3 install` must read back the installed base APK and prove its SHA-256 and signer. Record package, version, signer, device build, commands, observations, and artifact hashes.
+For device work, use the Android skill's explicit Galaxy S25 serial. `dev/pm3 install` must read back the installed base APK and prove its SHA-256 and signer. Record package, version, signer, device build, commands, observations, and artifact hashes.
 
-A release claim additionally needs approved signing inputs, a clean exact release tag, clean sibling-engine source, `scripts/ship-check.sh --only=release.bundle`, and installation of the exact packaged release APK on the phone.
+A release claim also needs approved signing inputs, a clean exact release tag, clean sibling-engine source, `scripts/ship-check.sh --only=release.bundle`, and installation of the exact packaged release APK on the phone.
