@@ -18,7 +18,7 @@ These are valid stopping points with evidence and a smallest resolving action, n
 | Sanitization conflicts with a build input | Package exporter currently archives the private Git tree. | Phase 08 checks every omission against build inputs and updates distribution spec before activation. Never fake exact source. |
 | True screen-lock/PIN acceptance | Existing approval boundary remains. | Ben owns permission. Do not change keyguard or guess credentials. |
 | New roadmap execution and publication | User delegated planning, not future implementation or release. | Ben owns later execution/push/tag/signing/publication approvals. Quiet planning needs no interruption. |
-| Two future core features lack briefs | Existing ask ledger explicitly defers their specification. | Ben/Nexus own the briefs. This roadmap does not invent or implement them. |
+| Two future core features lack briefs | Existing ask ledger explicitly defers their specification. | Product owners supply the briefs tracked in [ASKS](../../ASKS.md). This roadmap does not invent or implement them. |
 
 ## Deferred extraction is conditional, not forgotten
 
