@@ -23,6 +23,16 @@ New review filenames name their actual role and model, rather than the historica
 Existing review receipts retain their original filenames and provenance.
 All product boundaries, verification gates, and publication restrictions below remain in force.
 
+At 10:32 UTC Ben requested quiet autonomous work while watching YouTube and listening to music.
+Continue source review, tests, documentation and retained builds without desktop alerts or audio changes.
+Defer device actions and live source-switching acceptance while this boundary remains active.
+Keep code phases sequential. Read-only preparation for later phases does not accept those phases.
+
+Quiet preparation corrected two check-definition errors below. Task 9.3 now checks PiP independence
+inside its policy tests, not with a whole-Activity grep that rejects other required settings.
+Task 13.5 uses ledger presence and source-identity equality, not a negated successful `git log` command.
+Neither correction changes product requirements or accepts a later phase.
+
 **Top-level plan:** `/home/ben/Dev/ClaudeWorkspace/phosphor-mobil3/PRE-V2-B1-B21-EXECUTION-PLAN.md`
 
 **Implementation baseline:** mobile `fd3ad71b393d050bfde6703689d00860d027d8bf` on `release/phosphor-2.0.0`; sibling desktop engine `c0cf967c4afa0aa7bf907dee915480aed8bd0530` on `master`.
@@ -361,7 +371,7 @@ Unless a command uses `git -C`, begin it with `cd /home/ben/Dev/ClaudeWorkspace/
 - ▸9.2 📁 `/home/ben/Dev/ClaudeWorkspace/phosphor-mobil3/app/src/main/kotlin/dev/phosphor/mobil3/ui/DeckSheet.kt`, `Sheets.kt`, `Console.kt`, `PhosphorScreen.kt`, `Glyphs.kt` - transplant only the existing queue and jump action into SOURCE; move the B14 volume rule to console; add `controls_always_visible=false` and gate every hide path; then delete DECK UI, enum, route, cell, and glyph. Keep Rust/JNI deck playback.
   - ✅ `git grep -n -E 'Sheet\.DECK|DeckSheet|SettingsGlyph\.Deck|onDeck' -- app/src/main` -> no UI hits; `git grep -n 'deckOpen' -- app/src/main rust/src` -> playback engine hits remain.
 - ▸9.3 Add `pip_auto_enter=true`, synchronized quick and full toggles, and auto-entry-only gating. Manual PiP stays available. B12 reads no linger or controls key.
-  - ✅ `./gradlew --no-daemon :app:testDebugUnitTest --tests "dev.phosphor.mobil3.PictureInPicturePolicyTest" && ! git grep -n "linger_background\|controls_always_visible" -- app/src/main/kotlin/dev/phosphor/mobil3/MainActivity.kt` -> PiP policy is independent.
+  - ✅ `./gradlew --no-daemon :app:testDebugUnitTest --tests "dev.phosphor.mobil3.PictureInPicturePolicyTest"` -> tests prove PiP auto-entry and manual entry ignore linger and always-visible controls. Check the PiP policy and callbacks, not unrelated settings elsewhere in Activity.
 - ▸9.4 Make FEEL, MOTION, CORNERS, and LABELS preview effective chrome immediately through `LocalRoomStyle` and one live sample row. Keep CRT grid and beam untouched.
   - ✅ `./gradlew --no-daemon :app:testDebugUnitTest --tests "dev.phosphor.mobil3.ui.RoomStyleOverrideTest"` -> all style coupling and preview cases pass.
 - ▸9.5 Run GESTURES and RENDER reviews, commit B14/B13/B12/B10 with both issue references, install, and run the S25 visual/interaction matrix.
@@ -421,7 +431,7 @@ Unless a command uses `git -C`, begin it with `cd /home/ben/Dev/ClaudeWorkspace/
 - ▸13.4 📁 relay/scripts/docs named in `cleanup-relay.verify.md` - apply validated help/schema/constants/meta/test-helper cleanup; harden public publisher default mode and grep errors; omit estate-only script and `dev/scratch`; remove the dead `docs/UX-SPEC.md` copy and explicitly stage only public-safe active `vision/`/`spec/` files; fix `library --json`; add publisher fixture. Reject shared `NO_CANCEL`.
   - ✅ `cargo fmt --manifest-path relay/Cargo.toml -- --check && cargo clippy --manifest-path relay/Cargo.toml --locked --all-targets -- -D warnings && cargo test --manifest-path relay/Cargo.toml --locked && shellcheck scripts/*.sh && scripts/test-release-gates.sh && scripts/test-publish-public.sh` -> relay and publisher cleanup pass.
 - ▸13.5 📁 `/home/ben/Dev/ClaudeWorkspace/phosphor-mobil3/docs/SERIOUS-TODOS.md` - record remaining structural debt without code changes: capture reader lifecycle beyond the narrow mic fix; Activity/service/RemoteFlow splits; render/session/serve-client teardown; release scoreboard/envelope debt; full event policy; default and wake ownership duplication.
-  - ✅ `git grep -n "Post-v2 structure debt" -- docs/SERIOUS-TODOS.md && ! git log --format=%B --grep="Post-v2 structure debt" --invert-grep --all-match -1 >/dev/null` -> the debt ledger exists and stays outside behavior scope.
+  - ✅ `git grep -n "Post-v2 structure debt" -- docs/SERIOUS-TODOS.md` -> the debt ledger exists. Record complete source identities immediately before and after this documentation-only step and require equality. A successful history query cannot prove that code stayed unchanged.
 - ▸13.6 Commit Android, native, and relay cleanup separately with `Refs #$ISSUE_CLEANUP`. Run GLM verification and Grok scope audit for each. Muse reviews the combined cleanup diff.
   - ✅ `git status --short && git log -3 --oneline && bash -n dev/pm3 scripts/*.sh` -> three cleanup commits are clean; then run the Appendix E full mobile gate block.
 
