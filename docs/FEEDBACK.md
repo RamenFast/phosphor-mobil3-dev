@@ -210,3 +210,30 @@ The exact B2 debug APK remains installed. No production package, system setting,
 The [B2 receipt](dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md) maps each requirement to measured evidence and keeps fault-path limits explicit.
 Phase 4 task 4.4 passes. Final regression and human acceptance remain open. The next implementation phase is Phase 5, not the future roadmap.
 Keep `spec-version: pre-v2-b1-b21` and `drift: 21` unchanged.
+
+## 2026-09-05 17:21 UTC: original report audit
+
+Ben reposted the original 21 requests for comparison. This is a coverage check, not a report that every bug recurred.
+Each request remains in the raw report above, the execution plan's traceability table and `spec/ACCEPTANCE.md`.
+No original request is missing from those records. Coverage does not mean implementation or acceptance.
+
+| Original cards | Current evidence and remaining work |
+|---|---|
+| B2, built-in mic | Phase 4 passed five exact-APK phone cycles. Final regression remains open. |
+| B4, recursive local folders and dark scope | Phase 3 passed direct/tree playback, nested music, invalid entries and a lit trace. Final regression remains open. |
+| B9, local seek/navigation freeze | Phase 2 passed logged paused-ring seeking and navigation stress. Final regression remains open. |
+| B6/B7/B8, metadata, captured seek and play/pause | Notification access restored the observed Spotify path. Missing-access truth, reattachment, buffering and the full matrix remain Phase 5 work. |
+| B21, default stop and optional linger | Open, Phase 6. PiP auto-entry remains a separate setting. |
+| B3, Tailscale and fresh Linux | Open, Phase 7. Existing-relay audio frames do not establish fresh-install or whole-folder relay acceptance. |
+| B1/B19/B18, control deadzones, Android bottom edge and double tap | Open, Phase 8. Preserve the 333ms rule and dedicated playback toggle. |
+| B14/B13/B12/B10, sliders, DECK replacement, PiP and four style previews | Open, Phase 9. Preserve beam-colored sliders and move queue/volume before removing DECK. |
+| B5/B11, brightness and unwanted sleep | Open, Phase 10. Fixed-brightness and live-source wake tests remain separate required observations. |
+| B15/B16/B20, visible stereo grid data, orientation and auto-gain | Open, Phase 11. Require real left/right dBFS, mode-linked grid rotation and preserved no-cutoff limits. |
+| B17, settings and defaults | Open, Phase 12. Test update preservation, archive round-trip and accepted clean-install defaults. Do not invent missing custom RGB values. |
+
+Three cards have phase-specific live PASS evidence. Eighteen remain open, including the three with partial Spotify recovery.
+The B4 receipt retains the separate oversized Android-provider ANR and delayed-cancellation limit. Normal-folder acceptance does not erase that result.
+All cards retain their final-regression boundaries. Visual acceptance still requires Ben's judgment.
+The audit corrected stale B9 ask status and added the latest B2 progress above the execution plan's historical checkpoints.
+The future roadmap remains a frozen planning baseline, not authority to skip unfinished original repairs.
+No runtime source, phone, service, permission, setting, acceptance checkbox or drift counter changed during this audit.

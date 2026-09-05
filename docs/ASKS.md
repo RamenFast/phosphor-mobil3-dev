@@ -21,7 +21,7 @@
 | 2026-08-26 | B6: Restore honest local and captured title, artist, and captured transport controls | open · [#2](https://github.com/RamenFast/phosphor-mobil3-dev/issues/2) |
 | 2026-08-26 | B7: Restore in-app captured-media seek only when the active session can seek | open · [#2](https://github.com/RamenFast/phosphor-mobil3-dev/issues/2) |
 | 2026-08-26 | B8: Make the captured-media play/pause glyph match the audible state | open · [#2](https://github.com/RamenFast/phosphor-mobil3-dev/issues/2) |
-| 2026-08-26 | B9: Keep local seek and navigation from freezing the app and sound | open · [#1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) |
+| 2026-08-26 | B9: Keep local seek and navigation from freezing the app and sound | verify · Phase 2 logged live acceptance passed; final regression remains · [receipt](dev/receipts/pre-v2-b1-b21/phase-02-b9-seek-stress.md) · [#1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) |
 | 2026-08-26 | B10: Preview FEEL, MOTION, CORNERS, and LABELS changes immediately | open · [#5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
 | 2026-08-26 | B11: Keep the display awake while a playback or capture source is live | open · [#5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
 | 2026-08-26 | B12: Add synchronized quick and full controls for PiP auto-entry | open · [#4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) |
@@ -41,3 +41,4 @@
 | 2026-09-05 | Use only approved Astra/Grok workers with explicit supported high-to-max effort and bounded concurrency | global preference saved; project ceiling remains two workers; dated execution override records exact ranges and route limitations |
 | 2026-09-05 | Continue autonomous work without interrupting YouTube or music | active quiet-work boundary from 10:32 UTC; B2 offline delivery complete; roadmap authored without device, visible GUI, audio or active-service changes |
 | 2026-09-05 | Write a comprehensive self-contained mobile codebase plan, using subfolders as needed and choosing the roadmap priorities | completed in [mobile-next](plans/mobile-next/README.md). Nine numbered phases and 21 tasks include contained context, source inventory, verification and rollback. Independent plan review PASS and root document/guard checks passed. Future implementation and publication remain unapproved |
+| 2026-09-05 | Compare the reposted original bugs with the B1-B21 plan and verified progress | audited all 21 original requests against raw report, plan and acceptance matrix; B2/B4/B9 phase live checks passed, final regression open; remaining 18 cards open; [audit](FEEDBACK.md#2026-09-05-1721-utc-original-report-audit) |

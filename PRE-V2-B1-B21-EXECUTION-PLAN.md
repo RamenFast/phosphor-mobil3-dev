@@ -2,6 +2,18 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Latest execution checkpoint, 2026-09-05 17:21 UTC audit
+
+Ben reposted the original report. All 21 requests match the preserved raw report below and have acceptance rows.
+B9, B4 and B2 have passed their phase-specific phone checks. Each still requires final regression.
+B2 task 4.4 passed five exact-artifact cycles, recorded in receipt commit `2a3512e`.
+The next implementation phase is Phase 5: B6/B7/B8 metadata, seeking and captured playback truth.
+Notification-access recovery is partial evidence for those cards, not Phase 5 acceptance.
+The remaining 18 cards stay open. No acceptance checkbox or drift counter changes in this audit.
+Earlier checkpoints below and the future roadmap's frozen baseline retain their historical state.
+Use the current receipts and this checkpoint for progress, not an older pending-B2 instruction.
+This audit does not authorize new phone activity, future roadmap implementation or publication.
+
 ### Execution update, 2026-09-05
 
 Phase 2 task 2.5 passed with replay-verified S25 logs in receipt commit `73626ad`.
