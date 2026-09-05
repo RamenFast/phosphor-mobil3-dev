@@ -181,3 +181,19 @@ Ben requested quiet autonomous work at 10:32 UTC. No device or audio action foll
 Exact installation, five capture-to-mic cycles and narrow B4 transition regression remain pending.
 The receipt retains legacy capture-face, release-error retry and post-start reader limits. This is not a phone PASS.
 Keep B2 open and `drift: 21` unchanged. The [receipt](dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md) contains the evidence.
+
+## 2026-09-05: contained mobile roadmap, planning only
+
+Ben delegated mobile roadmap priorities and requested a context that a later executor could use without the conversation.
+The [mobile-next plan](plans/mobile-next/README.md) now contains nine numbered phases, 21 tasks, source identities, acceptance checks and rollback.
+Three isolated candidates and a separate critic selected evidence-first changes over a broad app rewrite.
+The plan preserves Activity-owned mic, existing services, shared Rust, instrument style and the unfinished B1-B21 sequence.
+
+Independent final plan review passed after five command/test-scope corrections.
+Root checked 63 source hashes, task coverage, file owners, local links and Bash syntax.
+Offline APK guards and 18 synthetic manifest/runner cases passed without a device operation.
+The [planning receipt](plans/mobile-next/verification/PLAN-REVIEW.md) preserves failed-review history, exact identities and evidence limits.
+
+No future runtime implementation, phone action, visible GUI, audio change or active-service operation occurred during planning.
+B2's exact debug APK remains retained, not installed. Device acceptance still waits for Ben's quiet boundary to change.
+New roadmap execution and publication remain unapproved. Keep `spec-version: pre-v2-b1-b21` and `drift: 21` unchanged.
