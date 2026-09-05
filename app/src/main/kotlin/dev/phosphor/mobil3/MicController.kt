@@ -102,6 +102,7 @@ class MicController {
     }
 
     fun cancelStart() { ++generation }
+    internal fun ownsSource(): Boolean = owner === this && (record != null || !stopped.isDone)
 
     fun stop() {
         ++generation
@@ -136,7 +137,7 @@ class MicController {
         private var owner: MicController? = null
 
         fun stopForLocal(requestId: Long, reply: (Long, String?, Boolean) -> Unit) {
-            main.post {
+            val stop = {
                 val current = owner
                 if (current == null) {
                     reply(requestId, null, false)
@@ -148,6 +149,7 @@ class MicController {
                     }
                 }
             }
+            if (Looper.myLooper() == main.looper) stop() else main.post { stop() }
         }
     }
 }

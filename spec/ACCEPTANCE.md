@@ -122,6 +122,19 @@ Each row requires its named automated gate and an honest live receipt. A visual 
 | [ ] | B20 | Loud, silent, then loud audio keeps stable framing. Only a proven new local item resets peak tracking; metadata refresh does not. The 6.0 clamp, 0.92 headroom, and 0.05 glide remain unchanged. |
 | [ ] | B21 | With `linger_background=false`, recents removal stops local, relay, capture, and microphone sources and clears capture consent. Linger preserves only sources with a real service owner and never claims unsupported microphone survival. |
 
+### B21 regression conditions
+
+These conditions extend the B21 row. They are not additional accepted cards.
+
+- [ ] Both service callback orders retire the removed task once. Delayed consent, source starts and saves cannot revive it.
+- [ ] A newer live task survives a delayed old removal callback. Reopening a retained service, disabling linger and removing the next task stops the source.
+- [ ] A stopped capture owner cannot recreate PlaybackService or clear a newer owner's mirror. A new playback service restores a surviving capture mirror without a new projection or consent request.
+- [ ] Activity destruction stops its own microphone without stopping a newer activity's owner. Picker navigation preserves its existing source.
+- [ ] Repeated local, capture and relay player release completes without a native stop or external transport command from the face.
+- [ ] Replacement playback waits for actual predecessor cleanup without converting a wait timeout into permanent new-owner failure. A real reader timeout, owner destruction and subsequent successful stop retry permit recovery.
+- [ ] Ordinary playback-service destruction preserves a separately owned microphone or capture source. Default task removal ends a cleaned-up started capture service even after timeout, while retaining the actual reader failure.
+- [ ] Android receipts establish actual task callback delivery and task-membership timing, including microphone-only operation with no playback service.
+
 ## Release gate
 
 If a required check lacks evidence, the release is not complete. Record the blocker, evidence, best current result, and smallest next step.

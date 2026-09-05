@@ -1135,6 +1135,15 @@ fun SettingsSheet(
         }
         val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
+            ChipCell(
+                "BACKGROUND LINGER · " + if (state.lingerBackground) "on" else "off",
+                active = state.lingerBackground, p = p, small = true,
+            ) { actions.setLingerBackground(!state.lingerBackground) }
+            Prose(
+                "After removal from recents, keep only existing service-owned local or relay playback and capture. " +
+                    "Microphone stops with its Activity. Off stops sources when the task is removed.",
+                p.muted, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
+            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell("GRID · " + (if (state.grid) "on" else "off"), active = state.grid, p = p, small = true) {
@@ -1375,6 +1384,7 @@ fun SettingsSheet(
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
     fun setFullscreen(on: Boolean)
+    fun setLingerBackground(on: Boolean)
     fun setViewLock(on: Boolean)
     fun isScopeRotationLocked(): Boolean
     fun setScopeRotationLocked(locked: Boolean)

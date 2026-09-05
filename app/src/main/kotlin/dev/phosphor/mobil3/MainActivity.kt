@@ -63,6 +63,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private lateinit var ui: ScopeUiState
     private val mic = MicController()
+    private var taskRevision = -1L
+    private var activityRevision = -1L
+    private var activityDestroyed = false
+    private val controllerBinding = ActivityControllerBinding()
+    private fun taskIsCurrent(): Boolean = !activityDestroyed &&
+        BackgroundLifecycle.policy.accepts(taskRevision) && BackgroundLifecycle.policy.acceptsActivity(activityRevision)
+
+    private fun startSourceService(intent: Intent) {
+        if (taskIsCurrent()) startService(BackgroundLifecycle.stamp(intent, taskRevision)
+            .putExtra(BackgroundLifecycle.EXTRA_ACTIVITY_REVISION, activityRevision))
+    }
+
+    private fun startCaptureService(intent: Intent) {
+        if (taskIsCurrent()) startForegroundService(BackgroundLifecycle.stamp(intent, taskRevision)
+            .putExtra(BackgroundLifecycle.EXTRA_ACTIVITY_REVISION, activityRevision))
+    }
     private var micReleaseRevision: Long? = null
     private var captureStatusSequence = 0L
     private var pendingCaptureConsent: Long? = null
@@ -147,18 +163,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val openFileLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri?.let { loadUri(it) }
+            if (taskIsCurrent()) uri?.let { loadUri(it) }
         }
 
     // The service owns traversal, staging and open. Binder carries only the tree identity.
     private val openFolderLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
+            if (!taskIsCurrent()) return@registerForActivityResult
             uri ?: return@registerForActivityResult
             runCatching {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
                 selectSource()
                 applyLocalGainPolicy()
-                startService(Intent(this, PlaybackService::class.java)
+                startSourceService(Intent(this, PlaybackService::class.java)
                     .setAction(PlaybackService.ACTION_OPEN_TREE)
                     .putExtra(PlaybackService.EXTRA_TREE_URI, uri.toString())
                     .putExtra(PlaybackService.EXTRA_QUEUE_START, 0))
@@ -277,7 +294,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
             val selection = pendingCaptureConsent
             pendingCaptureConsent = null
-            if (selection == null || selection != sourceSelection) return@registerForActivityResult
+            if (!taskIsCurrent() || selection == null || selection != sourceSelection) return@registerForActivityResult
             val data = result.data
             if (result.resultCode != android.app.Activity.RESULT_OK || data == null) {
                 applyCaptureStatus(
@@ -292,7 +309,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 applyLocalGainPolicy()
                 applyCaptureStatus(CaptureService.CaptureStatus.starting())
                 runCatching {
-                    startForegroundService(
+                    startCaptureService(
                         Intent(this, CaptureService::class.java).putExtra(CaptureService.EXTRA_RESULT, data)
                     )
                 }.onFailure {
@@ -306,6 +323,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val micPermission =
         registerForActivityResult(ActivityResultContracts.RequestPermission()) { granted ->
+            if (!taskIsCurrent()) return@registerForActivityResult
             val purpose = pendingAudioPermission
             pendingAudioPermission = AudioPermissionPurpose.NONE
             if (!granted) {
@@ -328,6 +346,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        taskRevision = BackgroundLifecycle.policy.enterActivity(taskId)
+        activityRevision = BackgroundLifecycle.policy.activityRevision
         ui = ScopeUiState()
         enableEdgeToEdge()
         // The scope is something you WATCH, so the screen must not dim or lock under it.
@@ -363,7 +383,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         super.onResume()
         refreshCaptureMetadataAccess()
         // Resume only passive live sources once per process. Files and relays remain explicit choices.
-        if (!lastSourceReopened) {
+        if (taskIsCurrent() && !lastSourceReopened) {
             lastSourceReopened = true
             if (!ui.live && ui.sourceLabel == "no source") {
                 when (runtimePrefs().getString("last_source", "none")) {
@@ -416,6 +436,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onStart() {
         super.onStart()
+        val bindingRevision = controllerBinding.start()
         if (!captureStatusReceiverRegistered) {
             ContextCompat.registerReceiver(
                 this,
@@ -434,7 +455,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
         future.addListener({
-            controller = future.get().also { c ->
+            if (!taskIsCurrent() || !controllerBinding.accepts(bindingRevision)) {
+                runCatching { future.get().release() }
+                return@addListener
+            }
+            val connected = runCatching { future.get() }.getOrElse {
+                android.util.Log.w("PhosphorPlayback", "Media session unavailable, reopen Phosphor to reconnect", it)
+                return@addListener
+            }
+            controller = connected.also { c ->
                 c.addListener(object : Player.Listener {
                     override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = sessionPlaying(c) }
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
@@ -478,6 +507,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onStop() {
+        controllerBinding.cancel()
         saveTuning()
         tick.removeCallbacks(uiTick)
         PhosphorNative.setRenderPaused(true)
@@ -497,7 +527,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
 
     override fun onDestroy() {
+        if (taskIsCurrent() && mic.ownsSource() && runtimePrefs().getString("last_source", "none") == "mic") {
+            runtimePrefs().edit { putString("last_source", "none") }
+        }
+        activityDestroyed = true
+        controllerBinding.cancel()
         selectSource()
+        BackgroundLifecycle.policy.leaveActivity(activityRevision)
+        mic.stop()
         super.onDestroy()
     }
 
@@ -590,6 +627,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        selectSource()
+        taskRevision = BackgroundLifecycle.policy.enterActivity(taskId)
+        activityRevision = BackgroundLifecycle.policy.activityRevision
         handleIntent(intent)
     }
 
@@ -604,7 +644,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         selectSource()
         runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         applyLocalGainPolicy()
-        startService(Intent(this, PlaybackService::class.java)
+        startSourceService(Intent(this, PlaybackService::class.java)
             .setAction(PlaybackService.ACTION_OPEN_DOCUMENT)
             .putExtra(PlaybackService.EXTRA_DOCUMENT_URI, uri.toString()))
     }
@@ -682,7 +722,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun openDeck(path: String) {
         selectSource()
         applyLocalGainPolicy()
-        startService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
+        startSourceService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
     }
 
     private fun micHandoffCancel() {
@@ -698,7 +738,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         return ++sourceSelection
     }
 
-    private fun micRequestIsCurrent(): Boolean = !isDestroyed &&
+    private fun micRequestIsCurrent(): Boolean = taskIsCurrent() && !isDestroyed &&
         micReleaseRevision?.let { PlaybackService.localSourcePublication.accepts(it) } == true
 
     private fun withSourcesReleased(
@@ -706,17 +746,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         micRequest: String? = null,
         start: () -> Unit,
     ) {
+        if (!taskIsCurrent()) return
         val reply = object : ResultReceiver(tick) {
             override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
                 val revision = resultData?.getLong(PlaybackService.EXTRA_SOURCE_REVISION, -1) ?: -1
-                if (resultCode == 0 && selection == sourceSelection && !isDestroyed &&
+                if (resultCode == 0 && taskIsCurrent() && selection == sourceSelection && !isDestroyed &&
                     PlaybackService.localSourcePublication.accepts(revision)) {
                     if (micRequest != null) micReleaseRevision = revision
                     start()
                 }
             }
         }
-        startService(Intent(this, PlaybackService::class.java)
+        startSourceService(Intent(this, PlaybackService::class.java)
             .setAction(PlaybackService.ACTION_RELEASE_LOCAL)
             .putExtra(CaptureService.EXTRA_MIC_REQUEST, micRequest)
             .putExtra(PlaybackService.EXTRA_RELEASE_REPLY, reply))
@@ -794,7 +835,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
         ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
         ui.remote = true
-        startService(
+        startSourceService(
             Intent(this, PlaybackService::class.java)
                 .setAction(PlaybackService.ACTION_REMOTE_CONNECT)
                 .putExtra(PlaybackService.EXTRA_HOST, host)
@@ -811,7 +852,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun disconnectRemote() {
         selectSource()
-        startService(
+        startSourceService(
             Intent(this, PlaybackService::class.java)
                 .setAction(PlaybackService.ACTION_REMOTE_DISCONNECT)
         )
@@ -834,6 +875,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
 
     override fun startMic() {
+        if (!taskIsCurrent()) return
         val selection = selectSource()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
@@ -854,6 +896,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun startCapture() {
+        if (!taskIsCurrent()) return
         // Already capturing: do NOT ask again. Android issues a single-use projection
         // token, so a redundant prompt would tear down a working session to rebuild an
         // identical one, and the user would blame us for the extra dialog. `live` plus a
@@ -910,6 +953,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun applyCaptureStatus(status: CaptureService.CaptureStatus) {
+        if (!taskIsCurrent()) return
         if (status.sequence > 0) {
             if (status.sequence <= captureStatusSequence) return
             captureStatusSequence = status.sequence
@@ -1023,7 +1067,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         runtimePrefs().edit {
             putString("random_track_title", lastRandomTrackTitle)
             // The remembered input and calibration date are device runtime metadata.
-            putString(
+            if (taskIsCurrent()) putString(
                 "last_source",
                 when {
                     ui.live && ui.sourceLabel == "capture" -> "capture"
@@ -1041,6 +1085,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun restoreTuning() {
         val p = prefs()
+        ui.lingerBackground = BackgroundLifecyclePolicy.linger(p.all)
         ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
         lastRandomTrackTitle = runtimePrefs().getString("random_track_title", null)
@@ -1133,7 +1178,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
     override fun captureConsentNeeded(): Boolean = !runtimePrefs().getBoolean("consent_seen", false)
-    private fun markConsentSeen() = runtimePrefs().edit { putBoolean("consent_seen", true) }
+    private fun markConsentSeen() {
+        if (taskIsCurrent()) runtimePrefs().edit { putBoolean("consent_seen", true) }
+    }
+
+    override fun setLingerBackground(on: Boolean) {
+        ui.lingerBackground = on
+        prefs().edit { putBoolean(BackgroundLifecyclePolicy.LINGER_KEY, on) }
+    }
 
     override fun setViewLock(on: Boolean) {
         ui.viewLock = on

@@ -309,7 +309,6 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleRelease(): ListenableFuture<*> {
-        PhosphorNative.remoteDisconnect()
         return Futures.immediateVoidFuture()
     }
 }

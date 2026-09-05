@@ -279,3 +279,21 @@ All 55 Android build tasks executed. Tests passed 198/198. Lint, JNI, signer, 11
 The [Phase 5 receipt](dev/receipts/pre-v2-b1-b21/phase-05-b6-b7-b8-media-truth.md) records the exact APK, source and signer hashes.
 This closes the retained-artifact blocker, not B6/B7/B8 acceptance. No phone, playback, GUI, active service or publication action occurred.
 Phase 6 continues with separate implementation and source review. Final live receipts and drift 21 remain open.
+
+## 2026-09-05 19:36 UTC: B21 offline ownership and shutdown repair
+
+Default task removal now has one stop path to the real local, relay, capture and Activity microphone owners.
+One false-default full-settings option preserves only existing service-owned sources. PiP remains separate.
+Late task, consent, save and controller callbacks are fenced. Capture cleanup cannot recreate PlaybackService or clear a newer mirror.
+Ordinary service destruction preserves separate readers. A recreated playback owner restores surviving capture without another projection prompt.
+Native teardown stays serial. Reader timeout remains an error, with explicit stop retry available after owner destruction.
+Local, capture and relay face release handlers are immediate and do not issue duplicate native or external transport stops.
+
+Worker and root each executed 225 Android tests. Native 41, shared audio 30 and relay 26 tests passed.
+Lint, JNI, CLI/boundary fixtures, scope/privacy and archive checks passed at their recorded component levels.
+The root aggregate first failed on a concurrent documentation name collision. Correction `c147ff7` preserved the exclusion through canonical governance without weakening the detector.
+Source and separate source-first human-intent reviews passed the same 15-file freeze after concrete ownership and recovery defects were corrected.
+The [Phase 6 receipt](dev/receipts/pre-v2-b1-b21/phase-06-b21-lifecycle.md) preserves failed attempts, exact hashes and the later Android matrix.
+
+B21 remains VERIFY. Actual callback delivery, task membership, public Media3 release and microphone-only/no-service teardown are not proven by host tests.
+No phone, playback, permission, GUI, active relay or publication action occurred. All original live cards and drift 21 remain open.

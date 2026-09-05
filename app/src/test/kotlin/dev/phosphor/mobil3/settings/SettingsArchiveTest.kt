@@ -9,6 +9,39 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test
+    fun lingerDefaultsFalseAndBooleanValuesRoundTripWithoutRuntimeOrPipState() {
+        assertFalse(dev.phosphor.mobil3.BackgroundLifecyclePolicy.linger(emptyMap<String, Any>()))
+        for (enabled in listOf(false, true)) {
+            val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3],
+                mapOf("linger_background" to enabled, "consent_seen" to true, "last_source" to "capture"))
+            assertEquals(listOf("linger_background"), exported.exportedKeys)
+            val imported = SettingsArchive.decode(exported.json)
+            assertEquals(mapOf("linger_background" to enabled), imported.values)
+            assertEquals(enabled, dev.phosphor.mobil3.BackgroundLifecyclePolicy.linger(imported.values))
+        }
+    }
+
+    @Test
+    fun oldArchiveDoesNotEraseAnExplicitLingerPreference() {
+        val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("grid" to true))
+        val imported = SettingsArchive.decode(exported.json)
+        assertFalse(imported.values.containsKey("linger_background"))
+        val existing = mutableMapOf<String, Any>("linger_background" to true)
+        existing.putAll(imported.values)
+        assertTrue(dev.phosphor.mobil3.BackgroundLifecyclePolicy.linger(existing))
+    }
+
+    @Test
+    fun lingerRejectsNonBooleanArchiveValues() {
+        for (invalid in listOf<Any>("true", 1, 0)) {
+            val error = assertFailsWith<SettingsArchive.ArchiveException> {
+                SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("linger_background" to invalid))
+            }
+            assertEquals("invalid_setting_type", error.error)
+        }
+    }
+
     private val metadata = arrayOf(
         "dev.phosphor.mobil3",
         "2.0.0",

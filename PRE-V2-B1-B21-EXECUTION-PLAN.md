@@ -2,6 +2,16 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Lifecycle checkpoint, 2026-09-05 19:36 UTC
+
+Phase 6 B21 offline implementation passed separate frozen-source and source-first human-intent reviews.
+Worker and root each ran 225 Android tests. Lint, JNI, native 41, shared audio 30, relay 26 and boundary components passed.
+The root aggregate first failed on a concurrent documentation false positive. `c147ff7` corrected the wording without changing the detector.
+Remaining boundary checks and unchanged runtime-input inventories passed separately. The failed aggregate is not relabeled as a full PASS.
+Receipt: `docs/dev/receipts/pre-v2-b1-b21/phase-06-b21-lifecycle.md` maps every outcome and preserves all failed attempts.
+The exact Phase 6 debug artifact is next. Sequential offline Phase 7 may follow the frozen behavior commit.
+Android callback delivery, actual public release and microphone-only/no-service delivery remain unmeasured. B21 and drift 21 remain open.
+
 ### Clean artifact checkpoint, 2026-09-05 18:58 UTC
 
 Phase 5 now has a retained debug APK from exact clean detached local source snapshots.

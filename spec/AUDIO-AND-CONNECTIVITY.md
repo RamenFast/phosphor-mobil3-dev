@@ -99,6 +99,18 @@ With `linger_background=false`, task removal must stop local and relay playback,
 
 With `linger_background=true`, only an already service-owned source may continue. The product must not promise background microphone survival while the microphone remains activity-owned.
 
+Task removal retires queued source starts, consent results and runtime-state saves from that task. A late callback must not stop or republish a newer task's source. A retained service must also handle a later removal after the app reopens and linger is disabled.
+
+Activity destruction stops that activity's microphone owner in either linger mode. Ordinary backgrounding and document-picker navigation must not be treated as destruction. Portable tuning settings remain unchanged by source teardown.
+
+The service owns native source teardown. Releasing a Media3 player face must complete immediately without a second native disconnect or external playback command. Capture-stop notification must reach only an existing matching playback owner and must not recreate the service.
+
+Ordinary playback-service destruction must not stop an activity-owned microphone or a separate capture owner. When a new playback service binds to surviving capture, it must restore the matching metadata and transport mirror without restarting projection or requesting consent.
+
+A replacement source must wait for earlier native cleanup. Reader-stop failure remains visible at the real reader owner and must support a later stop retry. A transient reader timeout must not permanently poison unrelated future playback after that reader actually stops.
+
+Once capture cleanup returns for a removed task, its started service must end even if the reader reported a timeout. Retain that failure and stop-only retry access after destruction. Ending the service must not be reported as proof that an unjoined reader stopped.
+
 ## 9. Deferred relay polish
 
 Application-layer authentication, host identity, protocol encryption, discovery, and simplified setup remain deferred.

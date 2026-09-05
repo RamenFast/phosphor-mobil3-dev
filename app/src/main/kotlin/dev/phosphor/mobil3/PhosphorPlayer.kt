@@ -16,6 +16,8 @@ import com.google.common.util.concurrent.ListenableFuture
 // next/prev from any surface — console, lock screen, earbuds — walks it.
 @androidx.annotation.OptIn(UnstableApi::class)
 class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
+    override fun handleRelease(): ListenableFuture<*> = Futures.immediateVoidFuture()
+
 
     private val transportIntent = LocalTransportIntent()
     private var playing: Boolean

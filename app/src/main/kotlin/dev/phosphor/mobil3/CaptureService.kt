@@ -21,6 +21,7 @@ import android.os.ResultReceiver
 import android.util.Log
 import androidx.core.content.IntentCompat
 import java.util.concurrent.atomic.AtomicLong
+import java.util.concurrent.CompletableFuture
 
 // The projection foreground service must start before MediaProjection is obtained.
 // Apps that disallow playback capture yield silence.
@@ -34,21 +35,30 @@ class CaptureService : Service() {
     private var lifecycleState = STATE_IDLE
     private var reader: Thread? = null
     private val main = Handler(Looper.getMainLooper())
-    private var stopCompletion = SourceStopCompletion()
+    private val stopCompletion = CaptureStopLifecycle()
+    private var destroyed = false
     private val micStopStatus = MicStopStatusToken()
+    private val taskRevision = BackgroundLifecycle.policy.revision
+    private val captureOwnerId = captureOwners.incrementAndGet()
+
+    override fun onCreate() {
+        super.onCreate()
+        owner = this
+    }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     @Synchronized
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            val owned = record != null || reader != null || running
+            retryRetiredStops()
+            val owned = record != null || reader != null || running || !retirement.pending.isDone
             val micRequest = intent.getStringExtra(EXTRA_MIC_REQUEST)
             micStopStatus.select(micRequest)
             finishCapture("stopped by user", CaptureStatus.idle(), retry = true)
             val requestId = intent.getLongExtra(EXTRA_STOP_REQUEST, -1)
             val reply = IntentCompat.getParcelableExtra(intent, EXTRA_STOP_REPLY, ResultReceiver::class.java)
-            stopCompletion.result.thenAccept { error ->
+            retirement.pending.thenAccept { error ->
                 if (micStopStatus.accepts(micRequest)) {
                     // Superseded callbacks must not overwrite the latest request's idle snapshot.
                     publishStatus((if (error == null) CaptureStatus.idle() else
@@ -63,6 +73,17 @@ class CaptureService : Service() {
             return START_NOT_STICKY
         }
         if (cleanedUp) return START_NOT_STICKY
+        if (BackgroundLifecycle.policy.removed || !BackgroundLifecycle.accepts(intent)) {
+            if (!running) finishCapture("task request retired", CaptureStatus.idle())
+            return START_NOT_STICKY
+        }
+        val previousStop = retirement.pending
+        if (!previousStop.isDone || previousStop.getNow(null) != null) {
+            finishCapture("previous owner still stopping", CaptureStatus.error(
+                "capture is still stopping", "Wait for source cleanup, then choose capture again",
+            ))
+            return START_NOT_STICKY
+        }
         if (lifecycleState == STATE_STARTING || lifecycleState == STATE_FLOWING) {
             // Activity retries and duplicate intents are idempotent. Never replace a
             // live AudioRecord/MediaProjection pair or start a second reader thread.
@@ -218,8 +239,9 @@ class CaptureService : Service() {
         running = true
         metadataBridgeActive = true
         startService(
-            Intent(this, PlaybackService::class.java)
+            BackgroundLifecycle.stamp(Intent(this, PlaybackService::class.java)
                 .setAction(PlaybackService.ACTION_CAPTURE_STARTED)
+                .putExtra(EXTRA_CAPTURE_OWNER, captureOwnerId), taskRevision)
         )
         publishStatus(CaptureStatus.flowing())
         reader = Thread {
@@ -238,20 +260,21 @@ class CaptureService : Service() {
     private fun finishCapture(reason: String, status: CaptureStatus, retry: Boolean = false) {
         if (cleanedUp) {
             if (retry && stopCompletion.result.isDone && stopCompletion.result.getNow(null) == ReaderStop.TIMEOUT) {
-                val completion = SourceStopCompletion()
-                stopCompletion = completion
+                val completion = stopCompletion.retry()
+                retirement.add(this, completion.result)
                 Thread({
                     val error = ReaderStop.finish(reader, {}, {}, {})
                     main.post {
                         publishStatus(if (error == null) status else CaptureStatus.error("capture stop failed", error))
                         completion.cleanupFinished(error)
-                        if (error == null) stopSelf()
+                        if (stopCompletion.shouldStopService(error)) stopSelf()
                     }
                 }, "capture-stop-retry").start()
             }
             return
         }
         cleanedUp = true
+        retirement.add(this, stopCompletion.result)
         if (running) Log.i(TAG, "capture stopped: $reason")
         // An idle STOP service never activated the ring and must not darken an old local deck.
         val ownedRing = running
@@ -279,29 +302,33 @@ class CaptureService : Service() {
             main.post {
                 if (metadataBridgeActive) {
                     metadataBridgeActive = false
-                    startService(
-                        Intent(this, PlaybackService::class.java)
-                            .setAction(PlaybackService.ACTION_CAPTURE_STOPPED)
-                    )
+                    PlaybackService.captureStopped(captureOwnerId)
                 }
                 publishStatus(if (error == null) status else CaptureStatus.error(
                     "capture stop failed", error,
                 ))
-                stopForeground(STOP_FOREGROUND_REMOVE)
+                if (!destroyed) stopForeground(STOP_FOREGROUND_REMOVE)
                 // Keep a failed stop available to subsequent request-specific retries.
                 stopCompletion.cleanupFinished(error)
-                if (error == null) stopSelf()
+                if (stopCompletion.shouldStopService(error)) stopSelf()
             }
         }, "capture-stop").start()
     }
 
+    override fun onTaskRemoved(rootIntent: Intent?) {
+        BackgroundLifecycle.removeTask(this, taskRevision)
+    }
+
     override fun onDestroy() {
+        destroyed = true
         if (!cleanedUp) finishCapture("service destroyed", CaptureStatus.idle())
+        if (owner === this) owner = null
         super.onDestroy()
         stopCompletion.ownerDestroyed()
     }
 
     private fun publishStatus(status: CaptureStatus) {
+        if (owner != null && owner !== this) return
         val observed = status.copy(sequence = statusSequence.incrementAndGet())
         lifecycleState = observed.state
         lastStatus = observed
@@ -330,6 +357,46 @@ class CaptureService : Service() {
     }
 
     companion object {
+        private var owner: CaptureService? = null
+        private val captureOwners = AtomicLong()
+        private val retirement = SourceRetirement()
+        internal const val EXTRA_CAPTURE_OWNER = "capture_owner"
+        internal fun isOwner(id: Long): Boolean = owner?.let {
+            it.captureOwnerId == id && !it.cleanedUp && it.running
+        } == true
+
+        internal fun ownsCapture(): Boolean = owner?.let {
+            !it.cleanedUp && it.running && it.record != null && it.projection != null
+        } == true
+
+        internal fun currentOwnerId(): Long? = owner?.captureOwnerId?.takeIf { ownsCapture() }
+
+        internal fun removeTask(keep: Boolean) {
+            if (!keep) {
+                val current = owner
+                current?.stopCompletion?.removeTask()
+                stopExisting()
+                if (current != null && current.stopCompletion.result.isDone &&
+                    current.stopCompletion.shouldStopService(current.stopCompletion.result.getNow(null))) {
+                    current.stopSelf()
+                }
+            }
+        }
+
+        internal fun stopExisting(): CompletableFuture<String?> {
+            retryRetiredStops()
+            val current = owner ?: return retirement.pending
+            current.micStopStatus.select(null)
+            current.finishCapture("owner stopped", CaptureStatus.idle(), retry = true)
+            return retirement.pending
+        }
+
+        private fun retryRetiredStops() {
+            retirement.retryFailed { retired ->
+                (retired as CaptureService).finishCapture("retry retired capture", CaptureStatus.idle(), retry = true)
+            }
+        }
+
         private const val TAG = "phosphor-mobil3"
         const val EXTRA_RESULT = "projection_result"
         const val ACTION_STOP = "dev.phosphor.mobil3.CAPTURE_STOP"
