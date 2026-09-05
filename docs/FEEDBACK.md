@@ -142,3 +142,8 @@ Implementation checkpoint `9bf8527` passed independent scoped source review, the
 The exact debug APK passed packaged boundary checks and pm3 hash/signer readback. Tuning and saved-relay bytes stayed unchanged across installation.
 The app launched, but keyguard still blocks real picker, audio and scope checks. Final independent intent review also remains pending.
 B4 stays open. The [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) records the exact source, APK and signer identities without a phone PASS.
+
+### B4 final intent review, 2026-09-05 09:24 UTC
+
+The separate final human-intent review passed for the frozen source. The root verified all 30 reviewed source identities against the installed candidate's unchanged source.
+Both independent reviews now pass their limited source contracts. B4 remains open because keyguard blocks the required direct/tree playback, output, scope and source-transition observations.

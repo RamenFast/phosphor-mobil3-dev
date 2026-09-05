@@ -1,7 +1,7 @@
 # Phase 3: B4 recursive local folders
 
 - Date: 2026-09-05, UTC.
-- Status: VERIFY. Implementation and source review passed their scoped gates. Final intent review and B4 phone acceptance remain pending.
+- Status: VERIFY. Implementation, source review and separate final human-intent review passed their scoped gates. B4 live phone acceptance remains blocked by keyguard.
 - B IDs: B4, with B9 transport and source-handoff regression checks.
 - Private issue: #1.
 - Public sibling issue: RamenFast/phosphor#9.
@@ -81,7 +81,9 @@ The independent final source review passed on the 09:07 frozen candidate.
 It closed the original EOF, destructive-failure, invalid-tail, Oboe-cleanup and successful-local-face findings.
 It also closed newer transport intent, persistent native and reader loss across supersession, dead remote-session retirement, and ownership-guarded idle cleanup.
 At 09:15 UTC the root independently compared all 30 reviewed source identities with current files. Every identity matched.
-The separate final human-intent review remains pending. Neither review substitutes for real phone acceptance.
+The separate final human-intent review also passed for the frozen source. It independently closed H1, H2 and the examined S1 orderings.
+At 09:24 UTC the root checked all 30 intent-review identities against current source and found no mismatch.
+Neither review substitutes for real phone acceptance.
 
 Prepared controls include a multi-level tone tree with invalid entries and a corrupt tail, plus a separate tree exceeding 128 entries with nested compressed music.
 Fixture preparation and host measurements are not phone acceptance.
