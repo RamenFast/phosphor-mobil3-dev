@@ -2,6 +2,15 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Clean artifact checkpoint, 2026-09-05 18:58 UTC
+
+Phase 5 now has a retained debug APK from exact clean detached local source snapshots.
+Mobile `5215120` and shared engine `4dc0f2c` match every reviewed build input before and after compilation.
+All 55 Android build tasks executed. Tests passed 198/198, with lint, JNI, signer, source and artifact boundary checks.
+The Phase 5 receipt records full source and APK hashes. Original concurrent trees remain untouched, not declared clean.
+No APK was installed. Phase 4 remains the last verified installed baseline. B6/B7/B8 and drift remain open.
+Phase 6 implementation and independent source review continue offline. The earlier clean-candidate blocker below is historical.
+
 ### Offline checkpoint, 2026-09-05 18:35 UTC
 
 Phase 5 B6/B7/B8 implementation is frozen after separate source and human-intent reviews.

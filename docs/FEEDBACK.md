@@ -270,3 +270,12 @@ Clean-sibling provenance and the retained clean candidate stay pending. No faile
 The [Phase 5 receipt](dev/receipts/pre-v2-b1-b21/phase-05-b6-b7-b8-media-truth.md) maps each outcome to evidence and later live checks.
 B6/B7/B8 stay VERIFY pending actual Android title/artist, seek, glyph and notification acceptance. Drift remains 21.
 No phone, playback, permission, visible GUI, active relay or production state changed. Quiet sequential Phase 6 work follows the frozen behavior commit.
+
+## 2026-09-05 18:58 UTC: Phase 5 clean artifact evidence
+
+The root retained a debug APK from clean detached local snapshots of mobile `5215120` and shared source `4dc0f2c`.
+Every reviewed input matched before and after. Original concurrent desktop edits remained untouched.
+All 55 Android build tasks executed. Tests passed 198/198. Lint, JNI, signer, 11 source checks and 5 artifact checks passed.
+The [Phase 5 receipt](dev/receipts/pre-v2-b1-b21/phase-05-b6-b7-b8-media-truth.md) records the exact APK, source and signer hashes.
+This closes the retained-artifact blocker, not B6/B7/B8 acceptance. No phone, playback, GUI, active service or publication action occurred.
+Phase 6 continues with separate implementation and source review. Final live receipts and drift 21 remain open.

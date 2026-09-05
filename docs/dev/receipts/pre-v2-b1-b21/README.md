@@ -11,7 +11,7 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 | B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | Phase 2 PASS; VERIFY pending final regression |
 | B4 | `phase-03-b4-folder-tree.md` | `phase-15-crash.md` | Phase 3 required live PASS; final regression pending |
 | B2 | `phase-04-b2-mic.md` | `phase-15-sources.md` | Phase 4 live PASS 5/5; final regression pending |
-| B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | offline implementation and separate reviews passed; clean candidate and live/final acceptance pending |
+| B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | offline implementation, separate reviews and exact clean-snapshot debug artifact passed; installation and live/final acceptance pending |
 | B21 | `phase-06-b21-lifecycle.md` | `phase-15-lifecycle.md` | pending |
 | B3 | `phase-07-b3-relay-matrix.md` | `phase-17-relay.md` | pending |
 | B1, B18, B19 | `phase-08-gestures.md` | `phase-16-gestures.md` | pending |

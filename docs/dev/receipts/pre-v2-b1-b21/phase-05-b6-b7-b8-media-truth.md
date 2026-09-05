@@ -1,14 +1,14 @@
 # Phase 5: B6/B7/B8 media truth
 
 - Date: 2026-09-05, UTC.
-- Status: VERIFY. Frozen source and separate human-intent reviews passed. Runtime, fixture and selected boundary gates passed. Whole-sibling cleanliness and clean candidate remain blocked by concurrent desktop work. Android acceptance remains deferred.
+- Status: VERIFY. Frozen source and separate human-intent reviews passed. Runtime, fixture and boundary gates passed. A clean-snapshot debug candidate was verified at 18:58 UTC. Original concurrent trees remain untouched. Android acceptance remains deferred.
 - B IDs: B6, B7, B8.
 - Private issue: #2.
 - Mobile baseline: `1f94a4d` after the narrow scope-document correction. The behavior commit is the commit introducing this receipt.
 - Shared audio test commit: `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f`.
 - Frozen behavior manifest: `ec3c9b931b441d2e4af527cb71e7981bfcfab463304c28997e51de0d457cc439`.
 - Device, Android build and installed candidate fields: not measured in this phase. No device command ran.
-- Candidate package: `dev.phosphor.mobil3.debug`, planned retained debug build only. No production package change.
+- Candidate package: `dev.phosphor.mobil3.debug`, retained debug build only. No production package change or installation.
 
 ## Starting state and boundary
 
@@ -120,7 +120,47 @@ A later rollback reverts the Phase 5 mobile behavior commit and optional sibling
 **Best current result:** Frozen implementation, real shared decoder integration tests, passing runtime/fixture gates and separate source/human-intent reviews.
 **Next step:** Complete remaining quiet review/build receipts, then run the named live matrix only in an authorized noninterrupting window.
 
-The clean candidate also requires actual sibling cleanliness. Concurrent desktop work is preserved, not reset or silently included.
+The initial clean-candidate blocker was resolved with exact detached source snapshots, documented below. Concurrent desktop work remains preserved, not reset or silently included.
+
+## Clean-source artifact follow-through, 18:48:54 to 18:58:26 UTC
+
+The root built from local detached snapshots of the two reviewed commits. Each snapshot had an empty Git status and no branch refs.
+No Git worktree, new branch, network fetch or change to either original source tree was needed.
+The original sibling tree remains concurrently edited. Cleanliness below applies to the actual build snapshots, not that original tree.
+Both snapshots matched every input in the retained root attempt 2 inventory before and after the build. Whole-snapshot whitespace checks passed.
+The existing local JDK, SDK and Gradle cache were reused. Native targets and Android outputs were separate from the active repository.
+
+| Identity | Verified value |
+|---|---|
+| Mobile source | `5215120513fc025215526ba3d91abc53a021ca04` |
+| Shared source | `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f` |
+| Package | `dev.phosphor.mobil3.debug` |
+| Version | `2.0.0-debug`, code `2000000` |
+| APK SHA-256 | `65501d9a5281248d335f6cca7c122f4cdd2d1050283d0ed2262dc72a238f8403` |
+| Debug signer SHA-256 | `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d` |
+| Android build log SHA-256 | `4dd04608ee16e3cd784a90e9053669825f961304803a42fef00965733fa5b801` |
+| Full artifact boundary output SHA-256 | `b1bda14c558ab7b8c42e5556698e3f18209152371d9c06eda617d814f00d3528` |
+
+The retained directory is `phase-05/candidate-5215120513fc-isolated/` under the ignored run directory.
+It contains `phase-05-5215120513fc.apk`, XML test results, lint output, package metadata, merged manifest, signer report, runtime dependencies and checksums.
+The root reread every retained checksum after successful task completion. All six matched.
+
+```bash
+./gradlew --offline --no-daemon --max-workers=2 :app:testDebugUnitTest --rerun :app:lintDebug :app:assembleDebug :app:checkEngine
+./gradlew --offline --no-daemon --max-workers=2 :app:dependencies --configuration debugRuntimeClasspath --console=plain
+scripts/check-play-boundary.sh all --artifact "$APK" --manifest "$MANIFEST" --dependencies "$DEPENDENCIES" --json
+scripts/ship-check.sh --only=scope. --json
+```
+
+The wrapper ran at low CPU/I/O priority with two workers and offline Cargo resolution.
+The Android build passed in 8m 58s, with all 55 tasks executed. Tests passed 198/198 with zero failures, errors or skips.
+Lint, packaged JNI and debug assembly passed. The Android signer verifier accepted the APK and matched the retained Phase 4 debug signer.
+The full boundary command passed 11 source and 5 artifact checks. Both scope gates passed. The protected archive remained byte-identical.
+The complete artifact task exited zero in 571.9 seconds. Its before/after source verification outputs were identical.
+The earlier failed root aggregate commands remain failed historical attempts. This separate clean-snapshot artifact success does not relabel them.
+
+No device state was queried or changed. Installed read-back identity, Android lifecycle, real metadata/seek/glyph behavior and visual acceptance remain pending.
+The artifact is available for the later authorized explicit-device workflow. No production signing, release, installation or publication occurred.
 
 ## Redaction check
 
