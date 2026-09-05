@@ -106,3 +106,9 @@ The fallback still lies about playback state without permission. Phase 5 remains
 
 The service-release crash already assigned to Phase 6 occurred before B9 stress. User tuning and saved relay preferences survived the update and tests.
 No card has its final regression receipt yet. Keep `drift: 21`.
+
+## 2026-09-05 execution routing update
+
+Ben replaced the old Sol/GLM/Grok/Muse mapping with Astra high-to-max or Grok 4.6 xhigh-to-max, at supported levels only.
+The plan records that override. The project keeps its two-worker ceiling, separate reviews, and root-owned device tests.
+Astra-high answered through the configured route. Grok 4.6 availability and max effort remain unverified. No product behavior changed.

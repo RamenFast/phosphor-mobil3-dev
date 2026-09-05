@@ -2,6 +2,23 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Execution update, 2026-09-05
+
+Execution has reached Phase 2 device verification. Current receipts live in
+`docs/dev/receipts/pre-v2-b1-b21/`. The original planning status above is historical.
+
+Ben replaced this plan's model mapping on 2026-09-05. Use only GPT Astra with supported
+high through max effort, or Grok 4.6 with supported xhigh through max effort.
+The live Jcode worker pin is Astra. Grok 4.6 is not currently available through the configured route.
+Do not substitute older Grok, Sol, GLM, or Muse models. Do not claim untested effort levels work.
+
+Keep separate implementation, source-verification, and human-intent reviews using approved workers.
+The root still owns integration, device actions, gates, and commits. Preserve the two-worker project
+ceiling and sequential code phases. Workers do not spawn more workers.
+New review filenames name their actual role and model, rather than the historical model chain.
+Existing review receipts retain their original filenames and provenance.
+All product boundaries, verification gates, and publication restrictions below remain in force.
+
 **Top-level plan:** `/home/ben/Dev/ClaudeWorkspace/phosphor-mobil3/PRE-V2-B1-B21-EXECUTION-PLAN.md`
 
 **Implementation baseline:** mobile `fd3ad71b393d050bfde6703689d00860d027d8bf` on `release/phosphor-2.0.0`; sibling desktop engine `c0cf967c4afa0aa7bf907dee915480aed8bd0530` on `master`.
