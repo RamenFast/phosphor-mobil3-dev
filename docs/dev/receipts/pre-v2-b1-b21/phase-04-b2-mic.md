@@ -4,6 +4,7 @@
 - Status: B2 OPEN. Offline implementation and gate evidence only. Five-cycle phone acceptance is pending.
 - Private issue: #3.
 - Mobile base: `2401239e3c7a644f7d9c598d2a43ae761464b4c1`.
+- Implementation commit: `47ff7cdc71c3b8e4315d265844fdfbfcfeb2136c`.
 - Unchanged sibling: `2a45b0f4d05696efe98970f51ac5358c052b565f`.
 - Rollback APK: Phase 3 debug candidate, SHA-256 `98523b2eadd1ea2807ccd9f6ebcfc0850d6d3ec430c8d744ad330c7ca2d8be0a`.
 
@@ -70,9 +71,22 @@ The root retained XML results, lint XML, command logs and source manifests in th
 - Independent source review: initial FAIL retained. Corrected-source PASS includes an independent compiled-policy reproduction with both destruction orders.
   Root rechecked all 12 reviewed source identities.
 - Independent human-intent review: PASS on the corrected candidate. Root checked its 11 listed source/spec/plan identities.
-- Clean-source commit and retained APK: next. Both final reviews now pass their bounded source contracts.
+- Clean-source commit and retained APK: complete at `47ff7cd`. Both final reviews pass their bounded source contracts.
 - Exact APK installation and hash/signer readback: deferred by the quiet-work boundary.
 - Five capture-to-mic cycles and B4 transition regression: pending.
+
+## Exact retained debug APK, not installed
+
+The root built commit `47ff7cd` from clean mobile and sibling trees, then rechecked both identities and the frozen source manifest.
+The build completed at 10:50:55 UTC. Generated `BUILD_COMMIT` is `47ff7cdc71c3`, without a dirty suffix.
+The exact APK passed 11 source and 5 packaged-artifact boundary checks. The pinned NDK runtime exemption remained the only exemption.
+
+- Retained file: `dev/scratch/pre-v2-20260829T072841Z/phase-04/candidate-47ff7cdc71c3/phase-04-47ff7cdc71c3.apk`.
+- APK SHA-256: `ad9a726eb510d3c5ecd066af7218fbc95fdbbef137acc7603ed5771118d42993`.
+- Debug signer SHA-256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`.
+- Signature verification: APK v2 scheme passed.
+
+No device command or installation occurred. Use this retained APK for the later B2 check, rather than silently rebuilding from a newer documentation commit.
 
 ## Historical pre-fix comparison
 
