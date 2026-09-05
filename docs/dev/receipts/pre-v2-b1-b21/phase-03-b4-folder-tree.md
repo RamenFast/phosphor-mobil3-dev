@@ -5,13 +5,14 @@
 - B IDs: B4, with B9 transport and source-handoff regression checks.
 - Private issue: #1.
 - Public sibling issue: RamenFast/phosphor#9.
-- Mobile implementation commit: pending final source review and gates.
+- Mobile implementation commit: `9bf85276a2deca736dd8a2b13a7732482a96b4ac`.
 - Sibling commit: `2a45b0f4d05696efe98970f51ac5358c052b565f`.
 - Shared playback blob: `ea80431c1431490baf8c3ba25b8faa970e52566f`.
-- Device role: S25. Exact candidate installation and device receipt fields remain pending.
+- Device role: S25, Android 16, build `S931USQSBCZF5_OYNBCZF5`. Exact candidate installed and read back. Live picker and playback acceptance are blocked by keyguard.
 - ADB identity: [redacted].
-- APK and installed readback hashes: pending.
-- Signer identity: pending candidate verification.
+- Package and version: `dev.phosphor.mobil3.debug`, `2.0.0-debug`.
+- APK and installed readback SHA-256: `98523b2eadd1ea2807ccd9f6ebcfc0850d6d3ec430c8d744ad330c7ca2d8be0a`.
+- Signer SHA-256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`.
 
 ## Human outcome
 
@@ -56,7 +57,23 @@ It also passed mobile formatting, both repository diff checks and protected arch
 The complete source manifests before and after the gates matched. Earlier 139-test and 158-test checkpoints remain historical evidence.
 
 `checkEngine` invokes locked cargo-ndk checking. It does not itself emit or enforce a Git SHA receipt.
-The root records sibling identity separately and will bind it to the final clean APK build.
+The root separately recorded both clean repository identities and bound them to the final APK build.
+
+## Exact debug build and installation
+
+After the implementation commit, the root ran `:app:assembleDebug :app:checkEngine` through the wrapper from a clean tree.
+The build completed at 09:19 UTC. Source hashes still matched final gate 3.
+The exact debug APK, merged debug manifest and debug runtime dependency report passed 11 source and 5 artifact boundary checks.
+The scanner verified its single packaged C++ runtime exemption against the pinned NDK.
+
+`dev/pm3 --serial [redacted] install <exact-candidate.apk>` passed at 09:19:48 UTC.
+Local and installed APK hashes matched, and signer verification passed. `dev/pm3 run` then reported a running process.
+Tuning and saved-relay XML bytes matched the fresh pre-install backup after installation.
+
+The phone remained keyguard-restricted after launch. The root did not guess a PIN or change keyguard policy.
+No direct/tree playback, audible/visual agreement, source race or live B4 crash-window PASS is claimed.
+The root verified separate diagnostic access with 1000 all-PID Android records, a unique marker and exact raw replay.
+That finite access check is not coverage of a B4 playback test.
 
 ## Review and acceptance still required
 
@@ -73,9 +90,11 @@ Output measurements, changing trace and session progression must agree. A screen
 
 ## Restoration and rollback
 
-The verified Phase 2 APK remains the rollback artifact. No B4 installation or rollback has occurred.
-Take fresh settings and source-state backups before installation. Restore changed test toggles and remove only task-owned device fixtures and diagnostics.
-Protected archive hashes must pass again with the final candidate.
+The verified Phase 2 APK remains the rollback artifact. Its SHA-256 was rechecked before installing the B4 candidate.
+Fresh preferences were backed up immediately before installation. Tuning and saved-host bytes remained unchanged afterward.
+No phone test toggle or keyguard setting changed. Task-owned fixture trees and the temporary log reader remain ready for the blocked live checks.
+After live acceptance or closeout, restore any newly changed test toggles and remove only task-owned device fixtures and diagnostics.
+Protected archive hashes passed with final gate 3.
 
 ## Redaction
 

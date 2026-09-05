@@ -135,3 +135,10 @@ Final gate 3 passed 162 Android, 39 mobile native and 27 shared-audio tests, wit
 Lint, Android native compilation, mobile formatting, protected hashes and before/after source identity checks passed.
 This snapshot includes persistent source-loss reconciliation and ownership-guarded idle cleanup.
 Independent final reviews and exact-APK phone acceptance remain pending. Compilation does not close B4.
+
+### B4 exact debug installation, 2026-09-05 09:20 UTC
+
+Implementation checkpoint `9bf8527` passed independent scoped source review, then built from clean mobile and sibling trees.
+The exact debug APK passed packaged boundary checks and pm3 hash/signer readback. Tuning and saved-relay bytes stayed unchanged across installation.
+The app launched, but keyguard still blocks real picker, audio and scope checks. Final independent intent review also remains pending.
+B4 stays open. The [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) records the exact source, APK and signer identities without a phone PASS.
