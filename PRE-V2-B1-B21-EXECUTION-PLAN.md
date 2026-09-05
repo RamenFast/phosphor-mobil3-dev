@@ -2,6 +2,14 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Quiet execution, 2026-09-05 17:45 UTC
+
+Ben authorized continuation to completion without interrupting his podcast.
+Phase 5 implementation is active. Keep code phases sequential and preserve separate source and human-intent reviews.
+Complete offline work, tests, retained builds and local commits without phone actions, playback changes, visible windows or active-service operations.
+Defer installation, live relay deployment and Android/visual acceptance. Offline evidence does not close those gates or reset drift.
+The confirmed Astra high worker route and two-worker ceiling remain in effect. The future roadmap remains outside this request.
+
 ### Latest execution checkpoint, 2026-09-05 17:21 UTC audit
 
 Ben reposted the original report. All 21 requests match the preserved raw report below and have acceptance rows.
@@ -328,6 +336,7 @@ Unless a command uses `git -C`, begin it with `cd /home/ben/Dev/ClaudeWorkspace/
   - ✅ `./gradlew --no-daemon :app:testDebugUnitTest --tests "dev.phosphor.mobil3.PlaybackTruthTest"` -> tagged metadata, blank fallback, superseded rejection, and sole B6 consumption pass.
 - ▸5.3 📁 `/home/ben/Dev/ClaudeWorkspace/phosphor-mobil3/app/src/main/kotlin/dev/phosphor/mobil3/PlaybackService.kt` capture mirror - reattach `capturePlayer` before active fast-return; map capture playing through the existing active platform-state set; widen only its visibility. Leave local/remote observers unchanged.
   - ✅ `./gradlew --no-daemon :app:testDebugUnitTest --tests "dev.phosphor.mobil3.CaptureMirrorPolicyTest"` -> play, pause, buffering, transition, and reattach identity pass.
+  - Root source check, 2026-09-05: `MainActivity` observes Media3 `isPlaying`, which is false during buffering. Include the smallest capture-only observer and initial-sync correction there. Preserve local/remote semantics and verify the actual UI observer wiring, not only the mirror policy.
 - ▸5.4 Publish capture seek only when duration is real and the captured session advertises `ACTION_SEEK_TO`. Keep the UI availability gate and router guard.
   - ✅ `./gradlew --no-daemon :app:testDebugUnitTest --tests "dev.phosphor.mobil3.CaptureMirrorPolicyTest"` -> seekable sessions expose seek and non-seekable sessions do not.
 - ▸5.5 Run TRUTH reviews, commit B6/B7/B8 with `Refs #$ISSUE_TRUTH`, install, and test tagged local playback plus Spotify capture.

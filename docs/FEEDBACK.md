@@ -244,3 +244,10 @@ Following the roadmap README's actual start-here links exposed a remaining integ
 The README and current resume point now report B2's live PASS and direct readers to inherited Phase 5 and the exact receipt.
 The old baseline and procedure remain explicitly historical. Their source hashes and artifact identities remain unchanged.
 This correction changes documentation navigation only. It does not accept more repairs or authorize roadmap implementation.
+
+## 2026-09-05 17:45 UTC: quiet continuation
+
+Ben requested completion of the original repairs while listening to a podcast, without interruptions.
+Phase 5 resumes from mobile `d1877aa` and sibling `2a45b0f`. Existing B2/B4/B9 phase evidence remains valid within its recorded scope.
+Root keeps sequential code phases and separate approved reviews. Phone activity, playback changes, visible windows and active-service operations remain deferred.
+Offline tests, retained builds and local commits may proceed. No live PASS, human acceptance, publication or future roadmap implementation follows from this boundary.
