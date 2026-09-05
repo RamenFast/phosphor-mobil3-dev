@@ -95,6 +95,23 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setRenderPaused(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckValidate(
+    mut env: JNIEnv,
+    _class: JClass,
+    path: jni::objects::JString,
+) -> jni::sys::jboolean {
+    ensure_init();
+    let path: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
+    match crate::deck::validate(&path) {
+        Ok(()) => 1,
+        Err(error) => {
+            log::warn!("deckValidate({path}): {error}");
+            0
+        }
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckOpen(
     mut env: JNIEnv,
     _class: JClass,
@@ -102,13 +119,22 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckOpen(
 ) -> jni::sys::jboolean {
     ensure_init();
     let path: String = env.get_string(&path).map(|s| s.into()).unwrap_or_default();
-    match crate::deck::open(&path) {
+    match crate::deck::prepare(&path) {
         Ok(()) => 1,
         Err(e) => {
             log::error!("deckOpen({path}): {e}");
             0
         }
     }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckPublish(
+    _env: JNIEnv,
+    _class: JClass,
+    paused: jni::sys::jboolean,
+) {
+    crate::deck::publish(paused != 0);
 }
 
 #[unsafe(no_mangle)]
@@ -142,7 +168,7 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckSeekMs(
     _class: JClass,
     ms: jni::sys::jlong,
 ) -> jni::sys::jboolean {
-    match crate::deck::seek_ms(ms.max(0) as u64) {
+    match crate::deck::prepare_seek_ms(ms.max(0) as u64) {
         Ok(()) => 1,
         Err(e) => {
             log::error!("deckSeekMs: {e}");

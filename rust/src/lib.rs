@@ -4,6 +4,8 @@
 
 pub mod bridge_core;
 #[cfg(any(target_os = "android", test))]
+mod deck_activation;
+#[cfg(any(target_os = "android", test))]
 mod deck_close;
 pub mod engine;
 pub mod selftest;

@@ -17,9 +17,13 @@ import android.media.session.MediaSessionManager
 import android.media.session.PlaybackState as PlatformPlaybackState
 import android.os.Bundle
 import android.os.Handler
+import android.os.ResultReceiver
 import android.os.SystemClock
+import android.provider.DocumentsContract
 import android.util.Log
 import android.view.KeyEvent
+import android.widget.Toast
+import androidx.core.content.IntentCompat
 import androidx.core.graphics.scale
 import androidx.core.net.toUri
 import androidx.media3.common.C
@@ -36,6 +40,9 @@ import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.util.concurrent.Executors
+import java.util.concurrent.CompletableFuture
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicLong
 
 // The deck's Android citizenship: ONE MediaSessionService, ONE MediaSession, TWO players
 // — the local Rust deck (PhosphorPlayer) and the Tailscale bridge deck (RemotePlayer) —
@@ -51,7 +58,7 @@ class PlaybackService : MediaSessionService() {
     private var session: MediaSession? = null
     private lateinit var audioManager: AudioManager
     private var focusRequest: AudioFocusRequest? = null
-    private var resumeOnFocusGain = false
+    private val focusResume = LocalFocusResume()
     private lateinit var main: Handler
     private var remotePolling = false
     private data class RemoteEndpoint(val host: String, val port: Int, val label: String)
@@ -67,11 +74,18 @@ class PlaybackService : MediaSessionService() {
     private var captureArtGeneration = 0
 
     private sealed interface LocalDeckRequest {
+        data class Tree(val uri: String, val start: Int, val transportRevision: Long) : LocalDeckRequest
+        data class Document(val uri: String, val transportRevision: Long) : LocalDeckRequest
+        data class Path(val path: String, val transportRevision: Long) : LocalDeckRequest
+        data class Release(val stopReaders: Boolean = false, val after: () -> Unit) : LocalDeckRequest
         data class Play(
             val index: Int,
             val positionMs: Long?,
             val queueUris: MutableList<String?>,
             val queuePaths: MutableList<String?>,
+            val titles: List<String>,
+            val fromEof: Boolean = false,
+            val transportRevision: Long,
         ) : LocalDeckRequest
 
         data object Close : LocalDeckRequest
@@ -84,7 +98,11 @@ class PlaybackService : MediaSessionService() {
         schedule = { task -> localDeckExecutor.execute(task) },
         consume = { request, isLatest ->
             runCatching { runLocalDeckRequest(request, isLatest) }
-                .onFailure { Log.e(TAG, "local deck request failed", it) }
+                .onFailure {
+                    Log.e(TAG, "local deck request failed", it)
+                    reportLocal("Local audio failed: ${it.message}. Choose a readable file or folder and retry", isLatest)
+                    finishSelection(isLatest)
+                }
         },
     )
     @Volatile private var destroying = false
@@ -92,6 +110,10 @@ class PlaybackService : MediaSessionService() {
     private var openedLocalPath: String? = null
     private var openedLocalQueuePaths: MutableList<String?>? = null
     private var openedLocalIndex = -1
+    private val stopSequence = AtomicLong()
+    private val localQueuePolicy = LocalQueuePolicy()
+    private val sourceSurvival = LocalSourceSurvival()
+    private var advancingAtEnd = false
 
     private val activePlayer: Player get() = session?.player ?: localPlayer
 
@@ -117,6 +139,7 @@ class PlaybackService : MediaSessionService() {
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
             if (intent.action == AudioManager.ACTION_AUDIO_BECOMING_NOISY) {
+                localPlayer.recordTransportIntent(false)
                 activePlayer.playWhenReady = false // route died -> pause, never blast
             }
         }
@@ -125,17 +148,19 @@ class PlaybackService : MediaSessionService() {
     private val focusListener = AudioManager.OnAudioFocusChangeListener { change ->
         when (change) {
             AudioManager.AUDIOFOCUS_LOSS -> {
-                resumeOnFocusGain = false
+                localPlayer.recordTransportIntent(false)
+                focusResume.cancel()
                 activePlayer.playWhenReady = false
             }
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT,
             AudioManager.AUDIOFOCUS_LOSS_TRANSIENT_CAN_DUCK -> {
-                resumeOnFocusGain = activePlayer.playWhenReady
+                val wasPlaying = activePlayer.playWhenReady
+                localPlayer.recordTransportIntent(false)
                 activePlayer.playWhenReady = false
+                focusResume.arm(wasPlaying, localPlayer.transportRevision())
             }
             AudioManager.AUDIOFOCUS_GAIN -> {
-                if (resumeOnFocusGain) {
-                    resumeOnFocusGain = false
+                if (focusResume.take(localPlayer.transportRevision())) {
                     activePlayer.playWhenReady = true
                 }
             }
@@ -152,7 +177,7 @@ class PlaybackService : MediaSessionService() {
         super.onCreate()
         // Fresh service = nothing staged is open yet: sweep every transient audio copy
         // (settings/prefs untouched). Covers force-stop exits that skip onDestroy.
-        Thread { pruneStaged() }.start()
+        // Prune only on the serial deck worker after it knows which staged file to retain.
         main = Handler(mainLooper)
         audioManager = getSystemService(AUDIO_SERVICE) as AudioManager
         platformSessionManager = getSystemService(MEDIA_SESSION_SERVICE) as MediaSessionManager
@@ -160,6 +185,7 @@ class PlaybackService : MediaSessionService() {
             ComponentName(this, CaptureNotificationListenerService::class.java)
         localPlayer = PhosphorPlayer(mainLooper)
         remotePlayer = RemotePlayer(mainLooper)
+        remotePlayer.onTransportIntent = localPlayer::recordTransportIntent
         capturePlayer = CaptureMirrorPlayer(mainLooper).apply {
             playPauseRouter = ::routeCapturePlayPause
             // Prefer the captured app's controller; system media keys remain available without notification access.
@@ -207,10 +233,8 @@ class PlaybackService : MediaSessionService() {
         }
         if (target === remotePlayer) {
             // Entering remote: silence the other feeders (one scope ring, one owner).
-            localPlayer.playWhenReady = false
-            startService(
-                Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP)
-            )
+            localPlayer.setPublishedPlaying(false)
+            // Reader release was acknowledged by the serial request before remote startup.
         }
         s.setPlayer(target)
     }
@@ -218,6 +242,8 @@ class PlaybackService : MediaSessionService() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         when (intent?.action) {
             ACTION_CAPTURE_STARTED -> {
+                // Startup already followed the explicit source-release request. This is status,
+                // not a new source selection that can supersede a later tree request.
                 beginCaptureMirror()
                 return START_NOT_STICKY
             }
@@ -239,42 +265,42 @@ class PlaybackService : MediaSessionService() {
                 return START_NOT_STICKY
             }
             ACTION_REMOTE_CONNECT -> {
+                beginLocalSelection()
                 val host = intent.getStringExtra(EXTRA_HOST) ?: return START_NOT_STICKY
                 val port = intent.getIntExtra(EXTRA_PORT, 45777)
                 val label = intent.getStringExtra(EXTRA_LABEL) ?: host
-                startRemote(host, port, label)
+                localDeckRequests.enqueue(LocalDeckRequest.Release(stopReaders = true) { startRemote(host, port, label) })
                 return START_NOT_STICKY
             }
             ACTION_REMOTE_DISCONNECT -> {
+                closeLocalDeck()
                 stopRemote()
+                return START_NOT_STICKY
+            }
+            ACTION_RELEASE_LOCAL -> {
+                beginLocalSelection()
+                val reply = IntentCompat.getParcelableExtra(intent, EXTRA_RELEASE_REPLY, ResultReceiver::class.java)
+                localDeckRequests.enqueue(LocalDeckRequest.Release(stopReaders = true) { reply?.send(0, Bundle.EMPTY) })
+                return START_NOT_STICKY
+            }
+            ACTION_OPEN_TREE -> {
+                beginLocalSelection()
+                intent.getStringExtra(EXTRA_TREE_URI)?.let { uri ->
+                    localDeckRequests.enqueue(LocalDeckRequest.Tree(uri, intent.getIntExtra(EXTRA_QUEUE_START, 0), localPlayer.transportRevision()))
+                }
+                return START_NOT_STICKY
+            }
+            ACTION_OPEN_DOCUMENT -> {
+                beginLocalSelection()
+                intent.getStringExtra(EXTRA_DOCUMENT_URI)?.let { uri ->
+                    localDeckRequests.enqueue(LocalDeckRequest.Document(uri, localPlayer.transportRevision()))
+                }
                 return START_NOT_STICKY
             }
         }
         intent?.getStringExtra(EXTRA_OPEN)?.let { path ->
-            // Clear the local face before taking the session back; otherwise its previous
-            // track can flash between the remote reset and this new file opening.
-            localPlayer.setQueue(
-                listOf(PhosphorPlayer.QueueEntry(path, path.substringAfterLast('/'))), 0
-            )
-            queuePaths = mutableListOf(path)
-            queueUris = mutableListOf(null)
-            if (session?.player === remotePlayer) stopRemote()
-            stageAndOpen(0)
-        }
-        if (intent?.action == ACTION_OPEN_QUEUE) {
-            val uris = intent.getStringArrayListExtra(EXTRA_QUEUE_URIS) ?: arrayListOf()
-            val titles = intent.getStringArrayListExtra(EXTRA_QUEUE_TITLES) ?: arrayListOf()
-            val start = intent.getIntExtra(EXTRA_QUEUE_START, 0)
-            queueUris = uris.mapTo(mutableListOf<String?>()) { it }
-            queuePaths = MutableList(uris.size) { null }
-            localPlayer.setQueue(
-                uris.mapIndexed { i, _ ->
-                    PhosphorPlayer.QueueEntry("", titles.getOrElse(i) { "track ${i + 1}" })
-                },
-                start,
-            )
-            if (session?.player === remotePlayer) stopRemote()
-            stageAndOpen(start)
+            beginLocalSelection()
+            localDeckRequests.enqueue(LocalDeckRequest.Path(path, localPlayer.transportRevision()))
         }
         return super.onStartCommand(intent, flags, startId)
     }
@@ -292,7 +318,7 @@ class PlaybackService : MediaSessionService() {
             PhosphorNative.remoteDisconnect()
             remotePlayer.reset()
         }
-        localPlayer.playWhenReady = false
+        localPlayer.setPublishedPlaying(false)
         captureActive = true
         captureTrackKey = null
         captureArtwork = null
@@ -530,6 +556,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun routeCapturePlayPause(play: Boolean) {
+        localPlayer.recordTransportIntent(play)
         val controller = externalCaptureController ?: run {
             dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
             return
@@ -551,6 +578,7 @@ class PlaybackService : MediaSessionService() {
     // Queue documents are staged on demand and removed on startup, shutdown, and track changes.
     private var queueUris: MutableList<String?> = mutableListOf()
     private var queuePaths: MutableList<String?> = mutableListOf()
+    private var queueTitles: List<String> = emptyList()
 
     private fun stagedRoot() = java.io.File(filesDir, "staged").apply { mkdirs() }
 
@@ -585,14 +613,9 @@ class PlaybackService : MediaSessionService() {
         val uri = uriStr.toUri()
         val name = "q$i-" + (uri.lastPathSegment ?: "track").substringAfterLast('/')
             .substringAfterLast(':').replace('/', '_')
-        val dst = java.io.File(stagedRoot(), "queue/$name")
-        dst.parentFile?.mkdirs()
-        return runCatching {
-            contentResolver.openInputStream(uri)?.use { input ->
-                dst.outputStream().use { input.copyTo(it) }
-            }
-            dst.absolutePath.also { requestPaths[i] = it }
-        }.getOrNull()
+        val dst = java.io.File(stagedRoot(), "queue/${java.util.UUID.randomUUID()}-${name.takeLast(96)}")
+        return stageAudioFile(dst) { contentResolver.openInputStream(uri) }
+            .also { requestPaths[i] = it }
     }
 
     private fun stageAndOpen(i: Int) {
@@ -605,13 +628,17 @@ class PlaybackService : MediaSessionService() {
 
     private fun enqueueLocalPlay(i: Int, positionMs: Long?) {
         if (destroying) return
+        beginLocalSelection()
         localDeckRequests.enqueue(
-            LocalDeckRequest.Play(i, positionMs, queueUris, queuePaths)
+            LocalDeckRequest.Play(i, positionMs, queueUris, queuePaths, queueTitles, advancingAtEnd, localPlayer.transportRevision())
         )
     }
 
     private fun closeLocalDeck() {
-        if (!destroying) localDeckRequests.enqueue(LocalDeckRequest.Close)
+        if (!destroying) {
+            beginLocalSelection()
+            localDeckRequests.enqueue(LocalDeckRequest.Close)
+        }
     }
 
     private fun runLocalDeckRequest(
@@ -620,13 +647,187 @@ class PlaybackService : MediaSessionService() {
     ) {
         when (request) {
             LocalDeckRequest.Close -> {
-                PhosphorNative.deckClose()
-                openedLocalPath = null
-                openedLocalQueuePaths = null
-                openedLocalIndex = -1
+                sourceSurvival.nativeReplacing()
+                closeOpenedLocal()
             }
+            is LocalDeckRequest.Release -> {
+                if (request.stopReaders && !releaseReaders(isLatest)) return
+                sourceSurvival.nativeReplacing()
+                closeOpenedLocal()
+                if (!destroying && isLatest()) main.post {
+                    if (!destroying && isLatest()) {
+                        localPlayer.setPublishedPlaying(false)
+                        localPlayer.setQueue(emptyList(), 0)
+                        queueUris = mutableListOf()
+                        queuePaths = mutableListOf()
+                        queueTitles = emptyList()
+                        sourceSurvival.published()
+                        localSourcePublication.published(LocalSourcePublication.Source.OTHER)
+                        request.after()
+                    }
+                }
+            }
+            is LocalDeckRequest.Tree -> {
+                val tree = request.uri.toUri()
+                val current = { !destroying && isLatest() }
+                val source = DocumentTreeSource(contentResolver, tree, current)
+                val entries = FolderTreeWalker(source::children, current) { _, error ->
+                    reportLocal(error, isLatest)
+                }.walk(DocumentsContract.getTreeDocumentId(tree))
+                if (!current()) return
+                if (entries.isEmpty()) {
+                    reportLocal("No supported audio in this tree, choose another folder", isLatest)
+                    finishSelection(isLatest)
+                    return
+                }
+                runLocalPlayRequest(LocalDeckRequest.Play(
+                    request.start.coerceIn(entries.indices), null,
+                    entries.mapTo(mutableListOf<String?>()) {
+                        DocumentsContract.buildDocumentUriUsingTree(tree, it.id).toString()
+                    },
+                    MutableList(entries.size) { null }, entries.map { it.name },
+                    transportRevision = request.transportRevision,
+                ), isLatest)
+            }
+            is LocalDeckRequest.Document -> {
+                val uri = request.uri.toUri()
+                val title = contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
+                    ?.use { if (it.moveToFirst()) it.getString(0) else null } ?: "track"
+                runLocalPlayRequest(LocalDeckRequest.Play(
+                    0, null, mutableListOf(request.uri), mutableListOf(null), listOf(title),
+                    transportRevision = request.transportRevision,
+                ), isLatest)
+            }
+            is LocalDeckRequest.Path -> runLocalPlayRequest(LocalDeckRequest.Play(
+                0, null, mutableListOf(null), mutableListOf(request.path),
+                listOf(request.path.substringAfterLast('/')),
+                transportRevision = request.transportRevision,
+            ), isLatest)
             is LocalDeckRequest.Play -> runLocalPlayRequest(request, isLatest)
         }
+    }
+
+    private fun closeOpenedLocal() {
+        PhosphorNative.deckClose()
+        openedLocalPath = null
+        openedLocalQueuePaths = null
+        openedLocalIndex = -1
+    }
+
+    private fun reportLocal(message: String, isLatest: () -> Boolean) {
+        Log.w(TAG, "local audio: $message")
+        main.post {
+            if (!destroying && isLatest()) Toast.makeText(this, message, Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun finishSelection(isLatest: () -> Boolean) {
+        if (destroying || !isLatest()) return
+        if (sourceSurvival.loss().native) {
+            closeOpenedLocal()
+            publishNativeFailure(isLatest)
+            return
+        }
+        main.post {
+            if (!destroying && isLatest()) {
+                localQueuePolicy.failed(preservesNative = true)
+                val readers = sourceSurvival.loss().readers
+                if (readers.isNotEmpty()) publishLocalSource(localSourcePublication.readersReleased(readers))
+            }
+        }
+    }
+
+    private fun beginLocalSelection() {
+        localQueuePolicy.beginSelection()
+        localSourcePublication.selected()
+    }
+
+    private fun publishLocalSource(snapshot: LocalSourcePublication.Snapshot) {
+        sendBroadcast(Intent(ACTION_LOCAL_SOURCE_CHANGED).setPackage(packageName)
+            .putExtra(EXTRA_SOURCE_REVISION, snapshot.revision))
+    }
+
+    private fun publishNativeFailure(isLatest: () -> Boolean) {
+        main.post {
+            if (destroying || !isLatest()) return@post
+            // A superseded release may have disconnected remote before its guarded face reset.
+            // Retire that session/poll too, so it cannot republish a source that no longer exists.
+            remotePolling = false
+            remoteEndpoint = null
+            remotePlayer.reset()
+            leaveCaptureMirror()
+            localQueuePolicy.failed(preservesNative = false)
+            localPlayer.setPublishedPlaying(false)
+            localPlayer.setQueue(emptyList(), 0)
+            switchTo(localPlayer)
+            queueUris = mutableListOf()
+            queuePaths = mutableListOf()
+            queueTitles = emptyList()
+            localSourcePublication.failed(released = true)?.let(::publishLocalSource)
+        }
+    }
+
+    private fun releaseReaders(isLatest: () -> Boolean): Boolean {
+        val current = { !destroying && isLatest() }
+        if (!current()) return false
+        val id = stopSequence.incrementAndGet()
+        val micStop = SourceStopRequest(id)
+        val captureStop = SourceStopRequest(id)
+        val releaseEpoch = sourceSurvival.epoch()
+        fun recordRelease(stop: SourceStopRequest, reader: LocalSourcePublication.Reader) {
+            if (!destroying && sourceSurvival.readerStopped(releaseEpoch, reader, stop)) {
+                // A stale request may finish its stop after the newest invalid request rejected.
+                // Only a real newer source publication, not request supersession, retires this loss.
+                val loss = sourceSurvival.loss()
+                publishLocalSource(if (loss.native) {
+                    localSourcePublication.published(LocalSourcePublication.Source.NONE)
+                } else localSourcePublication.readersReleased(loss.readers))
+            }
+        }
+        MicController.stopForLocal(id) { requestId, error, owned ->
+            if (micStop.complete(requestId, error, owned)) recordRelease(micStop, LocalSourcePublication.Reader.MIC)
+        }
+        val reply = object : ResultReceiver(main) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                val accepted = captureStop.complete(
+                    resultData?.getLong(CaptureService.EXTRA_STOP_REQUEST, -1) ?: -1,
+                    if (resultCode == 0) null else resultData?.getString(CaptureService.EXTRA_STOP_ERROR)
+                        ?: "Capture stop failed, stop capture and retry",
+                    resultData?.getBoolean(CaptureService.EXTRA_STOP_OWNED, false) == true,
+                )
+                if (accepted) recordRelease(captureStop, LocalSourcePublication.Reader.CAPTURE)
+            }
+        }
+        startService(Intent(this, CaptureService::class.java)
+            .setAction(CaptureService.ACTION_STOP)
+            .putExtra(CaptureService.EXTRA_STOP_REQUEST, id)
+            .putExtra(CaptureService.EXTRA_STOP_REPLY, reply))
+        val micError = micStop.await(4_000, current)
+        val captureError = captureStop.await(4_000, current)
+        val error = micError ?: captureError
+        if (error != null) {
+            reportLocal(error, isLatest)
+            finishSelection(isLatest)
+            return false
+        }
+        if (!current()) return false
+        // Disconnecting remote also destroys a potentially published nonlocal source.
+        cleanupOwnedSource(remoteEndpoint != null) {
+            sourceSurvival.nativeReplacing()
+            PhosphorNative.remoteDisconnect()
+        }
+        val reset = CompletableFuture<Unit>()
+        main.post {
+            if (current()) {
+                remotePolling = false
+                remoteEndpoint = null
+                remotePlayer.reset()
+                leaveCaptureMirror()
+            }
+            reset.complete(Unit)
+        }
+        reset.get(4, TimeUnit.SECONDS)
+        return current()
     }
 
     private fun runLocalPlayRequest(
@@ -634,72 +835,105 @@ class PlaybackService : MediaSessionService() {
         isLatest: () -> Boolean,
     ) {
         if (destroying || !isLatest()) return
-        val path = stagedPath(request.index, request.queueUris, request.queuePaths) ?: return
-        if (destroying || !isLatest()) return
-
-        val sameTarget =
-            openedLocalPath == path &&
-                openedLocalQueuePaths === request.queuePaths &&
-                openedLocalIndex == request.index
-        var openedNewTrack = false
-        val succeeded = if (sameTarget && request.positionMs != null) {
-            PhosphorNative.deckSeekMs(request.positionMs).also { success ->
-                if (!success) {
-                    openedLocalPath = null
-                    openedLocalQueuePaths = null
-                    openedLocalIndex = -1
+        val previous = openedLocalIndex.takeIf { openedLocalQueuePaths === request.queuePaths }
+        for (index in localTrackCandidates(request.queueUris.size, request.index, previous, request.fromEof)) {
+            if (destroying || !isLatest()) return
+            val path = runCatching { stagedPath(index, request.queueUris, request.queuePaths) }
+                .onFailure { reportLocal("Skipped ${request.titles[index]}: ${it.message}", isLatest) }
+                .getOrNull() ?: continue
+            if (destroying || !isLatest()) return
+            if (!PhosphorNative.deckValidate(path)) {
+                reportLocal("Skipped ${request.titles[index]}: no decodable audio, choose another file", isLatest)
+                if (request.queueUris[index] != null) {
+                    java.io.File(path).delete()
+                    request.queuePaths[index] = null
                 }
+                continue
             }
-        } else {
+            if (destroying || !isLatest()) return
+            val sameTarget = openedLocalPath == path && openedLocalQueuePaths === request.queuePaths &&
+                openedLocalIndex == index
+            if (sameTarget && request.positionMs != null) {
+                sourceSurvival.nativeReplacing()
+                if (!PhosphorNative.deckSeekMs(request.positionMs)) {
+                    closeOpenedLocal()
+                    reportLocal("Seek failed, retry this track", isLatest)
+                    publishNativeFailure(isLatest)
+                } else main.post {
+                    if (!destroying && isLatest()) {
+                        PhosphorNative.deckPublish(!localPlayer.playWhenReady)
+                        sourceSurvival.published()
+                        localQueuePolicy.published()
+                    }
+                }
+                return
+            }
+            if (!releaseReaders(isLatest)) return
+            if (destroying || !isLatest()) return
             openedLocalPath = null
             openedLocalQueuePaths = null
             openedLocalIndex = -1
-            openedNewTrack = PhosphorNative.deckOpen(path)
-            if (openedNewTrack) {
-                openedLocalPath = path
-                openedLocalQueuePaths = request.queuePaths
-                openedLocalIndex = request.index
+            sourceSurvival.nativeReplacing()
+            if (!PhosphorNative.deckOpen(path)) {
+                closeOpenedLocal()
+                reportLocal("Skipped ${request.titles[index]}: audio output could not open", isLatest)
+                publishNativeFailure(isLatest)
+                continue
             }
-            if (openedNewTrack && request.positionMs != null && request.positionMs > 0L) {
-                PhosphorNative.deckSeekMs(request.positionMs).also { success ->
-                    if (!success) {
-                        openedLocalPath = null
-                        openedLocalQueuePaths = null
-                        openedLocalIndex = -1
-                    }
+            openedLocalPath = path
+            openedLocalQueuePaths = request.queuePaths
+            openedLocalIndex = index
+            if (request.positionMs != null && request.positionMs > 0 && index == request.index) {
+                if (!PhosphorNative.deckSeekMs(request.positionMs)) {
+                    closeOpenedLocal()
+                    reportLocal("Seek failed, retry this track", isLatest)
+                    publishNativeFailure(isLatest)
+                    return
                 }
-            } else {
-                openedNewTrack
             }
-        }
-        if (!succeeded || destroying || !isLatest()) return
-
-        if (openedNewTrack) {
             main.post {
                 if (destroying || !isLatest()) return@post
-                requestFocus()
+                queueUris = request.queueUris
+                queuePaths = request.queuePaths
+                queueTitles = request.titles
+                localPlayer.setQueue(request.titles.map { PhosphorPlayer.QueueEntry("", it) }, index)
                 switchTo(localPlayer)
-                localPlayer.onTrackOpened()
+                localPlayer.onTrackOpened(request.transportRevision)
+                if (localPlayer.playWhenReady) requestFocus()
+                PhosphorNative.deckPublish(!localPlayer.playWhenReady)
+                sourceSurvival.published()
+                localQueuePolicy.published()
+                publishLocalSource(localSourcePublication.published(LocalSourcePublication.Source.LOCAL))
                 startEndWatcher()
             }
-
-            // Prefetch the next entry so the gapless hand-off has a local file ready,
-            // then drop every other staged copy — two tracks is the whole budget.
-            val next = if (request.index + 1 < request.queueUris.size) {
-                stagedPath(request.index + 1, request.queueUris, request.queuePaths)
-            } else {
-                null
-            }
+            if (destroying || !isLatest()) return
+            val next = if (index + 1 < request.queueUris.size) {
+                runCatching { stagedPath(index + 1, request.queueUris, request.queuePaths) }.getOrNull()
+            } else null
             request.queuePaths.indices.forEach { j ->
-                if (
-                    j != request.index &&
-                    request.queuePaths[j] != null &&
-                    request.queuePaths[j] != next
-                ) {
-                    request.queuePaths[j] = null
-                }
+                if (j != index && request.queuePaths[j] != next) request.queuePaths[j] = null
             }
             pruneStaged(setOfNotNull(path, next))
+            return
+        }
+        reportLocal("No playable entries remain, choose another file or folder", isLatest)
+        if (sourceSurvival.loss().native || sourceSurvival.loss().readers.isNotEmpty()) {
+            finishSelection(isLatest)
+            return
+        }
+        val previousIndex = openedLocalIndex
+        val previousQueue = openedLocalQueuePaths
+        main.post {
+            if (destroying || !isLatest()) return@post
+            if (previousQueue === request.queuePaths && previousIndex >= 0) {
+                val playing = localPlayer.playWhenReady && !request.fromEof
+                localPlayer.setQueue(request.titles.map { PhosphorPlayer.QueueEntry("", it) }, previousIndex)
+                localPlayer.onTrackOpened()
+                localPlayer.setPublishedPlaying(playing)
+                localQueuePolicy.exhausted(request.fromEof)
+            } else {
+                localQueuePolicy.failed(preservesNative = previousQueue != null)
+            }
         }
     }
 
@@ -716,9 +950,14 @@ class PlaybackService : MediaSessionService() {
                 }
                 val dur = localPlayer.currentDurationMs()
                 val pos = PhosphorNative.deckPositionMs()
-                if (localPlayer.playWhenReady && dur > 0 && pos >= dur - 350) {
-                    if (!localPlayer.advanceIfPossible()) {
-                        localPlayer.playWhenReady = false // end of queue: rest
+                if (localQueuePolicy.mayAdvance() && localPlayer.playWhenReady && dur > 0 && pos >= dur - 350) {
+                    advancingAtEnd = true
+                    try {
+                        if (!localPlayer.advanceIfPossible()) {
+                            localPlayer.playWhenReady = false // end of queue: rest
+                        }
+                    } finally {
+                        advancingAtEnd = false
                     }
                 }
                 main.postDelayed(this, 400)
@@ -905,7 +1144,9 @@ class PlaybackService : MediaSessionService() {
         localPlayer.onSwitchTrack = null
         localPlayer.onSeek = null
         localPlayer.onStopRequested = null
+        remotePlayer.onTransportIntent = null
         localDeckRequests.enqueue(LocalDeckRequest.Close)
+        localDeckExecutor.execute { pruneStaged() }
         localDeckExecutor.shutdown()
         leaveCaptureMirror()
         remotePolling = false
@@ -918,11 +1159,13 @@ class PlaybackService : MediaSessionService() {
         capturePlayer.release()
         session = null
         PhosphorNative.remoteDisconnect()
-        pruneStaged() // exit leaves no transient audio behind
         super.onDestroy()
     }
 
     companion object {
+        internal val localSourcePublication = LocalSourcePublication()
+        const val ACTION_LOCAL_SOURCE_CHANGED = "dev.phosphor.mobil3.LOCAL_SOURCE_CHANGED"
+        const val EXTRA_SOURCE_REVISION = "source_revision"
         private const val TAG = "PhosphorPlayback"
         /**
          * Surface a link that remains non-streaming for 60 seconds.
@@ -932,10 +1175,13 @@ class PlaybackService : MediaSessionService() {
          */
         private const val REMOTE_GIVE_UP_MS = 60_000L
         const val EXTRA_OPEN = "open"
-        const val ACTION_OPEN_QUEUE = "dev.phosphor.mobil3.OPEN_QUEUE"
-        const val EXTRA_QUEUE_URIS = "queue_uris"
-        const val EXTRA_QUEUE_TITLES = "queue_titles"
+        const val ACTION_OPEN_TREE = "dev.phosphor.mobil3.OPEN_TREE"
+        const val EXTRA_TREE_URI = "tree_uri"
+        const val ACTION_OPEN_DOCUMENT = "dev.phosphor.mobil3.OPEN_DOCUMENT"
+        const val EXTRA_DOCUMENT_URI = "document_uri"
         const val EXTRA_QUEUE_START = "queue_start"
+        const val ACTION_RELEASE_LOCAL = "dev.phosphor.mobil3.RELEASE_LOCAL"
+        const val EXTRA_RELEASE_REPLY = "release_reply"
         const val ACTION_REMOTE_CONNECT = "dev.phosphor.mobil3.REMOTE_CONNECT"
         const val ACTION_REMOTE_DISCONNECT = "dev.phosphor.mobil3.REMOTE_DISCONNECT"
         const val ACTION_CAPTURE_STARTED = "dev.phosphor.mobil3.CAPTURE_STARTED"

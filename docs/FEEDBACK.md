@@ -120,3 +120,18 @@ After rejecting a stale-coordinate attempt, the UI-pinned rerun completed eight 
 All expected final positions and queue items appeared. The process survived, the final trace was lit, and raw log replay matched 77,993 records exactly.
 The root restored UI placement and verified unchanged tuning and saved-relay hashes, then removed the temporary device diagnostic.
 Phase 2 task 2.5 passes. B9 stays verify until final regression. The separate paused-position, source-label, capture fallback, and service-release issues remain open.
+
+## 2026-09-05 B4 implementation checkpoint
+
+Shared decoder preflight is committed in sibling `2a45b0f`, with 27 passing tests and independent source review.
+The mobile checkpoint passed 139 Android tests, lint and Android native compilation. It is not the final frozen candidate.
+Independent review is closing newer transport intent, partial source-stop failure and destructive-supersession ownership cases.
+The [B4 receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) keeps exact APK installation and direct/recursive phone acceptance pending.
+B4 remains open. B2 mic-start success, B6/B7/B8 capture truth and final regressions remain in their planned phases.
+
+### B4 frozen-source gate, 2026-09-05 09:08 UTC
+
+Final gate 3 passed 162 Android, 39 mobile native and 27 shared-audio tests, with no failures or skips.
+Lint, Android native compilation, mobile formatting, protected hashes and before/after source identity checks passed.
+This snapshot includes persistent source-loss reconciliation and ownership-guarded idle cleanup.
+Independent final reviews and exact-APK phone acceptance remain pending. Compilation does not close B4.

@@ -14,6 +14,10 @@ import android.media.AudioRecord
 import android.media.projection.MediaProjection
 import android.media.projection.MediaProjectionManager
 import android.os.IBinder
+import android.os.Bundle
+import android.os.Handler
+import android.os.Looper
+import android.os.ResultReceiver
 import android.util.Log
 import androidx.core.content.IntentCompat
 
@@ -27,13 +31,27 @@ class CaptureService : Service() {
     private var metadataBridgeActive = false
     private var cleanedUp = false
     private var lifecycleState = STATE_IDLE
+    private var reader: Thread? = null
+    private val main = Handler(Looper.getMainLooper())
+    private var stopCompletion = SourceStopCompletion()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     @Synchronized
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
-            finishCapture("stopped by user", CaptureStatus.idle())
+            val owned = record != null || reader != null || running
+            finishCapture("stopped by user", CaptureStatus.idle(), retry = true)
+            val requestId = intent.getLongExtra(EXTRA_STOP_REQUEST, -1)
+            IntentCompat.getParcelableExtra(intent, EXTRA_STOP_REPLY, ResultReceiver::class.java)?.let { reply ->
+                stopCompletion.result.thenAccept { error ->
+                    reply.send(if (error == null) 0 else 1, Bundle().apply {
+                        putLong(EXTRA_STOP_REQUEST, requestId)
+                        putString(EXTRA_STOP_ERROR, error)
+                        putBoolean(EXTRA_STOP_OWNED, owned)
+                    })
+                }
+            }
             return START_NOT_STICKY
         }
         if (cleanedUp) return START_NOT_STICKY
@@ -196,50 +214,83 @@ class CaptureService : Service() {
                 .setAction(PlaybackService.ACTION_CAPTURE_STARTED)
         )
         publishStatus(CaptureStatus.flowing())
-        Thread {
+        reader = Thread {
             val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
             while (running) {
                 val n = rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
-                if (n > 0) PhosphorNative.pushCaptureSamples(chunk, n)
+                if (running && n > 0) PhosphorNative.pushCaptureSamples(chunk, n)
             }
-        }.start()
+        }.also { it.start() }
         Log.i(TAG, "playback capture running")
         // MediaProjection consent cannot be renewed silently after process death.
         return START_NOT_STICKY
     }
 
     @Synchronized
-    private fun finishCapture(reason: String, status: CaptureStatus) {
-        if (cleanedUp) return
+    private fun finishCapture(reason: String, status: CaptureStatus, retry: Boolean = false) {
+        if (cleanedUp) {
+            if (retry && stopCompletion.result.isDone && stopCompletion.result.getNow(null) == ReaderStop.TIMEOUT) {
+                val completion = SourceStopCompletion()
+                stopCompletion = completion
+                Thread({
+                    val error = ReaderStop.finish(reader, {}, {}, {})
+                    main.post {
+                        publishStatus(if (error == null) status else CaptureStatus.error("capture stop failed", error))
+                        completion.cleanupFinished(error)
+                        if (error == null) stopSelf()
+                    }
+                }, "capture-stop-retry").start()
+            }
+            return
+        }
         cleanedUp = true
         if (running) Log.i(TAG, "capture stopped: $reason")
+        // An idle STOP service never activated the ring and must not darken an old local deck.
+        val ownedRing = running
         running = false
-        record?.run {
-            runCatching { stop() }
-            runCatching { release() }
-        }
+        val oldRecord = record
+        val oldReader = reader
         record = null
         // Null first: MediaProjection.stop() synchronously calls our callback on some
         // builds, and a second stop must be a harmless no-op rather than recursion.
         val oldProjection = projection
         projection = null
-        runCatching { oldProjection?.stop() }
-        PhosphorNative.setRingActive(false)
-        if (metadataBridgeActive) {
-            metadataBridgeActive = false
-            startService(
-                Intent(this, PlaybackService::class.java)
-                    .setAction(PlaybackService.ACTION_CAPTURE_STOPPED)
+        Thread({
+            val error = ReaderStop.finish(
+                reader = oldReader,
+                stop = { if (oldReader != null) oldRecord?.stop() },
+                release = { oldRecord?.release() },
+                cleanup = {
+                    try {
+                        oldProjection?.stop()
+                    } finally {
+                        cleanupOwnedSource(ownedRing) { PhosphorNative.setRingActive(false) }
+                    }
+                },
             )
-        }
-        publishStatus(status)
-        stopForeground(STOP_FOREGROUND_REMOVE)
-        stopSelf()
+            main.post {
+                if (metadataBridgeActive) {
+                    metadataBridgeActive = false
+                    startService(
+                        Intent(this, PlaybackService::class.java)
+                            .setAction(PlaybackService.ACTION_CAPTURE_STOPPED)
+                    )
+                }
+                publishStatus(if (error == null) status else CaptureStatus.error(
+                    "capture stop failed", error,
+                ))
+                stopForeground(STOP_FOREGROUND_REMOVE)
+                // Keep a failed stop available to subsequent request-specific retries.
+                stopCompletion.cleanupFinished(error)
+                if (error == null) stopSelf()
+            }
+        }, "capture-stop").start()
     }
 
     override fun onDestroy() {
         if (!cleanedUp) finishCapture("service destroyed", CaptureStatus.idle())
         super.onDestroy()
+        stopCompletion.ownerDestroyed()
     }
 
     private fun publishStatus(status: CaptureStatus) {
@@ -271,6 +322,10 @@ class CaptureService : Service() {
         private const val TAG = "phosphor-mobil3"
         const val EXTRA_RESULT = "projection_result"
         const val ACTION_STOP = "dev.phosphor.mobil3.CAPTURE_STOP"
+        const val EXTRA_STOP_REQUEST = "stop_request"
+        const val EXTRA_STOP_REPLY = "stop_reply"
+        const val EXTRA_STOP_ERROR = "stop_error"
+        const val EXTRA_STOP_OWNED = "stop_owned"
         const val ACTION_STATUS = "dev.phosphor.mobil3.CAPTURE_STATUS"
         const val EXTRA_STATE = "capture_state"
         const val EXTRA_MESSAGE = "capture_message"

@@ -9,7 +9,7 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 | B IDs | Planned receipt | Final regression receipt | State |
 |---|---|---|---|
 | B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | Phase 2 PASS; VERIFY pending final regression |
-| B4 | `phase-03-b4-folder-tree.md` | `phase-15-crash.md` | pending |
+| B4 | `phase-03-b4-folder-tree.md` | `phase-15-crash.md` | implementation VERIFY. Live and final regression pending |
 | B2 | `phase-04-b2-mic.md` | `phase-15-sources.md` | pending |
 | B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | pending |
 | B21 | `phase-06-b21-lifecycle.md` | `phase-15-lifecycle.md` | pending |

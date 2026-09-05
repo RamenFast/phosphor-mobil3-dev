@@ -18,9 +18,20 @@ import org.json.JSONObject
 @androidx.annotation.OptIn(UnstableApi::class)
 class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
-    private var playing = false
+    private val transportIntent = LocalTransportIntent()
+    private var playing: Boolean
+        get() = transportIntent.playing
+        set(value) { transportIntent.publish(value) }
     private var queue: List<QueueEntry> = emptyList()
     private var index = 0
+
+    internal fun transportRevision(): Long = transportIntent.revision
+    internal fun recordTransportIntent(play: Boolean) = transportIntent.record(play)
+    internal fun setPublishedPlaying(play: Boolean) {
+        playing = play
+        PhosphorNative.deckSetPaused(!play)
+        invalidateState()
+    }
 
     data class QueueEntry(
         val path: String, // local path once staged, else "" until resolved
@@ -93,7 +104,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     private fun loadedMetadata(): MediaMetadata? = loadedMeta
 
     /** Called (on the player looper) after the Rust deck opened the CURRENT queue entry. */
-    fun onTrackOpened() {
+    fun onTrackOpened(selectedAt: Long? = null) {
         val meta = JSONObject(PhosphorNative.deckMetadata())
         val path = meta.optString("path", "")
         loadedDurationMs =
@@ -111,7 +122,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
                 }
             }
             .build()
-        playing = true
+        playing = selectedAt?.let { transportIntent.atPublication(it, autoplay = true) } ?: true
         invalidateState()
     }
 
@@ -142,6 +153,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        recordTransportIntent(playWhenReady)
         playing = playWhenReady
         PhosphorNative.deckSetPaused(!playWhenReady)
         return Futures.immediateVoidFuture()

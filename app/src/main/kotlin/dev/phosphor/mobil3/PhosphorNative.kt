@@ -105,7 +105,9 @@ object PhosphorNative {
     external fun selfTest(filesDir: String): String
 
     // Deck: open a local file, drive the transport, read state.
+    external fun deckValidate(path: String): Boolean
     external fun deckOpen(path: String): Boolean
+    external fun deckPublish(paused: Boolean)
     external fun deckToggle(): Boolean
     external fun deckPositionMs(): Long
     external fun deckSetPaused(paused: Boolean)

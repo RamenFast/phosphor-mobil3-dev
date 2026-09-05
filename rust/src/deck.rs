@@ -4,7 +4,7 @@
 //! construction. Pause follows the desktop law: stop popping (backpressure freezes the
 //! decoder mid-sample); the stream keeps running with silence.
 
-use std::path::PathBuf;
+use std::path::{Path, PathBuf};
 use std::sync::atomic::{AtomicBool, Ordering};
 use std::sync::{Arc, Mutex, OnceLock, mpsc};
 
@@ -12,9 +12,12 @@ use oboe::{
     AudioOutputCallback, AudioOutputStreamSafe, AudioStream, AudioStreamAsync, AudioStreamBuilder,
     DataCallbackResult, Output, PerformanceMode, SharingMode, Stereo, Usage,
 };
-use phosphor_audio::playback::{AudibleRing, PlayerConfig, PlayerSession, spawn_player};
+use phosphor_audio::playback::{
+    AudibleRing, PlayerConfig, PlayerSession, spawn_player, validate_track,
+};
 use phosphor_audio::ring::SampleRing;
 
+use crate::deck_activation::DeckActivation;
 use crate::deck_close::close_session;
 
 pub const RATE: u32 = 48_000;
@@ -47,7 +50,7 @@ static DECK: Mutex<Option<Deck>> = Mutex::new(None);
 
 struct DeckOutput {
     audible: Arc<AudibleRing>,
-    paused: Arc<AtomicBool>,
+    activation: Arc<DeckActivation>,
     scratch: Vec<f32>,
 }
 
@@ -61,7 +64,7 @@ impl AudioOutputCallback for DeckOutput {
     ) -> DataCallbackResult {
         let need = frames.len() * 2;
         self.scratch.resize(need, 0.0);
-        let got = if self.paused.load(Ordering::Relaxed) {
+        let got = if !self.activation.playing() {
             0 // pause = don't pop; backpressure freezes the decoder (desktop law)
         } else {
             self.audible.pop_into(&mut self.scratch)
@@ -79,7 +82,7 @@ pub struct Deck {
     path: String,
     session: PlayerSession,
     stream: AudioStreamAsync<Output, DeckOutput>,
-    paused: Arc<AtomicBool>,
+    activation: Arc<DeckActivation>,
     _events_rx: mpsc::Receiver<phosphor_audio::AudioEvent>,
 }
 
@@ -90,11 +93,29 @@ pub fn open(path: &str) -> Result<(), String> {
     open_at(path, 0.0)
 }
 
+pub fn validate(path: &str) -> Result<(), String> {
+    validate_track(Path::new(path))
+}
+
 pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
+    open_at_state(path, seek_seconds, false, false)
+}
+
+pub fn prepare(path: &str) -> Result<(), String> {
+    open_at_state(path, 0.0, true, true)
+}
+
+fn open_at_state(
+    path: &str,
+    seek_seconds: f64,
+    initially_paused: bool,
+    prepared: bool,
+) -> Result<(), String> {
+    validate(path)?;
     close();
 
     let audible = AudibleRing::new(RATE);
-    let paused = Arc::new(AtomicBool::new(false));
+    let activation = Arc::new(DeckActivation::new(!prepared, initially_paused));
     let (events_tx, events_rx) = mpsc::channel();
 
     let config = PlayerConfig {
@@ -104,7 +125,7 @@ pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
         vacuum: false,
         pipe_rate: RATE,
     };
-    let session = spawn_player(
+    let mut session = spawn_player(
         config,
         scope_ring().clone(),
         Some(audible.clone()),
@@ -113,10 +134,10 @@ pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
 
     let callback = DeckOutput {
         audible,
-        paused: paused.clone(),
+        activation: activation.clone(),
         scratch: Vec::new(),
     };
-    let mut stream = AudioStreamBuilder::default()
+    let stream = AudioStreamBuilder::default()
         .set_performance_mode(PerformanceMode::LowLatency)
         .set_sharing_mode(SharingMode::Shared)
         .set_usage(Usage::Media)
@@ -124,17 +145,28 @@ pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
         .set_format::<f32>()
         .set_channel_count::<Stereo>()
         .set_callback(callback)
-        .open_stream()
-        .map_err(|e| format!("oboe open: {e}"))?;
-    stream.start().map_err(|e| format!("oboe start: {e}"))?;
+        .open_stream();
+    let mut stream = match stream {
+        Ok(stream) => stream,
+        Err(error) => {
+            close_session(&mut session, || {});
+            return Err(format!("oboe open: {error}"));
+        }
+    };
+    if let Err(error) = stream.start() {
+        close_session(&mut session, || {
+            let _ = stream.stop();
+        });
+        return Err(format!("oboe start: {error}"));
+    }
 
     scope_ring().lock().unwrap().clear_pending();
-    DECK_ACTIVE.store(true, Ordering::Relaxed);
+    DECK_ACTIVE.store(!prepared, Ordering::Relaxed);
     *DECK.lock().unwrap() = Some(Deck {
         path: path.to_owned(),
         session,
         stream,
-        paused,
+        activation,
         _events_rx: events_rx,
     });
     log::info!("deck open: {path} @ {seek_seconds}s");
@@ -143,22 +175,37 @@ pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
 
 pub fn set_paused(paused: bool) {
     if let Some(deck) = DECK.lock().unwrap().as_ref() {
-        deck.paused.store(paused, Ordering::Relaxed);
+        deck.activation.set_paused(paused);
         log::info!("deck paused: {paused}");
     }
 }
 
+pub fn publish(paused: bool) {
+    if let Some(deck) = DECK.lock().unwrap().as_ref() {
+        deck.activation.publish(paused);
+        DECK_ACTIVE.store(true, Ordering::Relaxed);
+    }
+}
+
 pub fn seek_ms(ms: u64) -> Result<(), String> {
+    seek_at_state(ms, false)
+}
+
+pub fn prepare_seek_ms(ms: u64) -> Result<(), String> {
+    seek_at_state(ms, true)
+}
+
+fn seek_at_state(ms: u64, prepare: bool) -> Result<(), String> {
     let (path, was_paused) = {
         let guard = DECK.lock().unwrap();
         let Some(deck) = guard.as_ref() else {
             return Err("no deck loaded".into());
         };
-        (deck.path.clone(), deck.paused.load(Ordering::Relaxed))
+        (deck.path.clone(), !deck.activation.playing())
     };
     // The desktop seeks by restarting decode at the offset; same here.
-    open_at(&path, ms as f64 / 1000.0)?;
-    set_paused(was_paused);
+    open_at_state(&path, ms as f64 / 1000.0, prepare || was_paused, prepare)?;
+    set_paused(prepare || was_paused);
     Ok(())
 }
 
@@ -191,10 +238,9 @@ pub fn toggle() -> bool {
     let Some(deck) = guard.as_ref() else {
         return false;
     };
-    let now_paused = !deck.paused.load(Ordering::Relaxed);
-    deck.paused.store(now_paused, Ordering::Relaxed);
-    log::info!("deck paused: {now_paused}");
-    !now_paused
+    let playing = deck.activation.toggle();
+    log::info!("deck playing: {playing}");
+    playing
 }
 
 pub fn position_micros() -> u64 {
@@ -206,7 +252,8 @@ pub fn position_micros() -> u64 {
 }
 
 pub fn close() {
-    if let Some(mut deck) = DECK.lock().unwrap().take() {
+    let deck = { DECK.lock().unwrap().take() };
+    if let Some(mut deck) = deck {
         close_session(&mut deck.session, || {
             let _ = deck.stream.stop();
         });

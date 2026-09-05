@@ -4,17 +4,40 @@ import android.annotation.SuppressLint
 import android.media.AudioFormat
 import android.media.AudioRecord
 import android.media.MediaRecorder
+import android.os.Handler
+import android.os.Looper
 import android.util.Log
+import java.util.concurrent.CompletableFuture
 
 // Mic → the beam ("room" mode). Foreground-app scope only for now (no FGS); the watching
 // use case keeps the app in front. Stereo because XY needs two channels.
 class MicController {
     @Volatile private var running = false
     private var record: AudioRecord? = null
+    private var reader: Thread? = null
+    private var generation = 0L
+    private var stopped = CompletableFuture.completedFuture<String?>(null)
 
     @SuppressLint("MissingPermission") // caller gates on RECORD_AUDIO
     fun start() {
         if (running) return
+        val request = ++generation
+        val previous = owner
+        if (previous != null && previous !== this) {
+            previous.stop()
+            stopped = previous.stopped
+        }
+        owner = this
+        if (!stopped.isDone) {
+            stopped.thenAccept { error ->
+                main.post { if (generation == request && error == null) start() }
+            }
+            return
+        }
+        stopped.getNow(null)?.let { error ->
+            Log.e("phosphor-mobil3", "mic remains stopped: $error")
+            return
+        }
         val fmt = AudioFormat.Builder()
             .setEncoding(AudioFormat.ENCODING_PCM_FLOAT)
             .setSampleRate(48_000)
@@ -33,20 +56,59 @@ class MicController {
         PhosphorNative.setRingActive(true)
         running = true
         rec.startRecording()
-        Thread {
+        reader = Thread {
             val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
             while (running) {
                 val n = rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
-                if (n > 0) PhosphorNative.pushCaptureSamples(chunk, n)
+                if (running && n > 0) PhosphorNative.pushCaptureSamples(chunk, n)
             }
-        }.start()
+        }.also { it.start() }
         Log.i("phosphor-mobil3", "mic capture running")
     }
 
     fun stop() {
+        ++generation
         running = false
-        record?.run { runCatching { stop() }; release() }
+        val oldRecord = record
+        if (oldRecord == null && (!stopped.isDone || stopped.getNow(null) == null)) return
+        if (oldRecord == null && stopped.getNow(null) != ReaderStop.TIMEOUT) return
+        val oldReader = reader
         record = null
-        PhosphorNative.setRingActive(false)
+        val completion = CompletableFuture<String?>()
+        stopped = completion
+        Thread({
+            val error = ReaderStop.finish(
+                reader = oldReader,
+                stop = { oldRecord?.stop() },
+                release = { oldRecord?.release() },
+                cleanup = { PhosphorNative.setRingActive(false) },
+            )
+            main.post {
+                if (error == null && owner === this && record == null) owner = null
+                completion.complete(error)
+                if (error != null) Log.e("phosphor-mobil3", "mic stop: $error")
+            }
+        }, "mic-stop").start()
+    }
+
+    companion object {
+        private val main = Handler(Looper.getMainLooper())
+        // Only a stop rendezvous. The activity's controller still owns AudioRecord and start.
+        private var owner: MicController? = null
+
+        fun stopForLocal(requestId: Long, reply: (Long, String?, Boolean) -> Unit) {
+            main.post {
+                val current = owner
+                if (current == null) {
+                    reply(requestId, null, false)
+                } else {
+                    current.stop()
+                    current.stopped.thenAccept { error ->
+                        if (error == null && owner === current && current.record == null) owner = null
+                        reply(requestId, error, true)
+                    }
+                }
+            }
+        }
     }
 }

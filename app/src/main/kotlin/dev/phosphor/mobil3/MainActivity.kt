@@ -18,12 +18,14 @@ import android.os.Build
 import android.os.Bundle
 import android.os.Handler
 import android.os.Looper
+import android.os.ResultReceiver
 import android.provider.Settings
 import android.view.OrientationEventListener
 import android.view.Surface
 import android.view.SurfaceHolder
 import android.view.SurfaceView
 import android.view.WindowManager
+import android.widget.Toast
 import androidx.activity.ComponentActivity
 import androidx.activity.compose.setContent
 import androidx.activity.enableEdgeToEdge
@@ -73,6 +75,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // Route gravity to the beam, individual elements, or the whole chrome for the four lock combinations.
     private var gravityListener: android.hardware.SensorEventListener? = null
     private var lastSourceReopened = false
+    private var sourceSelection = 0L
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
 
     /**
@@ -95,6 +98,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == CaptureService.ACTION_STATUS) {
                 applyCaptureStatus(CaptureService.statusFrom(intent))
+            } else if (intent?.action == PlaybackService.ACTION_LOCAL_SOURCE_CHANGED) {
+                applyLocalSourcePublication(intent.getLongExtra(PlaybackService.EXTRA_SOURCE_REVISION, -1))
             }
         }
     }
@@ -126,39 +131,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
             uri?.let { loadUri(it) }
         }
 
-    // Persist folder access and sort audio files by name for a stable queue.
+    // The service owns traversal, staging and open. Binder carries only the tree identity.
     private val openFolderLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocumentTree()) { uri ->
             uri ?: return@registerForActivityResult
-            contentResolver.takePersistableUriPermission(
-                uri, Intent.FLAG_GRANT_READ_URI_PERMISSION
-            )
-            Thread {
-                val root = androidx.documentfile.provider.DocumentFile.fromTreeUri(this, uri)
-                val audio = root?.listFiles().orEmpty()
-                    .filter { f ->
-                        f.isFile && (f.type?.startsWith("audio/") == true ||
-                            f.name?.substringAfterLast('.')?.lowercase() in
-                            setOf("wav", "flac", "mp3", "ogg", "opus", "m4a", "aac", "aiff"))
-                    }
-                    .sortedBy { it.name?.lowercase() ?: "" }
-                if (audio.isEmpty()) return@Thread
-                val intent = Intent(this, PlaybackService::class.java)
-                    .setAction(PlaybackService.ACTION_OPEN_QUEUE)
-                    .putStringArrayListExtra(
-                        PlaybackService.EXTRA_QUEUE_URIS,
-                        ArrayList(audio.map { it.uri.toString() }),
-                    )
-                    .putStringArrayListExtra(
-                        PlaybackService.EXTRA_QUEUE_TITLES,
-                        ArrayList(audio.map { it.name ?: "track" }),
-                    )
-                    .putExtra(PlaybackService.EXTRA_QUEUE_START, 0)
-                runOnUiThread {
-                    startService(intent)
-                    ui.sourceLabel = "deck"
-                }
-            }.start()
+            runCatching {
+                contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
+                ++sourceSelection
+                applyLocalGainPolicy()
+                startService(Intent(this, PlaybackService::class.java)
+                    .setAction(PlaybackService.ACTION_OPEN_TREE)
+                    .putExtra(PlaybackService.EXTRA_TREE_URI, uri.toString())
+                    .putExtra(PlaybackService.EXTRA_QUEUE_START, 0))
+            }.onFailure {
+                Toast.makeText(this, "Folder access failed, choose a readable tree", Toast.LENGTH_LONG).show()
+            }
         }
 
     private val createSettingsArchive =
@@ -279,21 +266,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 )
                 return@registerForActivityResult
             }
-            applyLocalGainPolicy()
-            mic.stop()
-            applyCaptureStatus(CaptureService.CaptureStatus.starting())
-            runCatching {
-                startForegroundService(
-                    Intent(this, CaptureService::class.java)
-                        .putExtra(CaptureService.EXTRA_RESULT, data)
-                )
-            }.onFailure {
-                applyCaptureStatus(
-                    CaptureService.CaptureStatus.error(
+            withSourcesReleased {
+                applyLocalGainPolicy()
+                applyCaptureStatus(CaptureService.CaptureStatus.starting())
+                runCatching {
+                    startForegroundService(
+                        Intent(this, CaptureService::class.java).putExtra(CaptureService.EXTRA_RESULT, data)
+                    )
+                }.onFailure {
+                    applyCaptureStatus(CaptureService.CaptureStatus.error(
                         "capture service could not start",
                         "Return to Phosphor and approve Android's foreground capture prompt again",
-                    )
-                )
+                    ))
+                }
             }
         }
 
@@ -313,12 +298,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 return@registerForActivityResult
             }
             when (purpose) {
-                AudioPermissionPurpose.MICROPHONE -> {
-                    applyLocalGainPolicy()
-                    mic.start()
-                    ui.sourceLabel = "mic"
-                    ui.live = true
-                }
+                AudioPermissionPurpose.MICROPHONE -> startMic()
                 AudioPermissionPurpose.PLAYBACK_CAPTURE -> launchCaptureConsent()
                 AudioPermissionPurpose.NONE -> Unit
             }
@@ -418,12 +398,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
             ContextCompat.registerReceiver(
                 this,
                 captureStatusReceiver,
-                IntentFilter(CaptureService.ACTION_STATUS),
+                IntentFilter(CaptureService.ACTION_STATUS).apply { addAction(PlaybackService.ACTION_LOCAL_SOURCE_CHANGED) },
                 ContextCompat.RECEIVER_NOT_EXPORTED,
             )
             captureStatusReceiverRegistered = true
         }
         applyCaptureStatus(CaptureService.currentStatus())
+        PlaybackService.localSourcePublication.current.let {
+            if (it.source == LocalSourcePublication.Source.NONE ||
+                it.source == LocalSourcePublication.Source.RELEASED_READERS) applyLocalSourcePublication(it.revision)
+        }
         PhosphorNative.setRenderPaused(false)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token).buildAsync()
@@ -569,23 +553,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun handleIntent(intent: Intent) {
-        intent.getStringExtra("open")?.let { openDeck(it, "deck") }
+        intent.getStringExtra("open")?.let { openDeck(it) }
         if (intent.getBooleanExtra("capture", false)) startCapture()
         if (intent.getBooleanExtra("remote", false)) startRemote()
     }
 
-    // Stage the selected document under its display name. The service removes transient copies on startup and shutdown.
+    // Direct documents use the same serial staging and validation path as tree entries.
     private fun loadUri(uri: Uri) {
-        Thread {
-            val name = queryDisplayName(uri) ?: "track.wav"
-            val staged = File(filesDir, "staged").apply { mkdirs() }
-            staged.listFiles()?.forEach { if (it.isFile && it.name != name) it.delete() }
-            val dst = File(staged, name)
-            contentResolver.openInputStream(uri)?.use { input ->
-                dst.outputStream().use { input.copyTo(it) }
-            }
-            runOnUiThread { openDeck(dst.absolutePath, "deck") }
-        }.start()
+        ++sourceSelection
+        runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
+        applyLocalGainPolicy()
+        startService(Intent(this, PlaybackService::class.java)
+            .setAction(PlaybackService.ACTION_OPEN_DOCUMENT)
+            .putExtra(PlaybackService.EXTRA_DOCUMENT_URI, uri.toString()))
     }
 
     // Mirror the session's timeline into the deck sheet's queue rows (ghost items from
@@ -609,8 +589,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.trackArtist = metadata.artist?.toString()
         ui.artwork = metadata.artworkData?.takeIf { it.isNotEmpty() }
         val source = metadata.extras?.getString("source")
+            ?: c.currentMediaItem?.mediaId?.takeIf { it.startsWith("q") }?.let { "local" }
         ui.remote = source == "remote"
         when (source) {
+            "local" -> {
+                ui.sourceLabel = "deck"
+                ui.live = false
+                ui.remote = false
+            }
             "capture" -> {
                 ui.sourceLabel = "capture"
                 ui.live = true
@@ -644,17 +630,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    private fun queryDisplayName(uri: Uri): String? =
-        contentResolver.query(uri, arrayOf(android.provider.OpenableColumns.DISPLAY_NAME), null, null, null)
-            ?.use { c -> if (c.moveToFirst()) c.getString(0) else null }
-
-    private fun openDeck(path: String, label: String) {
-        mic.stop()
-        stopCaptureService()
-        ui.live = false
+    private fun openDeck(path: String) {
+        ++sourceSelection
         applyLocalGainPolicy()
         startService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
-        ui.sourceLabel = label
+    }
+
+    private fun withSourcesReleased(start: () -> Unit) {
+        val selection = ++sourceSelection
+        val reply = object : ResultReceiver(tick) {
+            override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
+                if (resultCode == 0 && selection == sourceSelection && !isDestroyed) start()
+            }
+        }
+        startService(Intent(this, PlaybackService::class.java)
+            .setAction(PlaybackService.ACTION_RELEASE_LOCAL)
+            .putExtra(PlaybackService.EXTRA_RELEASE_REPLY, reply))
     }
 
     // ---- ScopeActions ----
@@ -724,7 +715,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
-        mic.stop()
+        ++sourceSelection
         prefs().edit { putFloat("gain", gainValue) }
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
         ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
@@ -765,11 +756,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
 
     override fun startMic() {
-        stopCaptureService()
         ui.live = false
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
-        ) { applyLocalGainPolicy(); mic.start(); ui.sourceLabel = "mic"; ui.live = true }
+        ) {
+            withSourcesReleased {
+                applyLocalGainPolicy()
+                mic.start()
+                ui.sourceLabel = "mic"
+                ui.live = true
+            }
+        }
         else {
             pendingAudioPermission = AudioPermissionPurpose.MICROPHONE
             micPermission.launch(Manifest.permission.RECORD_AUDIO)
@@ -815,22 +812,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
 
     override fun stopLive() {
-        mic.stop()
-        stopCaptureService()
-        PhosphorNative.setRingActive(false)
-        ui.live = false
-        if (ui.sourceLabel.startsWith("capture") || ui.sourceLabel == "mic") {
-            ui.sourceLabel = "no source"
-            acceptTrackTitle(null)
-            ui.trackArtist = null
-            ui.artwork = null
+        withSourcesReleased {
+            PhosphorNative.setRingActive(false)
+            ui.live = false
+            if (ui.sourceLabel.startsWith("capture") || ui.sourceLabel == "mic") {
+                ui.sourceLabel = "no source"
+                acceptTrackTitle(null)
+                ui.trackArtist = null
+                ui.artwork = null
+            }
+            ui.captureStatus = ""
+            ui.captureFix = ""
         }
-        ui.captureStatus = ""
-        ui.captureFix = ""
-    }
-
-    private fun stopCaptureService() {
-        startService(Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP))
     }
 
     private fun applyCaptureStatus(status: CaptureService.CaptureStatus) {
@@ -853,6 +846,29 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.trackArtist = null
                 ui.artwork = null
             }
+        }
+    }
+
+    private fun applyLocalSourcePublication(revision: Long) {
+        val publication = PlaybackService.localSourcePublication
+        if (!publication.accepts(revision)) return
+        when (publication.current.source) {
+            LocalSourcePublication.Source.LOCAL -> {
+                ui.sourceLabel = "deck"
+                ui.live = false
+                ui.remote = false
+            }
+            LocalSourcePublication.Source.NONE, LocalSourcePublication.Source.RELEASED_READERS -> {
+                if (publication.current.source == LocalSourcePublication.Source.RELEASED_READERS &&
+                    !publication.current.clearsReaderFace(ui.sourceLabel)) return
+                ui.sourceLabel = "no source"
+                ui.live = false
+                ui.remote = false
+                acceptTrackTitle(null)
+                ui.trackArtist = null
+                ui.artwork = null
+            }
+            LocalSourcePublication.Source.OTHER -> Unit
         }
     }
 

@@ -30,6 +30,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     // The service owns process-network binding; STOP must return through it so a
     // remote transport stop cannot strand a process-wide route.
     var onStopRequested: (() -> Unit)? = null
+    var onTransportIntent: ((Boolean) -> Unit)? = null
 
     // GREETED, SILENT and STALLED exist because the engine and relay already know all
     // three and the UI used to throw them away. GREETED is the window after the relay's
@@ -266,6 +267,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     // ── Transport → the bridge ──
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        onTransportIntent?.invoke(playWhenReady)
         // playpause is a TOGGLE on the wire: only send when intent differs from the last
         // known source-machine state, then trust the next M frame to reconcile.
         if (playWhenReady != playing) {
