@@ -197,3 +197,16 @@ The [planning receipt](plans/mobile-next/verification/PLAN-REVIEW.md) preserves 
 No future runtime implementation, phone action, visible GUI, audio change or active-service operation occurred during planning.
 B2's exact debug APK remains retained, not installed. Device acceptance still waits for Ben's quiet boundary to change.
 New roadmap execution and publication remain unapproved. Keep `spec-version: pre-v2-b1-b21` and `drift: 21` unchanged.
+
+## 2026-09-05 16:38 UTC: B2 exact-artifact phone check
+
+Ben authorized phone acceptance at 16:30 UTC. The retained `47ff7cd` debug APK passed offline package guards and installed hash/signer readback.
+All five capture-to-mic cycles passed. Every cycle released capture before one unsilenced mic recorder started, advanced sample frames and changed the beam.
+Observed capture-stop to mic-running intervals were 75.337 to 96.787 ms. These are measurements, not a timeout guarantee.
+Mic/local and capture/local transitions passed their narrow ownership checks. Rapid mic-then-local selection left local ownership without another mic start.
+The complete 300-second log had 69,626 records and replayed byte-for-byte. The scoped failure scan found no candidates.
+Root restored tuning, runtime preferences and saved hosts byte-for-byte, stopped task audio and removed only task fixtures and diagnostics.
+The exact B2 debug APK remains installed. No production package, system setting, desktop media, source code or sibling change occurred.
+The [B2 receipt](dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md) maps each requirement to measured evidence and keeps fault-path limits explicit.
+Phase 4 task 4.4 passes. Final regression and human acceptance remain open. The next implementation phase is Phase 5, not the future roadmap.
+Keep `spec-version: pre-v2-b1-b21` and `drift: 21` unchanged.

@@ -14,7 +14,7 @@
 | 2026-08-05 | Provision the approved production APK signer and Play-upload AAB signer outside the repository | blocked on external signing inputs |
 | 2026-08-05 | Add two major core features after the cleanup stage | waiting for feature brief |
 | 2026-08-26 | B1: Add chrome-adjacent scope deadzones and the exact 333ms settle delay | open · [#4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) |
-| 2026-08-26 | B2: Make capture-to-built-in-microphone switching start a live beam reliably | open · offline gates and independent reviews pass; five-cycle phone acceptance pending · [receipt](dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md) · [#3](https://github.com/RamenFast/phosphor-mobil3-dev/issues/3) |
+| 2026-08-26 | B2: Make capture-to-built-in-microphone switching start a live beam reliably | Phase 4 live PASS 5/5 on exact APK; final regression remains open · [receipt](dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md) · [#3](https://github.com/RamenFast/phosphor-mobil3-dev/issues/3) |
 | 2026-08-26 | B3: Prove regular-app Tailscale relay, fresh-Linux setup, direct files, and whole recursive folders | open · [#3](https://github.com/RamenFast/phosphor-mobil3-dev/issues/3) |
 | 2026-08-01 | B4: Make recursive local folder playback survive nested and invalid entries without freezing or going dark | verify · Phase 3 live acceptance passed, final regression remains · [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) · [#1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) |
 | 2026-08-26 | B5: Keep deposited scope brightness stable through settings and chrome cycles | open · [#5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
