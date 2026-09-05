@@ -251,3 +251,22 @@ Ben requested completion of the original repairs while listening to a podcast, w
 Phase 5 resumes from mobile `d1877aa` and sibling `2a45b0f`. Existing B2/B4/B9 phase evidence remains valid within its recorded scope.
 Root keeps sequential code phases and separate approved reviews. Phone activity, playback changes, visible windows and active-service operations remain deferred.
 Offline tests, retained builds and local commits may proceed. No live PASS, human acceptance, publication or future roadmap implementation follows from this boundary.
+
+## 2026-09-05 18:35 UTC: B6/B7/B8 offline truth repair
+
+The existing decoder event now drives local tag publication through the service's sole serial watcher.
+Exact open/request identity rejects stale metadata, including same-path seeks and failed replacements.
+Captured metadata and controls now use observed session identity, state, duration and supported actions.
+Buffering retains the pause action without claiming audible output. Local and remote retain their existing playing semantics.
+Unsupported captured play/skip controls are hidden, while the source/access remedy remains available.
+
+Separate source and human-intent reviews passed against the frozen 14-file manifest.
+Root independently reran 198 Android tests. Native 41, shared audio 30 and relay 26 tests passed.
+CLI, boundary, provenance-fixture, scope/privacy and Rust lint checks passed. Protected archive and all relevant source hashes remained unchanged.
+The first root scope check exposed ambiguous brief-owner wording, corrected in `1f94a4d` without weakening the gate.
+The next overall command stopped on whitespace in concurrent unrelated sibling desktop work. That work remains untouched.
+Clean-sibling provenance and the retained clean candidate stay pending. No failed aggregate run is reported as a full PASS.
+
+The [Phase 5 receipt](dev/receipts/pre-v2-b1-b21/phase-05-b6-b7-b8-media-truth.md) maps each outcome to evidence and later live checks.
+B6/B7/B8 stay VERIFY pending actual Android title/artist, seek, glyph and notification acceptance. Drift remains 21.
+No phone, playback, permission, visible GUI, active relay or production state changed. Quiet sequential Phase 6 work follows the frozen behavior commit.

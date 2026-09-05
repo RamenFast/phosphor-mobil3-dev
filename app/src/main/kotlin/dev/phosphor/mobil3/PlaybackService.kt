@@ -68,7 +68,9 @@ class PlaybackService : MediaSessionService() {
     private lateinit var notificationListenerComponent: ComponentName
     private var captureActive = false
     private var captureSessionsListenerRegistered = false
-    private var externalCaptureController: PlatformMediaController? = null
+    private val captureBinding = CaptureControllerBinding<PlatformMediaController>()
+    private val externalCaptureController: PlatformMediaController? get() = captureBinding.current
+    private var externalControllerCallback: PlatformMediaController.Callback? = null
     private var captureTrackKey: String? = null
     private var captureArtwork: ByteArray? = null
     private var captureArtGeneration = 0
@@ -116,29 +118,16 @@ class PlaybackService : MediaSessionService() {
     private var openedLocalIndex = -1
     private val stopSequence = AtomicLong()
     private val localQueuePolicy = LocalQueuePolicy()
+    private val playbackTruth = PlaybackTruth()
     private val sourceSurvival = LocalSourceSurvival()
     private var advancingAtEnd = false
 
     private val activePlayer: Player get() = session?.player ?: localPlayer
 
     private val activeSessionsChanged =
-        MediaSessionManager.OnActiveSessionsChangedListener { controllers ->
-            if (captureActive) chooseCaptureController(controllers.orEmpty())
-        }
-
-    private val externalControllerCallback = object : PlatformMediaController.Callback() {
-        override fun onMetadataChanged(metadata: PlatformMediaMetadata?) {
-            if (captureActive) publishCaptureMetadata(metadata)
-        }
-
-        override fun onPlaybackStateChanged(state: PlatformPlaybackState?) {
-            if (captureActive) publishCapturePlayback(state)
-        }
-
-        override fun onSessionDestroyed() {
+        MediaSessionManager.OnActiveSessionsChangedListener {
             if (captureActive) refreshCaptureController()
         }
-    }
 
     private val noisyReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context, intent: Intent) {
@@ -192,16 +181,18 @@ class PlaybackService : MediaSessionService() {
         remotePlayer.onTransportIntent = localPlayer::recordTransportIntent
         capturePlayer = CaptureMirrorPlayer(mainLooper).apply {
             playPauseRouter = ::routeCapturePlayPause
-            // Prefer the captured app's controller; system media keys remain available without notification access.
-            nextRouter = {
-                externalCaptureController?.transportControls?.skipToNext()
-                    ?: dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_NEXT)
+            nextRouter = { routeCaptureSkip(next = true) }
+            previousRouter = { routeCaptureSkip(next = false) }
+            seekRouter = { position ->
+                externalCaptureController?.let { controller ->
+                    val state = controller.playbackState
+                    val duration = controller.metadata?.getLong(PlatformMediaMetadata.METADATA_KEY_DURATION) ?: 0L
+                    if (CaptureMirrorPolicy.seekable(state?.state ?: PlatformPlaybackState.STATE_NONE,
+                            state?.actions ?: 0L, duration)) {
+                        controller.transportControls.seekTo(position.coerceIn(0L, duration))
+                    }
+                }
             }
-            previousRouter = {
-                externalCaptureController?.transportControls?.skipToPrevious()
-                    ?: dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_PREVIOUS)
-            }
-            seekRouter = { externalCaptureController?.transportControls?.seekTo(it) }
         }
         localPlayer.onSwitchTrack = ::stageAndOpen
         localPlayer.onSeek = ::seekLocalDeck
@@ -261,6 +252,7 @@ class PlaybackService : MediaSessionService() {
                         registerCaptureSessionsListener()
                         refreshCaptureController()
                     } else {
+                        unregisterCaptureSessionsListener()
                         clearExternalCaptureController()
                         publishCaptureMetadata(null)
                         publishCapturePlayback(null)
@@ -318,12 +310,14 @@ class PlaybackService : MediaSessionService() {
 
     // ── Phone-local capture face: external Android session → our ONE MediaSession. ──
     private fun beginCaptureMirror() {
+        val previousPlayer = session?.player
+        CaptureMirrorPolicy.attach(session?.player, capturePlayer) { session?.setPlayer(it) }
         if (captureActive) {
             refreshCaptureController()
             return
         }
         // Capture supersedes either deck without creating a second MediaSession.
-        if (session?.player === remotePlayer) {
+        if (previousPlayer === remotePlayer) {
             remotePolling = false
             remoteEndpoint = null
             PhosphorNative.remoteDisconnect()
@@ -334,7 +328,6 @@ class PlaybackService : MediaSessionService() {
         captureTrackKey = null
         captureArtwork = null
         capturePlayer.activate()
-        session?.setPlayer(capturePlayer)
         registerCaptureSessionsListener()
         refreshCaptureController()
     }
@@ -353,13 +346,17 @@ class PlaybackService : MediaSessionService() {
         captureTrackKey = null
         captureArtwork = null
         clearExternalCaptureController()
+        unregisterCaptureSessionsListener()
+        capturePlayer.reset()
+    }
+
+    private fun unregisterCaptureSessionsListener() {
         if (captureSessionsListenerRegistered) {
             runCatching {
                 platformSessionManager.removeOnActiveSessionsChangedListener(activeSessionsChanged)
             }
             captureSessionsListenerRegistered = false
         }
-        capturePlayer.reset()
     }
 
     private fun registerCaptureSessionsListener() {
@@ -375,17 +372,18 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun refreshCaptureController() {
+    private fun refreshCaptureController(excluded: android.media.session.MediaSession.Token? = null) {
         if (!captureActive) return
         val controllers = runCatching {
             platformSessionManager.getActiveSessions(notificationListenerComponent)
         }.getOrElse {
+            unregisterCaptureSessionsListener()
             clearExternalCaptureController()
             publishCaptureMetadata(null)
             publishCapturePlayback(null)
             return
         }
-        chooseCaptureController(controllers)
+        chooseCaptureController(controllers.filter { it.sessionToken != excluded })
     }
 
     /**
@@ -402,26 +400,54 @@ class PlaybackService : MediaSessionService() {
             }.thenBy {
                 it.metadata != null
             }.thenBy {
-                it === externalCaptureController
+                it.sessionToken == externalCaptureController?.sessionToken
             }
         )
         if (chosen !== externalCaptureController) {
             clearExternalCaptureController()
-            externalCaptureController = chosen
-            chosen?.registerCallback(externalControllerCallback, main)
+            val isCurrent = captureBinding.bind(chosen)
+            if (chosen != null) {
+                val callback = object : PlatformMediaController.Callback() {
+                    override fun onMetadataChanged(metadata: PlatformMediaMetadata?) {
+                        if (captureActive && isCurrent()) publishCaptureMetadata(metadata)
+                    }
+
+                    override fun onPlaybackStateChanged(state: PlatformPlaybackState?) {
+                        if (captureActive && isCurrent()) {
+                            publishCaptureMetadata(chosen.metadata)
+                            publishCapturePlayback(state)
+                        }
+                    }
+
+                    override fun onSessionDestroyed() {
+                        if (captureActive && isCurrent()) {
+                            clearExternalCaptureController()
+                            publishCaptureMetadata(null)
+                            publishCapturePlayback(null)
+                            refreshCaptureController(chosen.sessionToken)
+                        }
+                    }
+                }
+                externalControllerCallback = callback
+                runCatching { chosen.registerCallback(callback, main) }.onFailure {
+                    clearExternalCaptureController()
+                }
+            }
             captureTrackKey = null
             captureArtwork = null
             captureArtGeneration++
         }
-        publishCaptureMetadata(chosen?.metadata)
-        publishCapturePlayback(chosen?.playbackState)
+        publishCaptureMetadata(externalCaptureController?.metadata)
+        publishCapturePlayback(externalCaptureController?.playbackState)
     }
 
     private fun clearExternalCaptureController() {
-        externalCaptureController?.let {
-            runCatching { it.unregisterCallback(externalControllerCallback) }
+        val previous = externalCaptureController
+        captureBinding.bind(null)
+        externalControllerCallback?.let { callback ->
+            runCatching { previous?.unregisterCallback(callback) }
         }
-        externalCaptureController = null
+        externalControllerCallback = null
         captureArtGeneration++
         captureTrackKey = null
         captureArtwork = null
@@ -430,7 +456,8 @@ class PlaybackService : MediaSessionService() {
     private fun publishCaptureMetadata(metadata: PlatformMediaMetadata?) {
         if (!captureActive) return
         val controller = externalCaptureController
-        if (metadata == null || controller == null) {
+        if (metadata == null || controller == null ||
+            !CaptureMirrorPolicy.available(controller.playbackState?.state ?: PlatformPlaybackState.STATE_NONE)) {
             captureTrackKey = null
             captureArtwork = null
             captureArtGeneration++
@@ -491,15 +518,10 @@ class PlaybackService : MediaSessionService() {
 
     private fun publishCapturePlayback(state: PlatformPlaybackState?) {
         if (!captureActive) return
-        // Capture always advertises transport because the fallback routers dispatch system media keys.
-        val guaranteed = PlatformPlaybackState.ACTION_PLAY or
-            PlatformPlaybackState.ACTION_PAUSE or
-            PlatformPlaybackState.ACTION_PLAY_PAUSE or
-            PlatformPlaybackState.ACTION_SKIP_TO_NEXT or
-            PlatformPlaybackState.ACTION_SKIP_TO_PREVIOUS
+        if (state == null || !CaptureMirrorPolicy.available(state.state)) publishCaptureMetadata(null)
         capturePlayer.updatePlayback(
             state = state?.state ?: PlatformPlaybackState.STATE_NONE,
-            actions = (state?.actions ?: 0L) or guaranteed,
+            actions = state?.actions ?: 0L,
             positionMs = state?.position ?: C.TIME_UNSET,
             positionUpdateElapsedMs = state?.lastPositionUpdateTime ?: SystemClock.elapsedRealtime(),
         )
@@ -560,19 +582,13 @@ class PlaybackService : MediaSessionService() {
         }
     }.getOrNull()
 
-    /** System-wide media key: routes to the active app, no permission needed. */
-    private fun dispatchSystemMediaKey(code: Int) {
-        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_DOWN, code))
-        audioManager.dispatchMediaKeyEvent(KeyEvent(KeyEvent.ACTION_UP, code))
-    }
-
     private fun routeCapturePlayPause(play: Boolean) {
         localPlayer.recordTransportIntent(play)
-        val controller = externalCaptureController ?: run {
-            dispatchSystemMediaKey(KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
-            return
-        }
-        val actions = controller.playbackState?.actions ?: 0L
+        val controller = externalCaptureController ?: return
+        val state = controller.playbackState ?: return
+        if (!CaptureMirrorPolicy.available(state.state)) return
+        if (play == CaptureMirrorPolicy.playing(state.state)) return
+        val actions = state.actions
         val directAction = if (play) PlatformPlaybackState.ACTION_PLAY else PlatformPlaybackState.ACTION_PAUSE
         if (actions and directAction != 0L) {
             if (play) controller.transportControls.play() else controller.transportControls.pause()
@@ -584,6 +600,14 @@ class PlaybackService : MediaSessionService() {
                 KeyEvent(KeyEvent.ACTION_UP, KeyEvent.KEYCODE_MEDIA_PLAY_PAUSE)
             )
         }
+    }
+
+    private fun routeCaptureSkip(next: Boolean) {
+        val controller = externalCaptureController ?: return
+        val state = controller.playbackState ?: return
+        val action = if (next) PlatformPlaybackState.ACTION_SKIP_TO_NEXT else PlatformPlaybackState.ACTION_SKIP_TO_PREVIOUS
+        if (!CaptureMirrorPolicy.supports(state.state, state.actions, action)) return
+        if (next) controller.transportControls.skipToNext() else controller.transportControls.skipToPrevious()
     }
 
     // Queue documents are staged on demand and removed on startup, shutdown, and track changes.
@@ -719,6 +743,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun closeOpenedLocal() {
+        playbackTruth.closed()
         PhosphorNative.deckClose()
         openedLocalPath = null
         openedLocalQueuePaths = null
@@ -739,9 +764,12 @@ class PlaybackService : MediaSessionService() {
             publishNativeFailure(isLatest)
             return
         }
+        playbackTruth.retain(isLatest)
         main.post {
             if (!destroying && isLatest()) {
                 localQueuePolicy.failed(preservesNative = true)
+                playbackTruth.publishCurrent(localPlayer::onTrackMetadata)
+                startEndWatcher()
                 val readers = sourceSurvival.loss().readers
                 if (readers.isNotEmpty()) publishLocalSource(localSourcePublication.readersReleased(readers))
             }
@@ -871,11 +899,15 @@ class PlaybackService : MediaSessionService() {
                     closeOpenedLocal()
                     reportLocal("Seek failed, retry this track", isLatest)
                     publishNativeFailure(isLatest)
-                } else main.post {
-                    if (!destroying && isLatest()) {
-                        PhosphorNative.deckPublish(!localPlayer.playWhenReady)
-                        sourceSurvival.published()
-                        localQueuePolicy.published()
+                } else {
+                    playbackTruth.opened(path, request.titles[index], isLatest)
+                    main.post {
+                        if (!destroying && isLatest()) {
+                            PhosphorNative.deckPublish(!localPlayer.playWhenReady)
+                            sourceSurvival.published()
+                            localQueuePolicy.published()
+                            startEndWatcher()
+                        }
                     }
                 }
                 return
@@ -903,6 +935,7 @@ class PlaybackService : MediaSessionService() {
                     return
                 }
             }
+            playbackTruth.opened(path, request.titles[index], isLatest)
             main.post {
                 if (destroying || !isLatest()) return@post
                 queueUris = request.queueUris
@@ -935,17 +968,19 @@ class PlaybackService : MediaSessionService() {
         }
         val previousIndex = openedLocalIndex
         val previousQueue = openedLocalQueuePaths
+        playbackTruth.retain(isLatest)
         main.post {
             if (destroying || !isLatest()) return@post
             if (previousQueue === request.queuePaths && previousIndex >= 0) {
                 val playing = localPlayer.playWhenReady && !request.fromEof
                 localPlayer.setQueue(request.titles.map { PhosphorPlayer.QueueEntry("", it) }, previousIndex)
-                localPlayer.onTrackOpened()
                 localPlayer.setPublishedPlaying(playing)
                 localQueuePolicy.exhausted(request.fromEof)
             } else {
                 localQueuePolicy.failed(preservesNative = previousQueue != null)
             }
+            playbackTruth.publishCurrent(localPlayer::onTrackMetadata)
+            startEndWatcher()
         }
     }
 
@@ -956,10 +991,26 @@ class PlaybackService : MediaSessionService() {
         watching = true
         main.post(object : Runnable {
             override fun run() {
-                if (session?.player !== localPlayer || localPlayer.queueSize() == 0) {
+                if (destroying || session?.player !== localPlayer || localPlayer.queueSize() == 0) {
                     watching = false
                     return
                 }
+                playbackTruth.poll(
+                    schedule = { task -> localDeckExecutor.execute {
+                        runCatching(task).onFailure { Log.w(TAG, "Local metadata unavailable", it) }
+                    } },
+                    onMain = { task -> main.post { if (!destroying) task() } },
+                    readEvent = PhosphorNative::deckPollEvent,
+                    readMetadata = PhosphorNative::deckMetadata,
+                    readArtwork = PhosphorNative::deckCoverArt,
+                    publish = { if (session?.player === localPlayer) localPlayer.onTrackMetadata(it) },
+                    failed = { isLatest ->
+                        sourceSurvival.nativeReplacing()
+                        closeOpenedLocal()
+                        reportLocal("Local decoder could not start, choose a readable file and retry", isLatest)
+                        publishNativeFailure(isLatest)
+                    },
+                )
                 val dur = localPlayer.currentDurationMs()
                 val pos = PhosphorNative.deckPositionMs()
                 if (localQueuePolicy.mayAdvance() && localPlayer.playWhenReady && dur > 0 && pos >= dur - 350) {
@@ -1205,7 +1256,7 @@ class PlaybackService : MediaSessionService() {
         const val EXTRA_PORT = "port"
         const val EXTRA_LABEL = "label"
         private const val MAX_ART_EDGE = 1024
-        private val ACTIVE_PLATFORM_STATES = setOf(
+        internal val ACTIVE_PLATFORM_STATES = setOf(
             PlatformPlaybackState.STATE_PLAYING,
             PlatformPlaybackState.STATE_BUFFERING,
             PlatformPlaybackState.STATE_CONNECTING,
@@ -1223,7 +1274,7 @@ class PlaybackService : MediaSessionService() {
  * no MediaSession: PlaybackService temporarily installs it into Phosphor's single session.
  */
 @androidx.annotation.OptIn(UnstableApi::class)
-private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(looper) {
+internal class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(looper) {
     var playPauseRouter: ((Boolean) -> Unit)? = null
     var nextRouter: (() -> Unit)? = null
     var previousRouter: (() -> Unit)? = null
@@ -1251,12 +1302,7 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
                 Player.COMMAND_RELEASE,
             )
             .apply {
-                if (supports(
-                        PlatformPlaybackState.ACTION_PLAY,
-                        PlatformPlaybackState.ACTION_PAUSE,
-                        PlatformPlaybackState.ACTION_PLAY_PAUSE,
-                    )
-                ) add(Player.COMMAND_PLAY_PAUSE)
+                if (active && CaptureMirrorPolicy.canPlayPause(platformState, actions)) add(Player.COMMAND_PLAY_PAUSE)
                 if (supports(PlatformPlaybackState.ACTION_SKIP_TO_NEXT)) {
                     addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                 }
@@ -1266,7 +1312,7 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
                         Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM,
                     )
                 }
-                if (supports(PlatformPlaybackState.ACTION_SEEK_TO)) {
+                if (seekable()) {
                     addAll(
                         Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM,
                         Player.COMMAND_SEEK_BACK,
@@ -1279,7 +1325,7 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
             PlatformPlaybackState.STATE_BUFFERING,
             PlatformPlaybackState.STATE_CONNECTING -> Player.STATE_BUFFERING
             PlatformPlaybackState.STATE_ERROR -> Player.STATE_IDLE
-            PlatformPlaybackState.STATE_NONE -> if (active) Player.STATE_READY else Player.STATE_IDLE
+            PlatformPlaybackState.STATE_NONE -> Player.STATE_IDLE
             else -> Player.STATE_READY
         }
         val builder = State.Builder()
@@ -1292,8 +1338,9 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
             builder.setCurrentMediaItemIndex(1)
             if (positionMs != C.TIME_UNSET) {
                 builder.setContentPositionMs {
-                    if (playing) {
-                        positionMs + (SystemClock.elapsedRealtime() - positionUpdateElapsedMs)
+                    if (platformState == PlatformPlaybackState.STATE_PLAYING) {
+                        val position = positionMs + (SystemClock.elapsedRealtime() - positionUpdateElapsedMs).coerceAtLeast(0)
+                        if (durationMs > 0) position.coerceAtMost(durationMs) else position
                     } else positionMs
                 }
             }
@@ -1302,7 +1349,9 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
     }
 
     private fun supports(vararg candidates: Long): Boolean =
-        candidates.any { actions and it != 0L }
+        active && candidates.any { CaptureMirrorPolicy.supports(platformState, actions, it) }
+
+    private fun seekable(): Boolean = active && CaptureMirrorPolicy.seekable(platformState, actions, durationMs)
 
     private fun ghost(id: String): MediaItemData =
         MediaItemData.Builder(id)
@@ -1332,7 +1381,7 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
                     .build()
             )
             .setDurationUs(if (durationMs == C.TIME_UNSET) C.TIME_UNSET else durationMs * 1000)
-            .setIsSeekable(supports(PlatformPlaybackState.ACTION_SEEK_TO))
+            .setIsSeekable(seekable())
             .build()
     }
 
@@ -1370,11 +1419,11 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
         durationMs: Long,
         artwork: ByteArray?,
     ) {
-        this.title = title
-        this.artist = artist
-        this.album = album
+        this.title = title?.ifBlank { null }
+        this.artist = artist?.ifBlank { null }
+        this.album = album?.ifBlank { null }
         this.sourcePackage = sourcePackage
-        this.durationMs = durationMs
+        this.durationMs = durationMs.takeIf { it in 1..(Long.MAX_VALUE / 1000) } ?: C.TIME_UNSET
         artworkBytes = artwork
         invalidateState()
     }
@@ -1391,18 +1440,18 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
         positionUpdateElapsedMs: Long,
     ) {
         platformState = state
-        this.actions = actions
-        playing = state == PlatformPlaybackState.STATE_PLAYING
+        this.actions = if (CaptureMirrorPolicy.available(state)) actions else 0L
+        playing = CaptureMirrorPolicy.playing(state)
         this.positionMs = positionMs
         this.positionUpdateElapsedMs = positionUpdateElapsedMs
         invalidateState()
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
-        if (playWhenReady != playing) {
-            playPauseRouter?.invoke(playWhenReady)
-            playing = playWhenReady
-            invalidateState()
+        if (active) {
+            CaptureMirrorPolicy.routePlayPause(platformState, actions, playWhenReady) {
+                playPauseRouter?.invoke(it)
+            }
         }
         return Futures.immediateVoidFuture()
     }
@@ -1413,13 +1462,13 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
         seekCommand: Int,
     ): ListenableFuture<*> {
         when (seekCommand) {
-            Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM -> nextRouter?.invoke()
+            Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM ->
+                if (supports(PlatformPlaybackState.ACTION_SKIP_TO_NEXT)) nextRouter?.invoke()
             Player.COMMAND_SEEK_TO_PREVIOUS,
-            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM -> previousRouter?.invoke()
-            else -> if (supports(PlatformPlaybackState.ACTION_SEEK_TO)) {
-                seekRouter?.invoke(positionMs)
-                this.positionMs = positionMs
-                positionUpdateElapsedMs = SystemClock.elapsedRealtime()
+            Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM ->
+                if (supports(PlatformPlaybackState.ACTION_SKIP_TO_PREVIOUS)) previousRouter?.invoke()
+            else -> if (seekable()) {
+                seekRouter?.invoke(positionMs.coerceIn(0L, durationMs))
             }
         }
         invalidateState()
@@ -1428,8 +1477,6 @@ private class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer(
 
     override fun handleStop(): ListenableFuture<*> {
         if (playing) playPauseRouter?.invoke(false)
-        playing = false
-        invalidateState()
         return Futures.immediateVoidFuture()
     }
 }

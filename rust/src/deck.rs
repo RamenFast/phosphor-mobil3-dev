@@ -83,7 +83,21 @@ pub struct Deck {
     session: PlayerSession,
     stream: AudioStreamAsync<Output, DeckOutput>,
     activation: Arc<DeckActivation>,
-    _events_rx: mpsc::Receiver<phosphor_audio::AudioEvent>,
+    events_rx: mpsc::Receiver<phosphor_audio::AudioEvent>,
+}
+
+impl crate::deck_events::EventSource for Deck {
+    fn events(&self) -> &mpsc::Receiver<phosphor_audio::AudioEvent> {
+        &self.events_rx
+    }
+
+    fn path(&self) -> &str {
+        &self.path
+    }
+}
+
+pub fn poll_event_json() -> Option<String> {
+    crate::deck_events::poll_event_json(&DECK)
 }
 
 // PlayerSession is channels+Arcs; the oboe stream handle is safe to move with the deck.
@@ -167,7 +181,7 @@ fn open_at_state(
         session,
         stream,
         activation,
-        _events_rx: events_rx,
+        events_rx,
     });
     log::info!("deck open: {path} @ {seek_seconds}s");
     Ok(())

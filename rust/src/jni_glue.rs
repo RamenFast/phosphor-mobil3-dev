@@ -186,6 +186,17 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckClose(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckPollEvent(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    crate::deck::poll_event_json()
+        .and_then(|json| env.new_string(json).ok())
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckMetadata(
     env: JNIEnv,
     _class: JClass,

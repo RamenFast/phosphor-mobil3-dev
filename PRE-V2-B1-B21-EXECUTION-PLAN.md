@@ -2,6 +2,16 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Offline checkpoint, 2026-09-05 18:35 UTC
+
+Phase 5 B6/B7/B8 implementation is frozen after separate source and human-intent reviews.
+The root reran 198 Android tests. Native 41, shared audio 30, relay 26, fixtures and selected scope/privacy gates passed.
+Receipt: `docs/dev/receipts/pre-v2-b1-b21/phase-05-b6-b7-b8-media-truth.md` records exact hashes, failures and live limits.
+Concurrent unrelated desktop edits prevent the whole-sibling clean gate and clean candidate. Preserve that work.
+Do not repeat passing runtime tests merely to wait for another worker's whitespace or commit. Recheck the actual clean gate later.
+Phase 5 installation and acceptance remain deferred. Sequential offline Phase 6 may follow the frozen behavior commit.
+The retained Phase 4 APK remains the installed rollback baseline. No Phase 5 candidate is claimed, and no B-card or drift gate closes.
+
 ### Quiet execution, 2026-09-05 17:45 UTC
 
 Ben authorized continuation to completion without interrupting his podcast.

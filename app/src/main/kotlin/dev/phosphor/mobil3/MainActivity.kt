@@ -436,7 +436,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
         future.addListener({
             controller = future.get().also { c ->
                 c.addListener(object : Player.Listener {
-                    override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = isPlaying }
+                    override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = sessionPlaying(c) }
+                    override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
+                        if (c.mediaMetadata.extras?.getString("source") == "capture") ui.playing = sessionPlaying(c)
+                    }
+                    override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
+                        syncCaptureCommands(c)
+                    }
                     // The relay's failures arrive here carrying the engine's fix text.
                     // Keeping the message means the REMOTE sheet can show a remedy instead
                     // of a dead end; a recovered link clears it.
@@ -448,12 +454,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     ) {
                         syncQueue(c)
                         syncSessionFace(c)
+                        ui.playing = sessionPlaying(c)
                     }
                     override fun onMediaItemTransition(
                         item: androidx.media3.common.MediaItem?, reason: Int,
                     ) = syncQueue(c)
                     override fun onMediaMetadataChanged(m: MediaMetadata) {
                         syncSessionFace(c, m)
+                        ui.playing = sessionPlaying(c)
                         // Track boundary: advance a per-song light cycle (engine ignores
                         // it unless per-track cycling is active).
                         PhosphorNative.cycleAdvance()
@@ -462,7 +470,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 // Initial sync: the world may have moved while the Activity slept
                 // (earbud skips with the screen off) — mirror the session's truth now,
                 // not just on the next change event.
-                ui.playing = c.isPlaying
+                ui.playing = sessionPlaying(c)
                 syncSessionFace(c)
             }
         }, MoreExecutors.directExecutor())
@@ -481,6 +489,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         controller = null
         super.onStop()
     }
+
+    private fun sessionPlaying(player: Player): Boolean = CaptureMirrorPolicy.displayedPlaying(
+        capture = player.mediaMetadata.extras?.getString("source") == "capture",
+        isPlaying = player.isPlaying,
+        playWhenReady = player.playWhenReady,
+    )
 
     override fun onDestroy() {
         selectSource()
@@ -612,6 +626,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     /** The one MediaSession is the source of truth for every visible now-playing face. */
     private fun syncSessionFace(c: MediaController, metadata: MediaMetadata = c.mediaMetadata) {
+        syncCaptureCommands(c)
         acceptTrackTitle(metadata.title?.toString())
         ui.trackArtist = metadata.artist?.toString()
         ui.artwork = metadata.artworkData?.takeIf { it.isNotEmpty() }
@@ -655,6 +670,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.live = false
             }
         }
+    }
+
+    private fun syncCaptureCommands(player: Player) {
+        val capture = player.mediaMetadata.extras?.getString("source") == "capture"
+        ui.captureCanPlay = capture && player.isCommandAvailable(Player.COMMAND_PLAY_PAUSE)
+        ui.captureCanNext = capture && player.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
+        ui.captureCanPrevious = capture && player.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS_MEDIA_ITEM)
     }
 
     private fun openDeck(path: String) {

@@ -191,6 +191,7 @@ fun Console(
 ) {
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
+    val capture = state.sourceLabel == "capture"
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
     val cardShape = RoundedCornerShape(style.cornerRadius)
@@ -244,14 +245,16 @@ fun Console(
                 Spacer(Modifier.height(Dim.gap))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
-                if (hasTransport) {
+                if (hasTransport && (!capture || state.captureCanPrevious)) {
                     FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
                     Spacer(Modifier.width(Dim.gap))
                 }
-                StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced, designator = "S1") {
-                    Haptics.light(view); onPlay()
+                if (!capture || state.captureCanPlay) {
+                    StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced, designator = "S1") {
+                        Haptics.light(view); onPlay()
+                    }
                 }
-                if (hasTransport) {
+                if (hasTransport && (!capture || state.captureCanNext)) {
                     Spacer(Modifier.width(Dim.gap))
                     FlatKey("▸▸", p) { Haptics.light(view); onNext() }
                 }

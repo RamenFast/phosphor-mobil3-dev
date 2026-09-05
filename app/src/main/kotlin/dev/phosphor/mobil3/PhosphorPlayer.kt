@@ -9,7 +9,6 @@ import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import org.json.JSONObject
 
 // The Media3 bridge: the Rust deck is the engine, this is its Player face.
 // The loaded deck owns the transport (the v4.7.0 law) — this player IS the loaded deck.
@@ -105,24 +104,22 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     /** Called (on the player looper) after the Rust deck opened the CURRENT queue entry. */
     fun onTrackOpened(selectedAt: Long? = null) {
-        val meta = JSONObject(PhosphorNative.deckMetadata())
-        val path = meta.optString("path", "")
-        loadedDurationMs =
-            if (meta.isNull("duration_ms")) C.TIME_UNSET else meta.getLong("duration_ms")
-        val title =
-            if (meta.isNull("title")) path.substringAfterLast('/').ifEmpty { "phosphor" }
-            else meta.getString("title")
+        playing = selectedAt?.let { transportIntent.atPublication(it, autoplay = true) } ?: true
+        invalidateState()
+    }
+
+    internal fun onTrackMetadata(meta: PlaybackTruth.Metadata) {
+        loadedDurationMs = meta.durationMs ?: C.TIME_UNSET
         loadedMeta = MediaMetadata.Builder()
-            .setTitle(title)
-            .setArtist(if (meta.isNull("artist")) null else meta.getString("artist"))
-            .setAlbumTitle(if (meta.isNull("album")) null else meta.getString("album"))
+            .setTitle(meta.title)
+            .setArtist(meta.artist)
+            .setAlbumTitle(meta.album)
             .apply {
-                PhosphorNative.deckCoverArt()?.let {
+                meta.artwork?.let {
                     setArtworkData(it, MediaMetadata.PICTURE_TYPE_FRONT_COVER)
                 }
             }
             .build()
-        playing = selectedAt?.let { transportIntent.atPublication(it, autoplay = true) } ?: true
         invalidateState()
     }
 

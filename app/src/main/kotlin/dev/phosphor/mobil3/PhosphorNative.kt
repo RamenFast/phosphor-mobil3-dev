@@ -113,6 +113,7 @@ object PhosphorNative {
     external fun deckSetPaused(paused: Boolean)
     external fun deckSeekMs(ms: Long): Boolean
     external fun deckClose()
+    external fun deckPollEvent(): String?
     external fun deckMetadata(): String
     external fun deckCoverArt(): ByteArray?
 }
