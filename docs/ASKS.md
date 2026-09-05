@@ -44,4 +44,4 @@
 | 2026-09-05 | Compare the reposted original bugs with the B1-B21 plan and verified progress | audited all 21 original requests against raw report, plan and acceptance matrix; B2/B4/B9 phase live checks passed, final regression open; remaining 18 cards open; [audit](FEEDBACK.md#2026-09-05-1721-utc-original-report-audit) |
 | 2026-09-05 | Continue the original repairs to completion without interrupting a podcast | active from 17:45 UTC; Phase 5 offline implementation and separate reviews; sequential code phases, no phone/playback/visible GUI/active-service changes; actual live acceptance stays deferred |
 
-| 2026-09-05 | Compress eligible agent-facing context without information loss. Exclude Nexus home and exclusive files, preserve existing references and conditions. | documentation-only review and hash-verified integration |
+| 2026-09-05 | Compress eligible agent-facing context without information loss. Exclude the separately governed dwelling and its exclusive files, as defined in [workspace governance](../../AGENTS.md#1--scope--neighbors). Preserve existing references and conditions. | documentation-only review and hash-verified integration |
