@@ -93,3 +93,16 @@ These lines remain the authority. Only the B labels were added.
 | 08-26 | 1 | B18: Double-tap playback needs a dedicated settings toggle | open | Contract compiled · [issue #4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) · automated and live receipt pending |
 | 08-26 | 1 | B20: Auto-gain pumps after dead space but has not cut the scope off | open | Contract compiled · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) · automated and live receipt pending |
 | 08-26 | 1 | B21: Recents removal must stop sources by default; background linger must be optional | open | Contract compiled · [issue #1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) · automated and live receipt pending |
+
+## 2026-09-05 device follow-through
+
+Ben confirmed that the local freeze and captured Spotify transport faults are separate reports.
+The B9 pinned build survived seven effective paused seeks and eight next/next/previous batches on the S25.
+The [B9 receipt](dev/receipts/pre-v2-b1-b21/phase-02-b9-seek-stress.md) remains VERIFY because logcat evidence and final regression are pending.
+
+B6/B7/B8 reproduced with notification access disabled. The approved permission restored title, artist, seek, and matching play/pause behavior without code changes.
+The [Spotify receipt](dev/receipts/pre-v2-b1-b21/spotify-permission-recheck-2026-09-05.md) records matching session positions after pause and seek.
+The fallback still lies about playback state without permission. Phase 5 remains open, including its reattachment and capability checks.
+
+The service-release crash already assigned to Phase 6 occurred before B9 stress. User tuning and saved relay preferences survived the update and tests.
+No card has its final regression receipt yet. Keep `drift: 21`.

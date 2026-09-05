@@ -53,3 +53,11 @@ These items remain outside the B1-B21 behavior scope:
 ## Deferred product work
 
 The next two major core features are intentionally absent from this backlog until Ben provides the feature brief. Historical plans are not active todos.
+
+## 2026-09-05 device findings
+
+- [ ] Phase 6 task 6.3: fix the reproduced `Missing implementation to handle COMMAND_RELEASE` service-shutdown crash. The B9 receipt contains its DropBox evidence.
+- [ ] Phase 5: retain the notification-access recovery and stop publishing an inverted capture state when that permission is absent.
+- [ ] Check the capture-to-local queue transition: the band can say `no source` while the local queue plays and the trace is lit.
+- [ ] Check paused local seek position reporting: the mirror reads zero until playback resumes at the requested destination.
+- [ ] Resolve the S25 logcat evidence gap. Its logcat executable rejects standard arguments. Do not rewrite the phone's system files as an app-test workaround.

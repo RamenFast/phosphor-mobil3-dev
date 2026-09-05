@@ -1,6 +1,6 @@
 # Pre-v2 B1-B21 receipt index
 
-Status: contract compiled; behavior receipts pending.
+Status: B9 targeted device checks recorded as VERIFY. Spotify permission recovery recorded separately. Final behavior receipts remain pending.
 
 A B card passes only when its automated gate and named live receipt agree. A screenshot without state evidence is not a pass. A missing receipt keeps the card open.
 
@@ -8,7 +8,7 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 
 | B IDs | Planned receipt | Final regression receipt | State |
 |---|---|---|---|
-| B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | pending |
+| B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | VERIFY: stress checks passed; logcat and final regression pending |
 | B4 | `phase-03-b4-folder-tree.md` | `phase-15-crash.md` | pending |
 | B2 | `phase-04-b2-mic.md` | `phase-15-sources.md` | pending |
 | B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | pending |
@@ -23,6 +23,8 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 Phase 14 records the full automated gate and exact installed debug APK. Phase 18 adds the commit list, artifact hashes, signer evidence, gate outputs, final receipt hashes, and the three unchanged external release reds: `signing.release`, `provenance.release`, and `release.bundle`.
 
 ## Redaction law
+
+The supplemental `spotify-permission-recheck-2026-09-05.md` records B6/B7/B8 recovery after granting notification access. It does not close Phase 5.
 
 Tracked receipts must contain enough evidence to repeat and audit the check without exposing private estate state.
 
