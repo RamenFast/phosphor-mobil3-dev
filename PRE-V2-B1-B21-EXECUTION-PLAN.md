@@ -2,6 +2,14 @@
 
 **Status:** compiled for a zero-context execution session. Planning only in this session.
 
+### Exact artifact checkpoint, 2026-09-05 19:47 UTC
+
+Phase 6 behavior is committed at `43be0f2`. Its exact clean-snapshot debug APK passed 225 tests, lint, JNI, signer and 11+5 boundary checks.
+The retained receipt records all six independently rechecked artifact hashes. No installation or Android acceptance ran.
+Phase 7 now has two bounded Astra-high implementation workers: relay folders/UI and the isolated installer fixture.
+The installer fixture must pass root confinement review before execution. No active host or service operations are allowed.
+All original live acceptance cards and drift 21 remain open. The earlier checkpoints retain their historical observations.
+
 ### Lifecycle checkpoint, 2026-09-05 19:36 UTC
 
 Phase 6 B21 offline implementation passed separate frozen-source and source-first human-intent reviews.

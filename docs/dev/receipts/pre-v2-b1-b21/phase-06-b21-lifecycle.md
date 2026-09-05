@@ -1,13 +1,13 @@
 # Phase 6: B21 task removal and optional background playback
 
 - Date: 2026-09-05, UTC.
-- Status: VERIFY. Offline implementation, separate source and human-intent reviews, unit/JNI/lint gates and root boundary components passed. Android acceptance and the Phase 6 artifact remain pending.
+- Status: VERIFY. Offline implementation, separate reviews, unit/JNI/lint gates, root boundary components and the exact clean-snapshot debug artifact passed. Android acceptance remains pending.
 - B ID and private issue: B21, #1.
 - Behavior baseline: mobile `5215120513fc025215526ba3d91abc53a021ca04`. The behavior commit is the commit introducing this receipt.
 - Frozen source: 15 files, manifest SHA-256 `f2399b807d25f546dc3e2086015e28cad44a5d535a92fe04b71c3a4b4202f699`.
 - Shared reviewed source: `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f`. No sibling or native runtime edit belongs to this phase.
 - Device, Android build and installed read-back fields: not measured. No device command ran.
-- Planned retained package: `dev.phosphor.mobil3.debug`. No production package or signing change.
+- Retained package: `dev.phosphor.mobil3.debug`, `2.0.0-debug`, version code `2000000`. No production package or signing change.
 
 ## Boundary and starting state
 
@@ -119,3 +119,30 @@ A later authorized rollback reverts this phase's behavior commit and uses the re
 
 No literal device serial, private host/address, credential, personal media path or raw private state is included.
 Artifacts and raw logs remain ignored. Hashes identify only the measured scope, not unperformed Android acceptance.
+
+## Exact clean-snapshot artifact, 2026-09-05 19:41 UTC
+
+The retained APK uses mobile `43be0f2bdfa35f73db09bdb3fee7c92f6bfe2719` and shared engine `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f`.
+Both sources were clean detached local snapshots. The original concurrent source trees were not reset or declared wholly clean.
+
+The actual offline wrapper build reran unit tests and lint, assembled debug JNI/APK, and checked the engine.
+It completed in 2m16s with 55 tasks, 20 executed and 35 up-to-date. Retained XML records 225 tests, zero failures, errors or skips.
+The complete artifact task exited zero. Root then rechecked all six SHA-256 entries and the retained evidence independently.
+
+Source/build-input checks match before and after. Source boundary checks passed 11/11 and artifact checks passed 5/5.
+Both scope gates passed. All three protected archive files matched. The debug signer matches the retained Phase 4 and Phase 5 artifacts.
+
+Evidence directory: `phase-06/candidate-43be0f2bdfa3-isolated/` under the ignored run directory above.
+
+| Artifact | SHA-256 |
+|---|---|
+| `phase-06-43be0f2bdfa3.apk` | `3def4cd8f6a281d3f701e511e0ea7fee132d5cfbb522ed6a20d668bba31c9e40` |
+| `build.log` | `b7cf811569bacd947c00eaa9b9e62c793d7521b5f287e326e89bf379202430f2` |
+| `source-identity.txt` | `5439b92c56afb07e844e7d6a883a8473535c4d54a3ca674f44132474bcc37cec` |
+| `tests.txt` | `04aa7ea612fcd755622c6c5fa42f14ec67314f6505d0ce8da77b30b684ea3306` |
+| `signer.txt` | `5cd4660fc96362205bbaa03078d98b001a8ed33a18e1e32a904cff46f9ddd49a` |
+| `debug-artifact-boundary.json` | `e07709f74a11af1baf8dd75d91488e8f743f6e15c2753a5e587e8ac235cdd8c0` |
+
+Signing-certificate SHA-256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`.
+No installation, installed read-back, Android lifecycle, public player release or live microphone acceptance ran.
+B21 stays VERIFY. Phase 4 remains the last verified installed baseline. The prior failed root aggregate remains failed as documented above.
