@@ -112,3 +112,11 @@ No card has its final regression receipt yet. Keep `drift: 21`.
 Ben replaced the old Sol/GLM/Grok/Muse mapping with Astra high-to-max or Grok 4.6 xhigh-to-max, at supported levels only.
 The plan records that override. The project keeps its two-worker ceiling, separate reviews, and root-owned device tests.
 Astra-high answered through the configured route. Grok 4.6 availability and max effort remain unverified. No product behavior changed.
+
+## 2026-09-05 B9 logged acceptance
+
+The root recovered Android log evidence without changing system files or privileges.
+After rejecting a stale-coordinate attempt, the UI-pinned rerun completed eight paused seeks, a five-drag latest-request burst, and eight queue batches.
+All expected final positions and queue items appeared. The process survived, the final trace was lit, and raw log replay matched 77,993 records exactly.
+The root restored UI placement and verified unchanged tuning and saved-relay hashes, then removed the temporary device diagnostic.
+Phase 2 task 2.5 passes. B9 stays verify until final regression. The separate paused-position, source-label, capture fallback, and service-release issues remain open.

@@ -1,6 +1,6 @@
 # Pre-v2 B1-B21 receipt index
 
-Status: B9 targeted device checks recorded as VERIFY. Spotify permission recovery recorded separately. Final behavior receipts remain pending.
+Status: B9 Phase 2 passed with replay-verified Android log evidence. Spotify permission recovery is recorded separately. Final behavior receipts remain pending.
 
 A B card passes only when its automated gate and named live receipt agree. A screenshot without state evidence is not a pass. A missing receipt keeps the card open.
 
@@ -8,7 +8,7 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 
 | B IDs | Planned receipt | Final regression receipt | State |
 |---|---|---|---|
-| B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | VERIFY: stress checks passed; logcat and final regression pending |
+| B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | Phase 2 PASS; VERIFY pending final regression |
 | B4 | `phase-03-b4-folder-tree.md` | `phase-15-crash.md` | pending |
 | B2 | `phase-04-b2-mic.md` | `phase-15-sources.md` | pending |
 | B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | pending |

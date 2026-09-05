@@ -60,4 +60,4 @@ The next two major core features are intentionally absent from this backlog unti
 - [ ] Phase 5: retain the notification-access recovery and stop publishing an inverted capture state when that permission is absent.
 - [ ] Check the capture-to-local queue transition: the band can say `no source` while the local queue plays and the trace is lit.
 - [ ] Check paused local seek position reporting: the mirror reads zero until playback resumes at the requested destination.
-- [ ] Resolve the S25 logcat evidence gap. Its logcat executable rejects standard arguments. Do not rewrite the phone's system files as an app-test workaround.
+- [x] Resolve the S25 logcat evidence gap. A temporary read-only logd client captured the complete B9 rerun. Raw replay matched exactly, and the helper was removed. No system file or mount changed. See the Phase 2 receipt addendum.

@@ -1,7 +1,7 @@
 # Phase 2: B9 local seek and navigation
 
 - Date: 2026-09-05, America/Los_Angeles.
-- Status: VERIFY. Targeted responsiveness checks passed. The required logcat evidence remains unavailable.
+- Status: PASS for Phase 2. The logged rerun below closes task 2.5. B9 remains VERIFY until final regression.
 - Private issue: #1.
 - Mobile source: `e289a74c02b7e757f480ffc8636a4d0583ac6f37`.
 - Sibling source: `c0cf967c4afa0aa7bf907dee915480aed8bd0530`.
@@ -66,6 +66,8 @@ Playback was paused after testing. Screen timeout, screensaver, brightness, and 
 User tuning and saved-relay preference files remained byte-identical. Android bookkeeping and runtime preference files changed during normal use.
 The saved Phase 0 APK remains the rollback artifact. No rollback was needed.
 
+Original logging blocker, resolved by the later rerun below:
+
 **Blocked:** The phone's `/system/bin/logcat` runs a different executable and rejects standard logcat arguments.
 **Evidence:** Both `adb logcat -d` and the explicit device binary failed. Android DropBox supplied the actual crash stack instead.
 **Best current result:** Direct seeking and queue navigation remained responsive under the recorded stress runs.
@@ -75,3 +77,67 @@ Final Phase 15 regression remains pending. B9 remains VERIFY in the receipt inde
 ## Redaction
 
 This receipt omits literal device addresses, private media names, relay endpoints, and raw private logs.
+
+## Logged rerun, 00:49:00 through 00:51:06
+
+The package, APK, signer, sibling source, and running app process remained unchanged.
+The root reran `cargo test --manifest-path rust/Cargo.toml --locked`: 35 tests passed.
+The root reran `./gradlew --no-daemon :app:testDebugUnitTest` after sourcing `scripts/env.sh`: exit 0.
+
+### Logging recovery
+
+A temporary 17 KB arm64 diagnostic read Android's main, system, and crash buffers directly from logd.
+It used the existing shell UID and local `SOCK_SEQPACKET` reader socket. No system file, mount, privilege, or app code changed.
+This is actual Android log-buffer evidence, not output from the affected stock `logcat` command.
+The helper remained an ignored test fixture, not a product sidecar or installed app feature.
+
+The root verified a unique `PhosphorB9` marker in a 100-record finite dump before testing.
+The root also reran 215 parser checks under both a strict host build and ASan/UBSan, plus 17 CLI/error-path checks.
+The full 150-second follow captured all PIDs, without a text filter, and ended normally with 77,993 valid records.
+Raw packets replayed on the host to byte-identical text. No malformed record, premature EOF, or reader timeout occurred.
+All test markers, the final trace marker, and the end marker appeared in order.
+The reviewed window contained no application error/fatal record, AndroidRuntime/DEBUG crash report, ANR, panic, or reported log-reader loss.
+
+### Requirement-linked observations
+
+| Check | Observed result |
+|---|---|
+| Pause long enough to fill the audible ring, then seek | Eight individually marked drags each reached one native deck reopen and resumed at a changed position. |
+| Replace pending seek work | Five rapid drags produced three native reopens. The final request opened at 14.220 seconds, and the resumed session reported 14.274 seconds. |
+| Navigate while paused | Eight next/next/previous batches produced item 2 then item 1 native opens. Every batch ended with item 1 PLAYING. The second next included an expected boundary no-op. |
+| Keep the app responsive | The process stayed unchanged. Controls responded, final position advanced, and `final-live.png` showed a lit trace. |
+| Detect crashes or ANRs | The process-exit history was byte-identical before and after stress. The complete log window contained no matching failure. |
+| Preserve user state | Tuning and saved-relay preference hashes matched their pre-test values. UI placement returned to follow. Both media sessions were paused and projection was inactive. |
+
+An earlier logged attempt used stale portrait coordinates after the app rotated its chrome.
+Native logs showed that those drags did not seek. That attempt was stopped and is not counted as B9 acceptance.
+The root temporarily enabled the existing UI PLACEMENT lock, verified the geometry, and ran the corrected test above.
+The root then restored the toggle through Settings and proved the complete tuning XML byte-identical.
+
+Screen timeout, screensaver, and automatic-brightness mode were unchanged.
+Automatic brightness readback changed from 4 to 15 without a brightness-setting write. This is not a fixed-brightness B5 test.
+The root removed the temporary device reader, both raw-log files, and the generated UI dump after saving private evidence.
+The pre-existing logcat override was left untouched. Disk space remained approximately 19 GiB available.
+
+### Rerun evidence
+
+Artifacts below are inside the original private evidence directory's `log-reader/` subdirectory.
+`paused-ring-rerun.sh`, `reader.c`, and `README.md` preserve exact commands, wire-layout assumptions, and reproduction steps.
+
+| Artifact | SHA-256 |
+|---|---|
+| `pinned-rerun.log` | `9e39bcc09f51e830c1bd18c8e983576ce68308b8f5029762037b0423e0539db7` |
+| `pinned-logd.txt` | `ef8ecdf0ccf1b42d33dda8cf450a38f5f9dfbeb8acedc0a8bc909102c6efc9fb` |
+| `pinned.raw` | `f17238dc981733ea054e7e49df763df4c15b94849e79bfd6ac49a46a86a9b03c` |
+| `replay-status.txt` | `6e107ff8ce22864f31e58a81304c93a9a30317174135dbcf4b0aaccee830dfff` |
+| `final-live.png` | `6eb15d82f9dfca3465e48a398d1a64f79e2002df2d2c98f61150d0b1817336fe` |
+| `restored-settings.txt` | `e1d40ab75680bb2e526656418dd8ef3f35571380b67112ba1108c2bf48fe8b24` |
+| `cleanup.txt` | `b699ac657e3caf54e9f18c624b291b32c0c969defe6120151b30bc5c701a36ab` |
+| `root-host-checks.txt` | `bdb0555442e4b8a619acf657d3b34bda5f8c599833d20bff84454397c02b1572` |
+| `rust-tests.log` | `b117ee4a032e36d22978c2b56e7345afd63b3e79249b3fe208d8fb08ababe370` |
+| `android-unit-tests.log` | `d210e16840109d9e875986833ec8cd1c87bab7d62c6599fd8b7286059471cbea` |
+
+Reader source SHA-256: `4fd64cfc93fc52dc7f49556ba429ded309703a32d9a893af1996c09dff60938b`.
+Executed reader SHA-256: `c60ff2e5bf39c837a5106f93e58cd6e22392b6fbeb02fa66cb6639635c963ea5`.
+
+Phase 2 task 2.5 now passes. Phase 3 can proceed. Final Phase 15 regression and the separate observations above remain open.

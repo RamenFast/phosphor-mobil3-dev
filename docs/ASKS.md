@@ -35,7 +35,7 @@
 | 2026-08-26 | B20: Keep auto-gain stable across silent gaps without changing its never-cutoff limits | open · [#5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
 | 2026-08-26 | B21: Stop sources on recents removal by default and make background linger optional | open · [#1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) |
 | 2026-09-05 | Recover the existing handoff, check wireless S25 readiness and disk capacity, then confirm before app changes | completed; latest stop was Phase 2 task 2.5 |
-| 2026-09-05 | Resume the pinned B9 device test and preserve settings | device stress recorded as VERIFY in [receipt](dev/receipts/pre-v2-b1-b21/phase-02-b9-seek-stress.md); installed bytes and signer verified |
+| 2026-09-05 | Resume the pinned B9 device test and preserve settings | Phase 2 PASS with replay-verified logs in [receipt](dev/receipts/pre-v2-b1-b21/phase-02-b9-seek-stress.md); settings restored; final regression remains open |
 | 2026-09-05 | Test captured Spotify seek and play/pause separately from the local freeze, with permission prompts approved | reproduced and recovered by notification access; [receipt](dev/receipts/pre-v2-b1-b21/spotify-permission-recheck-2026-09-05.md); Phase 5 remains open |
 | 2026-09-05 | Monitor disk and clear only stale or rebuildable artifacts if needed | 19 GiB available during device tests; no cleanup needed |
 | 2026-09-05 | Use only approved Astra/Grok workers with explicit supported high-to-max effort and bounded concurrency | global preference saved; project ceiling remains two workers; dated execution override records exact ranges and route limitations |
