@@ -16,7 +16,7 @@
 | 2026-08-26 | B1: Add chrome-adjacent scope deadzones and the exact 333ms settle delay | open · [#4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) |
 | 2026-08-26 | B2: Make capture-to-built-in-microphone switching start a live beam reliably | open · [#3](https://github.com/RamenFast/phosphor-mobil3-dev/issues/3) |
 | 2026-08-26 | B3: Prove regular-app Tailscale relay, fresh-Linux setup, direct files, and whole recursive folders | open · [#3](https://github.com/RamenFast/phosphor-mobil3-dev/issues/3) |
-| 2026-08-01 | B4: Make recursive local folder playback survive nested and invalid entries without freezing or going dark | open · [#1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) |
+| 2026-08-01 | B4: Make recursive local folder playback survive nested and invalid entries without freezing or going dark | verify · Phase 3 live acceptance passed, final regression remains · [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) · [#1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) |
 | 2026-08-26 | B5: Keep deposited scope brightness stable through settings and chrome cycles | open · [#5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
 | 2026-08-26 | B6: Restore honest local and captured title, artist, and captured transport controls | open · [#2](https://github.com/RamenFast/phosphor-mobil3-dev/issues/2) |
 | 2026-08-26 | B7: Restore in-app captured-media seek only when the active session can seek | open · [#2](https://github.com/RamenFast/phosphor-mobil3-dev/issues/2) |

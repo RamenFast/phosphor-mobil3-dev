@@ -5,7 +5,9 @@
 ### Execution update, 2026-09-05
 
 Phase 2 task 2.5 passed with replay-verified S25 logs in receipt commit `73626ad`.
-B9 still requires final regression. Phase 3 implementation is in progress, not accepted.
+B9 still requires final regression. Phase 3 task 3.5 passed on the S25 at 10:09 UTC.
+B4 remains verify until final regression. Its receipt records the separate oversized-provider stress limit.
+Phase 4 B2 is next. No later phase is accepted by this checkpoint.
 Current receipts live in `docs/dev/receipts/pre-v2-b1-b21/`.
 The original planning status above is historical.
 

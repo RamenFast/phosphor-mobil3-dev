@@ -147,3 +147,20 @@ B4 stays open. The [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.
 
 The separate final human-intent review passed for the frozen source. The root verified all 30 reviewed source identities against the installed candidate's unchanged source.
 Both independent reviews now pass their limited source contracts. B4 remains open because keyguard blocks the required direct/tree playback, output, scope and source-transition observations.
+
+### B4 live acceptance, 2026-09-05 10:09 UTC
+
+Phase 3 task 3.5 passes on the installed `9bf8527` candidate. B4 is now verify, pending final regression.
+Direct and nested controls lit the scope. Invalid entries skipped in both navigation directions. The corrupt tail stopped without automatic retry.
+A 132-entry tree reached the same supported MP3 used directly, with matching metadata and position progression. Ben confirmed audible output.
+Pending pause, rotated UI seeking, mic/capture handoffs and the narrow remote/local transition passed their observed checks.
+The complete normal-workflow log replay matched 435,373 records, with no crash or ANR candidate and unchanged app exit history.
+
+A separate 20,001-file stress fixture caused Android's storage provider to ANR before the app received its tree grant.
+The later mic selection superseded the tree without stale local publication, but took about ten seconds to start. This is a recorded limit, not an arbitrary-size PASS.
+The root removed the fixture and verified provider recovery. Its separate 79,427-record log also replayed exactly.
+Unsafe or unreproduced destructive-loss branches retain production-linked tests, not invented phone observations.
+
+The root restored original runtime preferences and media volume. Tuning and saved hosts stayed byte-identical.
+All task-owned device fixtures and diagnostics were removed. The [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) contains scope, hashes and limitations.
+Keep `drift: 21` until the complete matrix and final regressions pass. Phase 4 B2 is next.
