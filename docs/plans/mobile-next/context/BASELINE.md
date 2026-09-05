@@ -3,6 +3,9 @@
 Snapshot: 2026-09-05, after B2 offline delivery and before new roadmap implementation.
 A source PASS, a built APK and a real device PASS are different facts.
 
+This is the historical planning snapshot, not live progress. B2 later passed five exact-artifact phone cycles and remains installed.
+Use [current repairs](CURRENT-REPAIRS.md) for the next action and its linked live receipt. The original artifact identities below remain unchanged.
+
 ## Repositories and artifacts
 
 | Item | Pinned fact |

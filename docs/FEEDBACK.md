@@ -237,3 +237,10 @@ All cards retain their final-regression boundaries. Visual acceptance still requ
 The audit corrected stale B9 ask status and added the latest B2 progress above the execution plan's historical checkpoints.
 The future roadmap remains a frozen planning baseline, not authority to skip unfinished original repairs.
 No runtime source, phone, service, permission, setting, acceptance checkbox or drift counter changed during this audit.
+
+### Reader entry-point follow-through
+
+Following the roadmap README's actual start-here links exposed a remaining integration defect: its current-repairs page still directed readers to the completed B2 test.
+The README and current resume point now report B2's live PASS and direct readers to inherited Phase 5 and the exact receipt.
+The old baseline and procedure remain explicitly historical. Their source hashes and artifact identities remain unchanged.
+This correction changes documentation navigation only. It does not accept more repairs or authorize roadmap implementation.

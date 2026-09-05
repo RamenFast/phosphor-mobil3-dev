@@ -41,8 +41,9 @@ Those specs remain product authority. This plan is a compiled execution guide, n
 
 ## What is done now, and what waits
 
-- B2 is committed, independently reviewed and built. Its 177 Android unit tests pass. The exact APK is retained, not installed.
+- Updated after the 2026-09-05 live checks: B2 passed five exact-APK capture-to-mic cycles. The tested debug APK remains installed. Final regression remains open.
 - B4 required live acceptance passed. Its final regression remains open, as does the overall B1-B21 sequence.
+- B9 also passed its phase-specific live check. [Current repairs](context/CURRENT-REPAIRS.md) resumes at inherited Phase 5, not another B2 installation.
 - Ben's quiet-work boundary remains active. No phone, visible window, audio change or active-relay action follows from this roadmap.
 - New roadmap implementation requires later authorization and accepted inherited Phase 18 behavior closure. Publication/signing remain separate.
 

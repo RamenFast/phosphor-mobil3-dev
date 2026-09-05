@@ -6,6 +6,17 @@ This digest identifies the exact resume point and prevents a later executor from
 
 ## Immediate resume point
 
+Updated 2026-09-05 after the original-report audit: B2 task 4.4 passed five exact-artifact phone cycles in receipt commit `2a3512e`.
+The tested debug APK remains installed. B2, B4 and B9 retain final-regression requirements.
+The next implementation phase is inherited Phase 5, covering B6/B7/B8 metadata, captured seeking and play/pause truth.
+Follow the latest checkpoint in the [canonical execution plan](../../../../PRE-V2-B1-B21-EXECUTION-PLAN.md).
+The [B2 live receipt](../../../dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md#live-acceptance-2026-09-05-1633-through-1638-utc) records the exact artifact, observations and limits.
+The completed phone-test window does not authorize further device activity or future roadmap implementation.
+
+## Historical resume point at roadmap compilation
+
+The following instructions and inventory preserve the earlier planning baseline. They are not the current next action.
+
 B2 source `47ff7cd` is independently reviewed, committed and built. Its exact debug APK is retained, not installed.
 The next unfinished action is existing Phase 4 task 4.4: installation and five real capture-to-mic cycles.
 Ben's quiet-work boundary currently blocks that action. It also blocks unrelated source-switching or relay tests.
