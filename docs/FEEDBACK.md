@@ -164,3 +164,20 @@ Unsafe or unreproduced destructive-loss branches retain production-linked tests,
 The root restored original runtime preferences and media volume. Tuning and saved hosts stayed byte-identical.
 All task-owned device fixtures and diagnostics were removed. The [receipt](dev/receipts/pre-v2-b1-b21/phase-03-b4-folder-tree.md) contains scope, hashes and limitations.
 Keep `drift: 21` until the complete matrix and final regressions pass. Phase 4 B2 is next.
+
+### B2 offline source checkpoint, 2026-09-05 10:49 UTC
+
+The candidate keeps activity-owned mic startup and existing B4 reader release.
+It requires later request-correlated capture idle, completed source release and successful recording before publishing a live mic face.
+Independent source review reproduced an overlapping-STOP snapshot overwrite and rejected the first candidate.
+The root corrected publication with one latest-stop token while preserving every request-specific B4 acknowledgement.
+Separate corrected-source and human-intent reviews now pass on matching file identities.
+
+The corrected frozen gates passed 15 mic tests and 177 Android tests, with no failures, errors or skips.
+Lint passed with zero errors and 15 warnings. Native/shared/relay tests, strict local Rust lint and source/boundary gates passed.
+Protected archive hashes and source manifests remained unchanged across root gates.
+
+Ben requested quiet autonomous work at 10:32 UTC. No device or audio action followed that boundary.
+Exact installation, five capture-to-mic cycles and narrow B4 transition regression remain pending.
+The receipt retains legacy capture-face, release-error retry and post-start reader limits. This is not a phone PASS.
+Keep B2 open and `drift: 21` unchanged. The [receipt](dev/receipts/pre-v2-b1-b21/phase-04-b2-mic.md) contains the evidence.

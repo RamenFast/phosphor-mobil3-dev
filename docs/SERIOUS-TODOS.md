@@ -50,6 +50,11 @@ These items remain outside the B1-B21 behavior scope:
 - [ ] Define the full native playback-event ownership policy after the narrow B6 metadata consumer lands.
 - [ ] Remove duplicated default authority and wake ownership after behavior receipts prove the current contracts.
 
+## B2 verification limits recorded during source review, 2026-09-05
+
+- [ ] Complete the exact-candidate five-cycle microphone matrix after Ben's quiet-work boundary changes. Include ordinary permission retry and safe source supersession. Do not claim JVM coverage proves Android consent or Activity recreation.
+- [ ] Keep post-start microphone read-error recovery in the separate reader-lifecycle work. The existing loop can remain nonresponsive after a successful startup without updating the live face. B2 changes startup and handoff only.
+
 ## Deferred product work
 
 The next two major core features are intentionally absent from this backlog until Ben provides the feature brief. Historical plans are not active todos.

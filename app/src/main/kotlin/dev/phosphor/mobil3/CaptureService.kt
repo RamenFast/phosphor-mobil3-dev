@@ -20,6 +20,7 @@ import android.os.Looper
 import android.os.ResultReceiver
 import android.util.Log
 import androidx.core.content.IntentCompat
+import java.util.concurrent.atomic.AtomicLong
 
 // The projection foreground service must start before MediaProjection is obtained.
 // Apps that disallow playback capture yield silence.
@@ -34,6 +35,7 @@ class CaptureService : Service() {
     private var reader: Thread? = null
     private val main = Handler(Looper.getMainLooper())
     private var stopCompletion = SourceStopCompletion()
+    private val micStopStatus = MicStopStatusToken()
 
     override fun onBind(intent: Intent?): IBinder? = null
 
@@ -41,16 +43,22 @@ class CaptureService : Service() {
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
         if (intent?.action == ACTION_STOP) {
             val owned = record != null || reader != null || running
+            val micRequest = intent.getStringExtra(EXTRA_MIC_REQUEST)
+            micStopStatus.select(micRequest)
             finishCapture("stopped by user", CaptureStatus.idle(), retry = true)
             val requestId = intent.getLongExtra(EXTRA_STOP_REQUEST, -1)
-            IntentCompat.getParcelableExtra(intent, EXTRA_STOP_REPLY, ResultReceiver::class.java)?.let { reply ->
-                stopCompletion.result.thenAccept { error ->
-                    reply.send(if (error == null) 0 else 1, Bundle().apply {
-                        putLong(EXTRA_STOP_REQUEST, requestId)
-                        putString(EXTRA_STOP_ERROR, error)
-                        putBoolean(EXTRA_STOP_OWNED, owned)
-                    })
+            val reply = IntentCompat.getParcelableExtra(intent, EXTRA_STOP_REPLY, ResultReceiver::class.java)
+            stopCompletion.result.thenAccept { error ->
+                if (micStopStatus.accepts(micRequest)) {
+                    // Superseded callbacks must not overwrite the latest request's idle snapshot.
+                    publishStatus((if (error == null) CaptureStatus.idle() else
+                        CaptureStatus.error("capture stop failed", error)).copy(micRequest = micRequest))
                 }
+                reply?.send(if (error == null) 0 else 1, Bundle().apply {
+                    putLong(EXTRA_STOP_REQUEST, requestId)
+                    putString(EXTRA_STOP_ERROR, error)
+                    putBoolean(EXTRA_STOP_OWNED, owned)
+                })
             }
             return START_NOT_STICKY
         }
@@ -294,8 +302,9 @@ class CaptureService : Service() {
     }
 
     private fun publishStatus(status: CaptureStatus) {
-        lifecycleState = status.state
-        lastStatus = status
+        val observed = status.copy(sequence = statusSequence.incrementAndGet())
+        lifecycleState = observed.state
+        lastStatus = observed
         sendBroadcast(
             Intent(ACTION_STATUS)
                 .setPackage(packageName)
@@ -303,6 +312,8 @@ class CaptureService : Service() {
                 .putExtra(EXTRA_MESSAGE, status.message)
                 .putExtra(EXTRA_FIX, status.fix)
                 .putExtra(EXTRA_LIVE, status.live)
+                .putExtra(EXTRA_SEQUENCE, observed.sequence)
+                .putExtra(EXTRA_MIC_REQUEST, observed.micRequest)
         )
     }
 
@@ -326,11 +337,13 @@ class CaptureService : Service() {
         const val EXTRA_STOP_REPLY = "stop_reply"
         const val EXTRA_STOP_ERROR = "stop_error"
         const val EXTRA_STOP_OWNED = "stop_owned"
+        const val EXTRA_MIC_REQUEST = "mic_request"
         const val ACTION_STATUS = "dev.phosphor.mobil3.CAPTURE_STATUS"
         const val EXTRA_STATE = "capture_state"
         const val EXTRA_MESSAGE = "capture_message"
         const val EXTRA_FIX = "capture_fix"
         const val EXTRA_LIVE = "capture_live"
+        const val EXTRA_SEQUENCE = "capture_sequence"
         const val STATE_IDLE = "idle"
         const val STATE_STARTING = "starting"
         const val STATE_FLOWING = "flowing"
@@ -339,6 +352,7 @@ class CaptureService : Service() {
         const val RESULT_OK_CODE = -1 // Activity.RESULT_OK
         private const val NOTIF_ID = 1002
         private const val CHANNEL = "capture"
+        private val statusSequence = AtomicLong()
 
         @Volatile
         private var lastStatus = CaptureStatus.idle()
@@ -350,6 +364,8 @@ class CaptureService : Service() {
             message = intent.getStringExtra(EXTRA_MESSAGE).orEmpty(),
             fix = intent.getStringExtra(EXTRA_FIX).orEmpty(),
             live = intent.getBooleanExtra(EXTRA_LIVE, false),
+            sequence = intent.getLongExtra(EXTRA_SEQUENCE, 0),
+            micRequest = intent.getStringExtra(EXTRA_MIC_REQUEST),
         )
     }
 
@@ -358,6 +374,8 @@ class CaptureService : Service() {
         val message: String,
         val fix: String,
         val live: Boolean,
+        val sequence: Long = 0,
+        val micRequest: String? = null,
     ) {
         companion object {
             fun idle() = CaptureStatus(STATE_IDLE, "", "", false)

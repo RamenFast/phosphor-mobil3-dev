@@ -55,6 +55,7 @@ import dev.phosphor.mobil3.ui.rollModeExcluding
 import dev.phosphor.mobil3.settings.SettingsArchive
 import java.io.ByteArrayOutputStream
 import java.io.File
+import java.util.UUID
 
 // Compose chrome overlays the scope SurfaceView. The loaded deck owns transport through one
 // MediaController so the console, notification, and lock screen remain consistent.
@@ -62,6 +63,24 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private lateinit var ui: ScopeUiState
     private val mic = MicController()
+    private var micReleaseRevision: Long? = null
+    private var captureStatusSequence = 0L
+    private var pendingCaptureConsent: Long? = null
+    private val micHandoff = MicHandoffPolicy(
+        start = { done ->
+            if (micRequestIsCurrent()) {
+                applyLocalGainPolicy()
+                mic.start(done, ::micRequestIsCurrent)
+            } else {
+                micHandoffCancel()
+            }
+        },
+        publish = { error ->
+            ui.live = error == null
+            ui.sourceLabel = if (error == null) "mic" else "no source"
+            if (error != null) Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+        },
+    )
     private var pendingAudioPermission = AudioPermissionPurpose.NONE
     private var controller: MediaController? = null
     private var reduced = false
@@ -137,7 +156,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             uri ?: return@registerForActivityResult
             runCatching {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                ++sourceSelection
+                selectSource()
                 applyLocalGainPolicy()
                 startService(Intent(this, PlaybackService::class.java)
                     .setAction(PlaybackService.ACTION_OPEN_TREE)
@@ -256,6 +275,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val captureConsent =
         registerForActivityResult(ActivityResultContracts.StartActivityForResult()) { result ->
+            val selection = pendingCaptureConsent
+            pendingCaptureConsent = null
+            if (selection == null || selection != sourceSelection) return@registerForActivityResult
             val data = result.data
             if (result.resultCode != android.app.Activity.RESULT_OK || data == null) {
                 applyCaptureStatus(
@@ -460,6 +482,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
         super.onStop()
     }
 
+    override fun onDestroy() {
+        selectSource()
+        super.onDestroy()
+    }
+
     // One gentle heartbeat for display facts Compose can't observe directly:
     // seek position from the controller, the resting-beam flag, the breathing accent.
     private var baseRoom: Palette? = null
@@ -560,7 +587,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // Direct documents use the same serial staging and validation path as tree entries.
     private fun loadUri(uri: Uri) {
-        ++sourceSelection
+        selectSource()
         runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         applyLocalGainPolicy()
         startService(Intent(this, PlaybackService::class.java)
@@ -631,20 +658,45 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun openDeck(path: String) {
-        ++sourceSelection
+        selectSource()
         applyLocalGainPolicy()
         startService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
     }
 
-    private fun withSourcesReleased(start: () -> Unit) {
-        val selection = ++sourceSelection
+    private fun micHandoffCancel() {
+        micHandoff.cancel()
+        mic.cancelStart()
+        micReleaseRevision = null
+    }
+
+    private fun selectSource(): Long {
+        micHandoffCancel()
+        pendingAudioPermission = AudioPermissionPurpose.NONE
+        pendingCaptureConsent = null
+        return ++sourceSelection
+    }
+
+    private fun micRequestIsCurrent(): Boolean = !isDestroyed &&
+        micReleaseRevision?.let { PlaybackService.localSourcePublication.accepts(it) } == true
+
+    private fun withSourcesReleased(
+        selection: Long = selectSource(),
+        micRequest: String? = null,
+        start: () -> Unit,
+    ) {
         val reply = object : ResultReceiver(tick) {
             override fun onReceiveResult(resultCode: Int, resultData: Bundle?) {
-                if (resultCode == 0 && selection == sourceSelection && !isDestroyed) start()
+                val revision = resultData?.getLong(PlaybackService.EXTRA_SOURCE_REVISION, -1) ?: -1
+                if (resultCode == 0 && selection == sourceSelection && !isDestroyed &&
+                    PlaybackService.localSourcePublication.accepts(revision)) {
+                    if (micRequest != null) micReleaseRevision = revision
+                    start()
+                }
             }
         }
         startService(Intent(this, PlaybackService::class.java)
             .setAction(PlaybackService.ACTION_RELEASE_LOCAL)
+            .putExtra(CaptureService.EXTRA_MIC_REQUEST, micRequest)
             .putExtra(PlaybackService.EXTRA_RELEASE_REPLY, reply))
     }
 
@@ -715,7 +767,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
-        ++sourceSelection
+        selectSource()
         prefs().edit { putFloat("gain", gainValue) }
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
         ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
@@ -736,6 +788,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun disconnectRemote() {
+        selectSource()
         startService(
             Intent(this, PlaybackService::class.java)
                 .setAction(PlaybackService.ACTION_REMOTE_DISCONNECT)
@@ -745,7 +798,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         applyLocalGainPolicy()
     }
 
-    override fun openFile() = openFileLauncher.launch(arrayOf("audio/*"))
+    override fun openFile() {
+        selectSource()
+        openFileLauncher.launch(arrayOf("audio/*"))
+    }
 
     override fun exportSettings() = createSettingsArchive.launch(
         "phosphor-settings-${BuildConfig.VERSION_NAME}.phossettings"
@@ -756,15 +812,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
 
     override fun startMic() {
-        ui.live = false
+        val selection = selectSource()
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
         ) {
-            withSourcesReleased {
-                applyLocalGainPolicy()
-                mic.start()
-                ui.sourceLabel = "mic"
-                ui.live = true
+            val request = UUID.randomUUID().toString()
+            ui.live = false
+            micHandoff.request(request, CaptureService.currentStatus().sequence)
+            withSourcesReleased(selection, request) {
+                // Re-read the observation too: the receiver may have been stopped by Android UI.
+                observeMicCaptureStatus(CaptureService.currentStatus())
+                micHandoff.sourcesReleased(request)
             }
         }
         else {
@@ -778,7 +836,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         // token, so a redundant prompt would tear down a working session to rebuild an
         // identical one, and the user would blame us for the extra dialog. `live` plus a
         // capture source is the honest signal that a projection is currently held.
-        if (ui.live && ui.sourceLabel.startsWith("capture")) return
+        val alreadyCapturing = ui.live && ui.sourceLabel.startsWith("capture") && !micHandoff.isPending
+        selectSource()
+        if (alreadyCapturing) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -792,6 +852,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun launchCaptureConsent() {
+        pendingCaptureConsent = sourceSelection
         markConsentSeen()
         ui.captureStatus = "waiting for Android capture permission"
         ui.captureFix = "Approve the prompt to connect playback audio"
@@ -827,6 +888,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun applyCaptureStatus(status: CaptureService.CaptureStatus) {
+        if (status.sequence > 0) {
+            if (status.sequence <= captureStatusSequence) return
+            captureStatusSequence = status.sequence
+        }
+        if (micHandoff.isPending) {
+            observeMicCaptureStatus(status)
+            return
+        }
         val wasCapture = ui.sourceLabel.startsWith("capture")
         ui.captureStatus = status.message
         ui.captureFix = status.fix
@@ -847,6 +916,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.artwork = null
             }
         }
+    }
+
+    private fun observeMicCaptureStatus(status: CaptureService.CaptureStatus) {
+        if (micReleaseRevision != null && !micRequestIsCurrent()) {
+            micHandoffCancel()
+            return
+        }
+        micHandoff.captureStatus(
+            sequence = status.sequence,
+            idle = status.state == CaptureService.STATE_IDLE,
+            requestId = status.micRequest,
+            error = status.fix.takeIf { status.state == CaptureService.STATE_ERROR },
+        )
     }
 
     private fun applyLocalSourcePublication(revision: Long) {
@@ -1518,7 +1600,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
 
     // ── Deck sheet verbs ──
-    override fun openFolder() = openFolderLauncher.launch(null)
+    override fun openFolder() {
+        selectSource()
+        openFolderLauncher.launch(null)
+    }
     override fun jumpToQueue(index: Int) { controller?.seekTo(index, 0) }
 
     private val audioMan by lazy { getSystemService(AUDIO_SERVICE) as android.media.AudioManager }

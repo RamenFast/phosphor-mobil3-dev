@@ -31,6 +31,8 @@ Microphone hardware is optional. Devices without a microphone may still install 
 
 A capture-to-microphone switch must stop capture first and wait for an idle observation that belongs to that stop request. A stale earlier idle state must not start the microphone. The microphone publishes live state only after `AudioRecord` initializes, recording starts, and the scope input is armed successfully. The handoff must not use a timer.
 
+When stops overlap, an older completion must not replace the latest mic request's idle snapshot. This also applies while the activity's status receiver is stopped. Every request keeps its source-stop acknowledgement so late reader loss remains visible. A newer non-mic selection cancels pending microphone startup.
+
 ## 4. Android playback capture
 
 Playback audio capture requires Android 10, API 29.

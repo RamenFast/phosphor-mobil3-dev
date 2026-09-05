@@ -77,7 +77,11 @@ class PlaybackService : MediaSessionService() {
         data class Tree(val uri: String, val start: Int, val transportRevision: Long) : LocalDeckRequest
         data class Document(val uri: String, val transportRevision: Long) : LocalDeckRequest
         data class Path(val path: String, val transportRevision: Long) : LocalDeckRequest
-        data class Release(val stopReaders: Boolean = false, val after: () -> Unit) : LocalDeckRequest
+        data class Release(
+            val stopReaders: Boolean = false,
+            val micRequest: String? = null,
+            val after: () -> Unit,
+        ) : LocalDeckRequest
         data class Play(
             val index: Int,
             val positionMs: Long?,
@@ -280,7 +284,14 @@ class PlaybackService : MediaSessionService() {
             ACTION_RELEASE_LOCAL -> {
                 beginLocalSelection()
                 val reply = IntentCompat.getParcelableExtra(intent, EXTRA_RELEASE_REPLY, ResultReceiver::class.java)
-                localDeckRequests.enqueue(LocalDeckRequest.Release(stopReaders = true) { reply?.send(0, Bundle.EMPTY) })
+                localDeckRequests.enqueue(LocalDeckRequest.Release(
+                    stopReaders = true,
+                    micRequest = intent.getStringExtra(CaptureService.EXTRA_MIC_REQUEST),
+                ) {
+                    reply?.send(0, Bundle().apply {
+                        putLong(EXTRA_SOURCE_REVISION, localSourcePublication.current.revision)
+                    })
+                })
                 return START_NOT_STICKY
             }
             ACTION_OPEN_TREE -> {
@@ -651,7 +662,7 @@ class PlaybackService : MediaSessionService() {
                 closeOpenedLocal()
             }
             is LocalDeckRequest.Release -> {
-                if (request.stopReaders && !releaseReaders(isLatest)) return
+                if (request.stopReaders && !releaseReaders(isLatest, request.micRequest)) return
                 sourceSurvival.nativeReplacing()
                 closeOpenedLocal()
                 if (!destroying && isLatest()) main.post {
@@ -767,7 +778,7 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
-    private fun releaseReaders(isLatest: () -> Boolean): Boolean {
+    private fun releaseReaders(isLatest: () -> Boolean, micRequest: String? = null): Boolean {
         val current = { !destroying && isLatest() }
         if (!current()) return false
         val id = stopSequence.incrementAndGet()
@@ -801,6 +812,7 @@ class PlaybackService : MediaSessionService() {
         startService(Intent(this, CaptureService::class.java)
             .setAction(CaptureService.ACTION_STOP)
             .putExtra(CaptureService.EXTRA_STOP_REQUEST, id)
+            .putExtra(CaptureService.EXTRA_MIC_REQUEST, micRequest)
             .putExtra(CaptureService.EXTRA_STOP_REPLY, reply))
         val micError = micStop.await(4_000, current)
         val captureError = captureStop.await(4_000, current)
