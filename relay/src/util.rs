@@ -62,6 +62,9 @@ pub fn run_cancellable(
     deadline: Duration,
     cancel: &AtomicBool,
 ) -> Result<Output, String> {
+    if cancel.load(Ordering::SeqCst) {
+        return Err("cancelled (session ending)".into());
+    }
     cmd.stdin(Stdio::null());
     let mut child: Child = cmd
         .stdout(Stdio::piped())
@@ -342,6 +345,17 @@ mod tests {
         let res = run_cancellable(&mut cmd, Duration::from_secs(30), &cancel);
         assert!(res.is_err() && res.unwrap_err().contains("cancelled"));
         assert!(t0.elapsed() < Duration::from_secs(1));
+    }
+
+    #[test]
+    fn folder_session_cancelled_command_is_not_spawned() {
+        let mut cmd = Command::new("/no-such-phosphor-fixture-executable");
+        let error =
+            run_cancellable(&mut cmd, Duration::from_secs(1), &AtomicBool::new(true)).unwrap_err();
+        assert!(
+            error.starts_with("cancelled"),
+            "must cancel before attempting spawn: {error}"
+        );
     }
 
     #[test]

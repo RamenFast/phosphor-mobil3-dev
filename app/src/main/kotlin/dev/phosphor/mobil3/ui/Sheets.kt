@@ -52,6 +52,7 @@ import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableFloatStateOf
@@ -1443,10 +1444,39 @@ fun RemoteFlow(
 ) {
     var showSources by remember { mutableStateOf(false) }
     var browsing by remember { mutableStateOf(false) }
-    var browseRoot by remember { mutableStateOf("") }
-    var browsePath by remember { mutableStateOf("") }
+    var browseRequest by remember { mutableStateOf<RemoteBrowseRequest?>(null) }
+    var selectedPeer by remember { mutableStateOf<Pair<String, Int>?>(null) }
     var sourcesJson by remember { mutableStateOf("") }
     var listingJson by remember { mutableStateOf("") }
+    var listingGeneration by remember { mutableIntStateOf(0) }
+    fun currentPeer(): Pair<String, Int>? {
+        if (!state.remote) return null
+        val status = runCatching {
+            org.json.JSONObject(dev.phosphor.mobil3.PhosphorNative.remoteStatus())
+        }.getOrNull() ?: return null
+        if (status.optString("state") !in listOf("streaming", "stalled")) return null
+        val peer = status.optString("host") to status.optInt("port")
+        if (peer.first.isBlank() || peer.second !in 1..65535) return null
+        return peer.takeIf { selectedPeer == null || selectedPeer == it }
+    }
+    fun clearBrowse() {
+        browseRequest?.retire()
+        browseRequest = null
+        listingJson = ""
+        browsing = false
+    }
+    fun requestBrowse(root: String, path: String) {
+        val peer = currentPeer() ?: run { clearBrowse(); return }
+        browseRequest?.retire()
+        listingJson = ""
+        browseRequest = RemoteBrowseRequest(
+            root, path, peer, dev.phosphor.mobil3.PhosphorNative.remoteListingGeneration(),
+        )
+        dev.phosphor.mobil3.PhosphorNative.remoteBrowse(root, path)
+    }
+    DisposableEffect(Unit) {
+        onDispose { browseRequest?.retire() }
+    }
     // Host-editing state. editTarget null while editing means "adding a new relay";
     // refusal holds the store's fix-bearing text until the user changes something.
     var editing by remember { mutableStateOf(false) }
@@ -1458,10 +1488,23 @@ fun RemoteFlow(
     var hostRevision by remember { mutableIntStateOf(0) }
 
     // Gentle wire poll while the remote panels are open (generation-gated on the JNI side).
-    LaunchedEffect(state.remote, showSources, browsing) {
+    LaunchedEffect(state.remote, showSources, browsing, selectedPeer) {
+        if (!state.remote) clearBrowse()
         while (state.remote && (showSources || browsing)) {
-            sourcesJson = dev.phosphor.mobil3.PhosphorNative.remoteSources()
-            listingJson = dev.phosphor.mobil3.PhosphorNative.remoteListing()
+            val peer = currentPeer()
+            if (peer == null || (browseRequest != null && browseRequest?.peer != peer)) {
+                clearBrowse()
+                sourcesJson = ""
+            } else {
+                sourcesJson = dev.phosphor.mobil3.PhosphorNative.remoteSources()
+                readRemoteListing(
+                    { dev.phosphor.mobil3.PhosphorNative.remoteListingGeneration() },
+                    { dev.phosphor.mobil3.PhosphorNative.remoteListing() },
+                )?.let { (generation, listing) ->
+                    listingJson = listing
+                    listingGeneration = generation
+                }
+            }
             kotlinx.coroutines.delay(400)
         }
     }
@@ -1494,6 +1537,10 @@ fun RemoteFlow(
             Box(Modifier.weight(1f)) {
                 SheetRow(label, p, checked = connected, glyph = SettingsGlyph.Remote) {
                     if (!connected) {
+                        clearBrowse()
+                        showSources = false
+                        sourcesJson = ""
+                        selectedPeer = hostPort
                         actions.startRemoteHost(label, hostPort.first, hostPort.second)
                     }
                 }
@@ -1581,17 +1628,17 @@ fun RemoteFlow(
             }
         }
         SheetRow("browse library…", p) {
-            browsing = !browsing
             if (browsing) {
+                clearBrowse()
+            } else if (currentPeer() != null) {
+                browsing = true
                 // Roots come from the relay's welcome; default to the first.
                 val st = runCatching {
                     org.json.JSONObject(dev.phosphor.mobil3.PhosphorNative.remoteStatus())
                 }.getOrNull()
                 val libs = st?.optJSONObject("welcome")?.optJSONArray("libraries")
                 if (libs != null && libs.length() > 0) {
-                    browseRoot = libs.getJSONObject(0).optString("id", "music0")
-                    browsePath = ""
-                    dev.phosphor.mobil3.PhosphorNative.remoteBrowse(browseRoot, "")
+                    requestBrowse(libs.getJSONObject(0).optString("id", "music0"), "")
                 }
             }
         }
@@ -1599,7 +1646,7 @@ fun RemoteFlow(
             // The relay may serve several roots (Music, another drive, a cloud remote).
             // Only the first was ever reachable, so a second drive configured on the
             // desktop was invisible from the phone. Show them when there is a choice.
-            val roots = remember(state.remote, browsing) {
+            val roots = remember(browseRequest?.peer, state.remote, browsing) {
                 runCatching {
                     org.json.JSONObject(dev.phosphor.mobil3.PhosphorNative.remoteStatus())
                         .optJSONObject("welcome")?.optJSONArray("libraries")
@@ -1614,6 +1661,7 @@ fun RemoteFlow(
                 } ?: emptyList()
             }
             if (roots.size > 1) {
+                val rootRequest = browseRequest
                 Row(
                     Modifier.fillMaxWidth().padding(top = 2.dp),
                     horizontalArrangement = Arrangement.spacedBy(6.dp),
@@ -1621,50 +1669,57 @@ fun RemoteFlow(
                     roots.forEach { (id, label) ->
                         FlatKey(
                             label, p, modifier = Modifier.weight(1f),
-                            active = id == browseRoot,
+                            active = id == browseRequest?.root,
                         ) {
-                            if (id != browseRoot) {
-                                browseRoot = id
-                                browsePath = ""
-                                dev.phosphor.mobil3.PhosphorNative.remoteBrowse(id, "")
-                            }
+                            rootRequest?.selectRoot(id, browseRequest, currentPeer(), browsing, ::requestBrowse)
                         }
                     }
                 }
             }
             runCatching { org.json.JSONObject(listingJson) }.getOrNull()?.let { l ->
                 val path = l.optString("path")
+                val request = browseRequest ?: return@let
+                val folder = RemoteFolderAction(
+                    root = l.optString("root"),
+                    path = path,
+                    generation = listingGeneration,
+                    request = request,
+                    currentRequest = { browseRequest },
+                    currentPeer = ::currentPeer,
+                    browse = ::requestBrowse,
+                    play = { root, target ->
+                        dev.phosphor.mobil3.PhosphorNative.remotePlayFile(root, target)
+                    },
+                    dismiss = { clearBrowse(); onDismiss() },
+                )
+                if (!folder.accepted) return@let
                 Mono(
                     "library › " + (path.ifBlank { "(root)" }), p.muted, Type.dataXs,
                     Modifier.padding(vertical = 4.dp),
                 )
+                FlatKey("PLAY FOLDER -> QUEUE", p) { folder.playFolder() }
                 if (path.isNotBlank()) {
-                    SheetRow("‹ up", p) {
-                        val parent = path.substringBeforeLast('/', "")
-                        browsePath = parent
-                        dev.phosphor.mobil3.PhosphorNative.remoteBrowse(browseRoot, parent)
-                    }
+                    SheetRow("‹ up", p) { folder.up() }
                 }
                 val dirs = l.optJSONArray("dirs")
                 if (dirs != null) for (i in 0 until dirs.length()) {
                     val d = dirs.getString(i)
-                    SheetRow("$d /", p) {
-                        browsePath = if (path.isBlank()) d else "$path/$d"
-                        dev.phosphor.mobil3.PhosphorNative.remoteBrowse(browseRoot, browsePath)
-                    }
+                    SheetRow("$d /", p) { folder.directory(d) }
                 }
                 val files = l.optJSONArray("files")
                 if (files != null) for (i in 0 until files.length()) {
                     val f = files.getJSONObject(i)
                     val name = f.optString("name")
-                    SheetRow(name, p) {
-                        val full = if (path.isBlank()) name else "$path/$name"
-                        dev.phosphor.mobil3.PhosphorNative.remotePlayFile(browseRoot, full)
-                        onDismiss()
-                    }
+                    SheetRow(name, p) { folder.file(name) }
                 }
             }
         }
-        SheetRow("disconnect", p) { actions.disconnectRemote(); onDismiss() }
+        SheetRow("disconnect", p) {
+            clearBrowse()
+            showSources = false
+            sourcesJson = ""
+            actions.disconnectRemote()
+            onDismiss()
+        }
     }
 }

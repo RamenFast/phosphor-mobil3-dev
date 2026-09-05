@@ -1,6 +1,34 @@
 # 🎯 Phosphor Mobile pre-v2 B1-B21 lived-repair plan
 
-**Status:** compiled for a zero-context execution session. Planning only in this session.
+**Status:** original B1-B21 execution is active. Ben authorized connected-phone validation at 22:36 UTC. The desktop remains quiet. Exact candidate and rollback checks precede installation. Live Linux deployment remains separate.
+
+### Phone handoff checkpoint, 2026-09-05 22:43 UTC
+
+The explicit USB phone reports the expected Galaxy S25, Android 16 and SDK 36, with keyguard not showing.
+The installed debug APK was pulled and matches the retained Phase 4 hash. Its signer verifies.
+App preferences were backed up with identical on-device hashes before and after the read. Display settings were recorded without changes.
+No candidate has been installed or launched. Finish the Phase 7 committed-input gate and exact artifact, then perform the authorized phone matrix.
+All live bug cards remain open until their named behavior is observed. The phone handoff does not authorize unrelated service, account or publication changes.
+
+### Callback correction checkpoint, 2026-09-05 21:58 UTC
+
+Independent human-intent review found retained root-selector and dismissal callbacks could outlive their browser authority.
+The existing request now retires before Play, on dismissal/disposal and on replacement. Root selection also checks the captured request and peer.
+Root gate 3 passed 246 Android tests, including all 21 folder-action cases, plus relay 43, selected native 40 and shared audio 30.
+The full source inventory stayed identical. Five new callback regressions passed. Compose callback timing remains unmeasured.
+The separate intent correction03 receipt closes both identified source-authority gaps against the passing gate evidence.
+Local commit and exact retained debug artifact are next. Phase 8 readiness is retained, not implemented.
+
+### Relay offline checkpoint, 2026-09-05 21:31 UTC
+
+Phase 7 has corrected relay folder/UI source and a confined canonical installer fixture.
+Root's scoped gate passed 241 Android tests, 43 relay tests, 40 selected native tests and 30 shared-audio tests.
+Seventeen focused folder cases, seven actual read-only relay CLI checks and fourteen installer fixture groups passed.
+The source inventory stayed identical before and after. Source review closed the backslash and stale-peer corrections.
+The exact socket test, developer CLI fixture and release fixture remain explicitly excluded from this quiet lane.
+The [Phase 7 receipt](docs/dev/receipts/pre-v2-b1-b21/phase-07-b3-relay-matrix.md) preserves failures and the worker's earlier socket-boundary discrepancy.
+Separate human-intent review, local commit and exact retained debug artifact are next. Live Linux/Tailscale and phone acceptance remain open.
+No installed app, active relay, audio, permissions or publication changed. Phase 8 follows the completed Phase 7 offline follow-through.
 
 ### Exact artifact checkpoint, 2026-09-05 19:47 UTC
 

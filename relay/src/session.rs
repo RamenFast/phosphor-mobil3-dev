@@ -117,7 +117,7 @@ pub enum Ev {
         token: u64,
         root_id: String,
         path: String,
-        result: Result<(), crate::library::LibErr>,
+        result: Result<crate::library::Selection, crate::library::LibErr>,
     },
     Tick,
     Watchdog,
@@ -673,6 +673,9 @@ impl SessionState {
     }
 
     fn on_play(&mut self, ctx: &Ctx, payload: &[u8]) {
+        if self.cancel_ops.load(Ordering::SeqCst) {
+            return;
+        }
         let Ok(p) = serde_json::from_slice::<proto::Play>(payload) else {
             return;
         };
@@ -693,10 +696,10 @@ impl SessionState {
             );
             return;
         };
+        self.fetch_token += 1; // every accepted Play supersedes older remote fetches
         if root.is_rclone() {
             // Remote downloads run off the control loop. Live capture continues until
             // the file is ready, while the phone receives downloading metadata immediately.
-            self.fetch_token += 1;
             let token = self.fetch_token;
             let downloading = proto::Meta {
                 title: p.path.rsplit('/').next().unwrap_or(&p.path).to_string(),
@@ -724,7 +727,7 @@ impl SessionState {
             self.reap_jobs();
             return;
         }
-        self.open_file(ctx, root, &p.root, &p.path);
+        self.open_file(ctx, root, &p.root, &p.path, None);
     }
 
     /// Shared open path (local play + post-fetch Drive play — cache-hit fast).
@@ -734,22 +737,24 @@ impl SessionState {
         root: crate::config::LibraryRoot,
         root_id: &str,
         path: &str,
+        selection: Option<crate::library::Selection>,
     ) {
         // Entering file mode: the live capture stops; the file pump is the audio.
         self.stop_capture();
         self.file = None;
-        match FileSession::open(
-            root,
-            path,
-            FileSessionResources {
-                writer: ctx.wtx.clone(),
-                counters: ctx.counters.clone(),
-                ctl: ctx.ctl.clone(),
-                art: ctx.art.clone(),
-                pump_ids: self.pump_ids.clone(),
-                cancel: self.cancel_ops.clone(),
-            },
-        ) {
+        let resources = FileSessionResources {
+            writer: ctx.wtx.clone(),
+            counters: ctx.counters.clone(),
+            ctl: ctx.ctl.clone(),
+            art: ctx.art.clone(),
+            pump_ids: self.pump_ids.clone(),
+            cancel: self.cancel_ops.clone(),
+        };
+        let opened = match selection {
+            Some(selection) => FileSession::open_selection(root, selection, resources),
+            None => FileSession::open(root, path, resources),
+        };
+        match opened {
             Ok(fs) => {
                 self.file = Some(fs);
                 self.last_meta = None;
@@ -777,17 +782,17 @@ impl SessionState {
         token: u64,
         root_id: String,
         path: String,
-        result: Result<(), crate::library::LibErr>,
+        result: Result<crate::library::Selection, crate::library::LibErr>,
     ) {
-        if token != self.fetch_token {
+        if token != self.fetch_token || self.cancel_ops.load(Ordering::SeqCst) {
             return; // superseded (newer play/stop/choose) — cache write is harmless
         }
         match result {
-            Ok(()) => {
+            Ok(selection) => {
                 let Some(root) = ctx.cfg.find_root(&root_id).cloned() else {
                     return;
                 };
-                self.open_file(ctx, root, &root_id, &path);
+                self.open_file(ctx, root, &root_id, &path, Some(selection));
             }
             Err((e, fix)) => {
                 ctx.error(
@@ -1206,5 +1211,147 @@ mod tests {
             selected_after_choose("device:old.monitor", "device:new.monitor", true),
             "device:new.monitor"
         );
+    }
+}
+
+#[cfg(test)]
+mod folder_session_tests {
+    use super::*;
+    use crate::library::{
+        self,
+        folder_tests::{WavTree, eof, pcm_frames},
+    };
+    use std::sync::mpsc::Receiver;
+
+    fn harness(tree: &WavTree) -> (SessionState, Ctx, Receiver<Ev>, Receiver<Vec<u8>>) {
+        let (wtx, frames) = mpsc::sync_channel(64);
+        let (ctl, events) = mpsc::channel();
+        let ctx = Ctx {
+            cfg: Arc::new(Config {
+                port: 0,
+                player: String::new(),
+                libraries: vec![tree.root.clone()],
+            }),
+            wtx,
+            ctl,
+            counters: Arc::new(Counters::default()),
+            snap: Arc::new(Mutex::new(PlayerSnapshot::default())),
+            art: Arc::new(Mutex::new(Default::default())),
+        };
+        let state = SessionState {
+            hello: false,
+            audio: false,
+            geometry: false,
+            fps: 60,
+            selected: String::new(),
+            capture: None,
+            file: None,
+            geo: None,
+            last_meta: None,
+            pump_ids: Arc::new(AtomicU64::new(0)),
+            cancel_ops: Arc::new(AtomicBool::new(false)),
+            jobs: vec![],
+            browse_token: 0,
+            fetch_token: 0,
+            scope_state: None,
+        };
+        (state, ctx, events, frames)
+    }
+
+    fn play(state: &mut SessionState, ctx: &Ctx, path: &str) {
+        state.on_play(
+            ctx,
+            &serde_json::to_vec(&serde_json::json!({"root":"fixture", "path":path})).unwrap(),
+        );
+    }
+
+    fn current(state: &SessionState) -> (String, Option<u64>) {
+        let file = state.file.as_ref().expect("actual FileSession opened");
+        (file.meta().path.unwrap(), file.current_pump_id())
+    }
+
+    #[test]
+    fn folder_session_play_and_real_eof_handlers_advance_nested_and_fence_superseded_ids() {
+        let tree = WavTree::new("handler");
+        for path in ["00.wav", "10-disc/01.wav", "20.wav"] {
+            tree.wav(path);
+        }
+        let (mut state, ctx, events, frames) = harness(&tree);
+        play(&mut state, &ctx, "");
+        let first = current(&state);
+        assert_eq!(first.0, "00.wav");
+        let id1 = eof(&events);
+        assert_eq!(first.1, Some(id1));
+        pcm_frames(&frames);
+        state.on_file_eof(&ctx, id1);
+        let second = current(&state);
+        assert_eq!(second.0, "10-disc/01.wav");
+        assert_ne!(second.1, first.1);
+        state.on_file_eof(&ctx, id1);
+        assert_eq!(current(&state), second);
+        let id2 = eof(&events);
+        pcm_frames(&frames);
+        state.on_file_eof(&ctx, id2);
+        let third = current(&state);
+        assert_eq!(third.0, "20.wav");
+        state.on_file_eof(&ctx, id2);
+        assert_eq!(current(&state), third);
+        let id3 = eof(&events);
+        pcm_frames(&frames);
+        state.on_file_eof(&ctx, id3);
+        assert_eq!(current(&state), ("20.wav".into(), None));
+        assert!(!state.file.as_ref().unwrap().meta().playing);
+        play(&mut state, &ctx, "00.wav");
+        let replacement = current(&state);
+        assert!(replacement.1.unwrap() > id3);
+        state.on_file_eof(&ctx, id3);
+        assert_eq!(current(&state), replacement);
+        assert_eq!(eof(&events), replacement.1.unwrap());
+        pcm_frames(&frames);
+        assert!(state.capture.is_none() && state.geo.is_none());
+    }
+
+    #[test]
+    fn folder_session_local_play_invalidates_remote_fetch_and_completion_keeps_prepared_queue() {
+        let tree = WavTree::new("fetched");
+        tree.wav("folder/00.wav");
+        tree.wav("folder/nested/01.wav");
+        tree.wav("new.wav");
+        let (mut state, ctx, events, frames) = harness(&tree);
+        state.fetch_token = 41;
+        let stale = library::prefetch(&tree.root, "folder", &state.cancel_ops).unwrap();
+        play(&mut state, &ctx, "new.wav");
+        assert_eq!(state.fetch_token, 42);
+        let selected = current(&state);
+        state.on_drive_fetched(&ctx, 41, "fixture".into(), "folder".into(), Ok(stale));
+        assert_eq!(current(&state), selected);
+        assert_eq!(eof(&events), selected.1.unwrap());
+        pcm_frames(&frames);
+        let prepared = library::prefetch(&tree.root, "folder", &state.cancel_ops).unwrap();
+        state.on_drive_fetched(&ctx, 42, "fixture".into(), "folder".into(), Ok(prepared));
+        assert_eq!(current(&state).0, "folder/00.wav");
+        let first = eof(&events);
+        pcm_frames(&frames);
+        state.on_file_eof(&ctx, first);
+        assert_eq!(current(&state).0, "folder/nested/01.wav");
+        let second = eof(&events);
+        pcm_frames(&frames);
+        state.on_file_eof(&ctx, second);
+        assert_eq!(current(&state), ("folder/nested/01.wav".into(), None));
+    }
+
+    #[test]
+    fn folder_session_cancelled_play_and_fetch_cannot_start_a_pump() {
+        let tree = WavTree::new("handler-cancel");
+        tree.wav("00.wav");
+        let (mut state, ctx, events, frames) = harness(&tree);
+        let prepared = library::prefetch(&tree.root, "", &state.cancel_ops).unwrap();
+        state.cancel_ops.store(true, Ordering::SeqCst);
+        play(&mut state, &ctx, "");
+        state.on_drive_fetched(&ctx, 0, "fixture".into(), "".into(), Ok(prepared));
+        assert!(state.file.is_none());
+        assert_eq!(state.pump_ids.load(Ordering::Relaxed), 0);
+        assert!(events.try_recv().is_err());
+        assert!(frames.try_recv().is_err());
     }
 }

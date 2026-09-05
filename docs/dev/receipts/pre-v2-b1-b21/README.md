@@ -13,7 +13,7 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 | B2 | `phase-04-b2-mic.md` | `phase-15-sources.md` | Phase 4 live PASS 5/5; final regression pending |
 | B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | offline implementation, separate reviews and exact clean-snapshot debug artifact passed; installation and live/final acceptance pending |
 | B21 | `phase-06-b21-lifecycle.md` | `phase-15-lifecycle.md` | offline implementation, separate reviews, 225-test gates and exact clean-snapshot debug artifact passed; installation and Android/live acceptance pending |
-| B3 | `phase-07-b3-relay-matrix.md` | `phase-17-relay.md` | pending |
+| B3 | `phase-07-b3-relay-matrix.md` | `phase-17-relay.md` | corrected source, separate intent review and scoped offline gate passed; exact artifact and live Linux/Tailscale acceptance pending |
 | B1, B18, B19 | `phase-08-gestures.md` | `phase-16-gestures.md` | pending |
 | B10, B12, B13, B14 | `phase-09-ui.md` | `phase-16-ui.md` | pending |
 | B5, B11 | `phase-10-display.md` | `phase-16-display.md` | pending |

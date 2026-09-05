@@ -297,3 +297,33 @@ The [Phase 6 receipt](dev/receipts/pre-v2-b1-b21/phase-06-b21-lifecycle.md) pres
 
 B21 remains VERIFY. Actual callback delivery, task membership, public Media3 release and microphone-only/no-service teardown are not proven by host tests.
 No phone, playback, permission, GUI, active relay or publication action occurred. All original live cards and drift 21 remain open.
+
+## 2026-09-05 21:31 UTC: B3 offline relay folders and Linux setup checks
+
+Relay folder Play now retains the complete recursive queue in the existing FileSession path. Direct files keep their sorted sibling behavior.
+One browser action plays the current folder. Directory rows remain browse. Peer/request/revision checks reject stale cached listings and retained callbacks.
+Literal backslashes remain valid names. Separate source review found and closed both the remote-name regression and stale-peer folder exposure.
+
+The canonical installer now exposes inert discovery and structured normal/error results. Its confined local/remote fixture checks exact production shell behavior.
+False doctor reports remain explicit warnings, not environment-readiness claims. Existing configuration is preserved and an active service is not reported as restarted.
+Root observed 14 fixture groups and 7 actual read-only relay configuration/library-list checks, including errors and recovery.
+Root's scoped gate passed 241 Android tests, 43 relay tests, 40 selected native tests and 30 shared-audio tests with identical source inventories.
+The corrected folder-focused gate passed 17 tests through finite real decoding and production EOF handlers, not physical audio output.
+
+The runtime worker's earlier full native suite created a self-only socket fixture despite its no-sockets boundary. That disclosed violation remains in its report.
+Root excludes that exact test without changing it. Developer CLI and release fixtures remain NOT RUN in this lane because their execution paths need separate confinement.
+Root gate 1 failed on a test-local name shadow after other components passed. The two-line correction and passing gate 2 do not relabel that failed command.
+
+The [Phase 7 receipt](dev/receipts/pre-v2-b1-b21/phase-07-b3-relay-matrix.md) maps each supported outcome to concrete evidence and the remaining live matrix.
+Separate human-intent review and exact clean debug artifact follow-through remain pending. No original live checkbox or drift counter changed.
+Actual Tailscale reachability, Linux activation, phone UI, audible/beam output and reconnect acceptance remain open. No live service or device operation was performed.
+
+## 2026-09-05 22:00 UTC: B3 callback authority correction and bounded intent closeout
+
+Independent human-intent review found retained root-selector callbacks bypassed the new request guard, and full source-sheet dismissal did not retire every action.
+The existing request now guards root selection and retires before Play, on replacement, dismissal and disposal. Retained and reentrant callbacks become inert.
+Root gate 3 passed 246 Android tests, including 21 folder-action cases and all five added regressions. Relay 43, selected native 40 and shared audio 30 also passed.
+Seven actual read-only relay CLI checks and fourteen confined installer groups passed again. The complete input inventory stayed unchanged.
+The independent correction03 receipt inspected the exact source, XML and logs and closed both bounded findings. Original review and failed attempts remain intact.
+Source-string wiring and production-helper tests do not execute Compose. Exact retained debug artifact follow-through remains next.
+Live B3, all original final cards and drift 21 remain open. The quiet-lane exclusions, prior socket-test disclosure and NOT RUN fixtures remain unchanged.
