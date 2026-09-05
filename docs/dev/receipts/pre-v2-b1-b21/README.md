@@ -11,14 +11,16 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 | B9 | `phase-02-b9-seek-stress.md` | `phase-15-crash.md` | Phase 2 PASS; VERIFY pending final regression |
 | B4 | `phase-03-b4-folder-tree.md` | `phase-15-crash.md` | Phase 3 required live PASS; final regression pending |
 | B2 | `phase-04-b2-mic.md` | `phase-15-sources.md` | Phase 4 live PASS 5/5; final regression pending |
-| B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | offline implementation, separate reviews and exact clean-snapshot debug artifact passed; installation and live/final acceptance pending |
-| B21 | `phase-06-b21-lifecycle.md` | `phase-15-lifecycle.md` | offline implementation, separate reviews, 225-test gates and exact clean-snapshot debug artifact passed; installation and Android/live acceptance pending |
-| B3 | `phase-07-b3-relay-matrix.md` | `phase-17-relay.md` | corrected source, separate intent review and scoped offline gate passed; exact artifact and live Linux/Tailscale acceptance pending |
+| B6, B7, B8 | `phase-05-b6-b7-b8-media-truth.md` | `phase-15-truth.md` | exact Phase7 installed; local title/artist and seek recovery observed; paused seek publication and complete captured transport remain VERIFY |
+| B21 | `phase-06-b21-lifecycle.md` | `phase-15-lifecycle.md` | actual mic/local recents removal cleaned source services; capture/relay/linger and mic-only/no-service cases remain VERIFY |
+| B3 | `phase-07-b3-relay-matrix.md` | `phase-17-relay.md` | committed gate4 and exact APK installed/readback verified; bidirectional tailnet ping passed; relay/Linux acceptance pending |
 | B1, B18, B19 | `phase-08-gestures.md` | `phase-16-gestures.md` | pending |
 | B10, B12, B13, B14 | `phase-09-ui.md` | `phase-16-ui.md` | pending |
 | B5, B11 | `phase-10-display.md` | `phase-16-display.md` | pending |
 | B15, B16, B20 | `phase-11-render.md` | `phase-16-render.md` | pending |
 | B17 | `phase-12-b17-settings.md` | `phase-16-settings.md` | pending |
+
+The supplemental [exact Phase7 live checkpoint](phase-07-installed-live-checkpoint.md) records the settings-preserving upgrade, actual local/mic workflows, replay-verified log window and remaining gaps. Historical offline receipts retain their original timestamped limits.
 
 Phase 14 records the full automated gate and exact installed debug APK. Phase 18 adds the commit list, artifact hashes, signer evidence, gate outputs, final receipt hashes, and the three unchanged external release reds: `signing.release`, `provenance.release`, and `release.bundle`.
 
