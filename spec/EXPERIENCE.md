@@ -140,7 +140,7 @@ FEEL, MOTION, CORNERS, and LABELS must change visible chrome immediately while t
 
 FEEL selects its canonical chrome defaults, including motion, density, prose font, corners, labels, and panel transparency. Explicit MOTION, CORNERS, and LABELS choices then override those defaults. Match follows the selected FEEL, or the displayed room when FEEL also matches. Changing MOTION must replace the prior duration scale rather than retaining another room's scale. Reduced motion has final authority over animation. One live sample row reads the same `LocalRoomStyle` as the surrounding chrome and offers a manual TRY action without a looping effect.
 
-DECK must not remain a destination. Its existing queue and jump action live in SOURCE. SOURCE must not duplicate artwork or transport controls. Native and JNI deck playback remain unchanged.
+DECK must not remain a destination. Its existing queue and jump action live in SOURCE. SOURCE must not duplicate artwork or transport controls. A loaded local queue advertises Media3 COMMAND_SEEK_TO_MEDIA_ITEM so actual SOURCE row taps reach the existing track-switch handler. Native and JNI deck playback remain unchanged.
 
 Ben removed the console volume feature on 2026-09-06. The console has no volume slider, VOL label, percentage, replacement control, or empty reserved row. Its measured height contracts around the remaining transport, MODE, SRC and overflow controls. Preserve their established shapes, spacing and hierarchy. Android hardware and system volume controls remain available without an app-owned volume adapter.
 

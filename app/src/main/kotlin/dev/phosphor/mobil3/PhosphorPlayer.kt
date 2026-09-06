@@ -62,6 +62,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
                 Player.COMMAND_RELEASE,
             )
             .apply {
+                if (queue.isNotEmpty()) add(Player.COMMAND_SEEK_TO_MEDIA_ITEM)
                 if (index < queue.size - 1) {
                     addAll(Player.COMMAND_SEEK_TO_NEXT, Player.COMMAND_SEEK_TO_NEXT_MEDIA_ITEM)
                 }

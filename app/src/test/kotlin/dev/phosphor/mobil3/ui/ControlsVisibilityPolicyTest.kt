@@ -66,6 +66,10 @@ class ControlsVisibilityPolicyTest {
             for (removed in listOf("Sheet.DECK", "DeckSheet", "SettingsGlyph.Deck", "onDeck")) assertFalse(removed in text)
         }
         assertTrue("deckOpen" in phase9Source("PhosphorNative.kt"))
+        val player = phase9Source("PhosphorPlayer.kt")
+        assertTrue("if (queue.isNotEmpty()) add(Player.COMMAND_SEEK_TO_MEDIA_ITEM)" in player)
+        assertTrue("mediaItemIndex != index && mediaItemIndex in queue.indices" in player)
+        assertTrue("onSwitchTrack?.invoke(index)" in player)
     }
 
     @Test fun removedVolumeLeavesAndroidOwnershipAndExistingHeartbeat() {
