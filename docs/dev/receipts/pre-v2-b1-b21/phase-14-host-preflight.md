@@ -59,3 +59,13 @@ Fresh task992854niea verified exactly these two substitutions, froze all tracked
 Release signing credentials were unset during the debug-only check. No release signing, publisher, device activation or external publication occurred. The earlier four-red result remains preserved. `root-privacy-evidence01.sha256` binds 45 retained files, SHA256 `ab888905371d52216c1a621c8dc791ec20470d2f13cc7eb6da70e96e61ec21fa`.
 
 This closes the unexpected privacy marker failure and establishes the required scoreboard result for this test-text snapshot. It does not close the separate shared formatting, missing publisher fixture, whole shared-workspace tests or Android acceptance requirements.
+
+## Exact committed artifact confirmation, 12:06 UTC
+
+Task1987772di5 completed with exit0. It rebuilt all regular tracked blobs from clean mobile commit `8aeb27cd1586f8cf2f18a63fe270c3325963944e` and shared commit `aa09b8e14f8b8912b125e3312b4ddeec09404089`. The inventory contains 367 mobile and 459 shared paths. Twelve reviewed rotation files match exactly. The thirteenth reconstructs the exact reviewed hash by reversing only the recorded test-method rename. The previous frozen generator and review artifacts remain unchanged.
+
+The debug APK SHA256 is `8e14bbbeef530a129bd74c3778a2c6f31e28302b2101f72d2a28c0637bb2eab1`. Its signer remains `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`. All six artifact checksums verified, with source inventories unchanged before and after the isolated build. The build reran 420 JVM tests, lint, assembly and checkEngine.
+
+The complete scoreboard also reran on the clean active commits: **18 green, exactly three permitted external release reds, zero skipped**. Neither repository changed during the run. `root-exact-artifact-evidence02.sha256` binds 67 retained files, SHA256 `10e95b83914223d81204559554812c49ae389562a13ecd040675c766270b8ae0`.
+
+This later documentation append is not part of that APK. The physical phone remains untouched. A read-only foreground check at 12:04 UTC still showed user media in front. Physical takeover and acceptance remain pending, along with the separate host requirements above.
