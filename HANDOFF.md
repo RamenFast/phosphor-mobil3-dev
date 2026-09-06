@@ -1,9 +1,10 @@
-# Handoff: S25 testing and four installed corrections
+# Handoff: ASUS testing and two additional installed corrections
 
 **Updated:** 2026-09-06. **Status:** partial device acceptance, not release-ready and not all B1-B21 passed.
 
 ## Read first
 
+- [ASUS clean-start acceptance and two installed repairs](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md).
 - [Gesture-driver repair and actual native surface recreation](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md).
 - [Final expanded phone pass and exact remaining gates](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-final-pass-2026-09-06.md).
 - [Earlier continuation and its limits](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-continuation-2026-09-06.md).
@@ -13,11 +14,22 @@
 
 ## Ben's current boundaries
 
+**The S25 is excluded from further testing.** Ben supplied an ASUS_AI2202 Android14 replacement. Its current explicit route is recorded in the private ASUS helper under `dev/scratch/asus-acceptance-20260906T2051Z/`. Recheck identity before device actions. ASUS MUSIC is 0/30. No Phosphor package or app data existed on it before this session.
+
 Ben authorized comprehensive phone testing, then required quiet testing while sleeping. Keep Android MUSIC volume at **at most 15 percent**. It is currently **2/15, about 13 percent**. Do not restore the earlier higher volume. Keep PC audio silent. Do not manipulate the PIN/keyguard, publish, push, sign a release or deploy/restart Linux services under this phone-testing authorization.
 
 The console volume slider is unwanted. It is removed, not moved elsewhere. Preserve the remaining UI design. The repeated Spotify play/pause-symbol and grid-visibility reports are priority requirements, not requests Ben should repeat.
 
-## Installed now
+## Installed now on ASUS
+
+- Implementation `6183aa8`, including `1a0f6b9`. These add the LIGHT fast-TIMER guard repair and complete untouched-control exports.
+- Debug package `dev.phosphor.mobil3.debug`, version `2.0.0-debug`.
+- APK SHA256 `5d30d7e62d47ebdb7e67ef94bd71f7a2455fd524197699e2b3dc1626bc2e5dc3`.
+- Exact retained APK: `dev/scratch/asus-acceptance-20260906T2051Z/snapshot-committed.apk`.
+- All 426 Android tests and lint passed. Actual warning/recovery and 41-key mutation/import passed. Native logs confirmed safe timer behavior and custom-color reset.
+- Final ASUS state: clean effective defaults, no source, app stopped, MUSIC 0/30. Private backups and receipts retained.
+
+## Previous S25 installation, unchanged
 
 - Mobile implementation `63fc7ef`, including final-item replay repair, volume removal `9b3cc62` and grid contract `9f65bd1`.
 - Shared implementation `297e88b`.

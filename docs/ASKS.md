@@ -63,3 +63,9 @@
 Ben requested fixing the remaining failures, not merely listing them.
 The [gesture recovery receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md) records a repaired Android16 test driver, four actual multi-pointer checks and proven native surface recreation.
 B8, exact physical settle timing, emulator rendering and the remaining matrix stay open. No new app fix is claimed.
+
+## 2026-09-06 replacement test phone and additional repairs
+
+Ben supplied the ASUS_AI2202 and requested that testing move off his S25. The S25 is now excluded from further tests.
+The [ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md) records clean native rendering and two newly found, fixed and installed bugs: fast TIMER confirmation bypass and incomplete untouched-control exports.
+Actual warning/recovery and a full 41-key defaults mutation/import passed. B8 and the remaining acceptance gaps stay open.

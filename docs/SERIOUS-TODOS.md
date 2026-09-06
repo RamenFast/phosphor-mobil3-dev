@@ -105,3 +105,10 @@ The driver initialization failure is repaired and four physical two-pointer case
 Full native surface destruction/recreation is now observed in replay-verified logs.
 These supersede those two earlier blockers only. Exact physical333ms timing, moving-trace recreation, B8, native emulator rendering and exhaustive variants remain open.
 See the [gesture recovery receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md). No independent worker review occurred while routing confirmation remains unanswered.
+
+## 2026-09-06 ASUS acceptance and additional fixes
+
+ASUS physical clean-start native rendering and default controls now pass, replacing the missing clean-device evidence but not repairing emulator translation.
+The fast-TIMER guard bypass and omitted untouched export controls are fixed and installed in `6183aa8`. Actual warning/recovery and all 41 exported values passed device checks.
+Remaining B8, synchronized physical 333 ms timing, moving-trace recreation, exhaustive variants and human/release gates are listed in the [ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md).
+Do not use the S25 for further tests.

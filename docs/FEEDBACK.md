@@ -473,3 +473,10 @@ Partial imports intentionally preserve omitted keys, including older archives. T
 The existing snapshot writer now saves the five effective control values before export, without seeding RGB values.
 Source-wiring and actual export/decode regressions were added. All 426 Android tests, lintDebug and assembleDebug passed.
 The next gate is a new clean-data ASUS export followed by real mutation/import and native readback. No blanket B17 or release acceptance is claimed.
+
+## 2026-09-06 21:23 UTC: both ASUS repairs delivered
+
+The final installed APK is 6183aa8 with SHA256 `5d30d7e62d47ebdb7e67ef94bd71f7a2455fd524197699e2b3dc1626bc2e5dc3`.
+The new clean export contained all five previously missing controls and no invented RGB. Actual UI mutations changed all five, then real import restored all 41 exported values.
+Native readback reset custom colors to zero and the cycle to a three-second TIMER. Test files and test-only inactive colors were cleaned up.
+ASUS remains installed, muted, no-source and stopped. S25 was not touched after the handoff. See the [ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md) for remaining gates. Drift stays 21.

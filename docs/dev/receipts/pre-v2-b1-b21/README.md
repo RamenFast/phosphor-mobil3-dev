@@ -140,3 +140,7 @@ Do not change `drift` from 21 to 0 until every B1-B21 row has its final PASS rec
 ### Gesture recovery, 2026-09-06 20:27 UTC
 
 [Recovery receipt](phase-15-16-gesture-recovery-2026-09-06.md): repaired Android16 input-driver initialization, four physical two-pointer checks, actual native surface teardown/recreation and exact restoration. B8, physical333ms timing, moving-trace recreation and emulator rendering remain open.
+
+### ASUS replacement phone, 2026-09-06 20:51 UTC onward
+
+[ASUS receipt](phase-15-16-asus-2026-09-06.md): clean native rendering, actual defaults, two installed LIGHT/export fixes, 426 Android tests and a real 41-key mutation/import. S25 excluded. Exact remaining gates retained.
