@@ -2,6 +2,15 @@
 
 **Status:** original B1-B21 execution is active. Ben authorized connected-phone validation at 22:36 UTC. The desktop remains quiet. Exact candidate and rollback checks precede installation. Live Linux deployment remains separate.
 
+### Controls checkpoint, 2026-09-06 01:24 UTC
+
+Phase 9 source passed the frozen 308-test gate and separate source/intent reviews after bounded corrections.
+The [Phase 9 receipt](docs/dev/receipts/pre-v2-b1-b21/phase-09-ui.md) maps every requirement and preserves earlier blocked reviews.
+ROOM and quick-menu scroll recovery, current volume publication and outer-height measurement were corrected.
+The exact committed artifact follows next. No Phase 9 phone interaction or acceptance is claimed.
+The last read-only phone check found another media app foreground. Root left it undisturbed and continued offline.
+Phase 8's exact 272-test APK is retained but not installed. All final B-cards and drift 21 remain open.
+
 ### Phone handoff checkpoint, 2026-09-05 22:43 UTC
 
 The explicit USB phone reports the expected Galaxy S25, Android 16 and SDK 36, with keyguard not showing.

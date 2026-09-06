@@ -81,7 +81,7 @@ val Palette.style: RoomStyle
 /** Provided at the PhosphorScreen root from the DISPLAYED room (crossfade-aware). */
 val LocalRoomStyle = compositionLocalOf { CarvedStyle }
 
-// Null follows the room. Non-null values are persisted user overrides.
+// FEEL selects its coupled defaults. Explicit controls win. Null follows that base.
 @Immutable
 data class StyleOverride(
     val character: ChromeCharacter? = null,
@@ -90,9 +90,42 @@ data class StyleOverride(
     val designators: Boolean? = null,
 )
 
-fun RoomStyle.overridden(o: StyleOverride): RoomStyle = copy(
-    character = o.character ?: character,
-    motion = o.motion ?: motion,
-    cornerRadius = o.radiusDp?.dp ?: cornerRadius,
-    designators = o.designators ?: designators,
-)
+fun RoomStyle.overridden(o: StyleOverride): RoomStyle {
+    val base = when (o.character) {
+        ChromeCharacter.Carved -> CarvedStyle
+        ChromeCharacter.Engraved -> VoidStyle
+        ChromeCharacter.Annotated -> BenchStyle
+        ChromeCharacter.Glass -> GlassStyle
+        null -> this
+    }
+    return base.copy(
+        motion = o.motion ?: base.motion,
+        durationScale = when (o.motion) {
+            MotionFeel.Cut -> VoidStyle.durationScale
+            null -> base.durationScale
+            else -> CarvedStyle.durationScale
+        },
+        cornerRadius = o.radiusDp?.dp ?: base.cornerRadius,
+        designators = o.designators ?: base.designators,
+    )
+}
+
+fun StyleOverride.nextCharacter(): StyleOverride {
+    val values = listOf(null) + ChromeCharacter.entries
+    return copy(character = values[(values.indexOf(character) + 1) % values.size])
+}
+
+fun StyleOverride.nextMotion(): StyleOverride {
+    val values = listOf(null) + MotionFeel.entries
+    return copy(motion = values[(values.indexOf(motion) + 1) % values.size])
+}
+
+fun StyleOverride.nextCorners(): StyleOverride {
+    val values = listOf(null, 0, 8, 12)
+    return copy(radiusDp = values[(values.indexOf(radiusDp) + 1) % values.size])
+}
+
+fun StyleOverride.nextLabels(): StyleOverride {
+    val values = listOf(null, true, false)
+    return copy(designators = values[(values.indexOf(designators) + 1) % values.size])
+}

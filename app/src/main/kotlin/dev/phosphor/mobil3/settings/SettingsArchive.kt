@@ -86,6 +86,8 @@ object SettingsArchive {
         "fullscreen" to Spec(Kind.BOOLEAN),
         "linger_background" to Spec(Kind.BOOLEAN),
         "double_tap_playback" to Spec(Kind.BOOLEAN),
+        "controls_always_visible" to Spec(Kind.BOOLEAN),
+        "pip_auto_enter" to Spec(Kind.BOOLEAN),
         "view_lock" to Spec(Kind.BOOLEAN),
         "scope_rotation_locked" to Spec(Kind.BOOLEAN),
         "scope_locked_orientation" to intRange(-1, 14),

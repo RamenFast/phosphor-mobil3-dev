@@ -21,8 +21,11 @@ import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -31,6 +34,87 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+
+@Composable
+internal fun LiveStyleSample(p: Palette, reduced: Boolean, overrides: StyleOverride) {
+    val style = LocalRoomStyle.current
+    var active by remember { mutableStateOf(false) }
+    LaunchedEffect(overrides) { active = !active }
+    val travel by animateDpAsState(
+        if (active && !reduced) 8.dp else 0.dp,
+        styleSpec(reduced, style, Motion.settle), label = "style-sample",
+    )
+    val shape = androidx.compose.foundation.shape.RoundedCornerShape(style.cornerRadius)
+    Row(
+        Modifier.fillMaxWidth().padding(top = 8.dp)
+            .background(p.surface2.copy(alpha = style.panelAlphaScale), shape)
+            .border(Dim.hairline, p.lineStrong, shape)
+            .padding((12f * style.densityScale).dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        StoneKey("TRY", p, size = 48.dp, reduced = reduced, designator = "S0") { active = !active }
+        Column(Modifier.weight(1f).padding(start = 12.dp).offset { IntOffset(travel.roundToPx(), 0) }) {
+            if (style.designators) Mono("V0 · LIVE SAMPLE", p.muted, Type.dataXs)
+            Prose("${style.character.name} · ${style.motion.name}", p.ink)
+            Mono("${style.cornerRadius.value.toInt()}dp · ${if (style.designators) "part-nos" else "plain"}", p.muted, Type.dataXs)
+        }
+    }
+}
+
+internal fun Modifier.sliderTrack(p: Palette, lo: Float, hi: Float? = null): Modifier = drawBehind {
+    val geometry = SliderGeometry(size.width, density)
+    val midY = size.height / 2f
+    drawLine(p.line, Offset(geometry.start, midY), Offset(geometry.end, midY), geometry.trackPx)
+    val xLo = geometry.xAt(lo)
+    val xHi = hi?.let(geometry::xAt)
+    drawLine(
+        sliderAccent(p), Offset(if (xHi == null) geometry.start else xLo, midY),
+        Offset(xHi ?: xLo, midY), geometry.trackPx,
+    )
+    for (x in listOfNotNull(xLo, xHi)) {
+        drawRect(
+            p.ink,
+            Offset(x - geometry.thumbPx / 2f, midY - geometry.thumbPx / 2f),
+            androidx.compose.ui.geometry.Size(geometry.thumbPx, geometry.thumbPx),
+        )
+    }
+}
+
+@Composable
+internal fun SliderLane(
+    p: Palette,
+    fraction: Float,
+    modifier: Modifier = Modifier,
+    highFraction: Float? = null,
+    onStart: (Float) -> Unit = {},
+    onChange: (Float) -> Unit,
+) {
+    Box(
+        modifier.height(SliderGeometry.HIT_LANE_DP.dp)
+            .consoleSeekGesture(
+                durationMs = 1L,
+                onStart = onStart,
+                onScrub = onChange,
+                onCommit = onChange,
+                onCancel = {},
+            )
+            .sliderTrack(p, fraction, highFraction),
+    )
+}
+
+@Composable
+fun DragRuleInline(
+    value: Float,
+    p: Palette,
+    format: (Float) -> String,
+    modifier: Modifier = Modifier,
+    onChange: (Float) -> Unit,
+) {
+    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
+        SliderLane(p, value.coerceIn(0f, 1f), Modifier.weight(1f), onChange = onChange)
+        Mono(format(value), p.ink, Type.dataXs, Modifier.padding(start = 8.dp).width(44.dp))
+    }
+}
 
 // ── Haptics map (UX-SPEC §3, low intensities) ─────────────────────────────────
 object Haptics {

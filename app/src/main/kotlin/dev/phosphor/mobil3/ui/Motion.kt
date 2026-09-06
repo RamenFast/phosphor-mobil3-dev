@@ -260,8 +260,10 @@ fun <T> styleSpec(
     if (reduced) return snap()
     val ms = (durationMs * style.durationScale).toInt().coerceAtLeast(1)
     return when (style.motion) {
+        MotionFeel.Cut -> snap()
         MotionFeel.Detented -> tween(ms, easing = stepEasing())
-        else -> tween(ms, easing = easing)
+        MotionFeel.Springy -> spring(dampingRatio = 0.85f, stiffness = 500f)
+        MotionFeel.Eased -> tween(ms, easing = easing)
     }
 }
 

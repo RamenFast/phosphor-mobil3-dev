@@ -39,6 +39,7 @@ class ScopeUiState {
     var seekable by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
     var durationMs by mutableLongStateOf(0L)
+    var volumeFraction by mutableFloatStateOf(0f)
 
     var gain by mutableFloatStateOf(1.0f)
     var beamEnergy by mutableFloatStateOf(8.0f)
@@ -63,6 +64,18 @@ class ScopeUiState {
     var fullscreen by mutableStateOf(true)
     var lingerBackground by mutableStateOf(false)
     var doubleTapPlayback by mutableStateOf(true)
+    var pipAutoEnter by mutableStateOf(dev.phosphor.mobil3.PictureInPicturePolicy.DEFAULT)
+    private var keepControls by mutableStateOf(ControlsVisibilityPolicy.DEFAULT)
+    var controlsVisibilityRevision by mutableLongStateOf(0L)
+        private set
+    var controlsAlwaysVisible: Boolean
+        get() = keepControls
+        set(value) {
+            if (value != keepControls) {
+                keepControls = value
+                controlsVisibilityRevision++
+            }
+        }
     var uprightQuadrant by mutableIntStateOf(0)
     var chromeQuadrant by mutableIntStateOf(0)
     var viewLock by mutableStateOf(false)

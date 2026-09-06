@@ -40,7 +40,6 @@ enum class SettingsGlyph {
     Fps,
     Hud,
     Grid,
-    Deck,
     Knob,
     File,
     Folder,
@@ -318,31 +317,6 @@ object SettingsGlyphs {
         }.build()
     }
 
-    /** The deck: a closed transport chassis carrying two open tape reels. */
-    val Deck: ImageVector by lazy {
-        builder("Deck").apply {
-            hairline {
-                moveTo(3f, 6f)
-                lineTo(21f, 6f)
-                lineTo(21f, 18f)
-                lineTo(3f, 18f)
-                close()
-                moveTo(11f, 12f)
-                curveTo(11f, 13.66f, 9.66f, 15f, 8f, 15f)
-                curveTo(6.34f, 15f, 5f, 13.66f, 5f, 12f)
-                curveTo(5f, 10.34f, 6.34f, 9f, 8f, 9f)
-                curveTo(9.66f, 9f, 11f, 10.34f, 11f, 12f)
-                close()
-                moveTo(19f, 12f)
-                curveTo(19f, 13.66f, 17.66f, 15f, 16f, 15f)
-                curveTo(14.34f, 15f, 13f, 13.66f, 13f, 12f)
-                curveTo(13f, 10.34f, 14.34f, 9f, 16f, 9f)
-                curveTo(17.66f, 9f, 19f, 10.34f, 19f, 12f)
-                close()
-            }
-        }.build()
-    }
-
     /** Settings: a front-panel knob — closed dial, pointer, travel ticks. */
     val Knob: ImageVector by lazy {
         builder("Knob").apply {
@@ -547,7 +521,6 @@ object SettingsGlyphs {
     }
 
     fun vector(glyph: SettingsGlyph): ImageVector = when (glyph) {
-        SettingsGlyph.Deck -> Deck
         SettingsGlyph.Knob -> Knob
         SettingsGlyph.Fps -> Fps
         SettingsGlyph.Hud -> Hud

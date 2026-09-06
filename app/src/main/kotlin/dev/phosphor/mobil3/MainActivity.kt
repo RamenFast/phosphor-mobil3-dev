@@ -382,6 +382,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun onResume() {
         super.onResume()
         refreshCaptureMetadataAccess()
+        ui.volumeFraction = volumeFrac()
         // Resume only passive live sources once per process. Files and relays remain explicit choices.
         if (taskIsCurrent() && !lastSourceReopened) {
             lastSourceReopened = true
@@ -422,16 +423,24 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 if (landscape) android.util.Rational(16, 9)
                 else android.util.Rational(9, 16)
             )
-        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) builder.setAutoEnterEnabled(true)
+        if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
+            builder.setAutoEnterEnabled(PictureInPicturePolicy.platformAutoEnter(Build.VERSION.SDK_INT, ui.pipAutoEnter))
+        }
         if (hasSourceRectHint) builder.setSourceRectHint(sourceRectHint)
         return builder.build()
     }
 
     override fun onUserLeaveHint() {
-        if (Build.VERSION.SDK_INT < Build.VERSION_CODES.S && !isInPictureInPictureMode) {
+        if (PictureInPicturePolicy.enterOnLeave(Build.VERSION.SDK_INT, ui.pipAutoEnter, isInPictureInPictureMode)) {
             enterPictureInPictureMode(pictureInPictureParams())
         }
         super.onUserLeaveHint()
+    }
+
+    override fun enterPictureInPicture() {
+        if (PictureInPicturePolicy.enterManually(isInPictureInPictureMode)) {
+            enterPictureInPictureMode(pictureInPictureParams())
+        }
     }
 
     override fun onStart() {
@@ -539,11 +548,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // One gentle heartbeat for display facts Compose can't observe directly:
-    // seek position from the controller, the resting-beam flag, the breathing accent.
+    // seek position, system MUSIC volume, resting-beam flag and breathing accent.
     private var baseRoom: Palette? = null
     private var lastRxBytes = 0L
     private val uiTick = object : Runnable {
         override fun run() {
+            ui.volumeFraction = volumeFrac()
             controller?.let { c ->
                 val dur = c.duration
                 ui.seekable = !ui.remote && dur > 0 &&
@@ -1052,6 +1062,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("band_mode", ui.bandMode)
             putBoolean("fullscreen", ui.fullscreen)
             putBoolean("double_tap_playback", ui.doubleTapPlayback)
+            putBoolean(dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.KEY, ui.controlsAlwaysVisible)
+            putBoolean(PictureInPicturePolicy.KEY, ui.pipAutoEnter)
             putBoolean("scope_rotation_locked", scopeRotationLockState)
             putInt("scope_locked_orientation", lockedScopeOrientation)
             putBoolean("ui_placement_locked", uiPlacementLockState)
@@ -1088,6 +1100,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val p = prefs()
         ui.lingerBackground = BackgroundLifecyclePolicy.linger(p.all)
         ui.doubleTapPlayback = p.getBoolean("double_tap_playback", true)
+        ui.controlsAlwaysVisible = dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(p.all)
+        ui.pipAutoEnter = PictureInPicturePolicy.autoEnter(p.all)
+        updatePictureInPictureParams()
         ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
         lastRandomTrackTitle = runtimePrefs().getString("random_track_title", null)
@@ -1197,6 +1212,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setDoubleTapPlayback(on: Boolean) {
         ui.doubleTapPlayback = on
         prefs().edit { putBoolean("double_tap_playback", on) }
+    }
+
+    override fun setControlsAlwaysVisible(on: Boolean) {
+        ui.controlsAlwaysVisible = on
+        prefs().edit { putBoolean(dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.KEY, on) }
+    }
+
+    override fun setPipAutoEnter(on: Boolean) {
+        ui.pipAutoEnter = on
+        prefs().edit { putBoolean(PictureInPicturePolicy.KEY, on) }
+        updatePictureInPictureParams()
     }
 
     override fun openCaptureMetadataSettings() {
@@ -1703,5 +1729,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             (cubic * max).toInt().coerceIn(0, max),
             0,
         )
+        ui.volumeFraction = volumeFrac()
     }
 }

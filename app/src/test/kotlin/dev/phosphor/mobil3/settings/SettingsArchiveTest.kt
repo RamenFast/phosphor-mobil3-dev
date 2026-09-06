@@ -9,6 +9,54 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test fun phase9SettingsRoundTripAllIndependentBooleanCombinations() {
+        for (controls in listOf(false, true)) for (pip in listOf(false, true)) {
+            val values = mapOf("controls_always_visible" to controls, "pip_auto_enter" to pip)
+            val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3],
+                values + mapOf("consent_seen" to true, "last_source" to "capture"))
+            assertEquals(values.keys.sorted(), exported.exportedKeys)
+            val decoded = SettingsArchive.decode(exported.json).values
+            assertEquals(values, decoded)
+            assertEquals(controls, dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(decoded))
+            assertEquals(pip, dev.phosphor.mobil3.PictureInPicturePolicy.autoEnter(decoded))
+        }
+    }
+
+    @Test fun missingPhase9KeysKeepDefaultsOrPreviouslyExplicitValues() {
+        val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("grid" to false))
+        val old = SettingsArchive.decode(exported.json).values
+        assertFalse(dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(old))
+        assertTrue(dev.phosphor.mobil3.PictureInPicturePolicy.autoEnter(old))
+        val existing = mutableMapOf<String, Any>("controls_always_visible" to true, "pip_auto_enter" to false)
+        existing.putAll(old)
+        assertTrue(dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(existing))
+        assertFalse(dev.phosphor.mobil3.PictureInPicturePolicy.autoEnter(existing))
+    }
+
+    @Test fun phase9KeysRejectNonBooleanExportAndImportValues() {
+        for (key in listOf("controls_always_visible", "pip_auto_enter")) for (invalid in listOf<Any>("false", 0, 1)) {
+            val error = assertFailsWith<SettingsArchive.ArchiveException> {
+                SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf(key to invalid))
+            }
+            assertEquals("invalid_setting_type", error.error)
+            val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf(key to true))
+            val root = JSONObject(exported.json)
+            root.getJSONObject("settings").put(key, invalid)
+            val encoded = if (invalid is String) "\"$invalid\"" else invalid.toString()
+            val canonical = "{" +
+                "\"exported_at\":\"${metadata[3]}\"," +
+                "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+                "\"settings\":{\"$key\":$encoded}," +
+                "\"source_distribution\":\"${metadata[2]}\"," +
+                "\"source_package\":\"${metadata[0]}\"," +
+                "\"source_version\":\"${metadata[1]}\"}"
+            root.put("content_sha256", MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) })
+            val imported = assertFailsWith<SettingsArchive.ArchiveException> { SettingsArchive.decode(root.toString()) }
+            assertEquals("invalid_setting_type", imported.error)
+        }
+    }
+
     @Test
     fun doubleTapBooleanRoundTripsWithoutRuntimeOrOtherSettings() {
         for (enabled in listOf(false, true)) {

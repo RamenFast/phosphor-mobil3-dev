@@ -13,6 +13,8 @@ import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.BoxWithConstraints
+import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.fillMaxSize
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.windowInsetsPadding
@@ -41,6 +43,7 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.LayoutCoordinates
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalLayoutDirection
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
@@ -165,6 +168,9 @@ interface ScopeActions {
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
     fun setLingerBackground(on: Boolean)
+    fun setControlsAlwaysVisible(on: Boolean)
+    fun setPipAutoEnter(on: Boolean)
+    fun enterPictureInPicture()
     fun setDoubleTapPlayback(on: Boolean)
     fun openCaptureMetadataSettings()
     fun openLink(url: String)
@@ -244,6 +250,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         else -> actualLandscape
     }
     var consoleVisible by remember { mutableStateOf(true) }
+    val consoleShown = ControlsVisibilityPolicy.visible(consoleVisible, state.controlsAlwaysVisible)
+    LaunchedEffect(state.controlsAlwaysVisible) {
+        if (state.controlsAlwaysVisible) consoleVisible = true
+    }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     var manualFrom by remember { mutableStateOf(Sheet.SETTINGS) } // where MANUAL returns to
     var overflowComposed by remember { mutableStateOf(false) }
@@ -309,15 +319,18 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     // Predictive back peels one layer at a time: popout → sheet → console → system.
     BackHandler(enabled = overflowComposed) { closeOverflow(Sheet.NONE) }
     BackHandler(enabled = !overflowComposed && sheet != Sheet.NONE) { sheet = Sheet.NONE }
-    BackHandler(enabled = !overflowComposed && sheet == Sheet.NONE && consoleVisible) {
-        consoleVisible = false
+    BackHandler(enabled = !overflowComposed && sheet == Sheet.NONE && consoleShown && !state.controlsAlwaysVisible) {
+        consoleVisible = ControlsVisibilityPolicy.afterHide(state.controlsAlwaysVisible)
     }
 
     // Console auto-hides after 4 s of no interaction (burn-in + clean stage).
-    LaunchedEffect(consoleVisible, sheet, overflowComposed) {
-        if (consoleVisible && sheet == Sheet.NONE && !overflowComposed) {
+    LaunchedEffect(consoleShown, sheet, overflowComposed, state.controlsVisibilityRevision) {
+        val revision = state.controlsVisibilityRevision
+        if (consoleShown && sheet == Sheet.NONE && !overflowComposed && !state.controlsAlwaysVisible) {
             delay(4000)
-            consoleVisible = false
+            if (ControlsVisibilityPolicy.timeoutCanHide(
+                    state.controlsAlwaysVisible, revision, state.controlsVisibilityRevision,
+                )) consoleVisible = ControlsVisibilityPolicy.afterHide(state.controlsAlwaysVisible)
         }
     }
 
@@ -348,6 +361,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setHudMode(mode: Int) = actions.setHudMode(mode)
             override fun setFullscreen(on: Boolean) = actions.setFullscreen(on)
             override fun setLingerBackground(on: Boolean) = actions.setLingerBackground(on)
+            override fun setControlsAlwaysVisible(on: Boolean) = actions.setControlsAlwaysVisible(on)
+            override fun setPipAutoEnter(on: Boolean) = actions.setPipAutoEnter(on)
+            override fun enterPictureInPicture() = actions.enterPictureInPicture()
             override fun setDoubleTapPlayback(on: Boolean) = actions.setDoubleTapPlayback(on)
             override fun openCaptureMetadataSettings() = actions.openCaptureMetadataSettings()
             override fun isScopeRotationLocked() = actions.isScopeRotationLocked()
@@ -377,6 +393,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 actions.setRemoteStreams(audio, geometry)
             override fun disconnectRemote() = actions.disconnectRemote()
             override fun openFolder() = actions.openFolder()
+            override fun jumpToQueue(index: Int) = actions.jumpToQueue(index)
         }
     }
 
@@ -550,7 +567,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     // bottom band may summon it (with the same bloom); gain/orbit
                                     // keep every other clearly classified stage drag.
                                     override fun bottomPullArmed() =
-                                        !consoleVisible && !overflowComposed
+                                        !ControlsVisibilityPolicy.visible(consoleVisible, state.controlsAlwaysVisible) && !overflowComposed
                                     override fun beginBottomChromePull(resistancePx: Float) {
                                         edgeTravelPx = 0f
                                         settingsHandedOff = false
@@ -596,7 +613,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                         }
                                         settingsPullActive = false
                                         sheet = Sheet.NONE
-                                        consoleVisible = false
+                                        consoleVisible = ControlsVisibilityPolicy.afterHide(state.controlsAlwaysVisible)
                                     }
                                     override fun view() = view
                                 }
@@ -607,7 +624,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                             detectTapGestures(
                                 onTap = {
                                     if (overflowComposed) closeOverflow(Sheet.NONE)
-                                    else consoleVisible = !consoleVisible
+                                    else consoleVisible = ControlsVisibilityPolicy.afterTap(consoleVisible, state.controlsAlwaysVisible)
                                 },
                                 onDoubleTap = if (state.doubleTapPlayback) {
                                     { currentActions.togglePlay() }
@@ -622,11 +639,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 1a: read-only status band.
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.
-            if (state.bandMode == 0 || (state.bandMode == 1 && consoleVisible)) {
+            if (state.bandMode == 0 || (state.bandMode == 1 && consoleShown)) {
                 StatusBand(
                     state, p, reduced,
                     hudVisible = state.hudMode == 0 ||
-                        (state.hudMode == 1 && consoleVisible),
+                        (state.hudMode == 1 && consoleShown),
                 )
             }
 
@@ -644,7 +661,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 1b: console strip, auto-hiding, with the settle-down exit.
             AnimatedVisibility(
-                visible = consoleVisible && (sheet == Sheet.NONE || settingsPullActive),
+                visible = consoleShown && (sheet == Sheet.NONE || settingsPullActive),
                 enter = fadeIn(motionSpec(reduced, Motion.summon)),
                 exit = fadeOut(motionSpec(reduced, Motion.settle)) +
                     slideOutVertically(motionSpec(reduced, Motion.settle)) { it / 12 },
@@ -666,6 +683,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onSettingsSwipe = {
                         if (!overflowComposed) sheet = Sheet.SETTINGS
                     },
+                    onVolume = { actions.setVolume(it) },
                     settingsPullHost = settingsPullHost,
                     moreActive = overflowComposed,
                     overflowPullHost = overflowPullHost,
@@ -676,19 +694,34 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // The ⋯ overflow popout (Obsidian-persistent, anchored above the console).
             if (overflowComposed && sheet == Sheet.NONE) {
-                Box(
+                val physicalInsets = chromeSafeDrawingInsets(0.dp, 0.dp)
+                val direction = LocalLayoutDirection.current
+                val insets = OverflowPopoutPolicy.rotatedInsets(
+                    listOf(
+                        physicalInsets.getLeft(density, direction), physicalInsets.getTop(density),
+                        physicalInsets.getRight(density, direction), physicalInsets.getBottom(density),
+                    ),
+                    chromeQuadrant,
+                )
+                val consoleHeight = with(density) { consoleHeightPx.toDp() }
+                BoxWithConstraints(
                     Modifier
                         .align(Alignment.BottomCenter)
-                        .padding(
-                            bottom = with(density) { consoleHeightPx.toDp() } + Dim.popoutGap
-                        ),
+                        // Console height already includes its bottom inset and margin.
+                        .windowInsetsPadding(WindowInsets(left = insets[0], top = insets[1], right = insets[2])),
                 ) {
+                  val viewportHeight = OverflowPopoutPolicy.viewportHeight(
+                      maxHeight.value, consoleHeight.value, Dim.popoutGap.value,
+                  ).dp
+                  Box(Modifier.padding(bottom = consoleHeight + Dim.popoutGap)) {
                     OverflowPopout(
                         p,
                         state = state,
                         reduced = reduced,
                         reveal = overflowReveal,
-                        onDeck = { closeOverflow(Sheet.DECK) },
+                        maxHeight = viewportHeight,
+                        onPictureInPicture = { actions.enterPictureInPicture() },
+                        onPipAutoEnter = { actions.setPipAutoEnter(!state.pipAutoEnter) },
                         onLight = { closeOverflow(Sheet.LIGHT) },
                         onRoom = { closeOverflow(Sheet.ROOM) },
                         onSettings = { closeOverflow(Sheet.SETTINGS) },
@@ -703,6 +736,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                         onGrid = { sheetActions.setGrid(!state.grid) },
                         onRequestClose = { closeOverflow(Sheet.NONE) },
                     )
+                  }
                 }
             }
 
@@ -745,17 +779,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) }) {
                     sheet = Sheet.NONE
                 }
-                Sheet.DECK -> DeckSheet(
-                    state, p, reduced,
-                    onPlay = { actions.togglePlay() },
-                    onNext = { actions.next() },
-                    onPrev = { actions.prev() },
-                    onSeek = { actions.seekTo(it) },
-                    onJump = { actions.jumpToQueue(it) },
-                    volumeFrac = { actions.volumeFrac() },
-                    onVolume = { actions.setVolume(it) },
-                    onOpenFolder = { actions.openFolder() },
-                ) { sheet = Sheet.NONE }
                 Sheet.SETTINGS -> SettingsSheet(
                     state, p, reduced,
                     sheetActions.withSheetRouting(

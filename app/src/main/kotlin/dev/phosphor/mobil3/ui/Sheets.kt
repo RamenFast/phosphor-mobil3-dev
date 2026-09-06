@@ -21,7 +21,6 @@ import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
-import androidx.compose.foundation.gestures.detectHorizontalDragGestures
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -41,6 +40,9 @@ import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.lazy.grid.GridCells
+import androidx.compose.foundation.lazy.grid.GridItemSpan
+import androidx.compose.foundation.lazy.LazyColumn
+import androidx.compose.foundation.lazy.itemsIndexed
 import androidx.compose.foundation.lazy.grid.LazyVerticalGrid
 import androidx.compose.foundation.lazy.grid.itemsIndexed
 import androidx.compose.foundation.lazy.grid.rememberLazyGridState
@@ -81,7 +83,7 @@ import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, DECK, MANUAL }
+enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, MANUAL }
 
 private fun sheetCurlProgress(
     fillFraction: Float,
@@ -433,7 +435,7 @@ fun SheetHost(
     }
 }
 
-// A draggable mono numeric: horizontal drag scrubs the value along a hairline rule.
+// Labels sit above the lane so narrow sheets keep the full usable track width.
 @Composable
 fun DragRule(
     label: String,
@@ -444,36 +446,15 @@ fun DragRule(
     format: (Float) -> String = { "%.2f".format(it) },
     onChange: (Float) -> Unit,
 ) {
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Mono(label, p.ink2, Type.data, Modifier.width(96.dp))
-        Box(
-            Modifier
-                .weight(1f)
-                .height(28.dp)
-                .pointerInput(min, max) {
-                    detectHorizontalDragGestures { change, _ ->
-                        change.consume()
-                        val frac = (change.position.x / size.width).coerceIn(0f, 1f)
-                        onChange(min + frac * (max - min))
-                    }
-                }
-                .drawBehind {
-                    val midY = size.height / 2f
-                    drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
-                    val x = ((value - min) / (max - min)).coerceIn(0f, 1f) * size.width
-                    drawLine(p.liveAccent, Offset(0f, midY), Offset(x, midY), 1.dp.toPx())
-                    val half = 4.dp.toPx()
-                    drawRect(
-                        p.ink,
-                        topLeft = Offset(x - half, midY - half),
-                        size = androidx.compose.ui.geometry.Size(half * 2, half * 2),
-                    )
-                },
-        )
-        Mono(format(value), p.ink, Type.data, Modifier.padding(start = 10.dp).width(56.dp))
+    val unit = remember { SliderGeometry(1f, 0f) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+            Mono(label, p.ink2, Type.data)
+            Mono(format(value), p.ink, Type.data)
+        }
+        SliderLane(p, unit.fraction(value, min, max), Modifier.fillMaxWidth()) {
+            onChange(unit.valueAt(it, min, max))
+        }
     }
 }
 
@@ -493,13 +474,11 @@ fun RangeDragRule(
     format: (Float) -> String = { "%.2f".format(it) },
     onChange: (Float, Float) -> Unit,
 ) {
-    val grab = remember { androidx.compose.runtime.mutableIntStateOf(-1) }
-    Row(
-        Modifier.fillMaxWidth().padding(vertical = 6.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
+    val grab = remember { androidx.compose.runtime.mutableIntStateOf(0) }
+    val unit = remember { SliderGeometry(1f, 0f) }
+    Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(
-            Modifier.width(96.dp).then(
+            Modifier.fillMaxWidth().then(
                 if (onLabelTap != null) Modifier.clickable { onLabelTap() } else Modifier
             ),
             verticalAlignment = Alignment.CenterVertically,
@@ -515,53 +494,17 @@ fun RangeDragRule(
             )
             Spacer(Modifier.width(8.dp))
             Mono(label, if (armed) p.accent else p.ink2, Type.data)
+            Spacer(Modifier.weight(1f))
+            Mono("${format(lo)}–${format(hi)}", p.ink, Type.dataXs)
         }
-        Box(
-            Modifier
-                .weight(1f)
-                .height(28.dp)
-                .pointerInput(min, max) {
-                    detectHorizontalDragGestures(
-                        onDragStart = { down ->
-                            val span = (max - min).takeIf { it > 0f } ?: 1f
-                            val xLo = ((lo - min) / span).coerceIn(0f, 1f) * size.width
-                            val xHi = ((hi - min) / span).coerceIn(0f, 1f) * size.width
-                            grab.intValue =
-                                if (kotlin.math.abs(down.x - xLo) <= kotlin.math.abs(down.x - xHi)) 0 else 1
-                        },
-                        onDragEnd = { grab.intValue = -1 },
-                        onDragCancel = { grab.intValue = -1 },
-                    ) { change, _ ->
-                        change.consume()
-                        val frac = (change.position.x / size.width).coerceIn(0f, 1f)
-                        val v = min + frac * (max - min)
-                        if (grab.intValue == 0) onChange(v.coerceIn(min, hi), hi)
-                        else onChange(lo, v.coerceIn(lo, max))
-                    }
-                }
-                .drawBehind {
-                    val midY = size.height / 2f
-                    drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
-                    val span = (max - min).takeIf { it > 0f } ?: 1f
-                    val xLo = ((lo - min) / span).coerceIn(0f, 1f) * size.width
-                    val xHi = ((hi - min) / span).coerceIn(0f, 1f) * size.width
-                    drawLine(p.liveAccent, Offset(xLo, midY), Offset(xHi, midY), 1.dp.toPx())
-                    val half = 4.dp.toPx()
-                    for (x in floatArrayOf(xLo, xHi)) {
-                        drawRect(
-                            p.ink,
-                            topLeft = Offset(x - half, midY - half),
-                            size = androidx.compose.ui.geometry.Size(half * 2, half * 2),
-                        )
-                    }
-                },
-        )
-        Mono(
-            "${format(lo)}–${format(hi)}",
-            p.ink,
-            Type.dataXs,
-            Modifier.padding(start = 10.dp).width(72.dp),
-        )
+        SliderLane(
+            p, unit.fraction(lo, min, max), Modifier.fillMaxWidth(),
+            highFraction = unit.fraction(hi, min, max),
+            onStart = { grab.intValue = unit.nearestThumb(it, lo, hi, min, max) },
+        ) {
+            val moved = unit.moveThumb(grab.intValue, it, lo, hi, min, max)
+            onChange(moved.first, moved.second)
+        }
     }
 }
 
@@ -620,6 +563,27 @@ fun SourceSheet(
             checked = state.sourceLabel == "deck" && state.queueTitles.size > 1,
             glyph = SettingsGlyph.Folder,
         ) { actions.openFolder(); onDismiss() }
+        SectionHeading("QUEUE", p)
+        if (state.queueTitles.isEmpty()) {
+            Prose("Open a folder to load its supported audio as a queue.", p.muted)
+        } else {
+            LazyColumn(Modifier.height(260.dp)) {
+                itemsIndexed(state.queueTitles) { i, title ->
+                    val active = i == state.queueIndex
+                    Row(
+                        Modifier.fillMaxWidth()
+                            .border(Dim.hairline, if (active) p.accent else p.line)
+                            .clickable { actions.jumpToQueue(i) }
+                            .padding(horizontal = Dim.rowPad, vertical = 9.dp),
+                    ) {
+                        Mono("%02d".format(i + 1), if (active) p.accent else p.muted, Type.dataXs)
+                        Spacer(Modifier.width(Dim.gapLg))
+                        Mono(title, if (active) p.accent else p.ink, Type.data)
+                    }
+                    Spacer(Modifier.height(5.dp))
+                }
+            }
+        }
         Row(
             Modifier.fillMaxWidth(),
             verticalAlignment = Alignment.CenterVertically,
@@ -934,64 +898,55 @@ fun RoomSheet(
                     }
                 }
             }
-        }
-
-        // Persisted style overrides layer on top of the active room; match clears an override.
-        SectionHeading("STYLE", p)
-        val ov = state.styleOverride
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.weight(1f)) {
-                ChipCell(
-                    "FEEL · " + (ov.character?.name?.lowercase() ?: "match"),
-                    active = ov.character != null, p = p, small = true,
-                ) {
-                    val all = listOf(null) + ChromeCharacter.entries
-                    state.styleOverride = ov.copy(
-                        character = all[(all.indexOf(ov.character) + 1) % all.size]
-                    )
-                }
-            }
-            Box(Modifier.weight(1f)) {
-                ChipCell(
-                    "MOTION · " + (ov.motion?.name?.lowercase() ?: "match"),
-                    active = ov.motion != null, p = p, small = true,
-                ) {
-                    val all = listOf(null) + MotionFeel.entries
-                    state.styleOverride = ov.copy(
-                        motion = all[(all.indexOf(ov.motion) + 1) % all.size]
-                    )
-                }
-            }
-        }
-        Spacer(Modifier.height(6.dp))
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-            Box(Modifier.weight(1f)) {
-                ChipCell(
-                    "CORNERS · " + (ov.radiusDp?.let { "${it}dp" } ?: "match"),
-                    active = ov.radiusDp != null, p = p, small = true,
-                ) {
-                    val all = listOf(null, 0, 8, 12)
-                    state.styleOverride = ov.copy(
-                        radiusDp = all[(all.indexOf(ov.radiusDp) + 1) % all.size]
-                    )
-                }
-            }
-            Box(Modifier.weight(1f)) {
-                ChipCell(
-                    "LABELS · " + (ov.designators?.let { if (it) "part-nos" else "plain" } ?: "match"),
-                    active = ov.designators != null, p = p, small = true,
-                ) {
-                    val all = listOf(null, true, false)
-                    state.styleOverride = ov.copy(
-                        designators = all[(all.indexOf(ov.designators) + 1) % all.size]
+            item(span = { GridItemSpan(maxLineSpan) }) {
+                Column(Modifier.fillMaxWidth()) {
+                    SectionHeading("STYLE", p)
+                    val ov = state.styleOverride
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            ChipCell(
+                                "FEEL · " + (ov.character?.name?.lowercase() ?: "match"),
+                                active = ov.character != null, p = p, small = true,
+                            ) {
+                                state.styleOverride = state.styleOverride.nextCharacter()
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            ChipCell(
+                                "MOTION · " + (ov.motion?.name?.lowercase() ?: "match"),
+                                active = ov.motion != null, p = p, small = true,
+                            ) {
+                                state.styleOverride = state.styleOverride.nextMotion()
+                            }
+                        }
+                    }
+                    Spacer(Modifier.height(6.dp))
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                        Box(Modifier.weight(1f)) {
+                            ChipCell(
+                                "CORNERS · " + (ov.radiusDp?.let { "${it}dp" } ?: "match"),
+                                active = ov.radiusDp != null, p = p, small = true,
+                            ) {
+                                state.styleOverride = state.styleOverride.nextCorners()
+                            }
+                        }
+                        Box(Modifier.weight(1f)) {
+                            ChipCell(
+                                "LABELS · " + (ov.designators?.let { if (it) "part-nos" else "plain" } ?: "match"),
+                                active = ov.designators != null, p = p, small = true,
+                            ) {
+                                state.styleOverride = state.styleOverride.nextLabels()
+                            }
+                        }
+                    }
+                    LiveStyleSample(p, reduced, state.styleOverride)
+                    Prose(
+                        "FEEL sets the chrome defaults. MOTION, CORNERS and LABELS override them. Match follows FEEL, or the room when FEEL matches.",
+                        p.muted, modifier = Modifier.padding(top = 6.dp),
                     )
                 }
             }
         }
-        Prose(
-            "overrides ride on top of whichever room you are in — match hands the choice back",
-            p.muted, modifier = Modifier.padding(top = 6.dp),
-        )
     }
 }
 
@@ -1143,6 +1098,15 @@ fun SettingsSheet(
         }
         val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
+            ChipCell(
+                "CONTROLS ALWAYS VISIBLE · " + if (state.controlsAlwaysVisible) "on" else "off",
+                active = state.controlsAlwaysVisible, p = p, small = true,
+            ) { actions.setControlsAlwaysVisible(!state.controlsAlwaysVisible) }
+            ChipCell(
+                "AUTO PiP · " + if (state.pipAutoEnter) "on" else "off",
+                active = state.pipAutoEnter, p = p, small = true,
+            ) { actions.setPipAutoEnter(!state.pipAutoEnter) }
+            FlatKey("ENTER PiP", p) { actions.enterPictureInPicture() }
             ChipCell(
                 "DOUBLE TAP PLAYBACK · " + if (state.doubleTapPlayback) "on" else "off",
                 active = state.doubleTapPlayback, p = p, small = true,
@@ -1395,6 +1359,10 @@ fun SettingsSheet(
 
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
+    fun jumpToQueue(index: Int)
+    fun setControlsAlwaysVisible(on: Boolean)
+    fun setPipAutoEnter(on: Boolean)
+    fun enterPictureInPicture()
     fun setDoubleTapPlayback(on: Boolean)
     fun setFullscreen(on: Boolean)
     fun setLingerBackground(on: Boolean)

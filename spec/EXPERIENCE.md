@@ -41,6 +41,8 @@ The sheet must respect safe drawing insets, display cutouts, and rounded physica
 
 Back, scrim, close control, and dismissal gestures must converge on one exit path.
 
+The quick popout stays anchored above the measured console until an explicit action or dismissal drag closes it. Its viewport uses the remaining safe height in the current rotated chrome frame. All destinations and quick toggles, including AUTO PiP, share one vertical scroll owner. Content consumes normal scrolling first. Only a downward remainder at the top pulls the existing reveal closed. Reversing that pull restores the popout before scrolling content. A content fling must not initiate dismissal. Short frames and larger text must retain scroll recovery without shrinking the 44dp slider lanes.
+
 ## 5. Rotation authority
 
 Android system rotation lock has final authority.
@@ -88,9 +90,11 @@ The capture seek rule appears only when the active session advertises seek, supp
 
 Picture-in-picture must retain the live scope and current source truth.
 
-Android 12 and newer may use automatic entry. Android 10 and 11 use a compatible manual entry path.
+Android 12 and newer use the platform automatic-entry parameter. Android 10 and 11 use `onUserLeaveHint` as the automatic fallback.
 
 The `pip_auto_enter` setting defaults to `true` and appears in quick and full settings. It controls automatic entry only. Manual picture-in-picture remains available in either setting state, and picture-in-picture must not depend on `linger_background` or `controls_always_visible`.
+
+The quick popout's PiP action and full settings' ENTER PiP action request manual entry through the existing Activity action adapters. Changing or restoring `pip_auto_enter` must refresh Android's parameters immediately. The real Android callback remains the owner of visible PiP state.
 
 The app must update the source rectangle and aspect ratio after configuration changes.
 
@@ -102,9 +106,17 @@ Theme, beam, grid, glow, motion, and photosensitivity settings must persist with
 
 FEEL, MOTION, CORNERS, and LABELS must change visible chrome immediately while their settings surface is open. The preview must not restyle the CRT beam or grid.
 
-DECK must not remain a destination. Before removal, its existing queue and jump action move to SOURCE, and its volume control moves to the console. `controls_always_visible=false` keeps the current hide behavior. When enabled, it blocks both timed and tap-to-hide paths.
+FEEL selects its canonical chrome defaults, including motion, density, prose font, corners, labels, and panel transparency. Explicit MOTION, CORNERS, and LABELS choices then override those defaults. Match follows the selected FEEL, or the displayed room when FEEL also matches. Changing MOTION must replace the prior duration scale rather than retaining another room's scale. Reduced motion has final authority over animation. One live sample row reads the same `LocalRoomStyle` as the surrounding chrome and offers a manual TRY action without a looping effect.
+
+DECK must not remain a destination. Before removal, its existing queue and jump action move to SOURCE, and its volume control moves to the console. SOURCE must not duplicate its artwork or transport controls. Native and JNI deck playback remain unchanged. The console volume rule keeps the existing system-volume action and cubic taper.
+
+The console reads observable current MUSIC volume, not a slider-owned cache. The existing foreground 500ms UI heartbeat refreshes the inverse-cubic fraction even while playback is paused or no controller is connected. Foreground return and slider writes refresh it immediately. The heartbeat starts with the Activity and is removed on stop. Hardware, system and route changes must reach the pinned readout without slider input. The existing cubic write and inverse-cubic read adapters remain unchanged.
+
+`controls_always_visible=false` keeps the current hide behavior. When enabled, it immediately reveals a hidden console and blocks timed, tap, Back, and cancelled-pull hiding. Sheets still own their modal surface, and PiP still owns its chrome-free layout. Every change to this setting invalidates a pending hide timer, including an enable-disable sequence before the old delay expires. HUD and band retain their existing modes and follow effective console visibility only in automatic mode.
 
 Seek, tuning, range, and inline volume controls must provide a 44dp touch lane, a sharp 2dp track, square thumbs, live beam accent, and tap-to-jump or nearest-thumb behavior.
+
+All four rules use the same production hit and draw geometry, with inset endpoints that keep the square thumb inside the lane. Tuning and range labels sit above a full-width lane. Inline volume has no fixed label column inside its slider. Range chooses the nearest thumb at the initial pointer position, chooses the lower thumb on a tie, and clamps without crossing. Seek commits on release and discards interrupted scrubs. Vertical intent yields to the console pull or sheet scroll without seeking, and additional or consumed pointers cancel slider ownership.
 
 The grid must remain visible against the tube. When `grid_data=true`, the status surface shows independent raw left and right amplitude with absolute dBFS. A left-only or right-only source must label the correct side. Xy45 rotates both trace and grid by 45 degrees. Other modes restore the Cartesian grid.
 

@@ -24,7 +24,7 @@ class DoubleTapPolicyTest {
         assertEquals(1, Regex("currentActions\\.togglePlay\\(\\)").findAll(tap).count())
         assertTrue("val currentActions by rememberUpdatedState(actions)" in screen)
         assertTrue("if (overflowComposed) closeOverflow(Sheet.NONE)" in tap)
-        assertTrue("else consoleVisible = !consoleVisible" in tap)
+        assertTrue("else consoleVisible = ControlsVisibilityPolicy.afterTap(consoleVisible, state.controlsAlwaysVisible)" in tap)
         assertFalse("onDoubleTap = {" in tap)
     }
 

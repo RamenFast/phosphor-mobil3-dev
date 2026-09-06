@@ -3,8 +3,6 @@ package dev.phosphor.mobil3.ui
 import androidx.compose.animation.core.InfiniteRepeatableSpec
 import androidx.compose.animation.core.LinearEasing
 import androidx.compose.animation.core.RepeatMode
-import androidx.compose.foundation.gestures.detectVerticalDragGestures
-import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.animation.core.animateFloat
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.tween
@@ -20,11 +18,14 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.layout.windowInsetsPadding
 import androidx.compose.foundation.layout.widthIn
+import androidx.compose.foundation.rememberScrollState
+import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -32,6 +33,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -40,9 +42,14 @@ import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.IntOffset
+import androidx.compose.ui.unit.Dp
+import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
@@ -142,7 +149,7 @@ fun SeekRule(
             Modifier
                 .weight(1f)
                 .padding(horizontal = 8.dp)
-                .height(20.dp)
+                .height(SliderGeometry.HIT_LANE_DP.dp)
                 .consoleSeekGesture(
                     durationMs = durationMs,
                     onScrub = { scrub = it },
@@ -152,19 +159,7 @@ fun SeekRule(
                     },
                     onCancel = { scrub = -1f },
                 )
-                .drawBehind {
-                    val midY = size.height / 2f
-                    drawLine(p.line, Offset(0f, midY), Offset(size.width, midY), 1.dp.toPx())
-                    val x = frac.coerceIn(0f, 1f) * size.width
-                    // The played portion glows the live beam's phosphor.
-                    drawLine(p.liveAccent, Offset(0f, midY), Offset(x, midY), 1.dp.toPx())
-                    val half = 4.dp.toPx()
-                    drawRect(
-                        p.ink,
-                        topLeft = Offset(x - half, midY - half),
-                        size = androidx.compose.ui.geometry.Size(half * 2, half * 2),
-                    )
-                },
+                .sliderTrack(p, frac),
         )
         Mono(if (durationMs > 0) fmt(durationMs) else "–:––", p.muted, Type.dataXs)
     }
@@ -184,6 +179,7 @@ fun Console(
     onPrev: () -> Unit,
     onSeek: (Long) -> Unit,
     onSettingsSwipe: () -> Unit,
+    onVolume: (Float) -> Unit,
     settingsPullHost: PullGestureHost,
     moreActive: Boolean,
     overflowPullHost: PullGestureHost,
@@ -199,11 +195,12 @@ fun Console(
     Box(
         Modifier
             .fillMaxWidth()
+            // The popout anchors above the full occupied height, including safe padding.
+            .onSizeChanged { onHeightChanged(it.height) }
             .windowInsetsPadding(
                 chromeSafeDrawingInsets(Dim.cardMarginH, Dim.cardMarginBottom)
             )
             .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
-            .onSizeChanged { onHeightChanged(it.height) }
             .burnInWalk(reduced),
         contentAlignment = Alignment.BottomCenter,
     ) {
@@ -277,6 +274,13 @@ fun Console(
                     onTap = onMore,
                 )
             }
+            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                Mono("VOL", p.muted, Type.dataXs, Modifier.padding(end = 8.dp))
+                DragRuleInline(
+                    state.volumeFraction, p, { "${(it * 100).roundToInt()} %" }, Modifier.weight(1f),
+                    onChange = onVolume,
+                )
+            }
         }
     }
 }
@@ -346,13 +350,30 @@ fun BenchPost(state: ScopeUiState, p: Palette) {
 
 // ── The ⋯ overflow — an anchored popout, Obsidian-persistent. Rows only exist
 //    once their feature is real (no dead chrome, honesty law). ──
+internal object OverflowPopoutPolicy {
+    fun viewportHeight(safeFrameHeight: Float, consoleHeight: Float, gap: Float): Float =
+        (safeFrameHeight - consoleHeight - gap).coerceAtLeast(0f)
+
+    // Left, top, right, bottom in the CCW-rotated chrome's coordinates.
+    fun rotatedInsets(physical: List<Int>, quadrant: Int): List<Int> =
+        List(4) { physical[Math.floorMod(it - quadrant, 4)] }
+
+    fun reverseDelta(delta: Float, dismissPx: Float): Float =
+        if (dismissPx <= 0f) 0f else delta.coerceIn(-dismissPx, 0f)
+
+    fun shouldClose(dismissPx: Float, heightPx: Float): Boolean =
+        heightPx > 0f && dismissPx / heightPx > 0.4f
+}
+
 @Composable
 fun OverflowPopout(
     p: Palette,
     state: ScopeUiState,
     reduced: Boolean,
     reveal: PullRevealState,
-    onDeck: () -> Unit,
+    maxHeight: Dp,
+    onPictureInPicture: () -> Unit,
+    onPipAutoEnter: () -> Unit,
     onLight: () -> Unit,
     onRoom: () -> Unit,
     onSettings: () -> Unit,
@@ -364,10 +385,58 @@ fun OverflowPopout(
     val style = LocalRoomStyle.current
     val shape = RoundedCornerShape(style.cornerRadius)
     var heightPx by remember { mutableIntStateOf(0) }
+    val scroll = rememberScrollState()
+    val currentStyle by rememberUpdatedState(style)
+    val currentReduced by rememberUpdatedState(reduced)
+    val currentClose by rememberUpdatedState(onRequestClose)
+    val dismissScroll = remember(reveal, scroll) {
+        object : NestedScrollConnection {
+            private var dragging = false
+            private var dismissPx = 0f
+
+            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+                if (source != NestedScrollSource.UserInput || !dragging) return Offset.Zero
+                val delta = OverflowPopoutPolicy.reverseDelta(available.y, dismissPx)
+                dismissPx += delta
+                if (delta != 0f) reveal.dragBy(-delta)
+                return Offset(0f, delta)
+            }
+
+            override fun onPostScroll(
+                consumed: Offset,
+                available: Offset,
+                source: NestedScrollSource,
+            ): Offset {
+                // Content gets first refusal. A fling cannot start a dismissal.
+                if (source != NestedScrollSource.UserInput || available.y <= 0f || scroll.canScrollBackward) {
+                    return Offset.Zero
+                }
+                if (!dragging) {
+                    dragging = true
+                    dismissPx = (1f - reveal.progress) * heightPx
+                    reveal.begin(resetClosed = false)
+                }
+                dismissPx = (dismissPx + available.y).coerceAtMost(heightPx.toFloat())
+                reveal.dragBy(-available.y)
+                return Offset(0f, available.y)
+            }
+
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (!dragging) return Velocity.Zero
+                dragging = false
+                if (OverflowPopoutPolicy.shouldClose(dismissPx, heightPx.toFloat())) currentClose()
+                else reveal.settleTo(true, currentStyle, currentReduced)
+                val consumed = if (dismissPx > 0f) Velocity(0f, available.y) else Velocity.Zero
+                dismissPx = 0f
+                return consumed
+            }
+        }
+    }
     val progress = reveal.progress
     Column(
         Modifier
             .width(Dim.popoutWidth)
+            .heightIn(max = maxHeight)
             .onSizeChanged {
                 heightPx = it.height
                 reveal.setTravelPx(it.height.toFloat())
@@ -384,25 +453,13 @@ fun OverflowPopout(
             .clip(shape)
             .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
             .border(Dim.hairline, p.lineStrong, shape)
-            // A downward drag anywhere on the open menu tracks the finger back out.
-            .pointerInput(reveal) {
-                detectVerticalDragGestures(
-                    onDragStart = { reveal.begin(resetClosed = false) },
-                    onDragEnd = {
-                        if (reveal.progress < 0.6f) onRequestClose()
-                        else reveal.settleTo(true, style, reduced)
-                    },
-                    onDragCancel = { reveal.settleTo(true, style, reduced) },
-                ) { change, delta ->
-                    change.consume()
-                    reveal.dragBy(-delta)
-                }
-            }
+            .nestedScroll(dismissScroll)
+            .verticalScroll(scroll)
             .padding(Dim.popoutPad)
     ) {
         // The 2×2 destination grid keeps each glyph and label upright as one unit.
         val cells = listOf(
-            Triple("deck", SettingsGlyph.Deck, onDeck),
+            Triple("PiP", SettingsGlyph.Display, onPictureInPicture),
             Triple("light", SettingsGlyph.BeamColor, onLight),
             Triple("room", SettingsGlyph.Room, onRoom),
             Triple("settings", SettingsGlyph.Knob, onSettings),
@@ -446,6 +503,11 @@ fun OverflowPopout(
                 active = state.grid, p = p, onTap = onGrid,
             )
         }
+        ChipCell(
+            "AUTO PiP · " + if (state.pipAutoEnter) "on" else "off",
+            active = state.pipAutoEnter, p = p, small = true,
+            onClick = onPipAutoEnter,
+        )
     }
 }
 

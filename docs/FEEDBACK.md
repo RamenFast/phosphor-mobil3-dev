@@ -343,3 +343,13 @@ The clean committed-source Phase 8 build completed successfully with 272 tests, 
 The authorized phone's USB route disappeared. Read-only wireless checks identified the same S25 with another media app in the foreground. Root left that playback undisturbed. No Phase 8 installation, fresh preference backup or input occurred. Prior backups remain intact. Paused-seek recovery, live gestures and all original final cards remain open, with drift 21 unchanged.
 
 Sequential Phase 9 controls work continues offline through the confirmed Astra high route. This does not accept any pending phone, relay, render or settings behavior.
+
+## 2026-09-06 01:24 UTC: controls source and independent correction reviews
+
+Phase 9 now shares 44dp slider lanes and live beam tint, moves queue to SOURCE and volume to console, removes only DECK UI, and persists independent controls/PiP options. Effective style defaults and explicit overrides reach the existing chrome and one live sample.
+
+Separate source and source-first intent reviews exposed unreachable short-layout controls, stale relocated volume and an inner/outer height mismatch. Bounded corrections now share existing scroll/refresh owners and report the actual occupied console height. Earlier blocked reviews remain intact.
+
+The final frozen gate passed 308 tests with zero failures, errors or skips. Lint retained 15 existing warnings. Full input inventories matched. Independent correction addenda closed the identified source findings without claiming Compose or Android execution. The [Phase 9 receipt](dev/receipts/pre-v2-b1-b21/phase-09-ui.md) preserves exact hashes, requirement-linked checks and live gaps.
+
+No device, playback, permission, visible GUI or live-service change occurred in this phase. Exact committed packaging is next. Phone layout/touch, system volume, PiP, settings restoration, paused seek and final regression remain open. Drift remains 21.

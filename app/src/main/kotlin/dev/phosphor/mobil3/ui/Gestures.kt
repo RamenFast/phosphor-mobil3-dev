@@ -214,50 +214,66 @@ fun Modifier.consoleSeekGesture(
     onScrub: (Float) -> Unit,
     onCommit: (Float) -> Unit,
     onCancel: () -> Unit,
+    onStart: (Float) -> Unit = {},
 ): Modifier {
     val currentScrub by rememberUpdatedState(onScrub)
     val currentCommit by rememberUpdatedState(onCommit)
     val currentCancel by rememberUpdatedState(onCancel)
+    val currentStart by rememberUpdatedState(onStart)
     return pointerInput(durationMs) {
         if (durationMs <= 0L) return@pointerInput
         val slop = viewConfiguration.touchSlop
         awaitEachGesture {
             val first = awaitFirstDown(requireUnconsumed = false)
             val origin = first.position
-            var ownership = 0 // 0 undecided · 1 horizontal seek · 2 rejected
-            var fraction = (origin.x / size.width).coerceIn(0f, 1f)
+            val geometry = SliderGeometry(size.width.toFloat(), density)
+            var ownership = if (first.isConsumed) 2 else 0 // 0 undecided · 1 horizontal seek · 2 rejected
+            var fraction = geometry.fractionAt(origin.x)
+            var started = false
             var finishedNormally = false
             try {
                 while (true) {
                     val event = awaitPointerEvent()
                     val pressed = event.changes.filter { it.pressed }
+                    val change = event.changes.firstOrNull { it.id == first.id }
+                    if (change == null || change.isConsumed || pressed.size > 1) {
+                        ownership = 2
+                    }
+                    if (ownership == 0 && change != null) {
+                        val travel = change.position - origin
+                        if (abs(travel.x) > slop || abs(travel.y) > slop) {
+                            ownership = if (
+                                abs(travel.x) > slop &&
+                                abs(travel.x) > abs(travel.y) * 1.35f
+                            ) 1 else 2
+                        }
+                    }
                     if (pressed.isEmpty()) {
-                        finishedNormally = true
+                        if (ownership != 2 && change != null) {
+                            if (!started) currentStart(geometry.fractionAt(origin.x))
+                            fraction = geometry.fractionAt(change.position.x)
+                            change.consume()
+                            finishedNormally = true
+                        }
                         break
                     }
-                    if (pressed.size != 1) {
+                    if (pressed.size != 1 || change == null || !change.pressed) {
                         ownership = 2
                         continue
                     }
-                    val change = pressed.first()
-                    val travel = change.position - origin
-                    if (ownership == 0 &&
-                        (abs(travel.x) > slop || abs(travel.y) > slop)
-                    ) {
-                        ownership = if (
-                            abs(travel.x) > slop &&
-                            abs(travel.x) > abs(travel.y) * 1.35f
-                        ) 1 else 2
-                    }
                     if (ownership == 1) {
-                        fraction = (change.position.x / size.width).coerceIn(0f, 1f)
+                        if (!started) {
+                            currentStart(geometry.fractionAt(origin.x))
+                            started = true
+                        }
+                        fraction = geometry.fractionAt(change.position.x)
                         currentScrub(fraction)
                         change.consume()
                     }
                 }
             } finally {
-                if (ownership == 1 && finishedNormally) currentCommit(fraction)
-                else if (ownership == 1) currentCancel()
+                if (finishedNormally) currentCommit(fraction)
+                else if (started) currentCancel()
             }
         }
     }
