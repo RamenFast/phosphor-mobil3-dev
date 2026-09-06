@@ -187,7 +187,7 @@ impl SessionMedia {
         }
         let media = match tag {
             // Protocol v2 carries nonempty s16le stereo, not partial channel frames.
-            b'A' if !payload.is_empty() && payload.len() % 4 == 0 => RemoteMedia::Audio(
+            b'A' if !payload.is_empty() && payload.len().is_multiple_of(4) => RemoteMedia::Audio(
                 payload
                     .chunks_exact(2)
                     .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)

@@ -77,3 +77,8 @@ The next two major core features are intentionally absent from this backlog unti
 - [ ] Verify or correct actual header release velocity and cancellation semantics. Header velocity remains zero and cancellation uses the existing distance-based settle path. The committed-displacement fix does not close these precommit behaviors.
 - [ ] Distinguish an unreadable OS rotation setting from a known lock in user-facing status. Current fail-closed behavior is preserved, but its diagnostic text conflates the two states.
 - [ ] Complete B17 visible/native clean defaults on a supported Android runtime. The isolated translated emulator proves selected startup/persistence and PiP observations, not native rendering. Five backend attempts and their failures are preserved in the settings receipt.
+
+## Full-gate preflight limits, 2026-09-06
+
+- [ ] Resolve whole-sibling formatting drift across53 files before claiming the required workspace format gate. Keep the pinned shared implementation unchanged until the scope is explicitly dispositioned. The host-preflight receipt preserves all observed formatter differences.
+- [ ] Complete the planned public-publisher sanitization/confinement fixture and private scratch/estate-script omission proof before invoking publication or the force-link-state harness. Existing publisher code remains untouched and the fixture is absent. This is a release-path blocker, not permission to skip the gate.

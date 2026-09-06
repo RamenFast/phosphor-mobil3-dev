@@ -24,6 +24,8 @@ The supplemental [rotation and sheet-continuity receipt](phase-12-rotation.md) r
 
 The supplemental [exact Phase7 live checkpoint](phase-07-installed-live-checkpoint.md) records the settings-preserving upgrade, actual local/mic workflows, replay-verified log window and remaining gaps. Historical offline receipts retain their original timestamped limits.
 
+The [Phase14 host preflight](phase-14-host-preflight.md) records full mobile-native/relay tests and the unresolved shared-format and publisher-fixture gates. It is not Phase14 acceptance.
+
 Phase 14 records the full automated gate and exact installed debug APK. Phase 18 adds the commit list, artifact hashes, signer evidence, gate outputs, final receipt hashes, and the three unchanged external release reds: `signing.release`, `provenance.release`, and `release.bundle`.
 
 ## Redaction law
