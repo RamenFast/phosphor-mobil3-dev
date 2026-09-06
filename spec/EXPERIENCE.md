@@ -55,6 +55,10 @@ The existing foreground tick and lifecycle callbacks refresh system authority ev
 
 The foreground tick refreshes rotation authority unconditionally. Android owns music volume. The app does not poll or display a volume fraction.
 
+### Grid visibility acceptance, 2026-09-06
+
+Ben rejected the faint grid again during actual device testing. The grid must be readable at the user's low display brightness without brightening the background or changing the beam. Change only shared minor and axis linear-light coefficients, equally in CPU and GPU. The first measured correction uses 0.035 and 0.08. Compare three grid-only captures against the prior coefficients at fixed brightness. In a clear region away from chrome and the resting point, minor line cores must exceed nearby background by at least 35 sRGB code values in their strongest color channel. Axes remain stronger than minor lines. Preserve Xy45 rotation and grid-off behavior. Pixel measurements are not Ben's visual approval.
+
 Sensor cardinals and Android Surface rotation use opposite landscape conventions. Convert them once at presentation routing. On a portrait-natural display, aligned observations C0/D0, C270/D1, C180/D2, and C90/D3 produce zero relative rotation in every app-lock combination. A display pinned at D0 retains the existing C0/90/180/270 to q0/1/2/3 mapping. Screen targets, Compose rotation signs, and native rotation signs do not change.
 
 On large screens, foldables, desktop windows, and multi-window layouts, the interface must remain usable when Android ignores requested orientation.
