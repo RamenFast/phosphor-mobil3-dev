@@ -64,3 +64,18 @@ This source freeze has not been installed or exercised on the S25. The separate 
 Keep actual Android OS hold, stale setter/import/unlock, all cardinal poses, local beam sign, safe corners/RTL, first-pull handoff and late-callback dismissal acceptance open. Also retain separate recreation/retired sensor-listener, natural-landscape, remote-geometry view-rotation bypass, header release-velocity and cancellation-threshold limits. No source or host result closes these platform boundaries.
 
 Build the exact committed candidate before device activation. Keep the exact pre-rotation settings APK SHA256 `1323fa5e178ffe729bde65131fafc0575f4b2ec109b73103b0085647e17bb71d` and private current preference backup. Revert by a new scoped commit if required. Never reset shared history, clear the physical app, replace newer user tuning with an old backup, or uninstall the production package.
+
+## Exact committed artifact, 2026-09-06T11:38Z
+
+The reviewed implementation is committed as `bf872f21c4dcb91f7631b804777025d8ac471885`. The shared dependency remains `aa09b8e14f8b8912b125e3312b4ddeec09404089`. Root proved all 13 reviewed blobs match that mobile commit before building. The isolated build selected every regular tracked blob from the exact commits: 366 mobile and 459 shared files. No working-tree export or active-branch rewrite was used.
+
+Artifact input manifest SHA256: `59ff1f938a70e06ead442a15a6ecce4d6249d49db20fdaf439d53c2b84ba1f16`.
+Exact APK SHA256: `7489ca8762953f62c90e95d773bd12bf141a0a9fb9f20ed01cde2f62ff30bbe6`.
+Package: `dev.phosphor.mobil3.debug`, version `2.0.0-debug`, code `2000000`.
+Signer SHA256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`.
+
+Task5590414d9y completed successfully after86.1s. The exact clean snapshot rebuilt 420 JVM testcases across34 suites with zero failures, errors or skips. Lint, assembly and checkEngine succeeded. Source inventories remained unchanged. The packaged boundary returned status ok with11 source checks,5 artifact checks and1 trusted runtime exemption. Both scope gates were green with zero skips. That filtered scope result is not the complete release scoreboard.
+
+The six-entry artifact manifest has SHA256 `ad9208c5e13cdfef4603ee215a8b150d93828f1e936e252300a511f295fe0a1c`. Root reverified every entry, APK signer and current source identities. Evidence and APK remain in the ignored `phase-12/candidate-bf872f21c4dc-isolated/` directory. This addendum is documentation after the build, not part of the built implementation commit.
+
+The APK is not installed on the S25. Installed readback, settings preservation and physical Android acceptance remain open. The pre-rotation rollback artifact and private backups remain retained.
