@@ -4,6 +4,7 @@
 
 ## Read first
 
+- [Gesture-driver repair and actual native surface recreation](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md).
 - [Final expanded phone pass and exact remaining gates](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-final-pass-2026-09-06.md).
 - [Earlier continuation and its limits](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-continuation-2026-09-06.md).
 - [Earlier phone receipt and per-card gaps](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md).
@@ -46,5 +47,11 @@ Original tuning was restored byte-for-byte except retaining the grid's already-e
 Phone fixture files and owned diagnostic processes/files are cleaned up. The app was verified in no-source state and left in the background without PiP. MUSIC remains 2/15. Backups and raw evidence are private and retained. The final 240-second diagnostic window replayed 82,861 records exactly, with no fatal/ANR/panic candidates. Earlier failed/truncated logging attempts are explicitly not counted as complete evidence.
 
 ## Release boundaries unchanged
+
+The 20:27 UTC continuation diagnosed the input-driver exit137 as an Android16 InputManager initialization exception.
+Its corrected retained fixture passed a no-input probe and four physical two-pointer checks.
+A complete native surface destruction/recreation sequence now has replay-verified logs, but moving-trace luminance through that sequence remains unproven.
+The exact 333ms physical boundary, B8 inversion and emulator failures remain open. No app runtime patch or new APK was needed for these checks.
+Original tuning and hosts were restored byte-for-byte. No workers ran because routing confirmation remains unanswered.
 
 Approved signing inputs, final-tag approval and the dependent release bundle remain external blockers. No push, tag, signing, publication, production/Fortress removal or Play submission occurred. Historical August release evidence remains in `docs/dev/receipts/primetime-cleanup/`.

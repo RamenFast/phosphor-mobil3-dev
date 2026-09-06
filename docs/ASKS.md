@@ -57,3 +57,9 @@
 ## 2026-09-06 device checkpoint
 
 [Current phone receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md) maps all B cards to actual observations and remaining limits. Three corrections are installed: console volume removal, measured grid visibility and the discovered SOURCE queue command. B8 stays open. No overall B1-B21 PASS is claimed.
+
+## 2026-09-06 20:24 UTC: fix the remaining issues
+
+Ben requested fixing the remaining failures, not merely listing them.
+The [gesture recovery receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md) records a repaired Android16 test driver, four actual multi-pointer checks and proven native surface recreation.
+B8, exact physical settle timing, emulator rendering and the remaining matrix stay open. No new app fix is claimed.

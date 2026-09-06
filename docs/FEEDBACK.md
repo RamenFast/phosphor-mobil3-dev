@@ -441,3 +441,10 @@ Installed 63fc7ef retains the four demonstrated corrections. Additional real che
 ## 2026-09-06 19:28 UTC: expanded phone test pass
 
 No new product patch was justified. Actual Spotify next-track buffering propagated to the mirror, stable glyph transitions matched, double-tap on/off worked, and all 42 exported keys round-tripped through Android pickers. Invalid-checksum import left preferences byte-identical. Local/relay/capture linger survived real task removal and stopped after disabling linger; microphone stopped even with linger. Fixed-brightness circle trace samples after modal dismissal and PiP reconfiguration overlapped baseline variation. The exact two-pointer driver was killed before event injection. Existing emulator renderer failures and full release/visual gates remain open. Original tuning and quiet phone state were restored. See the final pass receipt. B8 is still unreproduced, not declared fixed. Drift remains 21.
+
+## 2026-09-06 20:43 UTC: gesture driver recovered
+
+Exit137 was traced to an InputManager initialization exception, not an established external kill.
+The corrected InputManagerGlobal fixture passed a no-input probe and four real two-pointer cases with actual saved-gain checks.
+Native logs now prove full surface teardown and recreation. Moving-trace stability through that sequence and exact physical333ms timing remain open.
+The [receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md) retains evidence and limits. Original tuning and hosts match exactly. APK unchanged, MUSIC2/15, no source. Drift21.

@@ -136,3 +136,7 @@ Do not change `drift` from 21 to 0 until every B1-B21 row has its final PASS rec
 ### Final bounded S25 pass, 2026-09-06 18:53–19:28 UTC
 
 [Final pass receipt](phase-15-16-final-pass-2026-09-06.md): actual Spotify buffering, double-tap on/off, slider lanes, 42-key export/import plus checksum rollback, all-source linger/removal, and fixed-brightness trace measurements. Documents exact multi-pointer and emulator limits without claiming complete release acceptance.
+
+### Gesture recovery, 2026-09-06 20:27 UTC
+
+[Recovery receipt](phase-15-16-gesture-recovery-2026-09-06.md): repaired Android16 input-driver initialization, four physical two-pointer checks, actual native surface teardown/recreation and exact restoration. B8, physical333ms timing, moving-trace recreation and emulator rendering remain open.

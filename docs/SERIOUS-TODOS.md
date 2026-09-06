@@ -98,3 +98,10 @@ Final-item replay is repaired in 63fc7ef with real before/after proof. Four late
 ## 2026-09-06 final test-pass disposition
 
 The [final pass receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-final-pass-2026-09-06.md) supersedes stale coverage gaps: real buffering propagation, double-tap on/off, slider-lane samples, 42-key physical import/rollback, all-source linger/removal, and bounded trace stability are now observed. These are not blanket card closures. Remaining: unreproduced B8 inversion, exact physical multi-pointer/333ms tests (finite shell driver killed with exit137), clean-emulator native rendering (five prior failures), complete surface destruction/recreation, exhaustive LEG/default/mode/auto-gain-reset combinations and fresh-Linux release acceptance. Android currently appends .json to exported .phossettings filenames; round-trip works, but clarify the intended filename/MIME contract in follow-up. Do not repeat the same failed driver/emulator runs without a new hypothesis.
+
+## 2026-09-06 20:43 UTC: narrower remaining gates
+
+The driver initialization failure is repaired and four physical two-pointer cases passed.
+Full native surface destruction/recreation is now observed in replay-verified logs.
+These supersede those two earlier blockers only. Exact physical333ms timing, moving-trace recreation, B8, native emulator rendering and exhaustive variants remain open.
+See the [gesture recovery receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md). No independent worker review occurred while routing confirmation remains unanswered.

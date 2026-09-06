@@ -1,0 +1,28 @@
+gradle.projectsEvaluated {
+    rootProject.tasks.register('compilePhoneGestureDriver') {
+        doLast {
+            def source = new File(rootProject.projectDir,
+                'docs/dev/receipts/pre-v2-b1-b21/gesture-driver/PhoneGesture.java')
+            def output = new File(rootProject.projectDir, 'build/phone-gesture')
+            def classes = new File(output, 'classes')
+            classes.mkdirs()
+            def sdk = System.getenv('ANDROID_HOME')
+            def java = System.getenv('JAVA_HOME')
+            if (!sdk || !java) {
+                throw new GradleException('Missing Android environment. Fix: source scripts/env.sh.')
+            }
+            def commands = [
+                [java + '/bin/javac', '-cp', sdk + '/platforms/android-36/android.jar',
+                 '-d', classes.path, source.path],
+                [sdk + '/build-tools/36.0.0/d8', '--min-api', '29', '--lib',
+                 sdk + '/platforms/android-36/android.jar', '--output',
+                 new File(output, 'driver.jar').path, new File(classes, 'PhoneGesture.class').path]
+            ]
+            commands.each { command ->
+                if (new ProcessBuilder(command).inheritIO().start().waitFor() != 0) {
+                    throw new GradleException('Gesture fixture build failed. Fix: inspect the compiler output.')
+                }
+            }
+        }
+    }
+}
