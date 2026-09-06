@@ -448,3 +448,17 @@ Exit137 was traced to an InputManager initialization exception, not an establish
 The corrected InputManagerGlobal fixture passed a no-input probe and four real two-pointer cases with actual saved-gain checks.
 Native logs now prove full surface teardown and recreation. Moving-trace stability through that sequence and exact physical333ms timing remain open.
 The [receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md) retains evidence and limits. Original tuning and hosts match exactly. APK unchanged, MUSIC2/15, no source. Drift21.
+
+## 2026-09-06 21:05 UTC: ASUS fast-cycle guard bypass
+
+Testing moved to Ben's ASUS_AI2202, Android14, with the S25 excluded from further device actions.
+The exact prior APK rendered through Adreno730 Vulkan at about119FPS from empty app data.
+Clean-default export and visible controls matched the accepted defaults. Actual LEG endpoints0.1 and60 seconds worked.
+TRACK0.1 then TIMER bypassed the photosensitivity confirmation. Native logs showed `beam cycle: 0.1s per_track=false` without acknowledgment.
+The test immediately returned to TRACK with no audio source active.
+
+LIGHT now routes slider and both clock-mode controls through one guard.
+An unacknowledged fast TIMER request publishes1 second to UI and native state before displaying the existing warning.
+Five executable regressions cover ordering, TRACK exemption, acknowledgment and safe boundaries. Updated source checks require all three control routes.
+All424 Android tests, lintDebug and assembleDebug passed. An earlier full run failed only on the old source-string assertion, which was updated rather than removed.
+ASUS installation and actual warning/recovery verification are next. No B8 fix, independent review or S25 installation is claimed. Drift remains21.

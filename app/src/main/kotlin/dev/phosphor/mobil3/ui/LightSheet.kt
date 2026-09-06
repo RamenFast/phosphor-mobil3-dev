@@ -36,6 +36,21 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.input.pointer.pointerInput
 import androidx.compose.ui.unit.dp
 
+internal fun applyGuardedCycle(
+    state: ScopeUiState,
+    seconds: Float,
+    perTrack: Boolean,
+    acknowledged: Boolean,
+    publish: (Float, Boolean) -> Unit,
+    warn: (Float) -> Unit,
+) {
+    val guarded = !perTrack && seconds < 1f && !acknowledged
+    state.cycleSeconds = if (guarded) 1f else seconds
+    state.cyclePerTrack = perTrack
+    publish(state.cycleSeconds, perTrack)
+    if (guarded) warn(seconds)
+}
+
 // Beam presets, custom color cycles, and the photosensitivity guard.
 @Composable
 fun LightSheetV2(
@@ -52,6 +67,12 @@ fun LightSheetV2(
     var guardCard by remember { mutableStateOf(false) }
     var pendingSeconds by remember { mutableFloatStateOf(1.0f) }
     var editSlot by remember { mutableIntStateOf(-1) }
+    fun requestCycle(seconds: Float, perTrack: Boolean) = applyGuardedCycle(
+        state, seconds, perTrack, epilepsyAcknowledged(), onCycleChange,
+    ) { pending ->
+        pendingSeconds = pending
+        guardCard = true
+    }
 
     SheetHost(p, "LIGHT", reduced, onDismiss, glyph = SettingsGlyph.BeamColor) {
         if (guardCard) {
@@ -175,17 +196,7 @@ fun LightSheetV2(
                 DragRule(
                     "LEG", state.cycleSeconds, 0.1f, 60f, p, { "%.1f s".format(it) },
                 ) { v ->
-                    // The guard: in TIMER a sub-1 s leg strobes the whole screen, so it
-                    // stops at 1 s until knowingly accepted. TRACK is exempt — one
-                    // crossfade per song is not a strobe.
-                    if (!state.cyclePerTrack && v < 1.0f && !epilepsyAcknowledged()) {
-                        pendingSeconds = v
-                        state.cycleSeconds = 1.0f
-                        guardCard = true
-                    } else {
-                        state.cycleSeconds = v
-                        onCycleChange(v, state.cyclePerTrack)
-                    }
+                    requestCycle(v, state.cyclePerTrack)
                 }
                 Spacer(Modifier.height(Dim.gap))
                 Row(
@@ -194,14 +205,12 @@ fun LightSheetV2(
                 ) {
                     Box(Modifier.weight(1f)) {
                         ChipCell("TIMER", active = !state.cyclePerTrack, p = p, small = true) {
-                            state.cyclePerTrack = false
-                            onCycleChange(state.cycleSeconds, false)
+                            requestCycle(state.cycleSeconds, false)
                         }
                     }
                     Box(Modifier.weight(1f)) {
                         ChipCell("TRACK", active = state.cyclePerTrack, p = p, small = true) {
-                            state.cyclePerTrack = true
-                            onCycleChange(state.cycleSeconds, true)
+                            requestCycle(state.cycleSeconds, true)
                         }
                     }
                 }

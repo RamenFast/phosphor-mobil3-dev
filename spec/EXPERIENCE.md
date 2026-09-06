@@ -132,6 +132,8 @@ Portable imports merge only validated provided keys into the existing typed pref
 
 The LIGHT LEG and archive accept finite cycle values from 0.1 through 60 seconds, including both endpoints. Existing photosensitivity confirmation and TIMER/TRACK semantics remain unchanged. Range strings require exactly two finite, ordered components within the control's bounds. Custom RGB requires exactly nine finite components in 0 through 1. No malformed or empty extra token may disappear during parsing.
 
+Every LIGHT control that requests TIMER below one second uses the same photosensitivity guard, including a switch from TRACK. Without acknowledgment, publish a one-second TIMER to both UI and native state before showing the existing confirmation. KEEP 1 s or dismissing the sheet retains that safe value. Only explicit acknowledgment enables the pending faster value. TRACK remains exempt. For example, TRACK at 0.1 seconds followed by TIMER must show confirmation and run at one second, not silently start a 0.1-second timer.
+
 Without validated custom RGB and a legal active count, restore selects `custom_count=0` in the UI and retires native custom mode through the existing preset reset path. Illustrative picker colors are not recovered user settings and must not become a seeded palette. Valid stored RGB slots remain available when their count is zero. Restored focus and cycle values reach the existing native setters without requiring another surface creation or a later custom-mode selection.
 
 ### Existing control behavior
