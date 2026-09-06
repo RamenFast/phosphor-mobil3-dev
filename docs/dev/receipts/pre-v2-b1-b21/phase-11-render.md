@@ -111,3 +111,11 @@ The isolated build passed 362 JVM tests with zero failures/errors/skips, native 
 | Candidate `debug-artifact-boundary.json` | `d1e38c19ab5e4cc224cb2cbd6d31ee0c2c2aedc575a0f525b6fd671bf2ba2e51` |
 
 No APK was installed. The candidate is a verified rollback input, not proof of installed bytes, settings preservation or physical behavior. Phase7 remains the last verified installed phase. No current device-state claim is inferred from that historical fact. Phase12 can continue offline without changing these live acceptance limits.
+
+## 09:17 UTC: callback wording disposition
+
+The earlier source-contract classification above was too strong. AUDIO section 2 says: “The scope input must be tapped from the same sample stream that reaches the output callback.” It does not require the tap to execute inside the callback or promise zero physical latency. That normative wording is unchanged.
+
+The inspected shared playback owner sends the same stereo chunk to the audible ring and then the scope ring. A closed audible ring prevents that scope publication. DeckOutput consumes the audible ring and zero-fills underruns. This supports the same-stream relationship in source. The roughly 0.1-second ring capacity is not a measured total output delay or a hard physical timing bound.
+
+No callback relocation or second timing engine follows from this wording review alone. Physical sample-lock, underrun equivalence, seek/pause/tail behavior and perceptual timing remain open for the exact-APK matrix. Earlier reviews and the original receipt text remain historical evidence, not retroactively edited verdicts. The ignored owner-linked disposition has SHA256 `376b1c396be583bacc68d33d4228cb30f1d8c20a8dc265602953f94325e09161`.

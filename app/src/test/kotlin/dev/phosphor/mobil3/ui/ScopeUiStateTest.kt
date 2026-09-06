@@ -4,13 +4,14 @@ import kotlin.test.assertEquals
 import org.junit.Test
 
 class ScopeUiStateTest {
-    @Test fun hudDefaultsOffAndCyclesWithoutAnAuthorityStore() {
+    @Test fun hudDefaultsAutoAndCyclesWithoutAnAuthorityStore() {
         val state = ScopeUiState()
 
-        assertEquals(2, state.hudMode)
-        assertEquals(0, nextHudMode(state.hudMode))
+        assertEquals(1, state.hudMode)
+        assertEquals(2, nextHudMode(state.hudMode))
         assertEquals(1, nextHudMode(0))
         assertEquals(2, nextHudMode(1))
+        assertEquals(0, nextHudMode(2))
     }
 
     @Test fun invalidHudInputsAreNormalizedBeforeCycling() {

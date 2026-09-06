@@ -111,9 +111,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var pendingAudioPermission = AudioPermissionPurpose.NONE
     private var controller: MediaController? = null
     private var reduced = false
-    private var gainValue = 1.0f
+    private var gainValue = 1.8332275f
     private var lastRandomTrackTitle: String? = null
-    private var scopeRotationLockState by mutableStateOf(false)
+    private var scopeRotationLockState by mutableStateOf(true)
     private var uiPlacementLockState by mutableStateOf(false)
     private var lockedUiLandscape by mutableStateOf(false)
     private var lockedScopeOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
@@ -1093,7 +1093,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)
             putFloat("focus", focusPref)
             putString("room", ui.room.id)
-            putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
+            // Relay auto-gain is display truth, not authority for an absent local preference.
+            putBoolean("auto_gain", prefs().getBoolean("auto_gain", true))
             putInt("hud_mode", ui.hudMode)
             putInt("band_mode", ui.bandMode)
             putBoolean("fullscreen", ui.fullscreen)
@@ -1135,20 +1136,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.controlsAlwaysVisible = dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(p.all)
         ui.pipAutoEnter = PictureInPicturePolicy.autoEnter(p.all)
         updatePictureInPictureParams()
-        ui.modeIndex = p.getInt("mode", 0).also { PhosphorNative.setMode(it) }
+        ui.modeIndex = p.getInt("mode", 1).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
         lastRandomTrackTitle = runtimePrefs().getString("random_track_title", null)
         ui.randomBanModes = (p.getString("random_ban_modes", "") ?: "")
             .split(",").mapNotNull { it.toIntOrNull() }
             .filter { it in dev.phosphor.mobil3.ui.ModeLabels.indices }.toSet()
             .let { if (dev.phosphor.mobil3.ui.ModeLabels.size - it.size < 2) emptySet() else it }
-        ui.beamIndex = p.getInt("beam", 0).also { PhosphorNative.setBeamColor(it) }
+        ui.beamIndex = p.getInt("beam", 7).also { PhosphorNative.setBeamColor(it) }
         ui.fpsValue = p.getInt("fps", 0).also { PhosphorNative.setTargetFps(it) }
         ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
-        gainValue = p.getFloat("gain", 1f)
+        gainValue = p.getFloat("gain", 1.8332275f)
         ui.gain = gainValue
         PhosphorNative.setGain(gainValue)
-        val autoGain = p.getBoolean("auto_gain", false)
+        val autoGain = p.getBoolean("auto_gain", true)
         PhosphorNative.setGainAuto(autoGain)
         ui.autoGain = autoGain
         ui.localAutoGain = autoGain
@@ -1157,10 +1158,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         // The dice: restore range + armed state; never roll on restore — the last landed
         // BEAM/GLOW values above are the truth until the next track boundary.
         fun range(key: String, min: Float, max: Float, dLo: Float, dHi: Float): Pair<Float, Float> {
-            val parts = (p.getString(key, "") ?: "").split(",").mapNotNull { it.toFloatOrNull() }
+            val parts = (p.getString(key, "") ?: "").split(",")
             if (parts.size != 2) return dLo to dHi
-            val lo = parts[0].coerceIn(min, max)
-            return lo to parts[1].coerceIn(lo, max)
+            val lo = parts[0].toFloatOrNull() ?: return dLo to dHi
+            val hi = parts[1].toFloatOrNull() ?: return dLo to dHi
+            if (!lo.isFinite() || !hi.isFinite() || lo !in min..max || hi !in lo..max) return dLo to dHi
+            return lo to hi
         }
         range("beam_random_range", 1f, 30f, 6f, 20f).let { (lo, hi) ->
             ui.beamRandomLo = lo; ui.beamRandomHi = hi
@@ -1174,17 +1177,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.geomFx = p.getInt("geom_fx", 0).coerceIn(0, 4).also { PhosphorNative.setGeomFx(it) }
         ui.geomAmount = p.getFloat("geom_amount", 0.6f).coerceIn(0f, 1f)
             .also { PhosphorNative.setGeomAmount(it) }
-        ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
+        ui.grid = p.getBoolean("grid", false).also { PhosphorNative.setGrid(it) }
         ui.gridData = p.getBoolean(dev.phosphor.mobil3.ui.GridData.KEY, dev.phosphor.mobil3.ui.GridData.DEFAULT)
         ui.gridReading = null
-        focusPref = p.getFloat("focus", 0.3f)
-        ui.hudMode = p.getInt("hud_mode", 2).coerceIn(0, 2)
-        ui.bandMode = p.getInt("band_mode", 0)
+        focusPref = p.getFloat("focus", 0.3f).also { PhosphorNative.setFocus(it) }
+        ui.hudMode = p.getInt("hud_mode", 1).coerceIn(0, 2)
+        ui.bandMode = p.getInt("band_mode", 1)
         ui.fullscreen = p.getBoolean("fullscreen", true)
         ui.viewLock = p.getBoolean("view_lock", false)
-        scopeRotationLockState = p.getBoolean("scope_rotation_locked", false)
+        scopeRotationLockState = p.getBoolean("scope_rotation_locked", true)
         lockedScopeOrientation = p.getInt(
-            "scope_locked_orientation", ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
+            "scope_locked_orientation",
+            if (scopeRotationLockState) exactCurrentOrientation() else ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED,
         )
         uiPlacementLockState = p.getBoolean("ui_placement_locked", false)
         lockedUiOrientation = p.getInt(
@@ -1209,24 +1213,27 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 1 -> true; 0 -> false; else -> null
             },
         )
-        dev.phosphor.mobil3.ui.paletteById(p.getString("room", "blossom_dark") ?: "blossom_dark")
+        dev.phosphor.mobil3.ui.paletteById(p.getString("room", "amoled") ?: "amoled")
             .let { baseRoom = it; ui.room = it }
         // Restore the custom beam only after validating all nine RGB components.
-        val customCount = p.getInt("custom_count", 0).coerceIn(0, 3)
+        val customCount = p.getInt("custom_count", 0).takeIf { it in 1..3 } ?: 0
         val customRgb = p.getString("custom_rgb", null)
-            ?.split(",")?.mapNotNull { it.toFloatOrNull() }
+            ?.split(",")?.map { it.toFloatOrNull() }
+            ?.takeIf { values -> values.size == 9 && values.all { it != null && it.isFinite() && it in 0f..1f } }
+            ?.map { requireNotNull(it) }
         ui.cycleSeconds = p.getFloat("cycle_seconds", 3.0f)
         ui.cyclePerTrack = p.getBoolean("cycle_per_track", false)
-        if (customCount >= 1 && customRgb?.size == 9) {
+        if (customRgb != null) {
             ui.customColors = (0..2).map {
                 androidx.compose.ui.graphics.Color(
                     customRgb[it * 3], customRgb[it * 3 + 1], customRgb[it * 3 + 2],
                 )
             }
-            ui.customCount = customCount
-            PhosphorNative.setCustomBeam(customRgb.toFloatArray(), customCount)
-            PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)
         }
+        ui.customCount = if (customRgb != null) customCount else 0
+        // SetBeamColor alone does not retire native custom mode. Zero count selects the preset.
+        PhosphorNative.setCustomBeam(customRgb?.toFloatArray() ?: FloatArray(9), ui.customCount)
+        PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)
     }
     override fun captureConsentNeeded(): Boolean = !runtimePrefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() {
@@ -1424,7 +1431,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun applyLocalGainPolicy() {
-        val on = prefs().getBoolean("auto_gain", false)
+        val on = prefs().getBoolean("auto_gain", true)
         PhosphorNative.setGain(gainValue) // restores the remembered manual landing
         PhosphorNative.setGainAuto(on)
         ui.gain = gainValue
@@ -1515,7 +1522,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // Runs ALWAYS, not only under a lock. The detent governs plain rotation too: with
     // no lock the Activity used to be SCREEN_ORIENTATION_UNSPECIFIED, which hands the
     // decision to Android's own (very twitchy) sensor logic, so the detent was dead code
-    // for anyone who had not turned a lock on — which is the default. Ben reported
+    // for anyone who had not turned a lock on. Ben reported
     // rotation "still super sensitive" for exactly this reason.
     private fun updateOrientationSensor() {
         run {

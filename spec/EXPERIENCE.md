@@ -104,6 +104,20 @@ Existing rooms and beam controls remain available. The cleanup must not replace 
 
 Theme, beam, grid, glow, motion, and photosensitivity settings must persist without retaining behavioral history.
 
+### Known defaults and portable tuning
+
+Application startup migration uses HUD AUTO when no valid portable or legacy value exists. Valid existing modes and legacy Boolean choices retain their precedence, including explicit OFF. Saving local auto-gain uses the saved local preference or its accepted true fallback, never the relay's live display value. The existing relay command owner uses the same absent auto-gain and manual-gain defaults.
+
+An absent preference uses the accepted instrument tuning: the existing AMOLED room, mode 1, beam 7, manual gain 1.8332275, local auto-gain on, grid off, HUD 1 and BAND 1 (automatic), fullscreen on, focus 0.3, geometry amount 0.6, beam range 6 through 20, and cycle 3 seconds. Scope rotation defaults to locked through the Activity's stored orientation and existing orientation owner, not only a UI flag. A missing locked orientation uses the current exact orientation. Existing valid tuning and explicit false values take precedence over these fallbacks. Manual gain remains separate from the live auto-gain readout.
+
+Portable imports merge only validated provided keys into the existing typed preferences, then restore the instrument through its current owners. Missing keys in older archives must not erase existing values. The five independent settings retain their current defaults and surfaces: `pip_auto_enter=true` in full and quick settings, and `controls_always_visible=false`, `grid_data=false`, `double_tap_playback=true`, and `linger_background=false` in full settings. Runtime source, media metadata, consent, endpoints, and calibration remain outside portable settings.
+
+The LIGHT LEG and archive accept finite cycle values from 0.1 through 60 seconds, including both endpoints. Existing photosensitivity confirmation and TIMER/TRACK semantics remain unchanged. Range strings require exactly two finite, ordered components within the control's bounds. Custom RGB requires exactly nine finite components in 0 through 1. No malformed or empty extra token may disappear during parsing.
+
+Without validated custom RGB and a legal active count, restore selects `custom_count=0` in the UI and retires native custom mode through the existing preset reset path. Illustrative picker colors are not recovered user settings and must not become a seeded palette. Valid stored RGB slots remain available when their count is zero. Restored focus and cycle values reach the existing native setters without requiring another surface creation or a later custom-mode selection.
+
+### Existing control behavior
+
 FEEL, MOTION, CORNERS, and LABELS must change visible chrome immediately while their settings surface is open. The preview must not restyle the CRT beam or grid.
 
 FEEL selects its canonical chrome defaults, including motion, density, prose font, corners, labels, and panel transparency. Explicit MOTION, CORNERS, and LABELS choices then override those defaults. Match follows the selected FEEL, or the displayed room when FEEL also matches. Changing MOTION must replace the prior duration scale rather than retaining another room's scale. Reduced motion has final authority over animation. One live sample row reads the same `LocalRoomStyle` as the surrounding chrome and offers a manual TRY action without a looping effect.

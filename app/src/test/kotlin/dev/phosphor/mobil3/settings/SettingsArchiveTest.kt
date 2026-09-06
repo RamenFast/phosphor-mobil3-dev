@@ -9,6 +9,205 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    private val fiveKeys = listOf(
+        "pip_auto_enter", "controls_always_visible", "grid_data", "double_tap_playback", "linger_background",
+    )
+
+    @Test fun allFiveKeysRoundTripEveryBooleanCombinationAcrossPackageMetadata() {
+        for ((pkg, distribution) in listOf(
+            "dev.phosphor.mobil3.debug" to "debug",
+            "dev.phosphor.mobil3" to "release",
+            "dev.phosphor.mobil3" to "play",
+            "dev.phosphor.mobil3.fortress" to "fortress",
+        )) for (mask in 0 until 32) {
+            val values = fiveKeys.mapIndexed { index, key -> key to (mask and (1 shl index) != 0) }.toMap()
+            val archive = SettingsArchive.export(pkg, "1.9.0", distribution, metadata[3], values)
+            val decoded = SettingsArchive.decode(archive.json)
+            assertEquals(values, decoded.values, "$pkg/$distribution mask=$mask")
+            assertEquals(fiveKeys.sorted(), archive.exportedKeys)
+            assertEquals(pkg, decoded.sourcePackage)
+            assertEquals(distribution, decoded.sourceDistribution)
+            assertEquals("1.9.0", decoded.sourceVersion)
+            val reexported = SettingsArchive.export(metadata[0], "2.0.0", "release", metadata[3], decoded.values)
+            assertEquals(values, SettingsArchive.decode(reexported.json).values)
+            assertEquals(values["pip_auto_enter"], dev.phosphor.mobil3.PictureInPicturePolicy.autoEnter(decoded.values))
+            assertEquals(values["controls_always_visible"], dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(decoded.values))
+            assertEquals(values["linger_background"], dev.phosphor.mobil3.BackgroundLifecyclePolicy.linger(decoded.values))
+        }
+    }
+
+    @Test fun everyMissingOldKeyStaysAbsentAndDoesNotReplaceExplicitExistingValues() {
+        for (missing in fiveKeys) for (mask in 0 until 32) {
+            val existing = fiveKeys.mapIndexed { index, key -> key to (mask and (1 shl index) != 0) }.toMap()
+            val provided = existing.filterKeys { it != missing }.mapValues { !it.value }
+            val decoded = SettingsArchive.decode(export(provided).json).values
+            assertEquals(provided, decoded)
+            assertFalse(missing in decoded)
+            // Map-level merge model only. KnownDefaultsTest separately inspects the actual typed Activity merge.
+            val merged = mutableMapOf<String, Any>().apply { putAll(existing) }
+            merged.putAll(decoded)
+            assertEquals(existing[missing], merged[missing])
+            provided.forEach { (key, value) -> assertEquals(value, merged[key]) }
+        }
+        val old = SettingsArchive.decode(export(mapOf("mode" to 4)).json).values
+        assertTrue(fiveKeys.none(old::containsKey))
+        assertTrue(dev.phosphor.mobil3.PictureInPicturePolicy.autoEnter(old))
+        assertFalse(dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(old))
+        assertFalse(dev.phosphor.mobil3.BackgroundLifecyclePolicy.linger(old))
+    }
+
+    @Test fun fiveKeysRejectInvalidTypesOnExportAndValidChecksumImport() {
+        for (key in fiveKeys) for (invalid in listOf<Any>("false", "true", 0, 1, 0.5)) {
+            rejectsBoth(key, invalid, "invalid_setting_type")
+        }
+    }
+
+    @Test fun legalTuningAndExplicitFalseValuesSurviveCrossVersionArchiveRoundTrip() {
+        val tuning = mapOf<String, Any>(
+            "room" to "paper", "mode" to 0, "beam" to 2, "gain" to 2.25f,
+            "auto_gain" to false, "grid" to true, "fullscreen" to false,
+            "hud_mode" to 2, "band_mode" to 0, "focus" to 1.5f, "geom_amount" to 0.2f,
+            "beam_random_range" to "4,25", "glow_random_range" to "0.1,0.8",
+            "scope_rotation_locked" to false, "scope_locked_orientation" to 8,
+            "custom_count" to 3, "custom_rgb" to "0,1,0,1,0,1,0.25,0.5,0.75",
+            "cycle_seconds" to 60f, "cycle_per_track" to false,
+        )
+        val old = SettingsArchive.export("dev.phosphor.mobil3.debug", "1.0.0", "debug", metadata[3], tuning)
+        val values = SettingsArchive.decode(old.json).values
+        assertEquals(tuning, values)
+        val current = SettingsArchive.export(metadata[0], "2.0.0", "release", metadata[3], values)
+        assertEquals(tuning, SettingsArchive.decode(current.json).values)
+        assertTrue(fiveKeys.none(values::containsKey))
+    }
+
+    @Test fun cycleLegalEndpointsAndExistingInteriorValuesRoundTripExactly() {
+        for (seconds in listOf(0.1f, 0.25f, 3f, 30f, 60f)) for (perTrack in listOf(false, true)) {
+            val values = mapOf("cycle_seconds" to seconds, "cycle_per_track" to perTrack)
+            assertEquals(values, SettingsArchive.decode(export(values).json).values)
+        }
+    }
+
+    @Test fun cycleNextOutsideValuesFailExportAndValidChecksumImport() {
+        for (seconds in listOf(Math.nextDown(0.1f), Math.nextUp(60f), 0f, -1f, 61f)) {
+            rejectsBoth("cycle_seconds", seconds, "invalid_setting_value")
+        }
+    }
+
+    @Test fun cycleNonfiniteAndInvalidTypesCannotEnterThroughPublicInterfaces() {
+        for (invalid in listOf(Float.NaN, Float.POSITIVE_INFINITY, Float.NEGATIVE_INFINITY,
+            Double.NaN, Double.POSITIVE_INFINITY, Double.NEGATIVE_INFINITY)) {
+            assertEquals("invalid_setting_type", assertFailsWith<SettingsArchive.ArchiveException> {
+                export(mapOf("cycle_seconds" to invalid))
+            }.error)
+        }
+        // JSON has no nonfinite numeric literal. Quoted forms are invalid types, not numeric settings.
+        for (invalid in listOf<Any>("NaN", "Infinity", "-Infinity", "0.1", true, false)) {
+            rejectsBoth("cycle_seconds", invalid, "invalid_setting_type")
+        }
+        // Valid finite JSON numbers that overflow Float must also fail after checksum verification.
+        for (invalid in listOf(java.math.BigDecimal("1e39"), java.math.BigDecimal("-1e39"))) {
+            rejectsBoth("cycle_seconds", invalid, "invalid_setting_type")
+        }
+    }
+
+    @Test fun rgbAndRangeLegalEndpointsKeepEveryComponentAndInactivePalette() {
+        for (rgb in listOf("0,0,0,0,0,0,0,0,0", "1,1,1,1,1,1,1,1,1", "0,1,0.5,1,0,0.25,0.5,0.75,1")) {
+            for (count in 0..3) {
+                val values = mapOf("custom_rgb" to rgb, "custom_count" to count)
+                assertEquals(values, SettingsArchive.decode(export(values).json).values)
+            }
+        }
+        for ((key, ranges) in mapOf(
+            "beam_random_range" to listOf("1,30", "1,1", "30,30", "6,20"),
+            "glow_random_range" to listOf("0,0.98", "0,0", "0.98,0.98", "0.3,0.9"),
+        )) for (range in ranges) {
+            assertEquals(mapOf(key to range), SettingsArchive.decode(export(mapOf(key to range)).json).values)
+        }
+        val preset = SettingsArchive.decode(export(mapOf("custom_count" to 0)).json).values
+        assertEquals(mapOf("custom_count" to 0), preset)
+        assertFalse("custom_rgb" in preset)
+    }
+
+    @Test fun rgbRejectsDroppedExtraTokensWrongCountsNonfiniteAndOutOfBoundsComponents() {
+        val valid = "0,1,0.5,1,0,0.25,0.5,0.75,1"
+        val invalidComponents = listOf("bad", "", "NaN", "Infinity", "-Infinity", "1e1000", "-0.01", "1.01",
+            Math.nextDown(0f).toString(), Math.nextUp(1f).toString())
+        val invalid = listOf("", "$valid,bad", "bad,$valid", "$valid,", ",$valid", "$valid,0",
+            "0,1,0.5,1,0,0.25,0.5,0.75") + (0..8).flatMap { index ->
+            invalidComponents.map { component ->
+                valid.split(',').toMutableList().also { it[index] = component }.joinToString(",")
+            }
+        }
+        for (rgb in invalid) rejectsBoth("custom_rgb", rgb, "invalid_setting_value")
+        for (invalidType in listOf<Any>(1, true)) rejectsBoth("custom_rgb", invalidType, "invalid_setting_type")
+        for (count in listOf(-1, 4)) rejectsBoth("custom_count", count, "invalid_setting_value")
+    }
+
+    @Test fun rangesRejectDroppedExtraTokensWrongCountsNonfiniteReversedAndOutsideBounds() {
+        for ((key, valid, outside) in listOf(
+            Triple("beam_random_range", "6,20", listOf("0.99,20", "6,30.01", "20,6",
+                "${Math.nextDown(1f)},20", "6,${Math.nextUp(30f)}")),
+            Triple("glow_random_range", "0.3,0.9", listOf("-0.01,0.9", "0.3,0.99", "0.9,0.3",
+                "${Math.nextDown(0f)},0.9", "0.3,${Math.nextUp(0.98f)}")),
+        )) {
+            val malformed = listOf("", "1", "$valid,bad", "bad,$valid", "$valid,", ",$valid", "$valid,0",
+                "bad,0.9", "0.3,bad", "NaN,0.9", "0.3,NaN", "Infinity,0.9", "0.3,Infinity",
+                "-Infinity,0.9", "0.3,1e1000", "0.3,", ",0.9")
+            for (range in malformed + outside) rejectsBoth(key, range, "invalid_setting_value")
+            for (invalid in listOf<Any>(1, false)) rejectsBoth(key, invalid, "invalid_setting_type")
+        }
+    }
+
+    @Test fun portableTuningNeverCarriesRuntimeConsentEndpointOrCalibrationValues() {
+        val privateValues = mapOf<String, Any>(
+            "last_source" to "mic", "random_track_title" to "private title", "cal_date" to "private date",
+            "consent_seen" to true, "epilepsy_ack" to true, "host" to "private endpoint",
+            "remote_host" to "private endpoint", "track_artist" to "private artist", "open_id" to 42,
+        )
+        val exported = export(privateValues + mapOf("gain" to 1.8332275f, "custom_count" to 0))
+        assertEquals(privateValues.keys.sorted(), exported.skippedKeys)
+        assertEquals(mapOf("gain" to 1.8332275f, "custom_count" to 0), SettingsArchive.decode(exported.json).values)
+        assertFalse(exported.json.contains("private"))
+        for ((key, value) in privateValues) {
+            val decoded = SettingsArchive.decode(singleSettingFixture(key, value))
+            assertTrue(decoded.values.isEmpty())
+            assertEquals(listOf(key), decoded.skippedKeys)
+        }
+    }
+
+    private fun export(values: Map<String, *>) =
+        SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], values)
+
+    private fun rejectsBoth(key: String, value: Any, error: String) {
+        assertEquals(error, assertFailsWith<SettingsArchive.ArchiveException> {
+            export(mapOf(key to value))
+        }.error, "export $key=$value")
+        assertEquals(error, assertFailsWith<SettingsArchive.ArchiveException> {
+            SettingsArchive.decode(singleSettingFixture(key, value))
+        }.error, "valid-checksum import $key=$value")
+    }
+
+    // Single-setting wire fixture only, not a substitute validator or a copied production owner.
+    // Explicit canonical bytes let decode reach validation instead of stopping at a bad checksum.
+    private fun singleSettingFixture(key: String, value: Any): String {
+        val encoded = when (value) {
+            is String -> JSONObject.quote(value)
+            is Boolean -> value.toString()
+            is Number -> java.math.BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
+            else -> error("unsupported fixture")
+        }
+        val canonical = "{" +
+            "\"exported_at\":\"${metadata[3]}\"," +
+            "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+            "\"settings\":{\"$key\":$encoded}," +
+            "\"source_distribution\":\"${metadata[2]}\"," +
+            "\"source_package\":\"${metadata[0]}\"," +
+            "\"source_version\":\"${metadata[1]}\"}"
+        val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return canonical.dropLast(1) + ",\"content_sha256\":\"$digest\"}"
+    }
+
     @Test fun gridDataRoundTripsIndependentlyFromGridHudAndBand() {
         for (gridData in listOf(false, true)) for (grid in listOf(false, true)) {
             val values = mapOf("grid_data" to gridData, "grid" to grid, "hud_mode" to 2, "band_mode" to 0)

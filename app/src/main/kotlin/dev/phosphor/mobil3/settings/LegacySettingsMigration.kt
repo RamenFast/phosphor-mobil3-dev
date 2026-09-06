@@ -31,7 +31,7 @@ internal object LegacySettingsMigration {
         legacyBoolean(causal[NERD_HUD])?.let { return it }
         envelopeMode(causal[CAUSAL_ENVELOPE] as? String)?.let { return it }
         envelopeMode(portable[CAUSAL_ENVELOPE] as? String)?.let { return it }
-        return HUD_OFF
+        return HUD_AUTO
     }
 
     private fun validMode(value: Any?): Int? = (value as? Int)?.takeIf { it in HUD_ON..HUD_OFF }

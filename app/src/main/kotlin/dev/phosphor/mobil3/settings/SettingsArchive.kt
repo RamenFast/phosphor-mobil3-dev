@@ -104,17 +104,19 @@ object SettingsArchive {
         "ov_desig" to intRange(-1, 1),
         "custom_count" to intRange(0, 3),
         "custom_rgb" to string(512) { text ->
-            val values = text.split(',').mapNotNull { it.toFloatOrNull() }
-            values.size == 9 && values.all { it.isFinite() && it in 0f..1f }
+            val values = text.split(',').map { it.toFloatOrNull() }
+            values.size == 9 && values.all { it != null && it.isFinite() && it in 0f..1f }
         },
-        "cycle_seconds" to floatRange(0.25f, 30f),
+        "cycle_seconds" to floatRange(0.1f, 60f),
         "cycle_per_track" to Spec(Kind.BOOLEAN),
     )
 
     private fun rangeString(min: Float, max: Float) = string(80) { text ->
-        val values = text.split(',').mapNotNull { it.toFloatOrNull() }
-        values.size == 2 && values[0].isFinite() && values[1].isFinite() &&
-            values[0] in min..max && values[1] in values[0]..max
+        val values = text.split(',')
+        val lo = values.getOrNull(0)?.toFloatOrNull()
+        val hi = values.getOrNull(1)?.toFloatOrNull()
+        values.size == 2 && lo != null && hi != null && lo.isFinite() && hi.isFinite() &&
+            lo in min..max && hi in lo..max
     }
 
     fun export(

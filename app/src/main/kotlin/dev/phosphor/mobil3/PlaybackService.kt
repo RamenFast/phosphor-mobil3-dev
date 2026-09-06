@@ -1271,9 +1271,9 @@ class PlaybackService : MediaSessionService() {
                                 val p = prefs()
                                 PhosphorNative.remoteScopeCtl(
                                     "gain",
-                                    if (p.getBoolean("auto_gain", false)) "auto"
+                                    if (p.getBoolean("auto_gain", true)) "auto"
                                     else String.format(
-                                        java.util.Locale.US, "%.2f", p.getFloat("gain", 1f)
+                                        java.util.Locale.US, "%.2f", p.getFloat("gain", 1.8332275f)
                                     ),
                                 )
                                 remoteGainApplied = true
