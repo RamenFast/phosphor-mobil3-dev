@@ -85,3 +85,27 @@ Correction07 freeze SHA-256 is `dd18ea9534e50dffe4ea4b5076203ca44d66dd2904ba4ec5
 | `precommit-source-boundary-correction07.json` | `e25d43f97d3a903b1bb329a46004d7e4ce5486834375fbd2deb46bb509d62e59` |
 
 This supersedes only the executable test-name identity for packaging. It does not enlarge the source approvals or close Android acceptance. The exact committed build uses attempt07 as its gate.
+
+## Exact committed debug artifact, 2026-09-06 04:00 UTC
+
+Behavior commit `7f70e299d522686eb0fe7bef9d7d50276fb56557` was built from a clean detached local snapshot with shared engine `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f`. The manifest covers 360 exact mobile paths and 53 pinned shared paths. Root independently rehashed all 413 inputs after the build. Both snapshots remained clean, and source-before/source-after receipts were byte-identical.
+
+The isolated build completed at 03:54:37 UTC, exit 0. Android compilation, native packaging, lint, assembly and checkEngine ran. All 348 Android unit cases passed with zero failures, errors or skips. The 33 selected native passes belong to the preceding frozen attempt07, not a second native host run inside this artifact build.
+
+Artifact lint reported nine warnings and zero errors. The root gate reported 16 warnings. Inspection found the difference in dependency-version advisories, including a different suggested core-ktx version. The source-related warnings, including WakelockTimeout, remain. This is not a claim that seven code defects were fixed.
+
+Package metadata is `dev.phosphor.mobil3.debug`, version `2.0.0-debug`, code `2000000`, minimum SDK 29. APK v2 signing verified with the retained debug certificate SHA-256 `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`. Scope checks passed 2/2. Boundary checks passed 11 source and 5 artifact checks with one declared trusted-runtime exemption. Protected archive checks passed 3/3.
+
+The artifact is retained under the ignored evidence home in `candidate-7f70e299d522-isolated/`. Root independently verified all six `SHA256SUMS` entries at 03:59 UTC.
+
+| Exact artifact evidence | SHA-256 |
+|---|---|
+| `phase-10-7f70e299d522.apk` | `6dde48bb6113092fc5415cecc6f29cb63bcae733373b44681c6f30963a5de36b` |
+| `build.log` | `c420fd2d52bc2e2b67a4024781bd0522f41d523e0741ac5f85aefa61c5cce958` |
+| `source-identity.txt` | `f510a9c9510983ee009f74377190ab8980b9b207a6c45c921ba208f0ef9be1ca` |
+| `tests.txt` | `4397cdb7b078dfdc5ad6d06d11b915dbee0c69e4004b05391ce428e0e0f1343d` |
+| `signer.txt` | `5cd4660fc96362205bbaa03078d98b001a8ed33a18e1e32a904cff46f9ddd49a` |
+| `debug-artifact-boundary.json` | `8b09b299a71bda1b844aefff9e7d5380bad4f2e812f6f66eb34a594e6fcced6e` |
+| Exact artifact input manifest | `08757d0c536a885b83d9c20a489b303bbe73c8539005d7231c6265063f6a06b2` |
+
+No installation, preference change, device input or live-service action occurred. Phase 7 remains the last verified installed baseline. This closes Phase 10's exact offline packaging step only. B5/B11 Android acceptance and final regression remain open. Original Phase 11 source work follows without disturbing active media.

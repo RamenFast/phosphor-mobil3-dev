@@ -2,6 +2,14 @@
 
 **Status:** original B1-B21 execution is active. Ben authorized connected-phone validation at 22:36 UTC. The desktop remains quiet. Exact candidate and rollback checks precede installation. Live Linux deployment remains separate.
 
+### Exact display artifact checkpoint, 2026-09-06 04:00 UTC
+
+Phase 10 behavior commit `7f70e29` now has its exact clean-snapshot debug APK, retained but not installed.
+The build passed 348 Android unit cases, native packaging, lint, engine, scope and source/artifact boundary checks.
+Root independently verified all 413 committed inputs, clean snapshots and six artifact receipt hashes.
+The [Phase 10 receipt](docs/dev/receipts/pre-v2-b1-b21/phase-10-display.md) records exact identities and the artifact-specific lint advisory difference.
+Original Phase 11 follows offline. Android acceptance, final B-cards and drift 21 remain open. Active phone media remains undisturbed.
+
 ### Display ownership checkpoint, 2026-09-06 03:48 UTC
 
 Phase 10's frozen source passed 348 Android unit tests, 33 selected native tests and separate source and isolated source-first intent reviews.

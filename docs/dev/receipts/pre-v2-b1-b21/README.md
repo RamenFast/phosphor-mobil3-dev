@@ -16,7 +16,7 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 | B3 | `phase-07-b3-relay-matrix.md` | `phase-17-relay.md` | committed gate4 and exact APK installed/readback verified; bidirectional tailnet ping passed; relay/Linux acceptance pending |
 | B1, B18, B19 | `phase-08-gestures.md` | `phase-16-gestures.md` | frozen source review and exact clean 272-test artifact passed; six receipt hashes verified; installation and live gestures pending |
 | B10, B12, B13, B14 | `phase-09-ui.md` | `phase-16-ui.md` | committed 992c08a, separate reviews and exact 308-test APK passed; six artifact hashes verified; installation and Android acceptance pending |
-| B5, B11 | `phase-10-display.md` | `phase-16-display.md` | frozen 348-test/33-native gate and separate source/isolated intent reviews passed; exact artifact and Android acceptance pending |
+| B5, B11 | `phase-10-display.md` | `phase-16-display.md` | committed 7f70e29, separate reviews and exact 348-test APK passed; 33 native gate cases and six artifact hashes verified; installation and Android acceptance pending |
 | B15, B16, B20 | `phase-11-render.md` | `phase-16-render.md` | pending |
 | B17 | `phase-12-b17-settings.md` | `phase-16-settings.md` | pending |
 

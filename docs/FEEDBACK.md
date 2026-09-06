@@ -379,3 +379,9 @@ The [Phase 10 receipt](dev/receipts/pre-v2-b1-b21/phase-10-display.md) maps actu
 ### Phase 10 packaging-boundary correction, 03:51 UTC
 
 A test method name collided with the unchanged privacy scanner. Root renamed only that declaration, proved exact reverse-hash equivalence, and reran the full frozen gate plus source boundary. Attempt07 passed 348 Android and 33 native cases. No production/spec behavior or scanner changed. Earlier independent source/intent approvals remain bounded to identical production, with this root-verified test-name-only correction documented in the Phase 10 receipt.
+
+## 2026-09-06 04:00 UTC: exact Phase 10 debug artifact retained
+
+Behavior commit `7f70e29` now has an exact clean-snapshot debug APK. Root independently verified 360 mobile and 53 pinned shared inputs, identical before/after source receipts and all six artifact checksums. The isolated build passed 348 Android cases, native packaging, lint, engine checks, 2/2 scope checks and 11+5 boundary checks. The debug signer matches the retained lineage. Artifact lint reports nine warnings with zero errors. Its dependency advisories differ from the root gate's 16-warning report, not its code warnings.
+
+The [Phase 10 receipt](dev/receipts/pre-v2-b1-b21/phase-10-display.md) records exact source, APK and evidence identities. No APK was installed and no phone, preference or live-service state changed. Original Phase 11 can continue offline. B5/B11 live acceptance, final regression and drift 21 remain open.
