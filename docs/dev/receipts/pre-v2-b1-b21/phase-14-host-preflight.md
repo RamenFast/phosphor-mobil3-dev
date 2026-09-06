@@ -69,3 +69,13 @@ The debug APK SHA256 is `8e14bbbeef530a129bd74c3778a2c6f31e28302b2101f72d2a28c06
 The complete scoreboard also reran on the clean active commits: **18 green, exactly three permitted external release reds, zero skipped**. Neither repository changed during the run. `root-exact-artifact-evidence02.sha256` binds 67 retained files, SHA256 `10e95b83914223d81204559554812c49ae389562a13ecd040675c766270b8ae0`.
 
 This later documentation append is not part of that APK. The physical phone remains untouched. A read-only foreground check at 12:04 UTC still showed user media in front. Physical takeover and acceptance remain pending, along with the separate host requirements above.
+
+## Whole shared-workspace tests, 12:18 UTC
+
+Task745250lb80 ran `cargo test --workspace --locked -- --test-threads=1 --nocapture` on unchanged shared commit `aa09b8e14f8b8912b125e3312b4ddeec09404089`. Result: **193 passed across 19 test and documentation-test targets, zero failures, ignored cases or filters**. The complete log contains no reported GPU-adapter skip. This closes the previously unexecuted whole-workspace test requirement, not the separate formatting failure.
+
+Before execution, root inspected the actual desktop CLI subprocesses, temporary socket fixtures, settings-file fixtures, audio decoder tests, shell tests and renderer targets. The run used private temporary/config/cache/data/runtime directories and non-running control, session-bus and audio endpoints. Display variables were unset. CLI fixtures exercised real file rendering and error handling. Decoder fixtures used files and memory rings without starting AudioEngine. GPU tests used offscreen readback. No live window, audio route, service or phone was activated.
+
+All tracked inputs in both repositories rehashed after the run, and both repositories remained clean. Debug CPU timing is not a release performance claim. The owned test sandbox was removed only after the task exited and no process environment referenced it: 132 disposable files, 2,638,368 bytes. Its file inventory, complete test log, command, checksums and cleanup receipt remain retained. APKs, private backups and build caches were not removed.
+
+`root-shared-workspace-evidence01.sha256` binds the retained evidence, SHA256 `6d8866190de9470f6603149c6c7cf2eeb09601f068766fe7e5d34c6a13679b83`. Remaining requirements are the separately scoped shared formatting, publisher confinement fixture and physical acceptance. The phone-use question remains unanswered. No repeated notification or inferred consent followed the expired beacon.
