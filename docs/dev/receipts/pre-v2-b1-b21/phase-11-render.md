@@ -2,7 +2,7 @@
 
 Date: 2026-09-06. Cards: B15, B16, B20. Refs #5.
 
-**Status: bounded source and host gates passed. Exact artifact and Android acceptance are not yet established by this receipt.**
+**Status: bounded source, host gates and exact committed debug artifact passed. Android acceptance remains open.**
 
 - B15: OPEN. Raw-channel mechanism verified on host. Physical grid visibility and Ben confirmation remain required.
 - B16: OPEN. Shared CPU/GPU mechanism verified offscreen. Actual device mode transitions remain required.
@@ -85,3 +85,29 @@ The complete frozen attempt05 then passed at 07:58:30 with 362 JVM, 50 selected 
 | `root-render-correction05-gates.sh` | `f4cc7694e3a1cebbf03879b730599142805f0452d37e1f81330d1465d1083299` |
 
 Earlier independent approvals retain their exact original snapshot. Root's local-name equivalence proof and full retry are separate evidence, not a newly commissioned independent review. All physical and source-contract limits above remain open.
+
+## 08:01 UTC: exact committed debug artifact
+
+- Mobile behavior commit: `80eeb558d4e10332c3b45b4101ca68c860de0a25`.
+- Shared renderer commit: `aa09b8e14f8b8912b125e3312b4ddeec09404089`.
+- Package: `dev.phosphor.mobil3.debug`, version `2.0.0-debug`, code `2000000`, minimum SDK 29.
+- APK: `dev/scratch/pre-v2-20260829T072841Z/phase-11/candidate-80eeb558d4e1-isolated/phase-11-80eeb558d4e1.apk`.
+- APK SHA256: `3f14a3981085b62789735bcb6a85a887636876e6c79d47beb648ceba5f6d6854`.
+- Debug signer certificate SHA256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`.
+
+The builder used only clean detached local snapshots of those exact commits. Root proved all 27 final source/test/spec blobs equal combined05. It then generated a complete input manifest from Git commit blobs: 362 mobile paths and 459 shared paths. This includes the entire tracked shared tree, not only selected runtime dependencies. All 821 input hashes matched before and after the isolated build, and both snapshots stayed clean at their pinned commits.
+
+The isolated build passed 362 JVM tests with zero failures/errors/skips, native packaging, engine checks, 2/2 scope checks and 11 source plus five artifact boundary checks. Artifact lint reports nine warnings and zero errors. Its advisory differences from the 16-warning root report are dependency/plugin update notices, not source-code warning fixes. Root independently verified all six retained artifact checksums and identical source-before/source-after receipts.
+
+| Artifact evidence | SHA256 |
+|---|---|
+| `artifact-inputs-80eeb558d4e10332c3b45b4101ca68c860de0a25.sha256` | `050d88068c71d9823b78f25dd01cf86cdf4c8ef2bcd3dca9dc48400202cf3e7f` |
+| `artifact-commit-proof-80eeb558d4e10332c3b45b4101ca68c860de0a25.txt` | `b15aac331d96de56da8633327d1b15ed50bbf3f53f8e6b4b820f65028f0264a1` |
+| Candidate `SHA256SUMS` | `73da7ea2dfbbbec4546292ccdd5b25f96ba41693fa5d13f28f6df5399a28a8e1` |
+| Candidate `build.log` | `598a40a0b14544f9666db69918748736f01881c56f76ae533a2a670b5cb6de38` |
+| Candidate `source-identity.txt` | `5b3efea7964ffb543470b3e729d1c55d19af8e54b8cdae2ada29edca3c1e8c42` |
+| Candidate `tests.txt` | `c4b6d0424e33b0154270d4bcbae982ee8f39570aaaa34e171e4925f1abbdcb98` |
+| Candidate `signer.txt` | `5cd4660fc96362205bbaa03078d98b001a8ed33a18e1e32a904cff46f9ddd49a` |
+| Candidate `debug-artifact-boundary.json` | `d1e38c19ab5e4cc224cb2cbd6d31ee0c2c2aedc575a0f525b6fd671bf2ba2e51` |
+
+No APK was installed. The candidate is a verified rollback input, not proof of installed bytes, settings preservation or physical behavior. Phase7 remains the last verified installed phase. No current device-state claim is inferred from that historical fact. Phase12 can continue offline without changing these live acceptance limits.

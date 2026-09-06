@@ -397,3 +397,9 @@ The [Phase11 receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md) records exa
 ### Phase11 identifier-only boundary correction, 07:58 UTC
 
 The unchanged privacy scanner matched two private DSP identifier names before the mobile commit. Root renamed only those locals, proved exact reverse-hash equivalence, and preserved the failure. The full frozen attempt05 passed 362 JVM, 50 selected native, 26 shared renderer and 11 source-boundary checks, with all 827 input rows unchanged and lint 16 warnings/zero errors. This is a root-verified naming correction, not new Android or independent-review acceptance.
+
+## 2026-09-06 08:02 UTC: exact Phase11 debug artifact retained
+
+Behavior commit `80eeb55` and shared `aa09b8e` now have an exact clean-snapshot APK. Root verified all 27 final reviewed blobs against the commits and all 362 mobile plus 459 shared committed inputs before/after build. The isolated build passed 362 JVM cases, native packaging, checkEngine, 2/2 scope checks and 11+5 boundary checks. Six artifact checksums and the retained debug signer matched. Artifact lint has nine warnings and zero errors, with dependency/plugin advisory differences from the root gate.
+
+The [Phase11 receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md) retains the exact APK hash and full provenance. No installation, preference update or device acceptance occurred. B15/B16/B20, the callback-timing contract and drift 21 remain open. Phase12 settings/defaults is next.
