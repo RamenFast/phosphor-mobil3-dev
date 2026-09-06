@@ -48,6 +48,7 @@ A release passes only when every applicable must-level check below has evidence.
 
 - [ ] Single-file and recursive folder-tree playback work, including nested and invalid entries.
 - [ ] MediaSession, notification, lock-screen controls, focus loss, noisy route, seek, and track changes work.
+- [ ] The last local queue item drains to a native ended state. Play after completion restarts it from zero rather than repeatedly pausing its remaining tail.
 - [ ] The scope remains sample-locked to audible local playback.
 - [ ] Existing modes, themes, beam controls, geometry effects, rotation, settings transfer, and PiP survive cleanup.
 - [ ] Android system rotation authority and large-screen layouts remain usable.

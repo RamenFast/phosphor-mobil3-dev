@@ -350,6 +350,7 @@ class WakeOwnershipTest {
         assertTrue(watcher.indexOf("localPlayer.onNativeTerminal(result)") < watcher.indexOf("if (continueQueue)"))
         assertTrue(watcher.contains("result != PlaybackTruth.Terminal.OUTPUT_FAILED"))
         assertTrue(watcher.contains("dur > 0 && pos >= dur - 350")) // Ordinary known-duration trigger is retained.
+        assertFalse(watcher.substringAfter("val dur =").contains("localPlayer.playWhenReady = false"))
         assertFalse(watcher.substringAfter("terminal = {").substringBefore("val dur =").contains("closeOpenedLocal()"))
     }
 

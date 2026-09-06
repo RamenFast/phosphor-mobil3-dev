@@ -1150,9 +1150,11 @@ class PlaybackService : MediaSessionService() {
                 if (localQueuePolicy.mayAdvance() && localPlayer.playWhenReady && dur > 0 && pos >= dur - 350) {
                     advancingAtEnd = true
                     try {
-                        if (!localPlayer.advanceIfPossible()) {
-                            localPlayer.playWhenReady = false // end of queue: rest
-                        }
+                        // Only preselect a successor here. The final item must drain and
+                        // publish its native terminal state before stopping. Pausing it
+                        // early leaves output READY, so Play merely resumes the tail and
+                        // this watcher immediately pauses it again instead of replaying.
+                        localPlayer.advanceIfPossible()
                     } finally {
                         advancingAtEnd = false
                     }

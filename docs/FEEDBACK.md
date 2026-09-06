@@ -427,3 +427,9 @@ Ben repeated that the grid was unreadable. Three matched old/new captures at fix
 Actual SOURCE queue taps exposed a missing Media3 seek-to-item capability. The narrow correction passed Android tests and the real nested left-track selection. Paused seek position and last-item replay remain follow-ups. Stable-session Spotify checks matched their symbols, but the repeated B8 report remains open. The [phone receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md) records the final session-loss observation and all acceptance limits.
 
 419 JVM tests and 25 relevant shared renderer tests passed. Phone state was restored, except retaining the already-enabled grid and the new 2/15 music-volume ceiling. No PC audio, desktop service change or publication occurred. Drift remains 21.
+
+## 2026-09-06 continued phone acceptance: final-item replay
+
+The final-item replay failure was reproduced on installed 6565585 with a 15-second right-only fixture: the duration watcher paused before native drain and retained READY output, so Play resumed the tail and immediately paused again. The duration heuristic now only selects a successor. The final item drains and publishes native ENDED, allowing the existing replay path to restart at zero. The corrected physical APK reached STOPPED at 15000ms, then actual Play showed the pause glyph and advancing playback near the beginning. 419 JVM cases, lint, engine check and assembly passed. Paused seek on this candidate reached 9744ms without playback. This is a narrow repair, not full B9 closure.
+
+On the preceding final candidate, relaunching Spotify restored its external session. Three settled real capture toggles matched both platform sessions and the glyph (PAUSED, PLAYING, PAUSED). Immediate taps while chrome was hiding did not activate transport and are not counted as routing failures. B8 still lacks buffering coverage and reproduction of Ben's reported inversion.
