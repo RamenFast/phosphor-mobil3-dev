@@ -136,6 +136,8 @@ Every LIGHT control that requests TIMER below one second uses the same photosens
 
 Without validated custom RGB and a legal active count, restore selects `custom_count=0` in the UI and retires native custom mode through the existing preset reset path. Illustrative picker colors are not recovered user settings and must not become a seeded palette. Valid stored RGB slots remain available when their count is zero. Restored focus and cycle values reach the existing native setters without requiring another surface creation or a later custom-mode selection.
 
+An export snapshots effective controls even when the user has not edited them: background linger, view lock, custom activation count, cycle duration and TIMER/TRACK mode. Saving custom activation does not invent or overwrite absent RGB slots. A clean export therefore explicitly carries custom_count=0, a three-second TIMER, view lock off and linger off. Importing that export after changing those controls restores their exported defaults. Older partial archives continue to preserve keys they omit.
+
 ### Existing control behavior
 
 FEEL, MOTION, CORNERS, and LABELS must change visible chrome immediately while their settings surface is open. The preview must not restyle the CRT beam or grid.

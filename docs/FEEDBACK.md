@@ -462,3 +462,14 @@ An unacknowledged fast TIMER request publishes1 second to UI and native state be
 Five executable regressions cover ordering, TRACK exemption, acknowledgment and safe boundaries. Updated source checks require all three control routes.
 All424 Android tests, lintDebug and assembleDebug passed. An earlier full run failed only on the old source-string assertion, which was updated rather than removed.
 ASUS installation and actual warning/recovery verification are next. No B8 fix, independent review or S25 installation is claimed. Drift remains21.
+
+## 2026-09-06 21:14 UTC: untouched-control export repair
+
+Guard fix 1a0f6b9 passed actual ASUS warning, native one-second timer, KEEP 1 s and dismiss-without-acknowledgment checks.
+The real clean-default archive round-trip then exposed a separate omission: the 36-key export did not snapshot untouched linger, view lock, custom count or cycle settings.
+After setting custom count 2 and a one-second cycle, importing that archive left both active. Native logs confirmed the stale custom cycle.
+
+Partial imports intentionally preserve omitted keys, including older archives. That contract remains unchanged.
+The existing snapshot writer now saves the five effective control values before export, without seeding RGB values.
+Source-wiring and actual export/decode regressions were added. All 426 Android tests, lintDebug and assembleDebug passed.
+The next gate is a new clean-data ASUS export followed by real mutation/import and native readback. No blanket B17 or release acceptance is claimed.

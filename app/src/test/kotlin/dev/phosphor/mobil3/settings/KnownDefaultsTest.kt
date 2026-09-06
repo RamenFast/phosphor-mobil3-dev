@@ -65,8 +65,44 @@ class KnownDefaultsTest {
         assertTrue(BackgroundLifecyclePolicy.linger(existing))
     }
 
+    @Test fun untouchedControlValuesRoundTripAndOverridePreviouslyEditedDestination() {
+        val state = ScopeUiState()
+        val values = mapOf(
+            "linger_background" to state.lingerBackground,
+            "view_lock" to state.viewLock,
+            "custom_count" to state.customCount,
+            "cycle_seconds" to state.cycleSeconds,
+            "cycle_per_track" to state.cyclePerTrack,
+        )
+        val exported = SettingsArchive.export(
+            "dev.phosphor.mobil3.debug", "2.0.0-debug", "debug",
+            "2026-09-06T21:00:00Z", values,
+        )
+        val destination = mutableMapOf<String, Any>(
+            "linger_background" to true, "view_lock" to true,
+            "custom_count" to 2, "cycle_seconds" to 60f, "cycle_per_track" to true,
+            "custom_rgb" to "0,0,0,1,1,1,0,0,0",
+        )
+        destination.putAll(SettingsArchive.decode(exported.json).values)
+        for ((key, value) in values) assertEquals(value, destination[key], key)
+        assertFalse(exported.exportedKeys.contains("custom_rgb"))
+        assertEquals("0,0,0,1,1,1,0,0,0", destination["custom_rgb"])
+    }
+
     // The following tests inspect source only. They do not construct Activity, execute SharedPreferences,
     // load JNI, run Compose, or prove Android orientation, import delivery, or rendering behavior.
+    @Test fun sourceOnlySnapshotIncludesUntouchedControlsWithoutInventingRgb() {
+        val save = section(source("MainActivity.kt"), "private fun saveTuning()", "private fun restoreTuning()")
+        for (write in listOf(
+            "putBoolean(\"linger_background\", ui.lingerBackground)",
+            "putBoolean(\"view_lock\", ui.viewLock)",
+            "putInt(\"custom_count\", ui.customCount)",
+            "putFloat(\"cycle_seconds\", ui.cycleSeconds)",
+            "putBoolean(\"cycle_per_track\", ui.cyclePerTrack)",
+        )) assertTrue(save.contains(write), write)
+        assertFalse(save.contains("putString(\"custom_rgb\""))
+    }
+
     @Test fun sourceOnlyActivityFallbacksReadExistingPreferencesWithoutSeedingWrites() {
         val activity = source("MainActivity.kt")
         val restore = section(activity, "private fun restoreTuning()", "override fun captureConsentNeeded()")
