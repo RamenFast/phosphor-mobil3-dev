@@ -1,5 +1,7 @@
 # 🎯 Phosphor Mobile pre-v2 B1-B21 lived-repair plan
 
+**2026-09-06 user override:** Remove console volume entirely and preserve remaining UI design. Earlier B13/B14 volume steps are superseded by spec/EXPERIENCE.md. Prioritize real B8 Spotify symbol acceptance. Phone test volume stays at most 15 percent, including restoration. Keep PC audio silent.
+
 **Status:** original B1-B21 execution is active. Ben authorized connected-phone validation at 22:36 UTC. The desktop remains quiet. Exact candidate and rollback checks precede installation. Live Linux deployment remains separate.
 
 ### Exact display artifact checkpoint, 2026-09-06 04:00 UTC

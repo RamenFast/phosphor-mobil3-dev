@@ -391,7 +391,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         super.onResume()
         refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
-        ui.volumeFraction = volumeFrac()
         // Resume only passive live sources once per process. Files and relays remain explicit choices.
         if (taskIsCurrent() && !lastSourceReopened) {
             lastSourceReopened = true
@@ -567,12 +566,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // One gentle heartbeat for display facts Compose can't observe directly:
-    // seek position, system MUSIC volume, resting-beam flag and breathing accent.
+    // seek position, resting-beam flag and breathing accent.
     private var baseRoom: Palette? = null
     private var lastRxBytes = 0L
     private val uiTick = object : Runnable {
         override fun run() {
-            ui.volumeFraction = volumeFrac()
             refreshRotationAuthority()
             reassertSourceWake()
             controller?.let { c ->
@@ -1771,24 +1769,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
     override fun jumpToQueue(index: Int) { controller?.seekTo(index, 0) }
 
-    private val audioMan by lazy { getSystemService(AUDIO_SERVICE) as android.media.AudioManager }
-    override fun volumeFrac(): Float {
-        val max = audioMan.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-        val cur = audioMan.getStreamVolume(android.media.AudioManager.STREAM_MUSIC)
-        // Inverse of the cubic taper so the rule position matches perception.
-        return Math.cbrt((cur.toFloat() / max).toDouble()).toFloat()
-    }
-
-    override fun setVolume(frac: Float) {
-        val max = audioMan.getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)
-        val cubic = frac.coerceIn(0f, 1f).let { it * it * it } // spec: cubic-taper rule
-        audioMan.setStreamVolume(
-            android.media.AudioManager.STREAM_MUSIC,
-            (cubic * max).toInt().coerceIn(0, max),
-            0,
-        )
-        ui.volumeFraction = volumeFrac()
-    }
 }
 
 /** Failure-only publication. Generic recorder stop must not clear a replacement source face. */

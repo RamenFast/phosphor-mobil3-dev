@@ -53,7 +53,7 @@ System authority is transient, not a saved app preference. Activity requests mus
 
 The existing foreground tick and lifecycle callbacks refresh system authority even when gravity does not change. When Android permits rotation again, the existing app preferences and detent resume. Unknown gravity must not invent a cardinal. Detent tolerances, gravity filtering, and sensor ownership remain unchanged.
 
-The foreground tick publishes the existing volume readback first, then refreshes rotation authority. Both remain unconditional within the existing tick.
+The foreground tick refreshes rotation authority unconditionally. Android owns music volume. The app does not poll or display a volume fraction.
 
 Sensor cardinals and Android Surface rotation use opposite landscape conventions. Convert them once at presentation routing. On a portrait-natural display, aligned observations C0/D0, C270/D1, C180/D2, and C90/D3 produce zero relative rotation in every app-lock combination. A display pinned at D0 retains the existing C0/90/180/270 to q0/1/2/3 mapping. Screen targets, Compose rotation signs, and native rotation signs do not change.
 
@@ -136,15 +136,15 @@ FEEL, MOTION, CORNERS, and LABELS must change visible chrome immediately while t
 
 FEEL selects its canonical chrome defaults, including motion, density, prose font, corners, labels, and panel transparency. Explicit MOTION, CORNERS, and LABELS choices then override those defaults. Match follows the selected FEEL, or the displayed room when FEEL also matches. Changing MOTION must replace the prior duration scale rather than retaining another room's scale. Reduced motion has final authority over animation. One live sample row reads the same `LocalRoomStyle` as the surrounding chrome and offers a manual TRY action without a looping effect.
 
-DECK must not remain a destination. Before removal, its existing queue and jump action move to SOURCE, and its volume control moves to the console. SOURCE must not duplicate its artwork or transport controls. Native and JNI deck playback remain unchanged. The console volume rule keeps the existing system-volume action and cubic taper.
+DECK must not remain a destination. Its existing queue and jump action live in SOURCE. SOURCE must not duplicate artwork or transport controls. Native and JNI deck playback remain unchanged.
 
-The console reads observable current MUSIC volume, not a slider-owned cache. The existing foreground 500ms UI heartbeat refreshes the inverse-cubic fraction even while playback is paused or no controller is connected. Foreground return and slider writes refresh it immediately. The heartbeat starts with the Activity and is removed on stop. Hardware, system and route changes must reach the pinned readout without slider input. The existing cubic write and inverse-cubic read adapters remain unchanged.
+Ben removed the console volume feature on 2026-09-06. The console has no volume slider, VOL label, percentage, replacement control, or empty reserved row. Its measured height contracts around the remaining transport, MODE, SRC and overflow controls. Preserve their established shapes, spacing and hierarchy. Android hardware and system volume controls remain available without an app-owned volume adapter.
 
 `controls_always_visible=false` keeps the current hide behavior. When enabled, it immediately reveals a hidden console and blocks timed, tap, Back, and cancelled-pull hiding. Sheets still own their modal surface, and PiP still owns its chrome-free layout. Every change to this setting invalidates a pending hide timer, including an enable-disable sequence before the old delay expires. HUD and band retain their existing modes and follow effective console visibility only in automatic mode.
 
-Seek, tuning, range, and inline volume controls must provide a 44dp touch lane, a sharp 2dp track, square thumbs, live beam accent, and tap-to-jump or nearest-thumb behavior.
+Seek, tuning, and range controls must provide a 44dp touch lane, a sharp 2dp track, square thumbs, live beam accent, and tap-to-jump or nearest-thumb behavior.
 
-All four rules use the same production hit and draw geometry, with inset endpoints that keep the square thumb inside the lane. Tuning and range labels sit above a full-width lane. Inline volume has no fixed label column inside its slider. Range chooses the nearest thumb at the initial pointer position, chooses the lower thumb on a tie, and clamps without crossing. Seek commits on release and discards interrupted scrubs. Vertical intent yields to the console pull or sheet scroll without seeking, and additional or consumed pointers cancel slider ownership.
+All three rules use the same production hit and draw geometry, with inset endpoints that keep the square thumb inside the lane. Tuning and range labels sit above a full-width lane. Range chooses the nearest thumb at the initial pointer position, chooses the lower thumb on a tie, and clamps without crossing. Seek commits on release and discards interrupted scrubs. Vertical intent yields to the console pull or sheet scroll without seeking, and additional or consumed pointers cancel slider ownership.
 
 The grid must remain visible against the tube. When `grid_data=true`, the status surface shows independent raw left and right amplitude with absolute dBFS. A left-only or right-only source must label the correct side. Xy45 rotates both trace and grid by 45 degrees. Other modes restore the Cartesian grid.
 

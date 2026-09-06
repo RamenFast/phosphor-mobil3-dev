@@ -75,9 +75,7 @@ class SliderGeometryTest {
         assertTrue("unit.nearestThumb" in rules)
         assertTrue("unit.moveThumb" in rules)
         assertFalse("detectHorizontalDragGestures" in rules)
-        val inline = controls.substringAfter("fun DragRuleInline(").substringBefore("object Haptics")
-        assertTrue("SliderLane(" in inline)
-        assertFalse("96.dp" in inline)
+        assertFalse("fun DragRuleInline(" in controls)
     }
 
     @Test fun seekRecognizerRetainsVerticalRejectionCurrentCallbacksAndCancelOnInterruptedScrub() {

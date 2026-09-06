@@ -204,8 +204,6 @@ interface ScopeActions {
     fun dollyBy(delta: Float)
     fun openFolder()
     fun jumpToQueue(index: Int)
-    fun volumeFrac(): Float
-    fun setVolume(frac: Float)
     fun makeSurface(): SurfaceView
 }
 
@@ -660,7 +658,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onSettingsSwipe = {
                         if (!overflowComposed) sheet = Sheet.SETTINGS
                     },
-                    onVolume = { actions.setVolume(it) },
                     settingsPullHost = settingsPullHost,
                     moreActive = overflowComposed,
                     overflowPullHost = overflowPullHost,

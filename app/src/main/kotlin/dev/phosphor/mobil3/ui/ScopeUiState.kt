@@ -39,7 +39,6 @@ class ScopeUiState {
     var seekable by mutableStateOf(false)
     var positionMs by mutableLongStateOf(0L)
     var durationMs by mutableLongStateOf(0L)
-    var volumeFraction by mutableFloatStateOf(0f)
 
     var gain by mutableFloatStateOf(1.8332275f)
     var beamEnergy by mutableFloatStateOf(8.0f)

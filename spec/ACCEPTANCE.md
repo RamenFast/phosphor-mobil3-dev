@@ -112,8 +112,8 @@ Each row requires its named automated gate and an honest live receipt. A visual 
 | [ ] | B10 | FEEL, MOTION, CORNERS, and LABELS each change visible chrome immediately while STYLE is open and persist after close and reopen. |
 | [ ] | B11 | Main and picture-in-picture scope surfaces remain awake beyond a shortened captured timeout while a source is live. The display becomes sleep-eligible after stop, and the original device timeout is restored. |
 | [ ] | B12 | Quick and full `pip_auto_enter` controls stay synchronized. Off blocks automatic entry only, on restores it, and manual picture-in-picture works in both states. |
-| [ ] | B13 | No DECK destination remains. SOURCE queue jump, console volume, and persisted always-visible controls work, including both the 4-second and tap-to-hide paths. |
-| [ ] | B14 | Seek, tuning, range, and inline volume rules acquire across a 44dp lane and retain sharp 2dp tracks, square thumbs, live beam accent, and direct jump behavior. |
+| [ ] | B13 | No DECK destination or console volume row remains. SOURCE queue jump and persisted always-visible controls work, including both the 4-second and tap-to-hide paths. The console contracts without changing its remaining controls. Android retains volume ownership. |
+| [ ] | B14 | Seek, tuning, and range rules acquire across a 44dp lane and retain sharp 2dp tracks, square thumbs, live beam accent, and direct jump behavior. |
 | [ ] | B15 | A measured S25 grid receipt proves visible, repeatable CPU/GPU grid parity. Left-only and right-only fixtures publish the correct raw amplitude and absolute dBFS side only when `grid_data=true`. |
 | [ ] | B16 | Xy45 rotates both trace and grid by 45 degrees in CPU and GPU paths. Xy, swirl, dots, and other modes restore a Cartesian grid without an alpha change. |
 | [ ] | B17 | Same-package updates preserve edits, the settings archive round-trips all legal values and five new keys, and a clean install gets the accepted defaults with `custom_count=0`. |

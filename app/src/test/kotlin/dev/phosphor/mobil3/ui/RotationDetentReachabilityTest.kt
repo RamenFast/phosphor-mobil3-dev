@@ -72,7 +72,7 @@ class RotationDetentReachabilityTest {
             .substringBefore("\n    }\n")
         assertTrue(tick.contains("refreshRotationAuthority()"))
         val run = tick.substringAfter("override fun run() {").trimStart()
-        assertTrue(run.startsWith("ui.volumeFraction = volumeFrac()\n            refreshRotationAuthority()"))
+        assertTrue(run.startsWith("refreshRotationAuthority()"))
         assertTrue(tick.contains("tick.postDelayed(this, 500)"))
         assertTrue(method(activity, "override fun onStop()").contains("tick.removeCallbacks(uiTick)"))
         for (signature in listOf(

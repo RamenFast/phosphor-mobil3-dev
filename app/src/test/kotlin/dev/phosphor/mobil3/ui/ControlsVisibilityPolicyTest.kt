@@ -1,7 +1,5 @@
 package dev.phosphor.mobil3.ui
 
-import androidx.compose.runtime.snapshots.Snapshot
-import androidx.compose.runtime.snapshots.SnapshotStateObserver
 import org.junit.Test
 import kotlin.test.*
 
@@ -51,7 +49,7 @@ class ControlsVisibilityPolicyTest {
         assertTrue("ControlsVisibilityPolicy.alwaysVisible(p.all)" in activity)
     }
 
-    @Test fun sourceKeepsOnlyExistingQueueJumpAndConsoleVolumeInsteadOfDeckUi() {
+    @Test fun sourceKeepsQueueJumpWithoutDeckOrConsoleVolume() {
         val sheets = phase9Source("ui/Sheets.kt")
         val source = sheets.substringAfter("fun SourceSheet(").substringBefore("fun ModeSheet(")
         assertTrue("itemsIndexed(state.queueTitles)" in source)
@@ -62,90 +60,35 @@ class ControlsVisibilityPolicyTest {
         val screen = phase9Source("ui/PhosphorScreen.kt")
         assertTrue("override fun jumpToQueue(index: Int) = actions.jumpToQueue(index)" in screen)
         assertFalse("volumeFrac = { actions.volumeFrac() }" in screen)
-        assertTrue("onVolume = { actions.setVolume(it) }" in screen)
-        assertTrue("DragRuleInline(" in phase9Source("ui/Console.kt"))
+        assertFalse("onVolume" in screen)
+        assertFalse("DragRuleInline(" in phase9Source("ui/Console.kt"))
         for (text in listOf(screen, sheets, phase9Source("ui/Console.kt"), phase9Source("ui/Glyphs.kt"))) {
             for (removed in listOf("Sheet.DECK", "DeckSheet", "SettingsGlyph.Deck", "onDeck")) assertFalse(removed in text)
         }
         assertTrue("deckOpen" in phase9Source("PhosphorNative.kt"))
     }
 
-    @Test fun suppliedVolumeInvalidatesActualPinnedPausedStateWithoutSliderInput() {
-        val state = ScopeUiState().apply {
-            controlsAlwaysVisible = true
-            playing = false
-        }
-        val observer = SnapshotStateObserver { it() }
-        val scope = Any()
-        var invalidations = 0
-        val onChanged: (Any) -> Unit = { invalidations++ }
-        var displayed = -1f
-        Snapshot.sendApplyNotifications()
-        observer.start()
-        try {
-            for (supplied in listOf(0.2f, 0.8f, 0f, 1f)) {
-                observer.observeReads(scope, onChanged) {
-                    displayed = state.volumeFraction
-                }
-                val before = invalidations
-                Snapshot.withMutableSnapshot { state.volumeFraction = supplied }
-                assertEquals(before + 1, invalidations)
-                observer.observeReads(scope, onChanged) {
-                    displayed = state.volumeFraction
-                }
-                assertEquals(supplied, displayed)
-                assertFalse(state.playing)
-                assertTrue(state.controlsAlwaysVisible)
-            }
-        } finally {
-            observer.stop()
-            observer.clear()
-        }
-    }
-
-    @Test fun volumeUsesExistingLifecycleHeartbeatAndImmediateReadbackWithoutChangingCubicBackend() {
+    @Test fun removedVolumeLeavesAndroidOwnershipAndExistingHeartbeat() {
         val activity = phase9Source("MainActivity.kt")
-        val publish = "ui.volumeFraction = volumeFrac()"
+        val console = phase9Source("ui/Console.kt")
+        for (source in listOf(activity, console, phase9Source("ui/ScopeUiState.kt"), phase9Source("ui/PhosphorScreen.kt"))) {
+            for (removed in listOf("volumeFraction", "volumeFrac", "setVolume", "onVolume", "setStreamVolume")) {
+                assertFalse(removed in source, "Removed volume path remains: $removed")
+            }
+        }
+        assertFalse("Mono(\"VOL\"" in console)
+        assertFalse("DragRuleInline" in phase9Source("ui/Controls.kt"))
+        assertTrue(".onSizeChanged { onHeightChanged(it.height) }" in console)
+        assertTrue("FlatKey(\"MODE\"" in console)
+        assertTrue("FlatKey(\"SRC\"" in console)
+        assertTrue("OverflowHandleKey(" in console)
         val tick = activity.substringAfter("private val uiTick = object : Runnable {")
             .substringBefore("override fun onNewIntent(")
-        assertTrue("override fun run() {" in tick)
-        assertTrue("\n        }\n    }" in tick)
-        val run = tick.substringAfter("override fun run() {")
-            .substringBefore("\n        }\n    }")
-        val publishAt = run.indexOf(publish)
-        val controllerAt = run.indexOf("controller?.let {")
-        val scheduleAt = run.indexOf("tick.postDelayed(this, 500)")
-        assertTrue(publishAt >= 0 && controllerAt > publishAt && scheduleAt > controllerAt)
-        // Publication is unconditional, even with no controller. Other source refreshes may follow it.
-        assertTrue(run.substring(0, publishAt).isBlank())
-        assertEquals(1, Regex(Regex.escape(publish)).findAll(run).count())
-        assertTrue("tick.postDelayed(this, 500)" in tick)
+        val run = tick.substringAfter("override fun run() {").trimStart()
+        assertTrue(run.startsWith("refreshRotationAuthority()"))
         assertEquals(1, Regex("tick.postDelayed\\(this, 500\\)").findAll(activity).count())
-        val start = activity.substringAfter("override fun onStart() {").substringBefore("override fun onStop() {")
-        val stop = activity.substringAfter("override fun onStop() {").substringBefore("private fun sessionPlaying(")
-        val resume = activity.substringAfter("override fun onResume() {").substringBefore("override fun onPictureInPictureModeChanged(")
-        assertTrue("tick.post(uiTick)" in start)
-        assertTrue("tick.removeCallbacks(uiTick)" in stop)
         assertEquals(1, Regex("tick.post\\(uiTick\\)").findAll(activity).count())
         assertEquals(1, Regex("tick.removeCallbacks\\(uiTick\\)").findAll(activity).count())
-        assertTrue("refreshCaptureMetadataAccess()\n        $publish" in resume)
-        val read = activity.substringAfter("override fun volumeFrac(): Float {").substringBefore("override fun setVolume(")
-        assertTrue("getStreamMaxVolume(android.media.AudioManager.STREAM_MUSIC)" in read)
-        assertTrue("getStreamVolume(android.media.AudioManager.STREAM_MUSIC)" in read)
-        assertTrue("return Math.cbrt((cur.toFloat() / max).toDouble()).toFloat()" in read)
-        val write = activity.substringAfter("override fun setVolume(frac: Float) {")
-        assertTrue("frac.coerceIn(0f, 1f).let { it * it * it }" in write)
-        assertTrue("(cubic * max).toInt().coerceIn(0, max)" in write)
-        assertTrue("android.media.AudioManager.STREAM_MUSIC," in write)
-        assertTrue("0,\n        )\n        $publish" in write)
-        assertEquals(3, Regex(Regex.escape(publish)).findAll(activity).count())
-        val console = phase9Source("ui/Console.kt").substringAfter("fun Console(")
-            .substringBefore("private fun OverflowHandleKey(")
-        assertTrue("state.volumeFraction, p," in console)
-        assertTrue("onChange = onVolume" in console)
-        assertFalse("volumeFrac()" in console)
-        assertFalse("var volume" in console)
-        assertTrue("var volumeFraction by mutableFloatStateOf(0f)" in phase9Source("ui/ScopeUiState.kt"))
     }
 
     @Test fun viewportUsesRemainingSafeHeightWithoutShrinkingSliderLanes() {

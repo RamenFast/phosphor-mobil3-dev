@@ -102,20 +102,6 @@ internal fun SliderLane(
     )
 }
 
-@Composable
-fun DragRuleInline(
-    value: Float,
-    p: Palette,
-    format: (Float) -> String,
-    modifier: Modifier = Modifier,
-    onChange: (Float) -> Unit,
-) {
-    Row(modifier, verticalAlignment = Alignment.CenterVertically) {
-        SliderLane(p, value.coerceIn(0f, 1f), Modifier.weight(1f), onChange = onChange)
-        Mono(format(value), p.ink, Type.dataXs, Modifier.padding(start = 8.dp).width(44.dp))
-    }
-}
-
 // ── Haptics map (UX-SPEC §3, low intensities) ─────────────────────────────────
 object Haptics {
     fun light(v: View) = v.performHapticFeedback(HapticFeedbackConstants.CLOCK_TICK)

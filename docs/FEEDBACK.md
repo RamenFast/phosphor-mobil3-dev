@@ -413,3 +413,9 @@ The frozen final gate passed 386 JVM, 50 selected native and 26 shared renderer 
 B17 remains open. No Phase12 APK has yet been installed, and clean-emulator app defaults, same-package S25 preservation, real import delivery and the separate system-rotation authority gap remain unaccepted. The existing emulator only passed isolated boot/identity preflight. No physical phone or private preference changed. Drift remains 21.
 
 The [Phase11 receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md#0917-utc-callback-wording-disposition) now appends a transparent wording correction: the specification requires the same sample stream, not execution inside the output callback. The observed enqueue path supports that source relationship. Physical sample-lock and timing remain open, with no normative or historical review text replaced.
+
+## 2026-09-06: console volume removed by user direction
+
+Ben rejected the console volume feature during S25 acceptance. The current experience and acceptance contracts now require its removal, without replacement or reserved row. Android retains volume ownership. This supersedes the older B13/B14 inline-volume requirements.
+
+The repeated B8 report concerns Spotify capture, not the already-correct local-file glyph. It remains open pending real source-state and visible-button agreement. Testing must keep phone MUSIC volume at or below 15 percent and leave PC audio silent.

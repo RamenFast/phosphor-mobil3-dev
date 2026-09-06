@@ -46,3 +46,10 @@
 
 | 2026-09-05 | Compress eligible agent-facing context without information loss. Exclude the separately governed dwelling and its exclusive files, as defined in [workspace governance](../../AGENTS.md#1--scope--neighbors). Preserve existing references and conditions. | documentation-only review and hash-verified integration |
 | 2026-09-06 | Clean ephemeral files, install needed tools without extra prompts, and continue the original repairs | removed six obsolete daemon logs and eight temporary directories, 423579 bytes; retained rollback, evidence and reusable build inputs; Phase10 continues offline |
+
+## 2026-09-06 phone acceptance updates
+
+- Resume comprehensive S25 testing with existing exact artifacts and private backups. Active.
+- Remove the console volume slider and percentage without restyling remaining controls. Implementation in progress.
+- Prioritize the repeated B8 Spotify capture play/pause symbol report. Real button and source-state checks required.
+- Phone test volume must remain at most 15 percent while Ben sleeps. Current MUSIC index is 2 of 15. Do not restore a higher prior volume. Keep PC audio silent.

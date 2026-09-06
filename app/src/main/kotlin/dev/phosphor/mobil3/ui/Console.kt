@@ -183,7 +183,6 @@ fun Console(
     onPrev: () -> Unit,
     onSeek: (Long) -> Unit,
     onSettingsSwipe: () -> Unit,
-    onVolume: (Float) -> Unit,
     settingsPullHost: PullGestureHost,
     moreActive: Boolean,
     overflowPullHost: PullGestureHost,
@@ -276,13 +275,6 @@ fun Console(
                     active = moreActive,
                     pullHost = overflowPullHost,
                     onTap = onMore,
-                )
-            }
-            Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                Mono("VOL", p.muted, Type.dataXs, Modifier.padding(end = 8.dp))
-                DragRuleInline(
-                    state.volumeFraction, p, { "${(it * 100).roundToInt()} %" }, Modifier.weight(1f),
-                    onChange = onVolume,
                 )
             }
         }
