@@ -353,3 +353,9 @@ Separate source and source-first intent reviews exposed unreachable short-layout
 The final frozen gate passed 308 tests with zero failures, errors or skips. Lint retained 15 existing warnings. Full input inventories matched. Independent correction addenda closed the identified source findings without claiming Compose or Android execution. The [Phase 9 receipt](dev/receipts/pre-v2-b1-b21/phase-09-ui.md) preserves exact hashes, requirement-linked checks and live gaps.
 
 No device, playback, permission, visible GUI or live-service change occurred in this phase. Exact committed packaging is next. Phone layout/touch, system volume, PiP, settings restoration, paused seek and final regression remain open. Drift remains 21.
+
+## 2026-09-06 01:30 UTC: exact Phase 9 debug artifact retained
+
+Reviewed behavior commit `992c08a` now has an exact clean-snapshot debug APK. The isolated build passed 308 tests, lint, engine, two scope gates and 11 source plus 5 artifact boundary checks. All six artifact receipt hashes independently matched. The signer matches the existing debug lineage. The Phase 9 receipt records full source, APK and evidence identities.
+
+No APK was installed and no phone interaction occurred. Phase10 brightness/wake source work may continue offline. Live controls, paused seek, gesture and all final regression gates remain open. Existing backups, unrelated work and drift 21 are unchanged.

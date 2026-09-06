@@ -1,6 +1,6 @@
 # Phase 9: controls, PiP and effective style
 
-Status: **VERIFY**. Offline implementation, full gates and separate source/intent reviews are complete. Exact packaging and Android acceptance remain open.
+Status: **VERIFY**. Offline implementation, full gates, separate source/intent reviews and exact debug packaging passed. Installation and Android acceptance remain open.
 
 - B IDs: B14, B13, B12, B10.
 - Private issue references: #4 and #5.
@@ -65,3 +65,27 @@ All 21 current implementation/test/spec hashes were independently checked. DECK 
 The exact Phase8 APK remains retained and uninstalled. The earlier Phase7 APK is the last verified installed debug baseline. Existing device backups and task fixtures remain governed by the private phone checkpoint. No fresh preference backup is claimed for this phase.
 
 Next: commit the reviewed sources, retain the exact clean-snapshot Phase9 debug APK and verify its identities. During an undisturbed phone window, back up current preferences, install through `dev/pm3`, verify readback and preference preservation, then execute the named matrix and paused-seek/Phase8 regression. Revert this phase's source commit and use the retained prior artifact if rollback is needed. No publication, release signing, final B-card closure or drift reset is included.
+
+## Exact committed artifact, 2026-09-06 01:30 UTC
+
+Behavior commit `992c08a6ab836e6af25896c87ce8763817cabfea` contains only the 27 reviewed implementation, test, spec and evidence paths. Before commit, root rechecked 814 unchanged Full4 input hashes, excluding only owned documentation updates. The staged path set matched the owned list. The protected archive and source boundary passed. Both original working trees were clean after the commit, with no sibling change made by this phase.
+
+The sole isolated build completed at 01:29:34 UTC, exit 0, from clean detached snapshots of that mobile commit and consumed engine `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f`. Its input manifest covers 355 exact mobile paths and 53 consumed shared paths. Source checks matched before and after packaging. The exact build passed 308 tests, lint and engine checks. Scope gates passed 2/2. Package boundaries passed 11 source and 5 artifact checks, with one documented trusted-runtime exemption.
+
+- Package: `dev.phosphor.mobil3.debug`.
+- Version: `2.0.0-debug`, code `2000000`, minimum SDK 29.
+- Artifact: `candidate-992c08a6ab83-isolated/phase-09-992c08a6ab83.apk` in the private evidence home.
+- APK SHA-256: `7d8ed70487ab7ffad1060cc1b46fcea2a1d4e8fc5dffc31314b96fe2bf04be3c`.
+- Debug signer SHA-256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`, matching the installed debug lineage.
+
+Root independently ran `sha256sum -c SHA256SUMS`. All six entries passed:
+
+| Evidence | SHA-256 |
+|---|---|
+| Build log | `67c19ec40ccdd38db096c7cac64a341acca41ff019173608a2bb841a8e848b6e` |
+| Source identity | `6dbf664bb7fe61372ca219932ec0d2073a84e657a3cb423c8053233c8c32e900` |
+| Test summary | `fe803258ffcd0c62f3bda16172bc9e659ddb1e59f117f8b71d6815b551f4aa5e` |
+| Signer receipt | `5cd4660fc96362205bbaa03078d98b001a8ed33a18e1e32a904cff46f9ddd49a` |
+| Artifact boundary | `35a94ded3bff68a4e0802e20462f77e23a49e8c731a7a412dbe7e28da1b54fe4` |
+
+The sixth entry is the APK hash above. This closes exact packaging, not installation or live B-card acceptance. No device action occurred. The next live step still starts with current preference backup and exact installed readback. Sequential Phase10 source work may proceed offline while those gates remain open.
