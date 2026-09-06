@@ -480,3 +480,13 @@ The final installed APK is 6183aa8 with SHA256 `5d30d7e62d47ebdb7e67ef94bd71f7a2
 The new clean export contained all five previously missing controls and no invented RGB. Actual UI mutations changed all five, then real import restored all 41 exported values.
 Native readback reset custom colors to zero and the cycle to a three-second TIMER. Test files and test-only inactive colors were cleaned up.
 ASUS remains installed, muted, no-source and stopped. S25 was not touched after the handoff. See the [ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md) for remaining gates. Drift stays 21.
+
+## 2026-09-06 23:48 UTC: restored USB and remaining physical checks
+
+Ben restored the ASUS cable and asked to keep the phone alive. Authorized plugged-in wake and disabled screensaver settings were applied and read back.
+Two full native surface teardown/recreation cycles now have moving-trace measurements: −0.54% and +1.16% mean changes across 18 screenshots.
+The test fixture now takes explicit surface dimensions, validates all coordinates before input and runs seven invalid-coordinate regressions.
+The actual ASUS free-stage, bottom-band latch, held-margin and adjacent-stage comparisons passed. The 17 host timing tests also passed.
+An initial margin trajectory left the protected margin, so it did not establish held-margin rejection. The corrected fixed-height comparison did.
+No app-runtime change or installation was needed. Tuning/runtime preferences were restored byte-for-byte, audio stayed muted and owned files were removed.
+Exact physical 333ms, B8 and broader acceptance remain open. The [receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md) records limits and restoration. Drift stays 21.

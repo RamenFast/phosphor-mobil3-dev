@@ -3,6 +3,7 @@ gradle.projectsEvaluated {
         doLast {
             def source = new File(rootProject.projectDir,
                 'docs/dev/receipts/pre-v2-b1-b21/gesture-driver/PhoneGesture.java')
+            def boundsTest = new File(source.parentFile, 'PhoneGestureBoundsTest.java')
             def output = new File(rootProject.projectDir, 'build/phone-gesture')
             def classes = new File(output, 'classes')
             classes.mkdirs()
@@ -13,13 +14,17 @@ gradle.projectsEvaluated {
             }
             def commands = [
                 [java + '/bin/javac', '-cp', sdk + '/platforms/android-36/android.jar',
-                 '-d', classes.path, source.path],
+                 '-d', classes.path, source.path, boundsTest.path],
+                [java + '/bin/java', '-cp', classes.path + File.pathSeparator +
+                 sdk + '/platforms/android-36/android.jar', 'PhoneGestureBoundsTest'],
                 [sdk + '/build-tools/36.0.0/d8', '--min-api', '29', '--lib',
                  sdk + '/platforms/android-36/android.jar', '--output',
                  new File(output, 'driver.jar').path, new File(classes, 'PhoneGesture.class').path]
             ]
             commands.each { command ->
-                if (new ProcessBuilder(command).inheritIO().start().waitFor() != 0) {
+                def process = new ProcessBuilder(command).redirectErrorStream(true).start()
+                process.inputStream.eachLine { logger.lifecycle(it) }
+                if (process.waitFor() != 0) {
                     throw new GradleException('Gesture fixture build failed. Fix: inspect the compiler output.')
                 }
             }

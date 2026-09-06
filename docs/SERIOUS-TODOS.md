@@ -112,3 +112,12 @@ ASUS physical clean-start native rendering and default controls now pass, replac
 The fast-TIMER guard bypass and omitted untouched export controls are fixed and installed in `6183aa8`. Actual warning/recovery and all 41 exported values passed device checks.
 Remaining B8, synchronized physical 333 ms timing, moving-trace recreation, exhaustive variants and human/release gates are listed in the [ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md).
 Do not use the S25 for further tests.
+
+## 2026-09-06 23:48 UTC: ASUS recreation and gesture evidence
+
+Two complete native surface teardown/recreation cycles now preserve the measured moving trace.
+Eighteen screenshots show mean bright-trace changes of −0.54% and +1.16% with overlapping ranges.
+The ASUS-adapted finite driver passed a no-input probe, free pinch, latched bottom-band rejection,
+held console-margin rejection and an adjacent allowed-stage comparison. Seventeen host timing tests passed.
+The exact physical 333ms timestamp remains unobserved, not a failed product check or a completed test.
+B8, exhaustive variants and human/release gates remain open. See the [new receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md).

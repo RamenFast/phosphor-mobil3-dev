@@ -4,6 +4,7 @@
 
 ## Read first
 
+- [ASUS moving-trace recreation and version 2 physical gestures](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md). Two complete surface cycles and held-margin checks passed. Exact physical 333ms remains open.
 - [ASUS clean-start acceptance and two installed repairs](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md).
 - [Gesture-driver repair and actual native surface recreation](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-gesture-recovery-2026-09-06.md).
 - [Final expanded phone pass and exact remaining gates](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-final-pass-2026-09-06.md).
@@ -16,7 +17,13 @@
 
 **The S25 is excluded from further testing.** Ben supplied an ASUS_AI2202 Android14 replacement. Its current explicit route is recorded in the private ASUS helper under `dev/scratch/asus-acceptance-20260906T2051Z/`. Recheck identity before device actions. ASUS MUSIC is 0/30. No Phosphor package or app data existed on it before this session.
 
-Ben authorized comprehensive phone testing, then required quiet testing while sleeping. Keep Android MUSIC volume at **at most 15 percent**. It is currently **2/15, about 13 percent**. Do not restore the earlier higher volume. Keep PC audio silent. Do not manipulate the PIN/keyguard, publish, push, sign a release or deploy/restart Linux services under this phone-testing authorization.
+Ben authorized comprehensive phone testing, then required quiet testing while sleeping. Keep Android MUSIC volume at **at most 15 percent**. ASUS is muted at **0/30**. The excluded S25 was left at 2/15. Keep PC audio silent. Do not manipulate the PIN/keyguard, publish, push, sign a release or deploy/restart Linux services under this phone-testing authorization.
+
+USB access resumed at 23:32 UTC. Ben explicitly requested persistent plugged-in wake settings.
+ASUS now has `stay_on_while_plugged_in=7`, `screensaver_enabled=0` and its unchanged 600000ms unplugged timeout.
+Do not restore those two requested settings as if they were temporary tests.
+The latest pass restored both app preference files byte-for-byte, removed owned test files and stopped the app.
+Older S25 narratives below are historical. Their moving-trace recreation gap is superseded by the latest ASUS receipt.
 
 The console volume slider is unwanted. It is removed, not moved elsewhere. Preserve the remaining UI design. The repeated Spotify play/pause-symbol and grid-visibility reports are priority requirements, not requests Ben should repeat.
 

@@ -144,3 +144,7 @@ Do not change `drift` from 21 to 0 until every B1-B21 row has its final PASS rec
 ### ASUS replacement phone, 2026-09-06 20:51 UTC onward
 
 [ASUS receipt](phase-15-16-asus-2026-09-06.md): clean native rendering, actual defaults, two installed LIGHT/export fixes, 426 Android tests and a real 41-key mutation/import. S25 excluded. Exact remaining gates retained.
+
+### ASUS USB continuation, 2026-09-06 23:37 UTC
+
+[Recreation and gesture receipt](phase-15-16-asus-recreation-2026-09-06.md): 18 moving-trace screenshots across two full native surface cycles, ASUS-dimensioned physical gesture checks, fixture bounds regressions, exact restoration and requested keep-awake settings. Physical 333ms and broader gates remain open.

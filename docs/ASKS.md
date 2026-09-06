@@ -69,3 +69,10 @@ B8, exact physical settle timing, emulator rendering and the remaining matrix st
 Ben supplied the ASUS_AI2202 and requested that testing move off his S25. The S25 is now excluded from further tests.
 The [ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md) records clean native rendering and two newly found, fixed and installed bugs: fast TIMER confirmation bypass and incomplete untouched-control exports.
 Actual warning/recovery and a full 41-key defaults mutation/import passed. B8 and the remaining acceptance gaps stay open.
+
+## 2026-09-06 23:31 UTC: restore USB and keep the ASUS alive
+
+Ben fixed the cable and requested phone settings that keep testing connected.
+ASUS USB authorization is working. Plugged-in stay-awake is 7, the screensaver is disabled, and Android confirms Awake with StayOn true.
+The unplugged timeout and lock/security policy are unchanged. These requested settings remain enabled after cleanup.
+The [continuation receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md) records resumed moving-trace and gesture checks.

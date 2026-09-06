@@ -1,9 +1,13 @@
-# Android 16 gesture acceptance fixture
+# Android gesture acceptance fixture
 
 This is retained test input, not an app runtime endpoint or installed administration tool.
 The root operator owns device selection, authorization, coordinates, backups and cleanup.
-The fixture assumes the verified S25 portrait surface, 1080 by 2340 physical pixels.
-Do not use it on another orientation or device without revising the bounds.
+Version 2 requires explicit width and height before the command.
+Read the current screenshot dimensions and `wm size` before each orientation-specific run.
+The earlier S25 receipt used version 1 with fixed 1080 by 2340 bounds.
+ASUS portrait tests use 1080 by 2400. Do not target the excluded S25.
+Validate every coordinate before injecting the first event. Reject nonfinite coordinates,
+out-of-bounds points and invalid duration without delivering a partial gesture.
 
 Build through the project wrapper:
 
@@ -15,10 +19,12 @@ source scripts/env.sh
 ```
 
 Output: `build/phone-gesture/driver.jar`.
+The build runs host bounds checks against the same validator before packaging the driver.
+These check valid ASUS corners and seven invalid/nonfinite inputs, without Android injection.
 After uploading to a unique owned phone path and making the jar read-only, run:
 
 ```text
-CLASSPATH=OWNED_JAR app_process /system/bin PhoneGesture probe
+CLASSPATH=OWNED_JAR app_process /system/bin PhoneGesture 1080 2400 probe
 ```
 
 `probe` initializes the input manager without injecting events.
