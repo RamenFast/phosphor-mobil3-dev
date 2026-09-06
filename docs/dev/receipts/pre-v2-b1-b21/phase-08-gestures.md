@@ -1,6 +1,6 @@
 # Phase 8: gesture ownership and double-tap setting
 
-Status: **VERIFY**. Source and offline gates passed. Exact package and real Compose/phone acceptance remain open.
+Status: **VERIFY**. Source, offline gates and the exact retained debug package passed. Installation and real Compose/phone acceptance remain open.
 
 ## Implemented contract
 
@@ -35,3 +35,23 @@ Root full gate `rootseek1` passed 272 tests with zero failures, errors or skips,
 Evidence is retained under `dev/scratch/pre-v2-20260829T072841Z/phase-08/` and `phone-live-20260905/`. Historical attempts and the installed Phase 7 rollback remain intact. No worker installed, assembled, launched, operated the phone, changed shared engine code or created a new gesture recognizer.
 
 Next: package the exact committed sources, verify installed readback and preserved preferences, then check actual paused-seek publication and transformed gesture/settings behavior. Later controls/render/settings phases and combined regression remain separate.
+
+## Exact retained artifact, 2026-09-06 00:01 UTC verification
+
+The sole clean-snapshot build completed at 2026-09-05 23:46:53 UTC with exit 0. Mobile source is `0d47f0d21037adebd3d55f89e9f97e51798f7cf8`. Consumed shared source is `4dc0f2c3ec27c560b497b887f2a8e9c9031a967f`. Original working trees were not used as moving build inputs.
+
+The retained `phase-08-0d47f0d21037.apk` SHA-256 is `4c2e6fa312e328189e2a4deb3b5ef692b8cc74d7ade4c687c75fb7cdba3647b7`. The debug signing certificate SHA-256 is `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`, matching the prior installed debug lineage.
+
+Root independently ran `sha256sum -c SHA256SUMS` in the retained candidate directory. All six entries passed: APK, build log, source identity, test summary, signer and artifact boundary receipt. The exact build passed 272 tests with zero failures, errors or skips. The boundary receipt passed 11 source and 5 artifact checks, with one documented trusted-runtime exemption.
+
+| Retained evidence | SHA-256 |
+|---|---|
+| Build log | `d0887ee3b93533265c9c04aab6c8cee6fddd44ccfaf162df2dbd8b8ad719a98f` |
+| Source identity | `1886e9199f7af33a943586bf1c5f2c539f8ab1afae0921b24f2ccf569f3bf227` |
+| Test summary | `76627e22c872b4007e19da165f1958173a1f993198f3bdab2d356a28802b4edf` |
+| Signer | `5cd4660fc96362205bbaa03078d98b001a8ed33a18e1e32a904cff46f9ddd49a` |
+| Artifact boundary | `79bbfb7d57b957e1c74eea5d8db305a328f4f6c5fbcb6c8277d4cb7203ba9bcd` |
+
+No Phase 8 upgrade occurred. The next USB preflight found that route absent. A bounded read-only wireless probe verified the same S25 identity and found another media app in the foreground. Root sent no input, playback or package command. A compound state check exited before the preference backup commands, so no fresh Phase 8 preference backup is claimed. Earlier verified backups remain intact.
+
+The next live window still requires a fresh stable preference backup, exact `dev/pm3` upgrade and installed readback, then paused repeated seeks/resume and the transformed gesture/settings matrix. Sequential Phase 9 source work may proceed without closing these gates. B1, B18, B19 and drift 21 remain open.

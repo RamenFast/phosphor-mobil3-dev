@@ -335,3 +335,11 @@ Phase8 now uses the existing stage owner for transformed24dp chrome margins, thr
 Authorized phone checks on the exact installed Phase7 APK verified preference preservation, local direct/folder metadata and beam, microphone handoff, and local/mic recents source cleanup. The marked420-second local log replay matched58579 records with no crash/ANR/panic candidates. Complete lifecycle, captured transport, relay/Linux and later UI/render/default matrices remain open.
 
 A real paused seek exposed stale media-session position despite a native reopen at the requested offset. The existing successful latest-request publication now emits actual native position as a consumed Media3 discontinuity. Root full gate272 passed unchanged inputs. This source correction still needs exact installed recovery evidence. No original final card or drift21 count is closed by these partial results. See the Phase7 live checkpoint and Phase8 receipt.
+
+## 2026-09-06 00:05 UTC: exact Phase 8 package retained
+
+The clean committed-source Phase 8 build completed successfully with 272 tests, debug signer verification and 11 source plus 5 artifact boundary checks. Root independently verified all six retained receipt hashes. The [Phase 8 receipt](dev/receipts/pre-v2-b1-b21/phase-08-gestures.md) records the exact source, APK and evidence identities.
+
+The authorized phone's USB route disappeared. Read-only wireless checks identified the same S25 with another media app in the foreground. Root left that playback undisturbed. No Phase 8 installation, fresh preference backup or input occurred. Prior backups remain intact. Paused-seek recovery, live gestures and all original final cards remain open, with drift 21 unchanged.
+
+Sequential Phase 9 controls work continues offline through the confirmed Astra high route. This does not accept any pending phone, relay, render or settings behavior.
