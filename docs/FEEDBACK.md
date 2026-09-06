@@ -359,3 +359,11 @@ No device, playback, permission, visible GUI or live-service change occurred in 
 Reviewed behavior commit `992c08a` now has an exact clean-snapshot debug APK. The isolated build passed 308 tests, lint, engine, two scope gates and 11 source plus 5 artifact boundary checks. All six artifact receipt hashes independently matched. The signer matches the existing debug lineage. The Phase 9 receipt records full source, APK and evidence identities.
 
 No APK was installed and no phone interaction occurred. Phase10 brightness/wake source work may continue offline. Live controls, paused seek, gesture and all final regression gates remain open. Existing backups, unrelated work and drift 21 are unchanged.
+
+## 2026-09-06 01:41 UTC: requested ephemeral cleanup
+
+Ben requested cleanup of ephemeral files and continued implementation, with needed tool installations allowed without additional prompts. Root removed six obsolete Kotlin daemon logs and eight task-owned temporary directories, totaling 423579 bytes. Every removed file matched the expected name and type, and no inspected process descriptor held a target open.
+
+All twelve retained Phase8/9 artifact checksums and the protected archive hashes passed after cleanup. Rollback APKs, preference backups, review and build receipts, source snapshots, and reusable build caches remain intact. The ignored Phase10 cleanup receipt records each removed path, size and hash. No tool installation was needed for this step, and no phone or live-service action occurred.
+
+Phase10 source work and its prepared frozen gate continue. This cleanup does not close any B-card acceptance or change drift 21.

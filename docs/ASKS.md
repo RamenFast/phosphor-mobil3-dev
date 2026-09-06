@@ -45,3 +45,4 @@
 | 2026-09-05 | Continue the original repairs to completion without interrupting a podcast | active from 17:45 UTC; Phase 5 and Phase 6 offline code/reviews/exact artifacts verified; Phase 7 implementation active; no phone/playback/visible GUI/active-service changes; actual live acceptance stays deferred |
 
 | 2026-09-05 | Compress eligible agent-facing context without information loss. Exclude the separately governed dwelling and its exclusive files, as defined in [workspace governance](../../AGENTS.md#1--scope--neighbors). Preserve existing references and conditions. | documentation-only review and hash-verified integration |
+| 2026-09-06 | Clean ephemeral files, install needed tools without extra prompts, and continue the original repairs | removed six obsolete daemon logs and eight temporary directories, 423579 bytes; retained rollback, evidence and reusable build inputs; Phase10 continues offline |
