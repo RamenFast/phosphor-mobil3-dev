@@ -78,6 +78,7 @@ object SettingsArchive {
         "geom_fx" to intRange(0, 4),
         "geom_amount" to floatRange(0f, 1f),
         "grid" to Spec(Kind.BOOLEAN),
+        "grid_data" to Spec(Kind.BOOLEAN),
         "focus" to floatRange(0.3f, 3f),
         "room" to string(80) { it.matches(Regex("[a-zA-Z0-9_.-]+")) },
         "auto_gain" to Spec(Kind.BOOLEAN),

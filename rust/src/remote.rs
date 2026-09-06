@@ -176,12 +176,13 @@ fn set_link_error(err: &str, fix: &str) {
 
 /// Per-session shared handle: the lock-free reachable state JNI threads and
 /// session threads use to cancel and wake each other. `trip()` is idempotent,
-/// callable from any thread, and never blocks — cancellation + the socket FIN
-/// are the wakers every blocking point in the session observes.
+/// callable from any thread. Scope retirement uses only the ring/meter critical
+/// section. Socket FIN and all worker joins happen outside those locks.
 struct SessionShared {
     #[allow(dead_code)]
     session_gen: u64,
     cancel: AtomicBool,
+    scope: crate::engine::RemoteScopeLease,
     /// Dedicated shutdown clone — dropping other clones never FINs; an explicit
     /// shutdown(Both) is the only reliable waker for blocked reads/writes.
     sock: TcpStream,
@@ -194,10 +195,50 @@ impl SessionShared {
     fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::Relaxed)
     }
+    fn scope_live(&self) -> bool {
+        let l = link();
+        !self.cancelled()
+            && !l.quit.load(Ordering::Relaxed)
+            && l.generation.load(Ordering::SeqCst) == self.session_gen
+    }
+    fn push_scope(&self, samples: &[f32]) {
+        self.scope
+            .ingest(scope_ring(), &crate::render::RAW_STEREO, samples, || {
+                self.scope_live()
+            });
+    }
     fn trip(&self) {
         self.media.retire();
         self.cancel.store(true, Ordering::SeqCst);
+        self.scope.retire(
+            scope_ring(),
+            &crate::render::RAW_STEREO,
+            &crate::deck::DECK_ACTIVE,
+        );
         let _ = self.sock.shutdown(std::net::Shutdown::Both);
+    }
+}
+
+/// Mode authority is the existing K scope payload, scoped to its exact native session.
+pub struct GeometryMode {
+    session: std::sync::Weak<SessionShared>,
+    mode: Option<phosphor_dsp::Mode>,
+}
+
+impl GeometryMode {
+    pub(crate) fn current(&self) -> Option<phosphor_dsp::Mode> {
+        let session = self.session.upgrade()?;
+        let l = link();
+        let current = plock(&l.current);
+        if !l.quit.load(Ordering::Relaxed)
+            && !session.cancelled()
+            && l.generation.load(Ordering::SeqCst) == session.session_gen
+            && current.as_ref().is_some_and(|s| Arc::ptr_eq(s, &session))
+        {
+            self.mode
+        } else {
+            None
+        }
     }
 }
 
@@ -567,8 +608,8 @@ pub fn disconnect() {
     let l = link();
     l.quit.store(true, Ordering::Relaxed);
     l.generation.fetch_add(1, Ordering::SeqCst); // ONE bump per intent
-    // Clone under the pointer lock, trip OUTSIDE it (the no-I/O-under-lock law);
-    // trip never blocks, so disconnect from the player looper can never ANR.
+    // Clone under the pointer lock, then retire scope and FIN outside it.
+    // Disconnect does not wait for worker joins or output teardown.
     let cur = plock(&l.current).clone();
     if let Some(s) = cur {
         s.trip();
@@ -581,7 +622,6 @@ pub fn disconnect() {
     *l.slots.art.lock().unwrap() = None;
     *l.slots.art_id.lock().unwrap() = String::new();
     let _ = crate::render::sender().send(crate::render::Cmd::GeometryActive(false));
-    crate::deck::DECK_ACTIVE.store(false, Ordering::Relaxed);
 }
 
 pub fn set_streams(audio: bool, geometry: bool) {
@@ -891,6 +931,8 @@ enum SessionEnd {
 
 fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let l = link();
+    // Capture the source boundary before blocking setup, not after a source switch.
+    let scope = crate::engine::RemoteScopeLease::prepare(scope_ring(), &crate::render::RAW_STEREO);
     l.state.store(ST_CONNECTING, Ordering::Relaxed);
     // A previous relay's loudness is not a measurement of this session.
     l.remote_rms_known.store(false, Ordering::Relaxed);
@@ -941,6 +983,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let shared = Arc::new(SessionShared {
         session_gen: my_gen,
         cancel: AtomicBool::new(false),
+        scope,
         sock: shutdown_clone,
         writer_tx,
         hello_dirty: AtomicBool::new(false),
@@ -949,7 +992,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 
     // Publish under the generation gate. A session that lost the race while
     // connecting retires itself instead of replacing its successor.
-    {
+    let old = {
         let mut cur = plock(&l.current);
         if l.quit.load(Ordering::Relaxed) || l.generation.load(Ordering::SeqCst) != my_gen {
             drop(cur);
@@ -957,10 +1000,14 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             *out_slot.lock().unwrap() = None;
             return SessionEnd::Quit;
         }
-        if let Some(old) = cur.take() {
-            old.trip(); // never silently orphan a predecessor's socket
+        if let Some(old) = cur.as_ref() {
+            // Revoke before the pointer swap, without taking ring locks or doing I/O.
+            old.cancel.store(true, Ordering::SeqCst);
         }
-        *cur = Some(shared.clone());
+        cur.replace(shared.clone())
+    };
+    if let Some(old) = old {
+        old.trip(); // FIN and guarded scope retirement stay outside current.
     }
 
     // RAII from here: every return path (and any debug-build unwind) runs the
@@ -1125,7 +1172,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                     if l.cfg_audio.load(Ordering::Relaxed)
                         && !l.cfg_geometry.load(Ordering::Relaxed)
                     {
-                        scope_ring().lock().unwrap().push_interleaved(&buf[..got]);
+                        shared_v.push_scope(&buf[..got]);
                     }
                 }
             })
@@ -1162,8 +1209,14 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     if l.quit.load(Ordering::Relaxed) || shared.cancelled() {
         return SessionEnd::Quit;
     }
-    scope_ring().lock().unwrap().clear_pending();
-    crate::deck::DECK_ACTIVE.store(true, Ordering::Relaxed);
+    if !shared.scope.activate(
+        scope_ring(),
+        &crate::render::RAW_STEREO,
+        &crate::deck::DECK_ACTIVE,
+        || shared.scope_live(),
+    ) {
+        return SessionEnd::Quit;
+    }
     if l.cfg_geometry.load(Ordering::Relaxed) {
         let _ = crate::render::sender().send(crate::render::Cmd::GeometryActive(true));
     }
@@ -1240,9 +1293,9 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
 ///     resurrect a stream into an already-cleared slot (the late-install race)
 ///   9 take the stream under the lock, DROP IT OUTSIDE (oboe close can block
 ///     briefly while a callback drains — never under our lock)
-/// Policy (DECK_ACTIVE / GeometryActive / meta) is NOT touched here — it lives
-/// in disconnect() and terminal paths; the deck flag is shared with the local
-/// deck and a deferred clear would stomp a freshly opened local session.
+/// trip retires only this session's scope lease before any join. A predecessor
+/// cannot clear a replacement's ring, meter or active flag. Geometry and metadata
+/// policy remains in disconnect() and terminal paths.
 fn teardown_session(
     shared: &Arc<SessionShared>,
     path: &AudioPath,
@@ -1365,7 +1418,7 @@ fn reader(
                 // receive-side scope feed is the explicit fallback. With audio
                 // enabled the callback owns scope truth after jitter/zero-fill.
                 if !l.cfg_audio.load(Ordering::Relaxed) && !l.cfg_geometry.load(Ordering::Relaxed) {
-                    scope_ring().lock().unwrap().push_interleaved(&f32buf);
+                    shared.push_scope(&f32buf);
                 }
                 if audio_tx.try_send(f32buf).is_err() {
                     l.a_drops.fetch_add(1, Ordering::Relaxed);
@@ -1430,6 +1483,17 @@ fn reader(
                 // Heartbeat; while geometry streams it carries the desktop
                 // scope's live truth (mode/gain/auto) for the honesty band.
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
+                    let mode = v
+                        .get("scope")
+                        .and_then(|s| s.get("mode"))
+                        .and_then(|m| m.as_str())
+                        .and_then(|m| m.parse().ok());
+                    let _ = crate::render::sender().send(crate::render::Cmd::GeometryMode(
+                        GeometryMode {
+                            session: Arc::downgrade(&shared),
+                            mode,
+                        },
+                    ));
                     *plock(&l.slots.scope) =
                         v.get("scope").map(|s| s.to_string()).unwrap_or_default();
                     // Optional loudness labels silence after valid media proves flow.

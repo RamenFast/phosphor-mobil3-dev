@@ -102,6 +102,10 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
             }
             androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
                 Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
+                if (state.gridData) {
+                    Mono(GridData.line(state.gridReading, left = true), p.ink2, Type.dataXs)
+                    Mono(GridData.line(state.gridReading, left = false), p.ink2, Type.dataXs)
+                }
                 if (hudVisible && state.hudLine.isNotBlank()) {
                     Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
                 }

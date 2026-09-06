@@ -606,10 +606,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     }
                 }
             } else null
-            if (ui.hudMode != 2) {
-                val stats = runCatching {
+            val stats = if (dev.phosphor.mobil3.ui.GridData.needsStats(ui.hudMode, ui.gridData)) {
+                runCatching {
                     org.json.JSONObject(PhosphorNative.scopeStats())
                 }.getOrNull()
+            } else null
+            ui.gridReading = dev.phosphor.mobil3.ui.GridData.read(stats)
+            if (ui.hudMode != 2) {
                 val rx = rs?.optLong("rx_bytes") ?: 0L
                 val mbps = if (lastRxBytes in 1 until rx) {
                     (rx - lastRxBytes) * 8f * 2f / 1_000_000f // 500 ms tick → per-second
@@ -1087,6 +1090,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("geom_fx", ui.geomFx)
             putFloat("geom_amount", ui.geomAmount)
             putBoolean("grid", ui.grid)
+            putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)
             putFloat("focus", focusPref)
             putString("room", ui.room.id)
             putBoolean("auto_gain", prefs().getBoolean("auto_gain", ui.autoGain))
@@ -1171,6 +1175,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.geomAmount = p.getFloat("geom_amount", 0.6f).coerceIn(0f, 1f)
             .also { PhosphorNative.setGeomAmount(it) }
         ui.grid = p.getBoolean("grid", true).also { PhosphorNative.setGrid(it) }
+        ui.gridData = p.getBoolean(dev.phosphor.mobil3.ui.GridData.KEY, dev.phosphor.mobil3.ui.GridData.DEFAULT)
+        ui.gridReading = null
         focusPref = p.getFloat("focus", 0.3f)
         ui.hudMode = p.getInt("hud_mode", 2).coerceIn(0, 2)
         ui.bandMode = p.getInt("band_mode", 0)
@@ -1736,6 +1742,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setGeomFx(kind: Int) { ui.geomFx = kind.coerceIn(0, 4); PhosphorNative.setGeomFx(ui.geomFx) }
     override fun setGeomAmount(v: Float) { ui.geomAmount = v.coerceIn(0f, 1f); PhosphorNative.setGeomAmount(ui.geomAmount) }
     override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
+    override fun setGridData(on: Boolean) {
+        ui.gridData = on
+        ui.gridReading = null
+        prefs().edit { putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, on) }
+    }
 
     // ── Deck sheet verbs ──
     override fun openFolder() {

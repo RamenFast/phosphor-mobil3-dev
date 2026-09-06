@@ -1119,7 +1119,11 @@ fun SettingsSheet(
                         actions.setGrid(!state.grid)
                     }
                 }
-                Spacer(Modifier.weight(2f))
+                Box(Modifier.weight(2f)) {
+                    ChipCell("GRID DATA · " + if (state.gridData) "on" else "off",
+                        active = state.gridData, p = p, small = true,
+                    ) { actions.setGridData(!state.gridData) }
+                }
             }
             Spacer(Modifier.height(6.dp))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
@@ -1383,6 +1387,7 @@ interface SheetActions {
     fun tapGlowRandom()
     fun setGlowRandomRange(lo: Float, hi: Float)
     fun setGrid(on: Boolean)
+    fun setGridData(on: Boolean)
     fun setHudMode(mode: Int)
     fun setRemoteLatencyMode(mode: Int)
     fun openRoom()

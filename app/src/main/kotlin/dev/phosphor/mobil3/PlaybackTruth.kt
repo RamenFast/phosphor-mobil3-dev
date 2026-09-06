@@ -16,18 +16,32 @@ internal class PlaybackTruth {
         val artwork: ByteArray?,
     )
 
-    private class Open(val path: String, val filename: String, val isLatest: () -> Boolean) {
+    private class Open(
+        val path: String, val filename: String, val isLatest: () -> Boolean,
+        val nativeOpen: Long, val newItem: Boolean,
+    ) {
         @Volatile var metadata: Metadata? = null
         var started = false
         @Volatile var terminal: Terminal? = null
         @Volatile var terminalPublished = false
+        var published = false
+        var itemConfirmed = false
     }
 
     @Volatile private var opened: Open? = null
     private val polling = AtomicBoolean()
 
-    fun opened(path: String, filename: String, isLatest: () -> Boolean) {
-        opened = Open(path, filename, isLatest)
+    /** The returned publication belongs to this Open, not merely its path or latest predicate. */
+    fun opened(
+        path: String, filename: String, isLatest: () -> Boolean, nativeOpen: Long, newItem: Boolean,
+    ): () -> Boolean {
+        val owner = Open(path, filename, isLatest, nativeOpen, newItem)
+        opened = owner
+        return {
+            (opened === owner && owner.isLatest() && owner.terminal == null && nativeOpen > 0).also {
+                if (it) owner.published = true
+            }
+        }
     }
 
     fun closed() { opened = null }
@@ -35,11 +49,13 @@ internal class PlaybackTruth {
     /** A rejected preflight may keep the already audible source, not a failed replacement. */
     fun retain(isLatest: () -> Boolean) {
         opened = opened?.let { old ->
-            Open(old.path, old.filename, isLatest).also {
+            Open(old.path, old.filename, isLatest, old.nativeOpen, newItem = false).also {
                 it.metadata = old.metadata
                 it.started = old.started
                 it.terminal = old.terminal
                 it.terminalPublished = old.terminalPublished
+                it.published = old.published
+                it.itemConfirmed = old.itemConfirmed
             }
         }
     }
@@ -57,16 +73,25 @@ internal class PlaybackTruth {
         readArtwork: () -> ByteArray?,
         publish: (Metadata) -> Unit,
         terminal: (Terminal, isCurrent: () -> Boolean) -> Unit,
+        newItem: (Long) -> Unit = {},
     ) {
         if (!polling.compareAndSet(false, true)) return
         schedule {
             try {
                 val owner = opened
                 val event = readEvent()?.let(::JSONObject)
-                if (owner != null && event?.optString("event") == "track_started" &&
-                    event.optString("path") == owner.path
-                ) {
+                val matches = owner != null && event != null && event.optString("path") == owner.path &&
+                    event.optLong("open_id") == owner.nativeOpen
+                if (owner != null && matches && event.optString("event") == "track_started") {
                     owner.started = true
+                    onMain {
+                        if (opened === owner && owner.isLatest() && owner.terminal == null &&
+                            owner.published && owner.newItem && !owner.itemConfirmed && owner.nativeOpen > 0
+                        ) {
+                            owner.itemConfirmed = true
+                            newItem(owner.nativeOpen)
+                        }
+                    }
                     val json = JSONObject(readMetadata())
                     if (json.optString("path") == owner.path) {
                         fun tag(key: String) = if (json.isNull(key)) null else
@@ -84,7 +109,7 @@ internal class PlaybackTruth {
                         }
                     }
                 }
-                if (owner != null && event?.optString("path") == owner.path) {
+                if (owner != null && matches) {
                     when (event.optString("event")) {
                         "playback_ended" -> if (!owner.started) owner.terminal = Terminal.START_FAILED
                         "playback_drained" -> owner.terminal = owner.terminal ?: Terminal.ENDED

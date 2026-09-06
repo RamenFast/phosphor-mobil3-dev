@@ -9,6 +9,55 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test fun gridDataRoundTripsIndependentlyFromGridHudAndBand() {
+        for (gridData in listOf(false, true)) for (grid in listOf(false, true)) {
+            val values = mapOf("grid_data" to gridData, "grid" to grid, "hud_mode" to 2, "band_mode" to 0)
+            val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], values)
+            assertEquals(values, SettingsArchive.decode(exported.json).values)
+            assertTrue("grid_data" in exported.exportedKeys)
+        }
+    }
+
+    @Test fun gridDataAbsentOldArchiveKeepsExistingPreferenceOrFalseDefault() {
+        val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("grid" to true))
+        val decoded = SettingsArchive.decode(exported.json).values
+        assertFalse(decoded.containsKey("grid_data"))
+        assertEquals(false, decoded["grid_data"] ?: dev.phosphor.mobil3.ui.GridData.DEFAULT)
+        val existing = mutableMapOf<String, Any>("grid_data" to true)
+        existing.putAll(decoded) // Activity imports only provided keys, then restoreTuning reads the real preference.
+        assertEquals(true, existing["grid_data"])
+    }
+
+    @Test fun gridDataRejectsNonBooleanAndDoesNotArchiveRawSignal() {
+        for (invalid in listOf<Any>(0, 1, "false", "true")) {
+            val error = assertFailsWith<SettingsArchive.ArchiveException> {
+                SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("grid_data" to invalid))
+            }
+            assertEquals("invalid_setting_type", error.error)
+            val good = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3], mapOf("grid_data" to true))
+            val altered = JSONObject(good.json)
+            altered.getJSONObject("settings").put("grid_data", invalid)
+            // Match the existing archive fixtures so checksum rejection cannot mask the type check.
+            val encoded = if (invalid is String) "\"$invalid\"" else invalid.toString()
+            val canonical = "{" +
+                "\"exported_at\":\"${metadata[3]}\"," +
+                "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+                "\"settings\":{\"grid_data\":$encoded}," +
+                "\"source_distribution\":\"${metadata[2]}\"," +
+                "\"source_package\":\"${metadata[0]}\"," +
+                "\"source_version\":\"${metadata[1]}\"}"
+            altered.put("content_sha256", MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
+                .joinToString("") { "%02x".format(it.toInt() and 0xff) })
+            assertEquals("invalid_setting_type", assertFailsWith<SettingsArchive.ArchiveException> {
+                SettingsArchive.decode(altered.toString())
+            }.error)
+        }
+        val exported = SettingsArchive.export(metadata[0], metadata[1], metadata[2], metadata[3],
+            mapOf("grid_data" to true, "left_dbfs" to -6.0f, "raw_stereo" to "0.5,0", "open_id" to 42))
+        assertEquals(listOf("grid_data"), exported.exportedKeys)
+        assertEquals(listOf("left_dbfs", "open_id", "raw_stereo"), exported.skippedKeys)
+    }
+
     @Test fun phase9SettingsRoundTripAllIndependentBooleanCombinations() {
         for (controls in listOf(false, true)) for (pip in listOf(false, true)) {
             val values = mapOf("controls_always_visible" to controls, "pip_auto_enter" to pip)

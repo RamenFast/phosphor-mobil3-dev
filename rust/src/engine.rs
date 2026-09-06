@@ -1,9 +1,210 @@
 //! Host-testable engine glue. No JNI, no Android — plain `cargo test` covers this.
 
 use phosphor_dsp::{Computer, Mode};
+use std::sync::atomic::{AtomicBool, Ordering};
+use std::sync::{Arc, Mutex};
 
-/// Desktop-v3 autosize law, kept host-testable here rather than buried in the
-/// Android render loop. Constants and update order are verbatim from shell.rs:
+/// One complete, finite stereo tap window, before display gain or DSP.
+#[derive(Clone, Copy, Debug, PartialEq)]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) struct StereoPeak {
+    pub left: f32,
+    pub right: f32,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl StereoPeak {
+    /// Compact malformed frames out of the same vector the DSP will consume.
+    pub(crate) fn prepare(samples: &mut Vec<f32>) -> Option<Self> {
+        let mut peak = Self {
+            left: 0.0,
+            right: 0.0,
+        };
+        let mut kept = 0;
+        for frame in 0..samples.len() / 2 {
+            let (left, right) = (samples[frame * 2], samples[frame * 2 + 1]);
+            if !left.is_finite() || !right.is_finite() {
+                continue;
+            }
+            peak.left = peak.left.max(left.abs());
+            peak.right = peak.right.max(right.abs());
+            samples[kept] = left;
+            samples[kept + 1] = right;
+            kept += 2;
+        }
+        samples.truncate(kept);
+        (kept != 0).then_some(peak)
+    }
+
+    pub(crate) fn max(self) -> f32 {
+        self.left.max(self.right)
+    }
+
+    pub(crate) fn json(self) -> serde_json::Value {
+        let dbfs = |peak: f32| (peak > 0.0).then(|| 20.0 * peak.log10());
+        serde_json::json!({
+            "left": self.left, "right": self.right,
+            "left_dbfs": dbfs(self.left), "right_dbfs": dbfs(self.right),
+        })
+    }
+}
+
+/// The foreground 500ms stats read consumes this bounded window, not a second audio tap.
+#[derive(Default)]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) struct StereoWindow {
+    peak: Option<StereoPeak>,
+    started_ms: u64,
+    remote_boundary: Option<Arc<()>>,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl StereoWindow {
+    pub(crate) const fn new() -> Self {
+        Self {
+            peak: None,
+            started_ms: 0,
+            remote_boundary: None,
+        }
+    }
+
+    pub(crate) fn observe(&mut self, peak: Option<StereoPeak>, now_ms: u64) {
+        let Some(peak) = peak else {
+            return;
+        };
+        if now_ms.saturating_sub(self.started_ms) > 500 {
+            self.peak = None;
+        }
+        self.peak = Some(match self.peak {
+            Some(old) => StereoPeak {
+                left: old.left.max(peak.left),
+                right: old.right.max(peak.right),
+            },
+            None => {
+                self.started_ms = now_ms;
+                peak
+            }
+        });
+    }
+
+    pub(crate) fn take(&mut self, now_ms: u64) -> Option<StereoPeak> {
+        self.peak
+            .take()
+            .filter(|_| now_ms.saturating_sub(self.started_ms) <= 500)
+    }
+}
+
+/// The producer and source boundaries use this same lock order. A drained old batch
+/// finishes publication before a boundary can clear it, never after that clear.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn with_stereo_window<T>(
+    ring: &std::sync::Mutex<phosphor_audio::SampleRing>,
+    meter: &std::sync::Mutex<StereoWindow>,
+    work: impl FnOnce(&mut phosphor_audio::SampleRing, &mut StereoWindow) -> T,
+) -> T {
+    let mut ring = ring.lock().unwrap();
+    let mut meter = meter.lock().unwrap();
+    work(&mut ring, &mut meter)
+}
+
+/// One remote attempt, distinct even when reconnect reuses the Link generation.
+/// Generic source boundaries replace StereoWindow and invalidate both identities.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) struct RemoteScopeLease {
+    before: Arc<()>,
+    owner: Arc<()>,
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl RemoteScopeLease {
+    pub(crate) fn prepare(
+        ring: &Mutex<phosphor_audio::SampleRing>,
+        meter: &Mutex<StereoWindow>,
+    ) -> Self {
+        with_stereo_window(ring, meter, |_, meter| Self {
+            before: meter
+                .remote_boundary
+                .get_or_insert_with(|| Arc::new(()))
+                .clone(),
+            owner: Arc::new(()),
+        })
+    }
+
+    fn matches(meter: &StereoWindow, identity: &Arc<()>) -> bool {
+        meter
+            .remote_boundary
+            .as_ref()
+            .is_some_and(|id| Arc::ptr_eq(id, identity))
+    }
+
+    pub(crate) fn activate(
+        &self,
+        ring: &Mutex<phosphor_audio::SampleRing>,
+        meter: &Mutex<StereoWindow>,
+        active: &AtomicBool,
+        live: impl FnOnce() -> bool,
+    ) -> bool {
+        with_stereo_window(ring, meter, |ring, meter| {
+            if !live() || !Self::matches(meter, &self.before) {
+                return false;
+            }
+            ring.clear_pending();
+            *meter = StereoWindow::new();
+            meter.remote_boundary = Some(self.owner.clone());
+            active.store(true, Ordering::Relaxed);
+            true
+        })
+    }
+
+    pub(crate) fn ingest(
+        &self,
+        ring: &Mutex<phosphor_audio::SampleRing>,
+        meter: &Mutex<StereoWindow>,
+        samples: &[f32],
+        live: impl FnOnce() -> bool,
+    ) -> bool {
+        with_stereo_window(ring, meter, |ring, meter| {
+            if !live() || !Self::matches(meter, &self.owner) {
+                return false;
+            }
+            ring.push_interleaved(samples);
+            true
+        })
+    }
+
+    pub(crate) fn retire(
+        &self,
+        ring: &Mutex<phosphor_audio::SampleRing>,
+        meter: &Mutex<StereoWindow>,
+        active: &AtomicBool,
+    ) -> bool {
+        with_stereo_window(ring, meter, |ring, meter| {
+            if !Self::matches(meter, &self.owner) {
+                return false;
+            }
+            ring.clear_pending();
+            *meter = StereoWindow::new();
+            active.store(false, Ordering::Relaxed);
+            true
+        })
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn grid_angle(mode: Mode, remote_geometry: bool, remote_mode: Option<Mode>) -> f32 {
+    let actual = if remote_geometry {
+        remote_mode
+    } else {
+        Some(mode)
+    };
+    if actual == Some(Mode::Xy45) {
+        std::f32::consts::FRAC_PI_4
+    } else {
+        0.0
+    }
+}
+
+/// Autosize holds through silence. Sounding frames retain the desktop constants:
 /// instant peak attack, 0.999 release, 0.92 headroom, 0.01 floor, 0.1..6 target,
 /// and a 0.05 effective-gain glide.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -11,6 +212,7 @@ pub(crate) struct AutoGain {
     enabled: bool,
     peak: f32,
     effective: f32,
+    reset_open: u64,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -20,15 +222,13 @@ impl AutoGain {
             enabled: false,
             peak: 0.0,
             effective: manual_gain.clamp(0.1, 7.0),
+            reset_open: 0,
         }
     }
 
     pub(crate) fn set_auto(&mut self, on: bool, manual_gain: f32) -> f32 {
         self.enabled = on;
-        if on {
-            // Re-measure from the next sound; the glide starts wherever it was.
-            self.peak = 0.0;
-        } else {
+        if !on {
             self.effective = manual_gain.clamp(0.1, 7.0);
         }
         self.effective
@@ -45,9 +245,19 @@ impl AutoGain {
         self.enabled
     }
 
+    pub(crate) fn new_local_item(&mut self, proven_open: u64, current_open: u64) {
+        if proven_open != 0 && proven_open == current_open && proven_open != self.reset_open {
+            self.peak = 0.0;
+            self.reset_open = proven_open;
+        }
+    }
+
     pub(crate) fn update(&mut self, peak: f32) -> Option<f32> {
         if !self.enabled {
             return None;
+        }
+        if !peak.is_finite() || peak < 0.02 {
+            return Some(self.effective);
         }
         self.peak = peak.max(self.peak * 0.999);
         let target = (0.92 / self.peak.max(0.01)).clamp(0.1, 6.0);
@@ -432,14 +642,579 @@ mod tests {
         ag.set_auto(true, 1.0);
         let loud = ag.update(20.0).unwrap(); // target clamps to 0.1
         assert!((loud - 0.955).abs() < 1e-6, "loud={loud}");
-        let released = ag.update(0.0).unwrap(); // tracked peak is 20 * 0.999
+        let released = ag.update(0.02).unwrap(); // Only sounding frames release the tracked peak.
         let expected_target = (0.92_f32 / (20.0_f32 * 0.999)).clamp(0.1, 6.0);
         let expected = loud + (expected_target - loud) * 0.05;
         assert!((released - expected).abs() < 1e-6, "released={released}");
 
-        ag.set_auto(true, 1.0);
-        let quiet = ag.update(0.0).unwrap(); // 0.01 floor -> target clamps to 6
+        ag.new_local_item(1, 1);
+        let quiet = ag.update(0.02).unwrap(); // New quiet track's target clamps to 6.
         assert!((quiet - (released + (6.0 - released) * 0.05)).abs() < 1e-6);
+    }
+
+    #[test]
+    fn stereo_peak_raw_channels_dbfs_and_one_shared_tap() {
+        for (input, expected) in [
+            (vec![0.0, 0.0, -0.5, 0.0], (0.5, 0.0)),
+            (vec![0.0, -0.25, 0.0, 0.125], (0.0, 0.25)),
+            (vec![-1.0, 0.25, 0.5, -0.125], (1.0, 0.25)),
+        ] {
+            let mut ring = SampleRing::new(48_000);
+            ring.push_interleaved(&input);
+            let mut samples = ring.take_stereo_samples();
+            let peak = super::StereoPeak::prepare(&mut samples).unwrap();
+            assert_eq!((peak.left, peak.right), expected);
+            assert!(ring.take_stereo_samples().is_empty());
+            let raw = peak.json();
+            for (key, magnitude) in [("left", peak.left), ("right", peak.right)] {
+                assert_eq!(raw[key].as_f64().unwrap(), magnitude as f64);
+                let db = &raw[format!("{key}_dbfs")];
+                if magnitude == 0.0 {
+                    assert!(db.is_null());
+                } else {
+                    assert!(
+                        (db.as_f64().unwrap() - 20.0 * (magnitude as f64).log10()).abs() < 1e-5
+                    );
+                }
+            }
+            for gain in [0.1, 1.0, 6.0, 7.0] {
+                let mut computer = Computer::new();
+                computer.gain = gain;
+                super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
+                assert_eq!(peak.json(), raw);
+            }
+        }
+        // Android source boundary: the renderer, not this host test, owns the production tap.
+        let render = include_str!("render.rs");
+        assert_eq!(render.matches("take_stereo_samples()").count(), 1);
+        assert!(render.contains("StereoPeak::prepare(&mut samples)"));
+        assert!(render.contains("raw_peak.map_or(0.0, crate::engine::StereoPeak::max)"));
+        assert!(render.contains("compute_scope_frame(&mut computer, &samples"));
+        assert!(!include_str!("jni_glue.rs").contains("take_stereo_samples"));
+    }
+
+    #[test]
+    fn stereo_peak_silence_no_data_finite_pairs_and_odd_tail_are_distinct() {
+        let mut ring = SampleRing::new(48_000);
+        ring.push_interleaved(&[0.5]);
+        assert_eq!(
+            super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
+            None
+        );
+        ring.push_interleaved(&[-0.25]);
+        let completed = super::StereoPeak::prepare(&mut ring.take_stereo_samples()).unwrap();
+        assert_eq!((completed.left, completed.right), (0.5, 0.25));
+        for mut samples in [
+            vec![],
+            vec![0.8],
+            vec![f32::NAN, 0.0],
+            vec![0.0, f32::INFINITY],
+        ] {
+            assert_eq!(super::StereoPeak::prepare(&mut samples), None);
+            assert!(samples.is_empty());
+        }
+        let mut samples = vec![0.0, 0.0];
+        let silence = super::StereoPeak::prepare(&mut samples).unwrap();
+        assert_eq!(silence.max(), 0.0);
+        assert_eq!(silence.json()["left"], 0.0);
+        assert!(silence.json()["left_dbfs"].is_null());
+        let mut samples = vec![f32::NAN, 1.0, -0.5, 0.25, 0.0, f32::NEG_INFINITY, 100.0];
+        let peak = super::StereoPeak::prepare(&mut samples).unwrap();
+        assert_eq!(samples, [-0.5, 0.25]);
+        assert_eq!((peak.left, peak.right), (0.5, 0.25));
+        let over = super::StereoPeak {
+            left: 2.0,
+            right: f32::MIN_POSITIVE,
+        }
+        .json();
+        assert!(over["left_dbfs"].as_f64().unwrap() > 6.0);
+        assert!(over["right_dbfs"].as_f64().unwrap().is_finite());
+    }
+
+    #[test]
+    fn stereo_peak_window_keeps_empty_presentation_gaps_but_expires_and_consumes() {
+        let mut meter = super::StereoWindow::new();
+        assert_eq!(meter.take(0), None);
+        let left = super::StereoPeak {
+            left: 0.5,
+            right: 0.0,
+        };
+        let right = super::StereoPeak {
+            left: 0.0,
+            right: 0.25,
+        };
+        meter.observe(Some(left), 10);
+        for frame in 2..60 {
+            meter.observe(None, frame * 8);
+        }
+        meter.observe(Some(right), 490);
+        assert_eq!(
+            meter.take(500),
+            Some(super::StereoPeak {
+                left: 0.5,
+                right: 0.25
+            })
+        );
+        assert_eq!(meter.take(501), None);
+        let zero = super::StereoPeak {
+            left: 0.0,
+            right: 0.0,
+        };
+        meter.observe(Some(zero), 520);
+        assert_eq!(meter.take(1020), Some(zero));
+        meter.observe(Some(left), 1100);
+        assert_eq!(meter.take(1601), None);
+        meter.observe(Some(left), 1700);
+        meter.observe(Some(right), 2201);
+        assert_eq!(meter.take(2201), Some(right)); // Hidden HUD cannot collect a lifetime peak.
+    }
+
+    #[test]
+    fn stereo_peak_source_boundary_clears_a_delayed_old_drained_batch() {
+        use std::sync::{Arc, Mutex, mpsc};
+        let ring = Arc::new(Mutex::new(SampleRing::new(48_000)));
+        let meter = Arc::new(Mutex::new(super::StereoWindow::new()));
+        ring.lock().unwrap().push_interleaved(&[0.75, 0.25]);
+        let (drained_tx, drained_rx) = mpsc::channel();
+        let (resume_tx, resume_rx) = mpsc::channel();
+        let producer = {
+            let (ring, meter) = (ring.clone(), meter.clone());
+            std::thread::spawn(move || {
+                super::with_stereo_window(&ring, &meter, |ring, meter| {
+                    let mut samples = ring.take_stereo_samples();
+                    let peak = super::StereoPeak::prepare(&mut samples);
+                    drained_tx.send(()).unwrap();
+                    resume_rx.recv().unwrap();
+                    meter.observe(peak, 100);
+                })
+            })
+        };
+        drained_rx.recv().unwrap();
+        let boundary = {
+            let (ring, meter) = (ring.clone(), meter.clone());
+            std::thread::spawn(move || {
+                super::with_stereo_window(&ring, &meter, |ring, meter| {
+                    ring.clear_pending();
+                    *meter = super::StereoWindow::new();
+                })
+            })
+        };
+        resume_tx.send(()).unwrap();
+        producer.join().unwrap();
+        boundary.join().unwrap();
+        assert_eq!(meter.lock().unwrap().take(101), None);
+        // A replacement's measured zero must not inherit the retired loud peak.
+        super::with_stereo_window(&ring, &meter, |ring, meter| {
+            ring.push_interleaved(&[0.0, 0.0]);
+            meter.observe(
+                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
+                110,
+            );
+        });
+        assert_eq!(meter.lock().unwrap().take(120).unwrap().max(), 0.0);
+        // Host helper coverage ends at these Android-owned adapters, checked as source strings.
+        let render = include_str!("render.rs");
+        let deck = include_str!("deck.rs");
+        assert!(render.contains("= with_stereo_window(|ring, meter|"));
+        assert!(deck.contains("crate::render::with_stereo_window(|ring, meter|"));
+        assert!(deck.contains("*meter = crate::engine::StereoWindow::new()"));
+        assert!(
+            deck.split("pub fn close()")
+                .nth(1)
+                .unwrap()
+                .contains("set_ring_active(false)")
+        );
+        assert!(include_str!("remote.rs").contains("self.scope.retire("));
+    }
+
+    fn delayed_remote_scope_ingest(adapter: &str) {
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
+        let ring = Arc::new(Mutex::new(SampleRing::new(48_000)));
+        let meter = Arc::new(Mutex::new(super::StereoWindow::new()));
+        let active = super::AtomicBool::new(false);
+        let cancel = Arc::new(super::AtomicBool::new(false));
+        let lease = Arc::new(super::RemoteScopeLease::prepare(&ring, &meter));
+        assert!(lease.activate(&ring, &meter, &active, || true));
+        let (checked_tx, checked_rx) = mpsc::sync_channel(1);
+        let (resume_tx, resume_rx) = mpsc::sync_channel(1);
+        let (done_tx, done_rx) = mpsc::sync_channel(1);
+        let wait = Duration::from_secs(5);
+        let producer = {
+            let (ring, meter, lease, cancel) =
+                (ring.clone(), meter.clone(), lease.clone(), cancel.clone());
+            std::thread::spawn(move || {
+                assert!(!cancel.load(super::Ordering::SeqCst));
+                checked_tx.send(()).unwrap();
+                // This is upstream of ring acquisition, unlike the retained drain regression.
+                resume_rx.recv_timeout(wait).unwrap();
+                let accepted = lease.ingest(&ring, &meter, &[0.75, 0.25], || {
+                    !cancel.load(super::Ordering::SeqCst)
+                });
+                done_tx.send(accepted).unwrap();
+            })
+        };
+        checked_rx.recv_timeout(wait).unwrap();
+        cancel.store(true, super::Ordering::SeqCst);
+        assert!(lease.retire(&ring, &meter, &active));
+        super::with_stereo_window(&ring, &meter, |ring, meter| {
+            ring.clear_pending();
+            *meter = super::StereoWindow::new();
+            active.store(true, super::Ordering::Relaxed);
+            ring.push_interleaved(&[0.0, 0.0]);
+            meter.observe(
+                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
+                110,
+            );
+        });
+        resume_tx.send(()).unwrap();
+        assert!(!done_rx.recv_timeout(wait).unwrap());
+        producer.join().unwrap(); // Completion is received before joining.
+        super::with_stereo_window(&ring, &meter, |ring, meter| {
+            let mut samples = ring.take_stereo_samples();
+            assert!(samples.is_empty());
+            meter.observe(super::StereoPeak::prepare(&mut samples), 120);
+            assert_eq!(
+                meter.take(120),
+                Some(super::StereoPeak {
+                    left: 0.0,
+                    right: 0.0
+                })
+            );
+        });
+        assert!(active.load(super::Ordering::Relaxed));
+        // Runtime proof above covers the production ingest guard. This only maps each adapter.
+        assert!(include_str!("remote.rs").contains(adapter));
+    }
+
+    #[test]
+    fn stereo_peak_remote_scope_worker_rejects_delayed_old_batch() {
+        delayed_remote_scope_ingest("shared_v.push_scope(&buf[..got])");
+    }
+
+    #[test]
+    fn stereo_peak_remote_reader_fallback_rejects_delayed_old_batch() {
+        delayed_remote_scope_ingest("shared.push_scope(&f32buf)");
+    }
+
+    #[test]
+    fn stereo_peak_remote_retirement_clears_pending_and_measured_without_expiry() {
+        let ring = super::Mutex::new(SampleRing::new(48_000));
+        let meter = super::Mutex::new(super::StereoWindow::new());
+        let active = super::AtomicBool::new(false);
+        let lease = super::RemoteScopeLease::prepare(&ring, &meter);
+        assert!(lease.activate(&ring, &meter, &active, || true));
+        assert!(lease.ingest(&ring, &meter, &[0.75, 0.25], || true));
+        super::with_stereo_window(&ring, &meter, |ring, meter| {
+            meter.observe(
+                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
+                100,
+            );
+        });
+        assert!(lease.ingest(&ring, &meter, &[0.5, 0.125], || true));
+        assert!(lease.retire(&ring, &meter, &active));
+        assert!(!active.load(super::Ordering::Relaxed));
+        assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
+        assert_eq!(meter.lock().unwrap().take(101), None); // 1ms, not the 501ms expiry.
+        assert!(!lease.ingest(&ring, &meter, &[0.75, 0.25], || true));
+        assert!(!lease.activate(&ring, &meter, &active, || true));
+        assert!(!lease.retire(&ring, &meter, &active));
+    }
+
+    #[test]
+    fn stereo_peak_remote_late_cleanup_preserves_local_capture_and_mic() {
+        for source in ["local", "capture", "mic"] {
+            let ring = super::Mutex::new(SampleRing::new(48_000));
+            let meter = super::Mutex::new(super::StereoWindow::new());
+            let active = super::AtomicBool::new(false);
+            let old = super::RemoteScopeLease::prepare(&ring, &meter);
+            assert!(old.activate(&ring, &meter, &active, || true));
+            // The actual deck open and generic set_ring_active boundaries use this reset.
+            let measured = super::StereoPeak {
+                left: 0.5,
+                right: 0.125,
+            };
+            super::with_stereo_window(&ring, &meter, |ring, meter| {
+                ring.clear_pending();
+                *meter = super::StereoWindow::new();
+                active.store(true, super::Ordering::Relaxed);
+                meter.observe(Some(measured), 100);
+                ring.push_interleaved(&[0.25, 0.0625]);
+            });
+            // Keep outer liveness true to prove identity rejects independently of cancellation.
+            assert!(
+                !old.ingest(&ring, &meter, &[0.75, 0.25], || true),
+                "{source}"
+            );
+            assert!(!old.retire(&ring, &meter, &active), "{source}");
+            assert!(active.load(super::Ordering::Relaxed), "{source}");
+            assert_eq!(meter.lock().unwrap().take(101), Some(measured), "{source}");
+            assert_eq!(
+                ring.lock().unwrap().take_stereo_samples(),
+                [0.25, 0.0625],
+                "{source}"
+            );
+        }
+    }
+
+    #[test]
+    fn stereo_peak_remote_same_generation_successor_keeps_its_lease_and_measurement() {
+        let ring = super::Mutex::new(SampleRing::new(48_000));
+        let meter = super::Mutex::new(super::StereoWindow::new());
+        let active = super::AtomicBool::new(false);
+        let generation = std::sync::atomic::AtomicU64::new(77);
+        let live = || generation.load(super::Ordering::SeqCst) == 77;
+        let old = super::RemoteScopeLease::prepare(&ring, &meter);
+        assert!(old.activate(&ring, &meter, &active, live));
+        assert!(old.retire(&ring, &meter, &active));
+        let new = super::RemoteScopeLease::prepare(&ring, &meter);
+        assert!(new.activate(&ring, &meter, &active, live));
+        // Consumption and expiry must not retire the current session identity.
+        let measured = super::StereoPeak {
+            left: 0.5,
+            right: 0.125,
+        };
+        for (observed, read) in [(100, 101), (200, 701)] {
+            assert!(new.ingest(&ring, &meter, &[0.5, 0.125], live));
+            super::with_stereo_window(&ring, &meter, |ring, meter| {
+                meter.observe(
+                    super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
+                    observed,
+                );
+                assert_eq!(
+                    meter.take(read),
+                    (read - observed <= 500).then_some(measured)
+                );
+            });
+        }
+        assert!(new.ingest(&ring, &meter, &[0.5, 0.125], live));
+        super::with_stereo_window(&ring, &meter, |ring, meter| {
+            meter.observe(
+                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
+                710,
+            );
+        });
+        assert!(new.ingest(&ring, &meter, &[0.25, 0.0625], live));
+        assert!(!old.ingest(&ring, &meter, &[0.75, 0.25], live));
+        assert!(!old.retire(&ring, &meter, &active));
+        assert!(!old.activate(&ring, &meter, &active, live));
+        assert!(active.load(super::Ordering::Relaxed));
+        assert_eq!(meter.lock().unwrap().take(711), Some(measured));
+        assert_eq!(ring.lock().unwrap().take_stereo_samples(), [0.25, 0.0625]);
+        assert_eq!(generation.load(super::Ordering::SeqCst), 77);
+    }
+
+    #[test]
+    fn stereo_peak_remote_cancel_between_outer_check_and_locked_activation() {
+        use std::sync::{Arc, Mutex, mpsc};
+        use std::time::Duration;
+        for cancellation in ["session", "quit", "generation"] {
+            let ring = Arc::new(Mutex::new(SampleRing::new(48_000)));
+            let meter = Arc::new(Mutex::new(super::StereoWindow::new()));
+            let active = Arc::new(super::AtomicBool::new(false));
+            let cancel = Arc::new(super::AtomicBool::new(false));
+            let quit = Arc::new(super::AtomicBool::new(false));
+            let generation = Arc::new(std::sync::atomic::AtomicU64::new(77));
+            let lease = Arc::new(super::RemoteScopeLease::prepare(&ring, &meter));
+            let (checked_tx, checked_rx) = mpsc::sync_channel(1);
+            let (resume_tx, resume_rx) = mpsc::sync_channel(1);
+            let (done_tx, done_rx) = mpsc::sync_channel(1);
+            let wait = Duration::from_secs(5);
+            let setup = {
+                let (ring, meter, active, lease, cancel, quit, generation) = (
+                    ring.clone(),
+                    meter.clone(),
+                    active.clone(),
+                    lease.clone(),
+                    cancel.clone(),
+                    quit.clone(),
+                    generation.clone(),
+                );
+                std::thread::spawn(move || {
+                    let live = || {
+                        !cancel.load(super::Ordering::SeqCst)
+                            && !quit.load(super::Ordering::SeqCst)
+                            && generation.load(super::Ordering::SeqCst) == 77
+                    };
+                    assert!(live());
+                    checked_tx.send(()).unwrap();
+                    resume_rx.recv_timeout(wait).unwrap();
+                    done_tx
+                        .send(lease.activate(&ring, &meter, &active, live))
+                        .unwrap();
+                })
+            };
+            checked_rx.recv_timeout(wait).unwrap();
+            match cancellation {
+                "session" => cancel.store(true, super::Ordering::SeqCst),
+                "quit" => quit.store(true, super::Ordering::SeqCst),
+                _ => generation.store(78, super::Ordering::SeqCst),
+            }
+            resume_tx.send(()).unwrap();
+            assert!(!done_rx.recv_timeout(wait).unwrap(), "{cancellation}");
+            setup.join().unwrap();
+            assert!(!active.load(super::Ordering::Relaxed), "{cancellation}");
+            assert_eq!(meter.lock().unwrap().take(1), None);
+            assert!(!lease.retire(&ring, &meter, &active));
+        }
+    }
+
+    #[test]
+    fn stereo_peak_remote_setup_before_generic_replacement_cannot_activate_or_clear_it() {
+        let ring = super::Mutex::new(SampleRing::new(48_000));
+        let meter = super::Mutex::new(super::StereoWindow::new());
+        let active = super::AtomicBool::new(false);
+        let pending = super::RemoteScopeLease::prepare(&ring, &meter);
+        let measured = super::StereoPeak {
+            left: 0.0,
+            right: 0.0,
+        };
+        super::with_stereo_window(&ring, &meter, |ring, meter| {
+            ring.clear_pending();
+            *meter = super::StereoWindow::new();
+            active.store(true, super::Ordering::Relaxed);
+            meter.observe(Some(measured), 100);
+            ring.push_interleaved(&[0.0, 0.0]);
+        });
+        assert!(!pending.activate(&ring, &meter, &active, || true));
+        assert!(!pending.retire(&ring, &meter, &active));
+        assert!(active.load(super::Ordering::Relaxed));
+        assert_eq!(meter.lock().unwrap().take(101), Some(measured));
+        assert_eq!(ring.lock().unwrap().take_stereo_samples(), [0.0, 0.0]);
+    }
+
+    #[test]
+    fn stereo_peak_remote_adapters_share_production_lease_guard() {
+        let remote: String = include_str!("remote.rs")
+            .chars()
+            .filter(|ch| !ch.is_whitespace())
+            .collect();
+        assert!(remote.contains("self.scope.ingest("));
+        assert!(remote.contains("shared_v.push_scope(&buf[..got])"));
+        assert!(remote.contains("shared.push_scope(&f32buf)"));
+        assert!(remote.contains("shared.scope.activate("));
+        assert!(remote.contains("self.scope.retire("));
+        assert!(!remote.contains("push_interleaved("));
+        assert!(!remote.contains("set_ring_active("));
+        let setup = remote.split("fnrun_session(").nth(1).unwrap();
+        assert!(
+            setup.find("RemoteScopeLease::prepare").unwrap()
+                < setup.find(".to_socket_addrs()").unwrap()
+        );
+        let teardown = remote.split("fnteardown_session(").nth(1).unwrap();
+        assert!(
+            teardown.find("shared.trip()").unwrap()
+                < teardown.find("bridge_core::bounded_join(").unwrap()
+        );
+    }
+
+    #[test]
+    fn auto_gain_holds_dead_space_and_releases_only_sounding_frames() {
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        for _ in 0..100 {
+            gain.update(0.8);
+        }
+        let (peak, effective) = (gain.peak, gain.effective);
+        for _ in 0..10_000 {
+            for silent in [0.0, 0.019999, -1.0, f32::NAN, f32::INFINITY] {
+                assert_eq!(gain.update(silent), Some(effective));
+                assert_eq!(gain.peak, peak);
+            }
+        }
+        gain.update(0.02);
+        assert_eq!(gain.peak, peak * 0.999);
+        let expected = effective + ((0.92 / (peak * 0.999)) - effective) * 0.05;
+        assert!((gain.effective - expected).abs() < 1e-6);
+        gain.update(0.8);
+        assert_eq!(gain.peak, 0.8);
+    }
+
+    #[test]
+    fn auto_gain_only_current_new_item_resets_peak_without_jumping_gain() {
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        gain.update(0.8);
+        let effective = gain.effective;
+        for (proof, current) in [(0, 0), (1, 2), (1, 0)] {
+            gain.new_local_item(proof, current);
+            assert_eq!(gain.peak, 0.8);
+        }
+        gain.set_auto(true, 1.0); // Repeated restore is not a track.
+        assert_eq!(gain.peak, 0.8);
+        gain.new_local_item(2, 2);
+        assert_eq!(gain.peak, 0.0);
+        assert_eq!(gain.effective, effective);
+        gain.update(0.25);
+        gain.new_local_item(2, 2); // Duplicate TrackStarted cannot re-reset.
+        assert_eq!(gain.peak, 0.25);
+        gain.new_local_item(2, 3); // Delayed old render command cannot reset a newer item.
+        assert_eq!(gain.peak, 0.25);
+        gain.new_local_item(3, 3);
+        assert_eq!(gain.peak, 0.0);
+        assert_eq!(gain.set_manual(7.0), 7.0);
+        gain.set_auto(true, 7.0);
+        gain.update(0.0);
+        assert_eq!(gain.effective, 7.0); // Silence still holds the manual landing.
+        for _ in 0..10_000 {
+            gain.update(0.02);
+        }
+        assert!((gain.effective - 6.0).abs() < 0.0001);
+    }
+
+    #[test]
+    fn grid_angle_uses_actual_local_or_known_current_remote_mode_only() {
+        for mode in Mode::ALL {
+            let expected = if mode == Mode::Xy45 {
+                std::f32::consts::FRAC_PI_4
+            } else {
+                0.0
+            };
+            assert_eq!(super::grid_angle(mode, false, Some(Mode::Xy45)), expected);
+            assert_eq!(super::grid_angle(Mode::Xy45, true, Some(mode)), expected);
+            assert_eq!(super::grid_angle(mode, true, None), 0.0);
+        }
+        let compact =
+            |source: &str| -> String { source.chars().filter(|ch| !ch.is_whitespace()).collect() };
+        let render = compact(include_str!("render.rs"));
+        let assignment = "r.grid_angle=crate::engine::grid_angle(";
+        let angle = render.find(assignment).unwrap();
+        let flip = render.find("ifletSome(f)=flip.as_mut()").unwrap();
+        assert!(angle > flip);
+        assert!(render[flip..angle].contains("computer.mode=mode_from_index(f.pending_mode);"));
+        let arguments = render[angle..]
+            .split_once(';')
+            .unwrap()
+            .0
+            .strip_prefix(assignment)
+            .unwrap()
+            .strip_suffix(')')
+            .unwrap()
+            .trim_end_matches(',');
+        assert_eq!(
+            arguments,
+            "computer.mode,geometry_active,geometry_mode.as_ref().and_then(|m|m.current())"
+        );
+        let remote = compact(include_str!("remote.rs"));
+        assert!(remote.contains("Arc::ptr_eq(s,&session)"));
+        assert!(remote.contains("!session.cancelled()"));
+        let command = remote
+            .split_once("crate::render::Cmd::GeometryMode(")
+            .unwrap()
+            .1
+            .split_once(';')
+            .unwrap()
+            .0;
+        let fields = command
+            .split_once("GeometryMode{")
+            .unwrap()
+            .1
+            .split_once('}')
+            .unwrap()
+            .0
+            .trim_end_matches(',');
+        assert_eq!(fields, "session:Arc::downgrade(&shared),mode");
+        // Protocol K and G have no shared mode revision. These are adapter checks, not GPU or relay execution.
     }
 
     #[test]

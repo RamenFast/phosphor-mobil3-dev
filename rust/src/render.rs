@@ -38,10 +38,11 @@ pub enum Cmd {
     /// DSP reconstruction multiplier. Input stays 48 kHz; 1/2/4 reconstruct at
     /// 48/96/192 kHz while preserving one decay/deposit per displayed frame.
     SetOversample(u8),
-    /// Deflection gain (the figure swelling under a thumb). Clamped 0.1..6.
+    /// Manual deflection gain (the figure swelling under a thumb). Clamped 0.1..7.
     SetGain(f32),
     /// Desktop-parity autosize. Manual SetGain always disarms it.
     SetGainAuto(bool),
+    NewLocalItem(u64),
     /// Phosphor persistence 0..0.98 (glow / trail length).
     SetGlow(f32),
     /// Orbit the 3D camera by deltas (radians). 2D modes ignore it silently.
@@ -81,6 +82,7 @@ pub enum Cmd {
     CycleAdvance,
     /// Remote geometry mode: draw the desktop's decimated beam, bypassing the DSP.
     GeometryActive(bool),
+    GeometryMode(crate::remote::GeometryMode),
     /// One desktop tap frame (normalized 0..1 points in trace space).
     GeometryFrame(GeomFrame),
 }
@@ -122,6 +124,32 @@ pub static BEAM_RGB: AtomicU32 = AtomicU32::new(0x6bff8c);
 /// Nerd-HUD stats: measured fps ×10, and segments drawn in the last frame.
 pub static FPS_X10: AtomicU32 = AtomicU32::new(0);
 pub static SEGS_LAST: AtomicU32 = AtomicU32::new(0);
+
+pub(crate) static RAW_STEREO: std::sync::Mutex<crate::engine::StereoWindow> =
+    std::sync::Mutex::new(crate::engine::StereoWindow::new());
+
+fn meter_ms() -> u64 {
+    static EPOCH: OnceLock<std::time::Instant> = OnceLock::new();
+    EPOCH
+        .get_or_init(std::time::Instant::now)
+        .elapsed()
+        .as_millis() as u64
+}
+
+pub(crate) fn with_stereo_window<T>(
+    work: impl FnOnce(&mut phosphor_audio::SampleRing, &mut crate::engine::StereoWindow) -> T,
+) -> T {
+    crate::engine::with_stereo_window(crate::deck::scope_ring(), &RAW_STEREO, work)
+}
+
+pub(crate) fn take_stereo_stats() -> serde_json::Value {
+    RAW_STEREO
+        .lock()
+        .unwrap()
+        .take(meter_ms())
+        .map(crate::engine::StereoPeak::json)
+        .unwrap_or(serde_json::Value::Null)
+}
 
 fn pack_rgb(c: [f32; 3]) -> u32 {
     let ch = |v: f32| (v.clamp(0.0, 1.0).powf(1.0 / 2.2) * 255.0) as u32;
@@ -244,6 +272,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
 
     // Remote geometry (bridge visualizer mode): latest frame wins, decay keeps ticking.
     let mut geometry_active = false;
+    let mut geometry_mode = None;
     let mut geom_frame: Option<GeomFrame> = None;
 
     // Custom light + cycle: colors lerp slot→slot over `cycle_secs` per leg (timer mode)
@@ -408,6 +437,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
                     log::info!("auto gain: {on}");
                 }
+                Cmd::NewLocalItem(id) => {
+                    crate::deck::with_published_open(id, || auto_gain.new_local_item(id, id));
+                }
                 Cmd::SetBeamEnergy(e) => {
                     // Desktop parity: the "Beam" slider, 1.0..30.0.
                     computer.beam_energy = e.clamp(1.0, 30.0);
@@ -483,11 +515,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 }
                 Cmd::GeometryActive(on) => {
                     geometry_active = on;
+                    geometry_mode = None;
                     if !on {
                         geom_frame = None;
                     }
                     log::info!("geometry mode: {on}");
                 }
+                Cmd::GeometryMode(mode) => geometry_mode = Some(mode),
                 Cmd::GeometryFrame(f) => {
                     geom_frame = Some(f); // latest wins
                 }
@@ -502,24 +536,23 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             continue;
         };
 
-        let source_active = crate::deck::DECK_ACTIVE.load(Ordering::Relaxed);
-        let samples = if source_active {
-            crate::deck::scope_ring()
-                .lock()
-                .unwrap()
-                .take_stereo_samples()
-        } else {
-            Vec::new()
-        };
+        let (source_active, samples, raw_peak) = with_stereo_window(|ring, meter| {
+            let source_active = crate::deck::DECK_ACTIVE.load(Ordering::Relaxed);
+            let mut samples = if source_active {
+                ring.take_stereo_samples()
+            } else {
+                Vec::new()
+            };
+            let raw_peak = crate::engine::StereoPeak::prepare(&mut samples);
+            meter.observe(raw_peak, meter_ms());
+            (source_active, samples, raw_peak)
+        });
 
-        // One unconditional frame-peak fold feeds both autogain and the geometry FX
-        // envelope (instant attack, ~100 ms release at 120 fps).
-        let frame_peak = samples.iter().fold(0.0_f32, |p, s| p.max(s.abs()));
+        // Meter, autosize and geometry share the same raw pre-gain stereo window.
+        let frame_peak = raw_peak.map_or(0.0, crate::engine::StereoPeak::max);
         geom_env = frame_peak.max(geom_env * 0.92);
 
-        // Ported verbatim from desktop shell.rs: measure the raw source peak before
-        // compute, then glide Computer.gain. Empty active frames still release the
-        // peak slowly; remote geometry bypasses the local computer altogether.
+        // Empty and sub-threshold frames hold gain. Remote geometry bypasses local DSP.
         if source_active && !geometry_active && auto_gain.enabled() {
             if let Some(gain) = auto_gain.update(frame_peak) {
                 computer.gain = gain;
@@ -624,6 +657,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // The graticule follows effective gain so a pinch zooms the scene instead of only
         // amplifying the trace. Clamping prevents stripes and oversized cells.
         r.grid_spacing_fraction = (0.1125 * computer.gain).clamp(0.035, 0.55);
+        r.grid_angle = crate::engine::grid_angle(
+            computer.mode,
+            geometry_active,
+            geometry_mode.as_ref().and_then(|m| m.current()),
+        );
 
         // The DSP reconstructs the contiguous 48 kHz tap at the selected factor. Each display
         // frame performs one compute and one decay/deposit. Splitting a drained window into

@@ -50,12 +50,13 @@ class WakeOwnershipTest {
         var duration: Long? = null
         var terminals = 0
         var afterTerminal: () -> Unit = {}
+        var nativeOpen = 0L
 
         fun prepare() {
             survival.nativeReplacing()
             owner.wake.stop()
             queue.beginSelection()
-            truth.opened("/same.flac", "track") { true }
+            truth.opened("/same.flac", "track", { true }, ++nativeOpen, newItem = false)
         }
         fun publish() {
             output.opened()
@@ -67,7 +68,7 @@ class WakeOwnershipTest {
         fun update() = owner.wake.localChanged(
             !survival.loss().native, transport.playing, output.ready, output.failed,
         )
-        fun event(name: String) { events.add("""{"event":"$name","path":"/same.flac"}""") }
+        fun event(name: String) { events.add("""{"event":"$name","path":"/same.flac","open_id":$nativeOpen}""") }
         fun poll() = truth.poll(
             schedule = { worker.add(it) }, onMain = { main.add(it) },
             readEvent = { events.removeFirstOrNull() }, readMetadata = { metadata }, readArtwork = { null },

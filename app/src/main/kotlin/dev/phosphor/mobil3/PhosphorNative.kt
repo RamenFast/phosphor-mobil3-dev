@@ -64,7 +64,7 @@ object PhosphorNative {
     external fun cycleAdvance()
     /** Live beam color packed 0xRRGGBB (accent_follows_beam chrome breathing). */
     external fun beamColorNow(): Int
-    /** Nerd-HUD stats: {"fps":119.9,"segs":960}. */
+    /** Existing HUD heartbeat also consumes a <=500ms raw L/R grid_data window, or null for no data. */
     external fun scopeStats(): String
 
     // Remote source (Tailscale bridge, protocol v2 — docs/BRIDGE.md).
@@ -105,6 +105,10 @@ object PhosphorNative {
     // Deck: open a local file, drive the transport, read state.
     external fun deckValidate(path: String): Boolean
     external fun deckOpen(path: String): Boolean
+    /** Exact decoder instance, including same-path reopens. Read on the serial deck worker. */
+    external fun deckOpenIdentity(): Long
+    /** Only PlaybackTruth's current published new item may confirm its TrackStarted proof. */
+    external fun confirmLocalItem(openId: Long)
     external fun deckPublish(paused: Boolean)
     external fun deckToggle(): Boolean
     external fun deckPositionMs(): Long

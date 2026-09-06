@@ -88,10 +88,10 @@ These lines remain the authority. Only the B labels were added.
 | 08-26 | 1 | B11: The display sometimes sleeps while music is still playing | open | Contract compiled · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) · automated and live receipt pending |
 | 08-26 | 1 | B12: PiP auto-entry needs visible quick and full settings controls | open | Contract compiled · [issue #4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) · automated and live receipt pending |
 | 08-26 | 1 | B13: Remove DECK after queue and volume move, and add always-visible controls | open | Contract compiled · [issue #4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) · automated and live receipt pending |
-| 08-26 | 1 | B15: The grid is too dark and needs real left/right amplitude and dBFS data | open | Contract compiled · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) · automated and live receipt pending |
-| 08-26 | 1 | B16: The grid must rotate with the Xy45 goniometer trace | open | Contract compiled · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) · automated and live receipt pending |
+| 08-26 | 1 | B15: The grid is too dark and needs real left/right amplitude and dBFS data | open | Raw stereo data and source-boundary host gates passed. Physical coefficient experiment and Ben visibility confirmation remain open · [receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md) · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
+| 08-26 | 1 | B16: The grid must rotate with the Xy45 goniometer trace | open | Shared centered rotation, zero reset and offscreen parity passed. Actual phone transitions remain open · [receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md) · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
 | 08-26 | 1 | B18: Double-tap playback needs a dedicated settings toggle | open | Contract compiled · [issue #4](https://github.com/RamenFast/phosphor-mobil3-dev/issues/4) · automated and live receipt pending |
-| 08-26 | 1 | B20: Auto-gain pumps after dead space but has not cut the scope off | open | Contract compiled · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) · automated and live receipt pending |
+| 08-26 | 1 | B20: Auto-gain pumps after dead space but has not cut the scope off | open | Sounding-only gain release and exact new-item identity gates passed. Actual silent-gap experience remains open · [receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md) · [issue #5](https://github.com/RamenFast/phosphor-mobil3-dev/issues/5) |
 | 08-26 | 1 | B21: Recents removal must stop sources by default; background linger must be optional | open | Contract compiled · [issue #1](https://github.com/RamenFast/phosphor-mobil3-dev/issues/1) · automated and live receipt pending |
 
 ## 2026-09-05 device follow-through
@@ -385,3 +385,15 @@ A test method name collided with the unchanged privacy scanner. Root renamed onl
 Behavior commit `7f70e29` now has an exact clean-snapshot debug APK. Root independently verified 360 mobile and 53 pinned shared inputs, identical before/after source receipts and all six artifact checksums. The isolated build passed 348 Android cases, native packaging, lint, engine checks, 2/2 scope checks and 11+5 boundary checks. The debug signer matches the retained lineage. Artifact lint reports nine warnings with zero errors. Its dependency advisories differ from the root gate's 16-warning report, not its code warnings.
 
 The [Phase 10 receipt](dev/receipts/pre-v2-b1-b21/phase-10-display.md) records exact source, APK and evidence identities. No APK was installed and no phone, preference or live-service state changed. Original Phase 11 can continue offline. B5/B11 live acceptance, final regression and drift 21 remain open.
+
+## 2026-09-06 07:52 UTC: Phase11 source and host review closure
+
+The single raw stereo drain now supplies independent L/R amplitude and absolute dBFS under portable GRID DATA. A bounded meter window and exact per-attempt remote lease prevent stale source publication. Shared centered grid rotation preserves zero-angle output. Auto-gain holds silent gaps and resets tracked peak only after a proven current new local item.
+
+Frozen attempt04 passed 362 JVM, 50 selected native and 26 shared renderer tests. Lint reports 16 warnings and zero errors. Separate source and genuinely source-first intent reviews found no remaining concrete blocker in their bounded mechanisms. All 27 reviewed paths and 825 gate inputs matched. Failed runs and invalid-ordering reviews remain preserved.
+
+The [Phase11 receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md) records exact hashes and requirement-linked limits. B15 physical visibility, B16 device mode transitions, B20 actual silent-gap behavior and the local enqueue-versus-callback timing contract remain open. The shared implementation is committed as `aa09b8e14f8b8912b125e3312b4ddeec09404089`. Exact mobile packaging follows. No phone or active-media state changed, and drift remains 21.
+
+### Phase11 identifier-only boundary correction, 07:58 UTC
+
+The unchanged privacy scanner matched two private DSP identifier names before the mobile commit. Root renamed only those locals, proved exact reverse-hash equivalence, and preserved the failure. The full frozen attempt05 passed 362 JVM, 50 selected native, 26 shared renderer and 11 source-boundary checks, with all 827 input rows unchanged and lint 16 warnings/zero errors. This is a root-verified naming correction, not new Android or independent-review acceptance.

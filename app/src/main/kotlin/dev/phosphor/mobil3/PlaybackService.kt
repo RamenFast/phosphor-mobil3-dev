@@ -1014,9 +1014,12 @@ class PlaybackService : MediaSessionService() {
                     reportLocal("Seek failed, retry this track", isLatest)
                     publishNativeFailure(isLatest)
                 } else {
-                    playbackTruth.opened(path, request.titles[index], isLatest)
+                    val publishOpen = playbackTruth.opened(
+                        path, request.titles[index], isLatest, PhosphorNative.deckOpenIdentity(), newItem = false,
+                    )
                     main.post {
                         if (!destroying && !stopping && isLatest()) {
+                            if (!publishOpen()) return@post
                             PhosphorNative.deckPublish(!localPlayer.playWhenReady)
                             localPlayer.onNativeSeekCompleted()
                             sourceSurvival.published()
@@ -1051,9 +1054,12 @@ class PlaybackService : MediaSessionService() {
                     return
                 }
             }
-            playbackTruth.opened(path, request.titles[index], isLatest)
+            val publishOpen = playbackTruth.opened(
+                path, request.titles[index], isLatest, PhosphorNative.deckOpenIdentity(), newItem = true,
+            )
             main.post {
                 if (destroying || stopping || !isLatest()) return@post
+                if (!publishOpen()) return@post
                 queueUris = request.queueUris
                 queuePaths = request.queuePaths
                 queueTitles = request.titles
@@ -1122,6 +1128,7 @@ class PlaybackService : MediaSessionService() {
                     readMetadata = PhosphorNative::deckMetadata,
                     readArtwork = PhosphorNative::deckCoverArt,
                     publish = { if (session?.player === localPlayer) localPlayer.onTrackMetadata(it) },
+                    newItem = { if (session?.player === localPlayer) PhosphorNative.confirmLocalItem(it) },
                     terminal = { result, isCurrent ->
                         if (isCurrent() && session?.player === localPlayer) {
                             val continueQueue = localQueuePolicy.mayAdvance() && localPlayer.playWhenReady &&

@@ -5,6 +5,28 @@ use std::sync::{Mutex, mpsc};
 
 use crate::deck_activation::DeckActivation;
 
+/// A seek reopens the decoder, so paths cannot identify a native publication.
+pub(crate) struct LocalOpen {
+    pub(crate) id: u64,
+    published: bool,
+}
+
+impl LocalOpen {
+    pub(crate) fn new(published: bool) -> Self {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        Self {
+            id: NEXT.fetch_add(1, Ordering::Relaxed),
+            published,
+        }
+    }
+    pub(crate) fn publish(&mut self) {
+        self.published = true;
+    }
+    pub(crate) fn accepts(&self, id: u64) -> bool {
+        self.published && id != 0 && id == self.id
+    }
+}
+
 const EOF: u8 = 1;
 const DRAINED: u8 = 2;
 const OUTPUT_ERROR: u8 = 4;
@@ -14,6 +36,10 @@ const OUTPUT_ERROR: u8 = 4;
 pub(crate) struct DeckTerminal(AtomicU8);
 
 impl DeckTerminal {
+    pub(crate) fn allows_item_confirmation(&self) -> bool {
+        self.event().is_none()
+    }
+
     fn decoder_ended(&self) {
         self.0.fetch_or(EOF, Ordering::Release);
     }
@@ -57,13 +83,16 @@ pub(crate) fn poll_event_json(deck: &Mutex<Option<impl EventSource>>) -> Option<
     let guard = deck.try_lock().ok()?;
     let source = guard.as_ref()?;
     if let Some(event) = source.terminal().event() {
-        return Some(serde_json::json!({"event": event, "path": source.path()}).to_string());
+        return Some(
+            serde_json::json!({"event": event, "path": source.path(), "open_id": source.open_id()})
+                .to_string(),
+        );
     }
     let event = source.events().try_recv().ok()?;
     match event {
         AudioEvent::TrackStarted { path } => Some(
             serde_json::json!({
-                "event": "track_started", "path": path,
+                "event": "track_started", "path": path, "open_id": source.open_id(),
             })
             .to_string(),
         ),
@@ -71,7 +100,7 @@ pub(crate) fn poll_event_json(deck: &Mutex<Option<impl EventSource>>) -> Option<
             source.terminal().decoder_ended();
             Some(
                 serde_json::json!({
-                    "event": "playback_ended", "path": source.path(),
+                    "event": "playback_ended", "path": source.path(), "open_id": source.open_id(),
                 })
                 .to_string(),
             )
@@ -83,12 +112,102 @@ pub(crate) fn poll_event_json(deck: &Mutex<Option<impl EventSource>>) -> Option<
 pub(crate) trait EventSource {
     fn events(&self) -> &mpsc::Receiver<AudioEvent>;
     fn path(&self) -> &str;
+    fn open_id(&self) -> u64;
     fn terminal(&self) -> &DeckTerminal;
 }
 
 #[cfg(test)]
 mod tests {
     use super::*;
+
+    #[test]
+    fn auto_gain_native_identity_rejects_prepared_replaced_and_delayed_commands() {
+        let mut old = LocalOpen::new(false);
+        let mut gain = crate::engine::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        gain.update(0.8);
+        assert!(!old.accepts(old.id));
+        old.publish(); // Paused publication also has a real identity, without claiming output flow.
+        assert!(old.accepts(old.id));
+        let mut replacement = LocalOpen::new(false);
+        assert_ne!(old.id, replacement.id);
+        assert!(!replacement.accepts(old.id));
+        assert!(!replacement.accepts(replacement.id));
+        replacement.publish();
+        assert!(!replacement.accepts(0));
+        assert!(!replacement.accepts(old.id));
+        assert!(replacement.accepts(replacement.id));
+        let terminal = DeckTerminal::default();
+        assert!(terminal.allows_item_confirmation());
+        terminal.output_error();
+        assert!(!terminal.allows_item_confirmation());
+        if replacement.accepts(old.id) {
+            panic!("retired proof accepted");
+        }
+        gain.new_local_item(replacement.id, replacement.id);
+        let next = gain.update(0.02).unwrap();
+        assert!(next > 1.0); // New quiet item uses its own target rather than the retired loud peak.
+        let deck = include_str!("deck.rs");
+        let guarded = deck
+            .split("fn with_published_open(")
+            .nth(1)
+            .unwrap()
+            .split("// PlayerSession")
+            .next()
+            .unwrap();
+        assert!(guarded.contains("let guard = DECK.lock().unwrap()"));
+        assert!(guarded.contains("deck.open.accepts(id)"));
+        assert!(guarded.contains("deck.terminal.allows_item_confirmation()"));
+        assert!(
+            include_str!("render.rs")
+                .contains("with_published_open(id, || auto_gain.new_local_item(id, id))")
+        );
+    }
+
+    #[test]
+    fn auto_gain_track_started_and_terminal_events_carry_native_open_identity() {
+        struct Identified(mpsc::Receiver<AudioEvent>, DeckTerminal, LocalOpen);
+        impl EventSource for Identified {
+            fn events(&self) -> &mpsc::Receiver<AudioEvent> {
+                &self.0
+            }
+            fn path(&self) -> &str {
+                "/same.flac"
+            }
+            fn open_id(&self) -> u64 {
+                self.2.id
+            }
+            fn terminal(&self) -> &DeckTerminal {
+                &self.1
+            }
+        }
+        let mut identities = Vec::new();
+        for _ in 0..2 {
+            let (tx, rx) = mpsc::channel();
+            let identity = LocalOpen::new(false);
+            let id = identity.id;
+            identities.push(id);
+            let source = Mutex::new(Some(Identified(rx, DeckTerminal::default(), identity)));
+            for event in [
+                AudioEvent::TrackStarted {
+                    path: "/same.flac".into(),
+                },
+                AudioEvent::PlaybackEnded,
+            ] {
+                tx.send(event).unwrap();
+                let json: serde_json::Value =
+                    serde_json::from_str(&poll_event_json(&source).unwrap()).unwrap();
+                assert_eq!(json["open_id"].as_u64(), Some(id));
+                assert_eq!(json["path"], "/same.flac");
+            }
+            source.lock().unwrap().as_ref().unwrap().1.output_error();
+            let json: serde_json::Value =
+                serde_json::from_str(&poll_event_json(&source).unwrap()).unwrap();
+            assert_eq!(json["open_id"].as_u64(), Some(id));
+            assert_eq!(json["event"], "output_error");
+        }
+        assert_ne!(identities[0], identities[1]);
+    }
 
     struct Source(mpsc::Receiver<AudioEvent>, DeckTerminal);
     impl EventSource for Source {
@@ -97,6 +216,9 @@ mod tests {
         }
         fn path(&self) -> &str {
             "/music/current.flac"
+        }
+        fn open_id(&self) -> u64 {
+            1
         }
         fn terminal(&self) -> &DeckTerminal {
             &self.1

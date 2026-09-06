@@ -45,6 +45,8 @@ class ScopeUiState {
     var beamEnergy by mutableFloatStateOf(8.0f)
     var glow by mutableFloatStateOf(0.7f)
     var grid by mutableStateOf(true)
+    var gridData by mutableStateOf(GridData.DEFAULT)
+    var gridReading by mutableStateOf<GridData.Reading?>(null)
     var beamRandomArmed by mutableStateOf(false)
     var beamRandomLo by mutableFloatStateOf(6.0f)
     var beamRandomHi by mutableFloatStateOf(20.0f)
@@ -106,6 +108,36 @@ class ScopeUiState {
     val modeLabel: String get() = ModeLabels.getOrElse(modeIndex) { "?" }
     val modeTag: String get() = ModeTags.getOrElse(modeIndex) { "?" }
     val mode3d: Boolean get() = modeIndex == 4 || modeIndex == 5
+}
+
+/** Absolute raw-channel values from scopeStats, independent of display gain and HUD visibility. */
+object GridData {
+    const val KEY = "grid_data"
+    const val DEFAULT = false
+    data class Reading(val left: Double, val right: Double, val leftDbfs: Double?, val rightDbfs: Double?)
+
+    fun needsStats(hudMode: Int, enabled: Boolean) = hudMode != 2 || enabled
+
+    fun read(stats: org.json.JSONObject?): Reading? {
+        val data = stats?.optJSONObject(KEY) ?: return null
+        fun rawPeak(key: String) = data.optDouble(key, Double.NaN).takeIf { it.isFinite() && it >= 0.0 }
+        val left = rawPeak("left") ?: return null
+        val right = rawPeak("right") ?: return null
+        fun dbfs(key: String) = data.optDouble(key, Double.NaN).takeIf { it.isFinite() }
+        val leftDbfs = dbfs("left_dbfs")
+        val rightDbfs = dbfs("right_dbfs")
+        if ((left > 0.0 && leftDbfs == null) || (right > 0.0 && rightDbfs == null)) return null
+        return Reading(left, right, leftDbfs, rightDbfs)
+    }
+
+    fun line(reading: Reading?, left: Boolean): String {
+        val channel = if (left) "L" else "R"
+        if (reading == null) return "$channel · no data"
+        val rawPeak = if (left) reading.left else reading.right
+        val dbfs = if (left) reading.leftDbfs else reading.rightDbfs
+        val db = if (rawPeak == 0.0) "−∞" else String.format(java.util.Locale.ROOT, "%.1f", dbfs)
+        return String.format(java.util.Locale.ROOT, "%s · %.3f · %s dBFS", channel, rawPeak, db)
+    }
 }
 
 fun nextHudMode(current: Int): Int = ((if (current in 0..2) current else 2) + 1) % 3

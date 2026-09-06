@@ -138,6 +138,25 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckPublish(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckOpenIdentity(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jlong {
+    crate::deck::open_identity() as jni::sys::jlong
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_confirmLocalItem(
+    _env: JNIEnv,
+    _class: JClass,
+    open_id: jni::sys::jlong,
+) {
+    if open_id > 0 {
+        let _ = crate::render::sender().send(crate::render::Cmd::NewLocalItem(open_id as u64));
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_deckToggle(
     _env: JNIEnv,
     _class: JClass,
@@ -760,7 +779,10 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_scopeStats(
 ) -> jstring {
     let fps = crate::render::FPS_X10.load(std::sync::atomic::Ordering::Relaxed) as f32 / 10.0;
     let segs = crate::render::SEGS_LAST.load(std::sync::atomic::Ordering::Relaxed);
-    match env.new_string(format!(r#"{{"fps":{fps:.1},"segs":{segs}}}"#)) {
+    let stats = serde_json::json!({
+        "fps": fps, "segs": segs, "grid_data": crate::render::take_stereo_stats(),
+    });
+    match env.new_string(stats.to_string()) {
         Ok(s) => s.into_raw(),
         Err(_) => std::ptr::null_mut(),
     }

@@ -40,10 +40,13 @@ pub fn push_capture(samples: &[f32]) {
 }
 
 pub fn set_ring_active(active: bool) {
-    if active {
-        scope_ring().lock().unwrap().clear_pending();
-    }
-    DECK_ACTIVE.store(active, Ordering::Relaxed);
+    crate::render::with_stereo_window(|ring, meter| {
+        if active {
+            ring.clear_pending();
+        }
+        *meter = crate::engine::StereoWindow::new();
+        DECK_ACTIVE.store(active, Ordering::Relaxed);
+    });
     log::info!("scope ring active: {active}");
 }
 
@@ -88,6 +91,7 @@ impl AudioOutputCallback for DeckOutput {
 
 pub struct Deck {
     path: String,
+    open: crate::deck_events::LocalOpen,
     session: PlayerSession,
     stream: AudioStreamAsync<Output, DeckOutput>,
     activation: Arc<DeckActivation>,
@@ -104,6 +108,10 @@ impl crate::deck_events::EventSource for Deck {
         &self.path
     }
 
+    fn open_id(&self) -> u64 {
+        self.open.id
+    }
+
     fn terminal(&self) -> &DeckTerminal {
         &self.terminal
     }
@@ -111,6 +119,21 @@ impl crate::deck_events::EventSource for Deck {
 
 pub fn poll_event_json() -> Option<String> {
     crate::deck_events::poll_event_json(&DECK)
+}
+
+pub fn open_identity() -> u64 {
+    DECK.lock().unwrap().as_ref().map_or(0, |deck| deck.open.id)
+}
+
+/// The render command must still belong to the currently published native open.
+pub(crate) fn with_published_open(id: u64, apply: impl FnOnce()) {
+    let guard = DECK.lock().unwrap();
+    if guard
+        .as_ref()
+        .is_some_and(|deck| deck.open.accepts(id) && deck.terminal.allows_item_confirmation())
+    {
+        apply();
+    }
 }
 
 // PlayerSession is channels+Arcs; the oboe stream handle is safe to move with the deck.
@@ -189,10 +212,14 @@ fn open_at_state(
         return Err(format!("oboe start: {error}"));
     }
 
-    scope_ring().lock().unwrap().clear_pending();
-    DECK_ACTIVE.store(!prepared, Ordering::Relaxed);
+    crate::render::with_stereo_window(|ring, meter| {
+        ring.clear_pending();
+        *meter = crate::engine::StereoWindow::new();
+        DECK_ACTIVE.store(!prepared, Ordering::Relaxed);
+    });
     *DECK.lock().unwrap() = Some(Deck {
         path: path.to_owned(),
+        open: crate::deck_events::LocalOpen::new(!prepared),
         session,
         stream,
         activation,
@@ -211,7 +238,8 @@ pub fn set_paused(paused: bool) {
 }
 
 pub fn publish(paused: bool) {
-    if let Some(deck) = DECK.lock().unwrap().as_ref() {
+    if let Some(deck) = DECK.lock().unwrap().as_mut() {
+        deck.open.publish();
         deck.activation.publish(paused);
         DECK_ACTIVE.store(true, Ordering::Relaxed);
     }
@@ -288,5 +316,5 @@ pub fn close() {
             let _ = deck.stream.stop();
         });
     }
-    DECK_ACTIVE.store(false, Ordering::Relaxed);
+    set_ring_active(false);
 }

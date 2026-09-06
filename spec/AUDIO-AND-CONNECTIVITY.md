@@ -25,6 +25,8 @@ After a current native seek succeeds, publish its actual position to the media s
 
 Tagged local metadata must follow the item that the decoder actually starts. Blank title falls back to the filename. Blank artist remains absent. Metadata delivery must not block open or compete with folder validation for event ownership.
 
+Auto-gain's new-item boundary uses the existing serial request and event owners. Every native decoder open has a distinct transient identity, including same-path seek reopens. PlaybackTruth checks that identity on TrackStarted and terminal events as well as the exact current Open object and latest request. Only a successfully published new local item with matching TrackStarted proof may confirm one peak reset. Same-item seek, metadata refresh, retained-source preflight failure, unpublished or failed open, capture and microphone input cannot confirm a reset. Explicitly opening the same path as a new item can confirm one after its own proof. The render command rechecks the current published native identity under the deck lock, so delayed old proof cannot reset a replacement. This identity fence does not change metadata-driven beam-cycle behavior or the terminal, paused-tail, queue and wake policies.
+
 ## 3. Microphone
 
 Microphone input requires `RECORD_AUDIO`. The app must request permission after an explanatory user action.
