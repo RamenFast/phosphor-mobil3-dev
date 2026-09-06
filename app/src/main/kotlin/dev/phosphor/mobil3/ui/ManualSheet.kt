@@ -123,7 +123,6 @@ fun ManualSheet(
     SheetHost(p, "MANUAL", reduced, onDismiss, glyph = SettingsGlyph.About) {
         Column(
             Modifier
-                .bottomBloomOverscroll { !scroll.canScrollForward }
                 .verticalScroll(scroll, overscrollEffect = null)
         ) {
             Mono(

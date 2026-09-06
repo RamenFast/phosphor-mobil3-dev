@@ -551,15 +551,6 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGeomAmount(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBloomPull(
-    _env: JNIEnv,
-    _class: JClass,
-    pull: jni::sys::jfloat,
-) {
-    let _ = crate::render::sender().send(crate::render::Cmd::SetBloomPull(pull));
-}
-
-#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGrid(
     _env: JNIEnv,
     _class: JClass,

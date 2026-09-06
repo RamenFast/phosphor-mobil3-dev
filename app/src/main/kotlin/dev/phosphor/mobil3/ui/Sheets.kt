@@ -202,11 +202,8 @@ fun SheetHost(
         slidesSideways -> Alignment.BottomEnd
         else -> Alignment.BottomCenter
     }
-    val bloom = LocalBloomPull.current
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
-    val bloomTravelPx = with(density) { 28.dp.toPx() }
-    val bloomOffsetPx = -(bloom?.visualPull ?: 0f) * bloomTravelPx
     var availableHeightPx by remember { mutableIntStateOf(0) }
     var sheetHeightPx by remember { mutableIntStateOf(0) }
     var sheetWidthPx by remember { mutableIntStateOf(0) }
@@ -259,8 +256,7 @@ fun SheetHost(
         }
     }
     // A scroll child first consumes every ordinary scroll delta. Only its unconsumed
-    // downward remainder at TOP reaches this parent, becoming the sheet pull. The
-    // opposite (upward-at-bottom) remainder is still exclusively bloom's lane.
+    // downward remainder at TOP reaches this parent, becoming the sheet pull.
     val dismissNestedScroll = remember(style.motion, reduced, dismissDistancePx, dismissFlickPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -341,7 +337,7 @@ fun SheetHost(
                         .offset {
                             IntOffset(
                                 0,
-                                (dismissOffset.value.coerceAtLeast(0f) + bloomOffsetPx).roundToInt(),
+                                dismissOffset.value.coerceAtLeast(0f).roundToInt(),
                             )
                         }
                         .then(
@@ -522,7 +518,6 @@ fun SourceSheet(
     SheetHost(p, "SOURCE", reduced, onDismiss, glyph = SettingsGlyph.Signal) {
       Column(
           Modifier
-              .bottomBloomOverscroll { !scroll.canScrollForward }
               .verticalScroll(scroll, overscrollEffect = null)
       ) {
         if (consentCard) {
@@ -701,7 +696,6 @@ fun ModeSheet(
     SheetHost(p, "MODE", reduced, onDismiss, glyph = SettingsGlyph.Display) {
         Column(
             Modifier
-                .bottomBloomOverscroll { !scroll.canScrollForward }
                 .verticalScroll(scroll, overscrollEffect = null)
         ) {
             SectionHeading("AUTOMATIC", p, Modifier.padding(top = 0.dp))
@@ -833,8 +827,7 @@ fun RoomSheet(
             columns = GridCells.Fixed(2),
             state = gridState,
             modifier = Modifier
-                .heightIn(max = 340.dp)
-                .bottomBloomOverscroll { !gridState.canScrollForward },
+                .heightIn(max = 340.dp),
             overscrollEffect = null,
         ) {
             itemsIndexed(Rooms) { _, room ->
@@ -1324,7 +1317,6 @@ fun SettingsSheet(
         // right carries PERFORMANCE + REMOTE + ROOM & LIGHT + ABOUT (balanced by eye).
         Column(
             Modifier
-                .bottomBloomOverscroll { !scroll.canScrollForward }
                 .verticalScroll(scroll, overscrollEffect = null)
         ) {
             if (landscape) {

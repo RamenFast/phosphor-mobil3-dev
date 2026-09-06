@@ -62,10 +62,16 @@ import java.util.UUID
 class MainActivity : ComponentActivity(), ScopeActions {
 
     private lateinit var ui: ScopeUiState
-    private val mic = MicController()
+    private val micWake = SourceWakeLock.forOwner(this, "microphone")
+    private val mic = MicController { recording ->
+        micWake.microphoneChanged(recording, activityDestroyed)
+        if (activityStarted && !activityDestroyed) reassertSourceWake()
+    }
     private var taskRevision = -1L
     private var activityRevision = -1L
     private var activityDestroyed = false
+    private var activityStarted = false
+    private var scopeSurface: SurfaceView? = null
     private val controllerBinding = ActivityControllerBinding()
     private fun taskIsCurrent(): Boolean = !activityDestroyed &&
         BackgroundLifecycle.policy.accepts(taskRevision) && BackgroundLifecycle.policy.acceptsActivity(activityRevision)
@@ -86,7 +92,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         start = { done ->
             if (micRequestIsCurrent()) {
                 applyLocalGainPolicy()
-                mic.start(done, ::micRequestIsCurrent)
+                mic.start(done, ::micRequestIsCurrent) { error ->
+                    publishMicReaderFailure(ui, { taskIsCurrent() && !isDestroyed }) {
+                        runtimePrefs().edit { putString("last_source", "none") }
+                        Toast.makeText(this, error, Toast.LENGTH_LONG).show()
+                    }
+                }
             } else {
                 micHandoffCancel()
             }
@@ -136,6 +147,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             } else if (intent?.action == PlaybackService.ACTION_LOCAL_SOURCE_CHANGED) {
                 applyLocalSourcePublication(intent.getLongExtra(PlaybackService.EXTRA_SOURCE_REVISION, -1))
             }
+            reassertSourceWake()
         }
     }
 
@@ -147,6 +159,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val surfaceCallback = object : SurfaceHolder.Callback {
         override fun surfaceCreated(holder: SurfaceHolder) {
+            reassertSourceWake()
             if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 holder.surface.setFrameRate(120f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
             }
@@ -155,6 +168,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             PhosphorNative.surfaceCreatedOrChanged(holder.surface, w, h, resources.displayMetrics.density)
             // Restore the persisted focus whenever Android recreates the surface.
             PhosphorNative.setFocus(focusPref)
+            reassertSourceWake()
         }
         override fun surfaceDestroyed(holder: SurfaceHolder) {
             PhosphorNative.surfaceDestroyed()
@@ -350,14 +364,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         activityRevision = BackgroundLifecycle.policy.activityRevision
         ui = ScopeUiState()
         enableEdgeToEdge()
-        // The scope is something you WATCH, so the screen must not dim or lock under it.
-        // This is sufficient on its own: the flag holds a SCREEN_BRIGHT_WAKE_LOCK for as
-        // long as this window is in front (verified on the S25), and Doze/App Standby
-        // only bite once the screen is off, which this prevents. A playback foreground
-        // service covers the audio path when the app is backgrounded. No battery
-        // optimisation exemption is requested, because none is needed and asking for one
-        // is a Play-policy liability for no user benefit.
-        window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        // Visible flags mirror actual source owners. Idle chrome must remain sleep-eligible.
+        reassertSourceWake()
         window.attributes = window.attributes.apply {
             layoutInDisplayCutoutMode = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
                 WindowManager.LayoutParams.LAYOUT_IN_DISPLAY_CUTOUT_MODE_ALWAYS
@@ -445,6 +453,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onStart() {
         super.onStart()
+        activityStarted = true
+        reassertSourceWake()
         val bindingRevision = controllerBinding.start()
         if (!captureStatusReceiverRegistered) {
             ContextCompat.registerReceiver(
@@ -474,6 +484,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
             controller = connected.also { c ->
                 c.addListener(object : Player.Listener {
+                    override fun onEvents(player: Player, events: Player.Events) { reassertSourceWake() }
                     override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = sessionPlaying(c) }
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                         if (c.mediaMetadata.extras?.getString("source") == "capture") ui.playing = sessionPlaying(c)
@@ -516,6 +527,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onStop() {
+        activityStarted = false
+        reassertSourceWake()
         controllerBinding.cancel()
         saveTuning()
         tick.removeCallbacks(uiTick)
@@ -540,6 +553,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
             runtimePrefs().edit { putString("last_source", "none") }
         }
         activityDestroyed = true
+        micWake.destroy()
+        activityStarted = false
+        reassertSourceWake()
+        scopeSurface = null
         controllerBinding.cancel()
         selectSource()
         BackgroundLifecycle.policy.leaveActivity(activityRevision)
@@ -554,6 +571,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private val uiTick = object : Runnable {
         override fun run() {
             ui.volumeFraction = volumeFrac()
+            reassertSourceWake()
             controller?.let { c ->
                 val dur = c.duration
                 ui.seekable = !ui.remote && dur > 0 &&
@@ -774,8 +792,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // ---- ScopeActions ----
-    override fun makeSurface(): SurfaceView =
-        SurfaceView(this).apply { holder.addCallback(surfaceCallback) }
+    override fun makeSurface(): SurfaceView = SurfaceView(this).apply {
+        scopeSurface?.keepScreenOn = false
+        scopeSurface = this
+        holder.addCallback(surfaceCallback)
+        reassertSourceWake()
+    }
+
+    private fun reassertSourceWake() {
+        val awake = SourceWakePolicy.visible(
+            started = activityStarted && !activityDestroyed,
+            sourceLive = micWake.live || PlaybackService.hasLiveWakeSource() || CaptureService.hasLiveWakeSource(),
+        )
+        scopeSurface?.keepScreenOn = awake
+        if (awake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+        else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
+    }
 
     // The transport law, unified: ALL transport goes through the one MediaController —
     // the session's player routes to the local deck or the bridge. Notification, lock
@@ -1082,11 +1114,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             // The remembered input and calibration date are device runtime metadata.
             if (taskIsCurrent()) putString(
                 "last_source",
-                when {
-                    ui.live && ui.sourceLabel == "capture" -> "capture"
-                    ui.live && ui.sourceLabel == "mic" -> "mic"
-                    else -> "none"
-                },
+                runtimeInputSource(ui, mic.isRecording()),
             )
             putString(
                 "cal_date",
@@ -1640,7 +1668,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // Android can reveal system bars when focus returns, so restore the selected immersive state.
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
-        if (hasFocus) applyImmersive()
+        if (hasFocus) {
+            applyImmersive()
+            reassertSourceWake()
+        }
     }
 
     override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
@@ -1731,4 +1762,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         )
         ui.volumeFraction = volumeFrac()
     }
+}
+
+/** Failure-only publication. Generic recorder stop must not clear a replacement source face. */
+internal fun publishMicReaderFailure(ui: ScopeUiState, isCurrent: () -> Boolean, report: () -> Unit) {
+    if (!isCurrent() || !ui.live || ui.sourceLabel != "mic") return
+    ui.live = false
+    ui.sourceLabel = "no source"
+    report()
+}
+
+internal fun runtimeInputSource(ui: ScopeUiState, micRecording: Boolean): String = when {
+    ui.live && ui.sourceLabel == "capture" -> "capture"
+    ui.live && ui.sourceLabel == "mic" && micRecording -> "mic"
+    else -> "none"
 }

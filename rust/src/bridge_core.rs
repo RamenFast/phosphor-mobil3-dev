@@ -4,7 +4,7 @@
 //! `cargo test` exercises everything here; the android-gated `remote` consumes it.
 
 use std::io::{self, Read, Write};
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicU32, AtomicU64, Ordering};
 use std::sync::mpsc::{Receiver, RecvTimeoutError};
 use std::thread::JoinHandle;
 use std::time::{Duration, Instant};
@@ -133,6 +133,119 @@ pub fn read_fully<R: Read>(r: &mut R, buf: &mut [u8], cancel: &AtomicBool) -> io
 pub const QUIET_STALLED_MS: u64 = 3_000;
 pub const QUIET_DEAD_MS: u64 = 10_000;
 
+/// Decoded media accepted by the real remote reader, before audio/render dispatch.
+#[derive(Debug)]
+pub enum RemoteMedia {
+    Audio(Vec<f32>),
+    Geometry {
+        points: Vec<[f32; 2]>,
+        aspect: f32,
+        intensity: f32,
+    },
+}
+
+#[derive(Clone, Copy, Debug, Default, PartialEq, Eq)]
+pub struct MediaStatus {
+    pub received: bool,
+    pub live: bool,
+}
+
+/// One native session's receipts. Retired sessions cannot regain media authority.
+pub struct SessionMedia {
+    last_ms: AtomicU64,
+    retired: AtomicBool,
+}
+
+impl Default for SessionMedia {
+    fn default() -> Self {
+        Self {
+            last_ms: AtomicU64::new(u64::MAX),
+            retired: AtomicBool::new(false),
+        }
+    }
+}
+
+impl SessionMedia {
+    pub fn retire(&self) {
+        self.retired.store(true, Ordering::SeqCst);
+    }
+
+    pub fn status(&self, now_ms: u64) -> MediaStatus {
+        let last_ms = self.last_ms.load(Ordering::Acquire);
+        if self.retired.load(Ordering::SeqCst) || last_ms == u64::MAX {
+            return MediaStatus::default();
+        }
+        MediaStatus {
+            received: true,
+            live: now_ms.saturating_sub(last_ms) <= QUIET_STALLED_MS,
+        }
+    }
+
+    pub fn accept(&self, tag: u8, payload: &[u8], now_ms: u64) -> Option<RemoteMedia> {
+        if self.retired.load(Ordering::SeqCst) {
+            return None;
+        }
+        let media = match tag {
+            // Protocol v2 carries nonempty s16le stereo, not partial channel frames.
+            b'A' if !payload.is_empty() && payload.len() % 4 == 0 => RemoteMedia::Audio(
+                payload
+                    .chunks_exact(2)
+                    .map(|c| i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0)
+                    .collect(),
+            ),
+            b'G' => {
+                let v: serde_json::Value = serde_json::from_slice(payload).ok()?;
+                let (tw, th) = match v.get("trace_size") {
+                    None => (1.0, 1.0),
+                    Some(size) => {
+                        let size = size.as_array()?;
+                        if size.len() != 2 {
+                            return None;
+                        }
+                        (size[0].as_f64()?, size[1].as_f64()?)
+                    }
+                };
+                if !tw.is_finite() || !th.is_finite() || tw <= 0.0 || th <= 0.0 {
+                    return None;
+                }
+                let peak = match v.get("peak") {
+                    None => 0.6,
+                    Some(peak) => peak.as_f64()?,
+                } as f32;
+                let aspect = (tw / th.max(1.0)) as f32;
+                if !peak.is_finite() || !aspect.is_finite() {
+                    return None;
+                }
+                let line = v.get("polyline")?.as_array()?;
+                if line.len() < 2 {
+                    return None;
+                }
+                let mut points = Vec::with_capacity(line.len());
+                for point in line {
+                    let point = point.as_array()?;
+                    let x = (point.first()?.as_f64()? / tw.max(1.0)) as f32;
+                    let y = (point.get(1)?.as_f64()? / th.max(1.0)) as f32;
+                    if !x.is_finite() || !y.is_finite() {
+                        return None;
+                    }
+                    points.push([x, y]);
+                }
+                RemoteMedia::Geometry {
+                    points,
+                    aspect,
+                    intensity: (0.8 * peak.clamp(0.2, 1.0)).max(0.15),
+                }
+            }
+            _ => return None,
+        };
+        self.last_ms.store(now_ms, Ordering::Release);
+        if self.retired.load(Ordering::SeqCst) {
+            return None;
+        }
+        Some(media)
+    }
+}
+
 /// Reconnect ladder: 1 → 2 → 4 → 8 → 15 seconds. A healthy session resets it to 1.
 pub fn next_backoff(prev: u64) -> u64 {
     (prev.max(1) * 2).min(15)
@@ -146,14 +259,18 @@ pub enum WatchdogAction {
     Dead,
 }
 
-/// The receive-silence state machine, extracted verbatim from the session
-/// watchdog so the thresholds live in one tested place.
-pub fn watchdog_action(quiet_ms: u64, streaming: bool, stalled: bool) -> WatchdogAction {
+/// Socket silence ends a session. Only fresh accepted media recovers media flow.
+pub fn watchdog_action(
+    quiet_ms: u64,
+    media: MediaStatus,
+    streaming: bool,
+    stalled: bool,
+) -> WatchdogAction {
     if quiet_ms > QUIET_DEAD_MS {
         WatchdogAction::Dead
-    } else if quiet_ms > QUIET_STALLED_MS && streaming {
+    } else if streaming && (quiet_ms > QUIET_STALLED_MS || (media.received && !media.live)) {
         WatchdogAction::MarkStalled
-    } else if quiet_ms <= QUIET_STALLED_MS && stalled {
+    } else if quiet_ms <= QUIET_STALLED_MS && stalled && media.live {
         WatchdogAction::MarkStreaming
     } else {
         WatchdogAction::Ok
@@ -435,6 +552,216 @@ mod tests {
     }
 
     #[test]
+    fn remote_media_prior_receipt_then_reconnect_control_only_not_live() {
+        let prior = SessionMedia::default();
+        assert!(prior.accept(b'A', &[0; 4], 0).is_some());
+        assert!(prior.status(0).live);
+        prior.retire();
+
+        // Automatic reconnect and retarget both construct a fresh SessionShared.
+        let current = SessionMedia::default();
+        for now in [0, 1_000, 4_000, 10_001, 60_001] {
+            for tag in [b'W', b'K', b'M'] {
+                assert!(current.accept(tag, br#"{"rms":0.0}"#, now).is_none());
+                assert_eq!(current.status(now), MediaStatus::default());
+                assert_eq!(
+                    watchdog_action(0, current.status(now), true, false),
+                    WatchdogAction::Ok
+                );
+            }
+        }
+        assert_eq!(prior.status(0), MediaStatus::default());
+    }
+
+    #[test]
+    fn remote_media_stops_while_heartbeats_continue_and_recovers() {
+        let media = SessionMedia::default();
+        assert!(media.accept(b'A', &[0; 4], 100).is_some());
+        assert!(media.status(3_100).live);
+        for now in [3_101, 5_000, 15_000] {
+            for tag in [b'W', b'K', b'M'] {
+                assert!(media.accept(tag, b"{}", now).is_none());
+            }
+            let status = media.status(now);
+            assert_eq!(
+                status,
+                MediaStatus {
+                    received: true,
+                    live: false
+                }
+            );
+            assert_eq!(
+                watchdog_action(0, status, true, false),
+                WatchdogAction::MarkStalled
+            );
+            assert_eq!(watchdog_action(0, status, false, true), WatchdogAction::Ok);
+        }
+        assert!(
+            media
+                .accept(b'G', br#"{"polyline":[[0,0],[0,0]]}"#, 15_001)
+                .is_some()
+        );
+        assert!(media.status(15_001).live);
+        assert_eq!(
+            watchdog_action(0, media.status(15_001), false, true),
+            WatchdogAction::MarkStreaming
+        );
+        assert!(!media.status(18_002).live);
+        assert!(media.accept(b'A', &[0; 4], 18_003).is_some());
+        assert_eq!(
+            watchdog_action(0, media.status(18_003), false, true),
+            WatchdogAction::MarkStreaming
+        );
+    }
+
+    #[test]
+    fn remote_media_silent_stereo_audio_is_valid_at_monotonic_zero() {
+        let media = SessionMedia::default();
+        let Some(RemoteMedia::Audio(samples)) = media.accept(b'A', &[0; 1920], 0) else {
+            panic!("valid silent A frame was rejected");
+        };
+        assert_eq!(samples, vec![0.0; 960]);
+        assert_eq!(
+            media.status(0),
+            MediaStatus {
+                received: true,
+                live: true
+            }
+        );
+        assert!(media.status(QUIET_STALLED_MS).live);
+        assert!(!media.status(QUIET_STALLED_MS + 1).live);
+        let Some(RemoteMedia::Audio(samples)) = media.accept(b'A', &[0, 128, 255, 127], 4_000)
+        else {
+            panic!("valid full-scale stereo A frame was rejected");
+        };
+        assert_eq!(samples, vec![-1.0, 32767.0 / 32768.0]);
+        assert!(media.status(4_000).live);
+    }
+
+    #[test]
+    fn remote_media_valid_geometry_only_preserves_renderer_values() {
+        let media = SessionMedia::default();
+        let frame = br#"{"trace_size":[200,100],"peak":0.5,"polyline":[[0,0],[100,50]]}"#;
+        let Some(RemoteMedia::Geometry {
+            points,
+            aspect,
+            intensity,
+        }) = media.accept(b'G', frame, 25)
+        else {
+            panic!("valid geometry-only G frame was rejected");
+        };
+        assert_eq!(points, vec![[0.0, 0.0], [0.5, 0.5]]);
+        assert_eq!(aspect, 2.0);
+        assert_eq!(intensity, 0.4);
+        assert!(media.status(25).live);
+        // Coincident zero points and peak zero remain real geometry, not amplitude tests.
+        assert!(
+            media
+                .accept(b'G', br#"{"peak":0,"polyline":[[0,0],[0,0]]}"#, 4_000)
+                .is_some()
+        );
+        assert!(media.status(4_000).live);
+    }
+
+    #[test]
+    fn remote_media_malformed_audio_neither_acquires_nor_renews() {
+        let media = SessionMedia::default();
+        for len in [0, 1, 2, 3, 5, 6, 7] {
+            assert!(media.accept(b'A', &vec![0; len], 0).is_none());
+            assert_eq!(media.status(0), MediaStatus::default());
+        }
+        assert!(media.accept(b'A', &[0; 4], 0).is_some());
+        for len in [0, 1, 2, 3, 5, 6, 7] {
+            assert!(media.accept(b'A', &vec![0; len], 4_000).is_none());
+            assert_eq!(
+                media.status(4_000),
+                MediaStatus {
+                    received: true,
+                    live: false
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn remote_media_malformed_geometry_neither_acquires_nor_renews() {
+        let invalid: &[&[u8]] = &[
+            b"not json",
+            b"{}",
+            br#"{"polyline":[]}"#,
+            br#"{"polyline":[[0,0]]}"#,
+            br#"{"polyline":[[0,0],[1,1],["bad",0]]}"#,
+            br#"{"polyline":[[0,0],[1]]}"#,
+            br#"{"polyline":[[0,0],[1e300,0]]}"#,
+            br#"{"trace_size":[0,100],"polyline":[[0,0],[1,1]]}"#,
+            br#"{"trace_size":[1],"polyline":[[0,0],[1,1]]}"#,
+            br#"{"trace_size":[1e300,1],"polyline":[[0,0],[1,1]]}"#,
+            br#"{"peak":"bad","polyline":[[0,0],[1,1]]}"#,
+            br#"{"peak":1e300,"polyline":[[0,0],[1,1]]}"#,
+        ];
+        let media = SessionMedia::default();
+        for payload in invalid {
+            assert!(media.accept(b'G', payload, 0).is_none());
+            assert_eq!(media.status(0), MediaStatus::default());
+        }
+        assert!(
+            media
+                .accept(b'G', br#"{"polyline":[[0,0],[1,1]]}"#, 0)
+                .is_some()
+        );
+        for payload in invalid {
+            assert!(media.accept(b'G', payload, 4_000).is_none());
+            assert_eq!(
+                media.status(4_000),
+                MediaStatus {
+                    received: true,
+                    live: false
+                }
+            );
+        }
+    }
+
+    #[test]
+    fn remote_media_disconnect_retires_receipt_and_rejects_late_frames() {
+        let media = SessionMedia::default();
+        assert!(media.accept(b'A', &[0; 4], 5).is_some());
+        assert!(media.status(5).live);
+        // SessionShared::trip uses this before FIN on disconnect and every failure path.
+        media.retire();
+        media.retire();
+        for (tag, payload) in [
+            (b'A', &[0; 4][..]),
+            (b'G', &br#"{"polyline":[[0,0],[1,1]]}"#[..]),
+        ] {
+            assert!(media.accept(tag, payload, 6).is_none());
+            assert_eq!(media.status(6), MediaStatus::default());
+        }
+    }
+
+    #[test]
+    fn remote_media_socket_death_remains_separate_from_media_stall() {
+        let media = SessionMedia::default();
+        assert!(media.accept(b'A', &[0; 4], 0).is_some());
+        let stale = media.status(QUIET_DEAD_MS + 1);
+        assert_eq!(
+            watchdog_action(0, stale, true, false),
+            WatchdogAction::MarkStalled
+        );
+        assert_eq!(
+            watchdog_action(QUIET_DEAD_MS, stale, false, true),
+            WatchdogAction::Ok
+        );
+        assert_eq!(
+            watchdog_action(QUIET_DEAD_MS + 1, stale, false, true),
+            WatchdogAction::Dead
+        );
+        assert_eq!(
+            watchdog_action(QUIET_DEAD_MS + 1, MediaStatus::default(), false, false),
+            WatchdogAction::Dead
+        );
+    }
+
+    #[test]
     fn backoff_ladder_and_watchdog_tables() {
         assert_eq!(next_backoff(1), 2);
         assert_eq!(next_backoff(2), 4);
@@ -444,11 +771,17 @@ mod tests {
         assert_eq!(next_backoff(0), 2); // degenerate input still climbs
 
         use WatchdogAction::*;
-        assert_eq!(watchdog_action(0, false, false), Ok);
-        assert_eq!(watchdog_action(3_500, true, false), MarkStalled);
-        assert_eq!(watchdog_action(3_500, false, false), Ok); // pre-welcome quiet
-        assert_eq!(watchdog_action(1_000, false, true), MarkStreaming);
-        assert_eq!(watchdog_action(10_001, true, false), Dead);
-        assert_eq!(watchdog_action(10_001, false, false), Dead);
+        let no_media = MediaStatus::default();
+        let live = MediaStatus {
+            received: true,
+            live: true,
+        };
+        assert_eq!(watchdog_action(0, no_media, false, false), Ok);
+        assert_eq!(watchdog_action(3_500, no_media, true, false), MarkStalled);
+        assert_eq!(watchdog_action(3_500, no_media, false, false), Ok); // pre-welcome quiet
+        assert_eq!(watchdog_action(1_000, live, false, true), MarkStreaming);
+        assert_eq!(watchdog_action(1_000, no_media, false, true), Ok);
+        assert_eq!(watchdog_action(10_001, live, true, false), Dead);
+        assert_eq!(watchdog_action(10_001, no_media, false, false), Dead);
     }
 }

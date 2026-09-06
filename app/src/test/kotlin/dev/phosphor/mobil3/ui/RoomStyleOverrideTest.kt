@@ -20,7 +20,7 @@ class RoomStyleOverrideTest {
         assertTrue("SheetHost(p, \"ROOM\", reduced, onDismiss" in room)
         assertTrue(".heightIn(max = 340.dp)" in room)
         assertTrue("state = gridState" in room)
-        assertTrue(".bottomBloomOverscroll { !gridState.canScrollForward }" in room)
+        assertFalse("bottomBloomOverscroll" in room)
         val grid = sourceBodyAfter(room, "overscrollEffect = null,\n        ) {")
         assertTrue("itemsIndexed(Rooms)" in grid)
         val footer = sourceBodyAfter(grid, "item(span = { GridItemSpan(maxLineSpan) }) {")

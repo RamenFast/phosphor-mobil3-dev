@@ -124,6 +124,8 @@ Auto-gain must hold its effective gain through raw peaks below 0.02 and release 
 
 Beam energy must remain stable through chrome motion, settings cycles, and surface recreation. Intentional modal scrim dimming is not a beam-energy change.
 
+Chrome must not drive deposited beam brightness. The bottom-pull beam-breath driver, its native command, state, multiplier, and bloom-only gesture displacement are retired. The shared modal scrim remains 0.40. Real settings pulls, console and overflow scrolling, ordinary tube motion, and existing beam controls remain unchanged. This repair adds no beam-energy field or preference.
+
 Controls must keep sufficient contrast against both black and tinted grounds.
 
 ## 10. Haptics and sound
@@ -143,6 +145,22 @@ The remote surface must state that the relay requires Tailscale and must not be 
 ## 12. Performance
 
 The main scope and picture-in-picture must remain awake while a playback or capture source is live. Wake ownership follows the live source, not picture-in-picture visibility or background linger. After the source stops, the display must become sleep-eligible promptly.
+
+PlaybackService owns one screen wake lock for its published, ready, playing local source or its flowing remote link. Paused, ended, failed, unpublished, or retiring local playback cannot hold it. Remote connecting, greeted without frames, stalled, reconnecting, failed, stopped, or unavailable status cannot hold it. A link carrying measured silence remains live.
+
+Remote flow requires valid media received in the current native session within the existing 3-second stall threshold. Welcome, heartbeat, metadata, and lifetime frame counters cannot acquire or renew media wake. Nonempty, complete stereo PCM frames remain live even when every sample is zero. Valid geometry with at least two finite points also proves flow without audio. Malformed audio or geometry does not refresh media freshness. Media stops become stalled even while control traffic continues. Valid media restores flow. Retarget, reconnect, cancellation, and disconnect cannot reuse a previous session's receipt. Optional loudness starts unknown in each session, not at a previous relay's measured silence. The existing native reader and watchdog own these facts. Socket freshness still owns the 10-second dead-link decision, without another timer, poller, or service.
+
+Local terminal truth follows the current native deck, including files without duration and decode termination before the advertised end. The decoder's PlaybackEnded event follows a bounded drain wait, so it does not alone prove that a paused tail is empty. A started deck keeps that tail for resume. After observing decoder termination, an actual nonempty output callback that pops no samples proves the audible ring drained. Silence samples and earlier underruns do not prove completion. Oboe's stopped-stream error callback separately reports output failure through the same event owner. Neither observation adds a timer, amplitude test, or position-stall heuristic.
+
+The existing serial worker reads these events. Main-thread publication rechecks the exact Open object and latest request, including same-path seek and replacement. A drained deck publishes ENDED and stopped transport. A failed startup or output publishes an error and stopped transport. Later metadata or transport events cannot restore READY without successful native open or seek publication. Natural completion continues the existing queue when allowed, without granting wake to an unpublished next item. The existing known-duration watcher remains unchanged.
+
+CaptureService owns projection and AudioRecord wake state. Starting or permission-only capture cannot acquire it. A started recorder with a live projection holds it even when samples are silent or captured metadata is absent. Projection revocation, reader error, stop, and destruction release it through the existing retirement paths. PlaybackService's capture face remains a mirror and cannot acquire another capture lock.
+
+The Activity owns microphone wake state through its actual recorder start and stop callbacks. Retiring reader ownership is not recording liveness. Reader failures return to the owning main-thread stop path, and delayed failures cannot stop a replacement recorder. Activity destruction retires its microphone wake lock. This does not move microphone capture into a service or change its existing Activity lifetime.
+
+A current microphone reader failure also clears its successful live mic face and gives a permission, audio-route, and retry remedy. This failure-only publication checks the current task and Activity, actual retained recorder, and current mic face, not an attempted source-selection token. Generic stop cannot clear another source's face. Cancelled file, folder, or capture requests preserve the live recorder's failure authority. A replaced recorder or source face rejects the old failure. Runtime source saves require actual recording as well as the mic face, so a failed recorder cannot persist as live from stale UI state.
+
+Visible main and PiP surface/window flags mirror current live-source state. Start, focus return, surface creation, and the existing foreground UI heartbeat reassert that state. Source callbacks and that heartbeat clear the flags after stop. Activity stop clears visible flags without taking a live service's lock. Neither a visible idle scope nor background linger creates a permanent never-sleep mode.
 
 The scope should render at the selected supported panel cadence without allocating or crossing JNI per frame.
 

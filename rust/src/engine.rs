@@ -113,6 +113,28 @@ pub(crate) fn compute_scope_frame(
     computer.compute(samples, width, height).to_vec()
 }
 
+/// Final deposit transform used by the Android renderer's existing tube envelopes.
+/// Geometry changes preserve segment energy. Only the startup cathode envelope scales it.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn map_deposit_segment(
+    segment: &[f32; 5],
+    width: f32,
+    height: f32,
+    scale_xy: f32,
+    scale_y: f32,
+    brightness: f32,
+) -> [f32; 5] {
+    let cx = width * 0.5;
+    let cy = height * 0.5;
+    [
+        cx + (segment[0] - cx) * scale_xy,
+        cy + (segment[1] - cy) * scale_xy * scale_y,
+        cx + (segment[2] - cx) * scale_xy,
+        cy + (segment[3] - cy) * scale_xy * scale_y,
+        segment[4] * brightness,
+    ]
+}
+
 /// Geometry FX stage: a 2D transform on this frame's beam segments, applied AFTER dsp
 /// compute and BEFORE the view-rotation quarter-turn remap + deposit, so it composes
 /// with every mode. `kind`: 0 off · 1 kaleido · 2 spin · 3 tunnel · 4 pulse.
@@ -267,6 +289,50 @@ impl Default for Feeder {
 mod tests {
     use phosphor_audio::SampleRing;
     use phosphor_dsp::{Computer, Mode};
+
+    #[test]
+    fn render_deposit_energy_stays_exact_across_geometry_and_surface_sizes() {
+        // Exercise real DSP segments through the renderer's final deposit transform.
+        let mut computer = Computer::new();
+        super::set_reconstruction_rate(&mut computer, 4);
+        computer.mode = Mode::Xy;
+        computer.beam_energy = 13.5;
+        let samples: Vec<f32> = (0..480)
+            .flat_map(|n| {
+                let phase = std::f32::consts::TAU * 440.0 * n as f32 / 48_000.0;
+                [phase.sin() * 0.7, phase.cos() * 0.7]
+            })
+            .collect();
+        let segments = super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
+        assert!(!segments.is_empty());
+        assert!(segments.iter().any(|s| s[4] > 0.0));
+        for (width, height) in [(1080.0, 1920.0), (1920.0, 1080.0), (480.0, 270.0)] {
+            for step in 0..=100 {
+                let scale = step as f32 / 100.0;
+                for segment in &segments {
+                    let mapped =
+                        super::map_deposit_segment(segment, width, height, 1.0, scale, 1.0);
+                    assert_eq!(mapped[4].to_bits(), segment[4].to_bits());
+                }
+            }
+        }
+        assert_eq!(computer.beam_energy, 13.5);
+    }
+
+    #[test]
+    fn render_deposit_retains_cathode_envelope_and_nondefault_energy() {
+        let segment = [10.0, 20.0, 30.0, 40.0, 2.75];
+        for step in 0..=100 {
+            let brightness = step as f32 / 100.0;
+            let mapped = super::map_deposit_segment(&segment, 100.0, 200.0, 0.5, 0.25, brightness);
+            assert_eq!(&mapped[..4], &[30.0, 90.0, 40.0, 92.5]);
+            assert_eq!(mapped[4], 2.75 * brightness);
+        }
+        assert_eq!(
+            super::map_deposit_segment(&segment, 100.0, 200.0, 1.0, 1.0, 1.0),
+            segment
+        );
+    }
 
     /// A pure 440 Hz quadrature circle, produced in 10 ms capture chunks and drained at
     /// 120 Hz, must stay phase-contiguous across window boundaries and reconstruct as one

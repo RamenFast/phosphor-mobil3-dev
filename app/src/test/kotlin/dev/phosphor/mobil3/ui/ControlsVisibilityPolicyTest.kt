@@ -108,7 +108,17 @@ class ControlsVisibilityPolicyTest {
         val publish = "ui.volumeFraction = volumeFrac()"
         val tick = activity.substringAfter("private val uiTick = object : Runnable {")
             .substringBefore("override fun onNewIntent(")
-        assertTrue("override fun run() {\n            $publish\n            controller?.let" in tick)
+        assertTrue("override fun run() {" in tick)
+        assertTrue("\n        }\n    }" in tick)
+        val run = tick.substringAfter("override fun run() {")
+            .substringBefore("\n        }\n    }")
+        val publishAt = run.indexOf(publish)
+        val controllerAt = run.indexOf("controller?.let {")
+        val scheduleAt = run.indexOf("tick.postDelayed(this, 500)")
+        assertTrue(publishAt >= 0 && controllerAt > publishAt && scheduleAt > controllerAt)
+        // Publication is unconditional, even with no controller. Other source refreshes may follow it.
+        assertTrue(run.substring(0, publishAt).isBlank())
+        assertEquals(1, Regex(Regex.escape(publish)).findAll(run).count())
         assertTrue("tick.postDelayed(this, 500)" in tick)
         assertEquals(1, Regex("tick.postDelayed\\(this, 500\\)").findAll(activity).count())
         val start = activity.substringAfter("override fun onStart() {").substringBefore("override fun onStop() {")

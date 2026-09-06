@@ -14,6 +14,7 @@ class PlaybackTruthTest {
         val published = mutableListOf<PlaybackTruth.Metadata>()
         var reads = 0
         var failedOpens = 0
+        val terminals = mutableListOf<PlaybackTruth.Terminal>()
         var json = """{"path":"/same.flac","title":"tag title","artist":"tag artist","duration_ms":1234}"""
         fun start(path: String = "/same.flac") {
             events.add(JSONObject().put("event", "track_started").put("path", path).toString())
@@ -21,7 +22,11 @@ class PlaybackTruthTest {
         fun poll() = truth.poll(
             { worker.add(it) }, { main.add(it) },
             { reads++; events.removeFirstOrNull() }, { json }, { byteArrayOf(1, 2) }, { published.add(it) },
-            { failedOpens++; truth.closed() },
+            { result, current ->
+                assertTrue(current())
+                terminals.add(result)
+                if (result == PlaybackTruth.Terminal.START_FAILED) { failedOpens++; truth.closed() }
+            },
         )
         fun drain() {
             while (worker.isNotEmpty()) worker.removeFirst().invoke()
@@ -174,6 +179,63 @@ class PlaybackTruthTest {
         h.drain()
         h.poll(); h.drain()
         assertEquals(2, h.reads)
+    }
+
+    @Test fun drainedAndOutputFailurePublishOnlyOnMainAndOnceForTheExactOpen() {
+        for ((event, result) in listOf(
+            "playback_drained" to PlaybackTruth.Terminal.ENDED,
+            "output_error" to PlaybackTruth.Terminal.OUTPUT_FAILED,
+        )) {
+            val h = Harness()
+            h.truth.opened("/same.flac", "track") { true }
+            h.start(); h.poll(); h.drain()
+            h.events.add("""{"event":"$event","path":"/same.flac"}""")
+            h.poll(); h.worker.removeFirst().invoke()
+            assertTrue(h.terminals.isEmpty())
+            h.drain()
+            assertEquals(listOf(result), h.terminals)
+            repeat(3) {
+                h.events.add("""{"event":"$event","path":"/same.flac"}""")
+                h.poll(); h.drain()
+            }
+            assertEquals(listOf(result), h.terminals)
+        }
+    }
+
+    @Test fun delayedTerminalCannotClearSamePathSeekReplacementEvenWithTrueOldPredicate() {
+        for (event in listOf("playback_ended", "playback_drained", "output_error")) {
+            val h = Harness()
+            h.truth.opened("/same.flac", "old") { true }
+            h.events.add("""{"event":"$event","path":"/same.flac"}""")
+            h.poll(); h.worker.removeFirst().invoke()
+            h.truth.opened("/same.flac", "seek replacement") { true }
+            h.drain()
+            assertTrue(h.terminals.isEmpty())
+            h.start(); h.poll(); h.drain()
+            assertEquals(1, h.published.size)
+        }
+    }
+
+    @Test fun terminalSupersededBeforeDeliveryIsRetainedOnlyForTheSurvivingDeck() {
+        val h = Harness()
+        var latest = true
+        h.truth.opened("/same.flac", "track") { latest }
+        h.start(); h.poll(); h.drain()
+        h.events.add("""{"event":"playback_drained","path":"/same.flac"}""")
+        h.poll(); h.worker.removeFirst().invoke()
+        latest = false
+        h.drain()
+        assertTrue(h.terminals.isEmpty())
+        h.truth.retain { true }
+        h.poll(); h.drain()
+        assertEquals(listOf(PlaybackTruth.Terminal.ENDED), h.terminals)
+        var republished = false
+        h.truth.publishCurrent { republished = true }
+        assertFalse(republished)
+        h.truth.closed()
+        h.truth.retain { true }
+        h.poll(); h.drain()
+        assertEquals(1, h.terminals.size)
     }
 
     @Test fun successfulCurrentNativeSeekPublishesOnePositionDiscontinuity() {

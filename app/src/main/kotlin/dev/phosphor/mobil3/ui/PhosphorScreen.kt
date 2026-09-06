@@ -32,7 +32,6 @@ import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
 import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
-import androidx.compose.runtime.snapshotFlow
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -50,7 +49,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.phosphor.mobil3.PhosphorNative
 import kotlinx.coroutines.delay
-import kotlinx.coroutines.flow.distinctUntilChanged
 
 /** Layout handles stay at this boundary. The arbiter sees only root-space numbers. */
 internal class StageGeometry {
@@ -270,27 +268,14 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val ribbon = remember { RibbonState() }
     val stageGeometry = remember { StageGeometry() }
     val currentActions by rememberUpdatedState(actions)
-    val bloomScope = rememberCoroutineScope()
-    val bloom = remember(bloomScope) { BloomPullState(bloomScope) }
-    val settingsReveal = remember(bloomScope) { PullRevealState(bloomScope) }
-    val overflowReveal = remember(bloomScope) { PullRevealState(bloomScope) }
+    val revealScope = rememberCoroutineScope()
+    val settingsReveal = remember(revealScope) { PullRevealState(revealScope) }
+    val overflowReveal = remember(revealScope) { PullRevealState(revealScope) }
     val overflowGestureActive = remember { mutableStateOf(false) }
     val currentStyle = rememberUpdatedState(style)
     val currentReduced = rememberUpdatedState(reduced)
     val flickVelocityPx = with(density) { Dim.chromeFlickVelocity.toPx() }
     val popoutTravelPx = with(density) { Dim.popoutPullTravel.toPx() }
-
-    // The Compose side continuously commands NEW beam energy. The renderer deposits that
-    // energy into its real flash/glow textures, so release naturally leaves the P7 layers
-    // to decay instead of fading a chrome overlay.
-    LaunchedEffect(bloom, style.motion) {
-        snapshotFlow { bloom.enginePull(style.motion) }
-            .distinctUntilChanged()
-            .collect { PhosphorNative.setBloomPull(it) }
-    }
-    DisposableEffect(bloom) {
-        onDispose { PhosphorNative.setBloomPull(0f) }
-    }
 
     val finishOverflowClosed = {
         overflowComposed = false
@@ -498,7 +483,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     CompositionLocalProvider(
         LocalReducedMotion provides reduced,
         LocalRoomStyle provides style,
-        LocalBloomPull provides bloom,
         LocalChromeLandscape provides chromeLandscape,
         LocalUiPlacementLocked provides uiLocked,
         LocalUiUpright provides state.uprightQuadrant,
@@ -531,7 +515,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                         .fillMaxSize()
                         .onGloballyPositioned { stageGeometry.stage = it }
                         .stageGestures(
-                            remember(actions, state, bloom, style.motion, reduced) {
+                            remember(actions, state, style.motion, reduced) {
                                 object : StageGestureHost {
                                     private var edgeTravelPx = 0f
                                     private var settingsHandedOff = false
@@ -564,24 +548,21 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     override fun setGlowAbsolute(g: Float) = actions.setGlow(g)
                                     // The console owns its upward swipe while visible. Once it
                                     // settles away, only a one-finger pull born in the physical
-                                    // bottom band may summon it (with the same bloom); gain/orbit
+                                    // bottom band may summon it; gain/orbit
                                     // keep every other clearly classified stage drag.
                                     override fun bottomPullArmed() =
                                         !ControlsVisibilityPolicy.visible(consoleVisible, state.controlsAlwaysVisible) && !overflowComposed
-                                    override fun beginBottomChromePull(resistancePx: Float) {
+                                    override fun beginBottomChromePull() {
                                         edgeTravelPx = 0f
                                         settingsHandedOff = false
                                         bottomEdgePullActive = true
                                         consoleVisible = true
-                                        bloom.begin(resistancePx)
                                     }
                                     override fun dragBottomChromePull(
                                         upwardDeltaPx: Float,
-                                        resistancePx: Float,
                                     ) {
                                         val delta = upwardDeltaPx.coerceAtLeast(-edgeTravelPx)
                                         edgeTravelPx = (edgeTravelPx + delta).coerceAtLeast(0f)
-                                        bloom.dragBy(delta, resistancePx, style.motion)
                                         val handoffAt = maxOf(
                                             consoleHeightPx * 0.72f,
                                             with(density) { 96.dp.toPx() },
@@ -600,14 +581,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     }
                                     override fun releaseBottomChromePull(velocityY: Float) {
                                         bottomEdgePullActive = false
-                                        bloom.release(style.motion, reduced)
                                         if (settingsHandedOff && !currentReduced.value) {
                                             settingsPullHost.release(velocityY)
                                         }
                                     }
                                     override fun cancelBottomChromePull() {
                                         bottomEdgePullActive = false
-                                        bloom.release(style.motion, reduced)
                                         if (settingsHandedOff && !currentReduced.value) {
                                             settingsPullHost.cancel()
                                         }

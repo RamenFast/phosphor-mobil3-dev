@@ -10,10 +10,10 @@ enum class RemoteLinkState {
     /** Dialing: TCP connect in flight. */
     CONNECTING,
 
-    /** The relay greeted us. No frame has arrived, so nothing is flowing yet. */
+    /** The relay greeted us. No valid media has arrived in this session. */
     GREETED,
 
-    /** Frames are arriving. This is the only state that means a live link. */
+    /** Valid current-session media is arriving. SILENT is also live. */
     STREAMING,
 
     /**
@@ -44,9 +44,9 @@ data class RemoteLinkReading(
 
 object RemoteLinkTruth {
 
-    /** Frames of any kind prove the link is live. */
-    private const val KEY_AUDIO_FRAMES = "rx_a"
-    private const val KEY_GEOMETRY_FRAMES = "rx_g"
+    /** Native session receipt and freshness, never process-lifetime diagnostics. */
+    private const val KEY_MEDIA_RECEIVED = "media_received"
+    private const val KEY_MEDIA_LIVE = "media_live"
     private const val KEY_STATE = "state"
     private const val KEY_LAST_ERROR = "last_error"
     private const val KEY_ERROR = "error"
@@ -73,14 +73,11 @@ object RemoteLinkTruth {
         val failure = failureText(status)
         return when (status.optString(KEY_STATE)) {
             "streaming" -> {
-                // A VISUALIZER-only session is legitimately live with zero audio frames,
-                // so geometry counts too. Either counter proves media is moving.
-                val frames = status.optInt(KEY_AUDIO_FRAMES) + status.optInt(KEY_GEOMETRY_FRAMES)
-                if (frames > 0) {
-                    // The relay reports the loudness of what it actually sent. Without it
-                    // a silent desktop and a broken link look identical: both draw
-                    // nothing. isNull() keeps an older relay's absent field distinct from
-                    // a genuine measured zero.
+                val received = status.optBoolean(KEY_MEDIA_RECEIVED, false)
+                if (received && status.optBoolean(KEY_MEDIA_LIVE, false)) {
+                    // Receipt and freshness already prove flow. Optional relay loudness
+                    // labels silence without becoming wake authority. isNull() preserves
+                    // the difference between unknown loudness and a measured zero.
                     val silent = !status.isNull(KEY_REMOTE_RMS) &&
                         status.optDouble(KEY_REMOTE_RMS, -1.0) in 0.0..SILENCE_RMS
                     if (silent) {
@@ -88,6 +85,8 @@ object RemoteLinkTruth {
                     } else {
                         RemoteLinkReading(RemoteLinkState.STREAMING, failure)
                     }
+                } else if (received) {
+                    RemoteLinkReading(RemoteLinkState.STALLED, failure)
                 } else {
                     RemoteLinkReading(RemoteLinkState.GREETED, failure)
                 }

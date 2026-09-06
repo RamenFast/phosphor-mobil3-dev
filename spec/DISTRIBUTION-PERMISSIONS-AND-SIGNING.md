@@ -51,7 +51,15 @@ Allowed manifest permissions must map to a supported feature:
 
 Forbidden production access includes Binder authority permissions, package management, Shizuku, ADB, overlay, accessibility, root, privileged capture, advertising ID, and installation ID.
 
-`WAKE_LOCK` must not create a general never-sleep mode. The visible scope keeps its surface awake, and each live playback or capture service may own one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. Every stop and destroy path must release that ownership. The deprecated lock requires a narrow suppression at its owner. Picture-in-picture and background linger do not own wake state.
+`WAKE_LOCK` must not create a general never-sleep mode. The visible scope keeps its surface and window awake only while an actual source is live. Start and focus return reassert current source state, not unconditional wake flags. The flags clear after source stop and when the Activity stops.
+
+Each actual playback or capture owner may hold one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. PlaybackService owns local or remote playback, CaptureService owns projection capture, and the existing Activity owns microphone capture. A capture metadata mirror is not an owner. The shared platform wrapper creates one lock per owner and narrowly suppresses the deprecated constant there. It must not use a wake-up flag or change system brightness or timeout settings.
+
+Pause, end, error, revocation, stop, destruction, and replacement release wake when that source ceases to be live. Repeated cleanup is idempotent. A destroyed owner cannot reacquire from a delayed callback. Acquisition or release failure is reported locally without claiming that PowerManager succeeded. Existing source update paths may retry. Picture-in-picture and background linger do not own wake state. Host policy and fake-lock tests do not replace Android screen timeout and sleep acceptance.
+
+Local wake release consumes current-deck drained or stopped-output error truth through the existing event poll and main publication. Decoder EOF after a timed-out drain cannot discard a paused tail. Absent duration, early decoder termination, and output failure cannot leave a permanently READY source face. A microphone read failure releases its recorder lock and clears only its guarded mic face. No screen-lock timeout substitutes for these source transitions. Host tests exercise the real ring and ownership helpers with synthetic platform boundaries, not Android callback delivery or physical output latency.
+
+Remote wake consumes current-session valid media receipt and freshness from the existing native owner. Control traffic, historical counters, and signal amplitude cannot grant or renew it. Silent valid audio and valid geometry-only flow qualify. Malformed media, stale media despite continuing heartbeats, and retired sessions do not. The existing 3-second media stall threshold and service status updates release wake without a new timer or owner. Socket death retains its separate 10-second threshold. Host regressions exercise the actual acceptance and status/watchdog helpers without sockets or audio. Android main and picture-in-picture timeout, recovery, and disconnect checks remain required.
 
 ## 5. Backup and migration
 

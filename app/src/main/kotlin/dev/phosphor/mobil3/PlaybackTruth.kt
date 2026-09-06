@@ -5,6 +5,8 @@ import java.util.concurrent.atomic.AtomicBoolean
 
 /** The service's serial deck worker owns reads. Publication also checks the exact open request. */
 internal class PlaybackTruth {
+    enum class Terminal { ENDED, START_FAILED, OUTPUT_FAILED }
+
     data class Metadata(
         val path: String,
         val title: String,
@@ -17,7 +19,8 @@ internal class PlaybackTruth {
     private class Open(val path: String, val filename: String, val isLatest: () -> Boolean) {
         @Volatile var metadata: Metadata? = null
         var started = false
-        var failed = false
+        @Volatile var terminal: Terminal? = null
+        @Volatile var terminalPublished = false
     }
 
     @Volatile private var opened: Open? = null
@@ -35,14 +38,15 @@ internal class PlaybackTruth {
             Open(old.path, old.filename, isLatest).also {
                 it.metadata = old.metadata
                 it.started = old.started
-                it.failed = old.failed
+                it.terminal = old.terminal
+                it.terminalPublished = old.terminalPublished
             }
         }
     }
 
     fun publishCurrent(publish: (Metadata) -> Unit) {
         val owner = opened ?: return
-        if (owner.isLatest()) owner.metadata?.let(publish)
+        if (owner.isLatest() && owner.terminal == null) owner.metadata?.let(publish)
     }
 
     fun poll(
@@ -52,7 +56,7 @@ internal class PlaybackTruth {
         readMetadata: () -> String,
         readArtwork: () -> ByteArray?,
         publish: (Metadata) -> Unit,
-        failed: (isLatest: () -> Boolean) -> Unit,
+        terminal: (Terminal, isCurrent: () -> Boolean) -> Unit,
     ) {
         if (!polling.compareAndSet(false, true)) return
         schedule {
@@ -76,17 +80,40 @@ internal class PlaybackTruth {
                         )
                         owner.metadata = metadata
                         onMain {
-                            if (opened === owner && owner.isLatest()) publish(metadata)
+                            if (opened === owner && owner.isLatest() && owner.terminal == null) publish(metadata)
                         }
                     }
                 }
-                if (owner != null && event?.optString("event") == "playback_ended" &&
-                    event.optString("path") == owner.path && !owner.started) owner.failed = true
-                if (owner != null && owner.failed && opened === owner && owner.isLatest()) failed(owner.isLatest)
-                // PlaybackEnded is consumed here too. Decode EOF alone does not prove output drained.
+                if (owner != null && event?.optString("path") == owner.path) {
+                    when (event.optString("event")) {
+                        "playback_ended" -> if (!owner.started) owner.terminal = Terminal.START_FAILED
+                        "playback_drained" -> owner.terminal = owner.terminal ?: Terminal.ENDED
+                        "output_error" -> owner.terminal = Terminal.OUTPUT_FAILED
+                    }
+                }
+                owner?.terminal?.let { result ->
+                    val current = { opened === owner && owner.isLatest() }
+                    onMain {
+                        if (current() && !owner.terminalPublished) {
+                            owner.terminalPublished = true
+                            terminal(result, current)
+                        }
+                    }
+                }
+                // Decoder EOF alone leaves a started, possibly paused tail available for resume.
             } finally {
                 onMain { polling.set(false) }
             }
         }
     }
+}
+
+/** The Media3 face retains terminal output truth across later transport and metadata updates. */
+internal class LocalOutputState {
+    var terminal: PlaybackTruth.Terminal? = null
+        private set
+    val ready: Boolean get() = terminal == null
+    val failed: Boolean get() = terminal != null && terminal != PlaybackTruth.Terminal.ENDED
+    fun opened() { terminal = null }
+    fun ended(result: PlaybackTruth.Terminal) { terminal = result }
 }

@@ -367,3 +367,15 @@ Ben requested cleanup of ephemeral files and continued implementation, with need
 All twelve retained Phase8/9 artifact checksums and the protected archive hashes passed after cleanup. Rollback APKs, preference backups, review and build receipts, source snapshots, and reusable build caches remain intact. The ignored Phase10 cleanup receipt records each removed path, size and hash. No tool installation was needed for this step, and no phone or live-service action occurred.
 
 Phase10 source work and its prepared frozen gate continue. This cleanup does not close any B-card acceptance or change drift 21.
+
+## 2026-09-06 03:48 UTC: B5/B11 source-owned display repair
+
+The complete beam-breath driver is retired without adding a beam-energy field or changing the shared 0.40 scrim. Existing reveal and scroll owners remain. The actual source owners now control wake, including current local drained/error publication, per-session remote media freshness and guarded microphone failure publication after cancelled source requests.
+
+Frozen attempt06 passed 348 Android unit tests and 33 selected native cases. Lint reports 16 warnings and zero errors. All 823 full input rows stayed identical. Separate source review and a genuinely isolated source-first intent assessment found no remaining concrete blocker in their bounded scope. The independent map was saved before retained tests, results and prior reports. Earlier failed preparation and invalid-ordering reviews remain preserved, not relabelled as passes.
+
+The [Phase 10 receipt](dev/receipts/pre-v2-b1-b21/phase-10-display.md) maps actual producers to checks and open Android acceptance. Real PowerManager, main/PiP timeout, AudioRecord/Oboe/Media3 callbacks and settled GPU luminance remain unmeasured. Chosen beam tuning survives recreation, but different-size GPU energy textures are replaced. Exact committed packaging follows next. No phone, display setting, permission or service changed. B5/B11 and drift 21 remain open.
+
+### Phase 10 packaging-boundary correction, 03:51 UTC
+
+A test method name collided with the unchanged privacy scanner. Root renamed only that declaration, proved exact reverse-hash equivalence, and reran the full frozen gate plus source boundary. Attempt07 passed 348 Android and 33 native cases. No production/spec behavior or scanner changed. Earlier independent source/intent approvals remain bounded to identical production, with this root-verified test-name-only correction documented in the Phase 10 receipt.

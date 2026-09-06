@@ -19,6 +19,7 @@ use phosphor_audio::ring::SampleRing;
 
 use crate::deck_activation::DeckActivation;
 use crate::deck_close::close_session;
+use crate::deck_events::DeckTerminal;
 
 pub const RATE: u32 = 48_000;
 
@@ -51,11 +52,20 @@ static DECK: Mutex<Option<Deck>> = Mutex::new(None);
 struct DeckOutput {
     audible: Arc<AudibleRing>,
     activation: Arc<DeckActivation>,
+    terminal: Arc<DeckTerminal>,
     scratch: Vec<f32>,
 }
 
 impl AudioOutputCallback for DeckOutput {
     type FrameType = (f32, Stereo);
+
+    fn on_error_before_close(
+        &mut self,
+        _stream: &mut dyn AudioOutputStreamSafe,
+        _error: oboe::Error,
+    ) {
+        self.terminal.output_error();
+    }
 
     fn on_audio_ready(
         &mut self,
@@ -64,11 +74,9 @@ impl AudioOutputCallback for DeckOutput {
     ) -> DataCallbackResult {
         let need = frames.len() * 2;
         self.scratch.resize(need, 0.0);
-        let got = if !self.activation.playing() {
-            0 // pause = don't pop; backpressure freezes the decoder (desktop law)
-        } else {
-            self.audible.pop_into(&mut self.scratch)
-        };
+        let got = self
+            .terminal
+            .pop_output(&self.audible, &self.activation, &mut self.scratch);
         self.scratch[got..need].fill(0.0);
         for (i, frame) in frames.iter_mut().enumerate() {
             frame.0 = self.scratch[2 * i];
@@ -83,6 +91,7 @@ pub struct Deck {
     session: PlayerSession,
     stream: AudioStreamAsync<Output, DeckOutput>,
     activation: Arc<DeckActivation>,
+    terminal: Arc<DeckTerminal>,
     events_rx: mpsc::Receiver<phosphor_audio::AudioEvent>,
 }
 
@@ -93,6 +102,10 @@ impl crate::deck_events::EventSource for Deck {
 
     fn path(&self) -> &str {
         &self.path
+    }
+
+    fn terminal(&self) -> &DeckTerminal {
+        &self.terminal
     }
 }
 
@@ -130,6 +143,7 @@ fn open_at_state(
 
     let audible = AudibleRing::new(RATE);
     let activation = Arc::new(DeckActivation::new(!prepared, initially_paused));
+    let terminal = Arc::new(DeckTerminal::default());
     let (events_tx, events_rx) = mpsc::channel();
 
     let config = PlayerConfig {
@@ -149,6 +163,7 @@ fn open_at_state(
     let callback = DeckOutput {
         audible,
         activation: activation.clone(),
+        terminal: terminal.clone(),
         scratch: Vec::new(),
     };
     let stream = AudioStreamBuilder::default()
@@ -181,6 +196,7 @@ fn open_at_state(
         session,
         stream,
         activation,
+        terminal,
         events_rx,
     });
     log::info!("deck open: {path} @ {seek_seconds}s");

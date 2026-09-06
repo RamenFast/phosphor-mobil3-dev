@@ -11,7 +11,7 @@ import java.util.concurrent.CompletableFuture
 
 // Mic → the beam ("room" mode). Foreground-app scope only for now (no FGS); the watching
 // use case keeps the app in front. Stereo because XY needs two channels.
-class MicController {
+class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
     @Volatile private var running = false
     private var record: AudioRecord? = null
     private var reader: Thread? = null
@@ -20,7 +20,11 @@ class MicController {
     private var stopped = CompletableFuture.completedFuture<String?>(null)
 
     @SuppressLint("MissingPermission") // caller gates on RECORD_AUDIO
-    fun start(onStarted: (String?) -> Unit, isCurrent: () -> Boolean) {
+    fun start(
+        onStarted: (String?) -> Unit,
+        isCurrent: () -> Boolean,
+        onFailed: (String) -> Unit = {},
+    ) {
         if (!isCurrent()) return
         if (running) {
             onStarted(null)
@@ -37,7 +41,7 @@ class MicController {
             stopped.thenAccept { error ->
                 main.post {
                     if (generation == request) {
-                        if (error == null) start(onStarted, isCurrent) else if (isCurrent()) onStarted(error)
+                        if (error == null) start(onStarted, isCurrent, onFailed) else if (isCurrent()) onStarted(error)
                     }
                 }
             }
@@ -87,26 +91,44 @@ class MicController {
         try {
             reader = Thread {
                 val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
-                while (running) {
-                    val n = rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
-                    if (running && n > 0) PhosphorNative.pushCaptureSamples(chunk, n)
-                }
+                readSourceSamples(
+                    running = { running },
+                    read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
+                    push = { n -> PhosphorNative.pushCaptureSamples(chunk, n) },
+                    failed = { error -> main.post {
+                        retireSourceReaderFailure(
+                            // Recorder identity fences replacement. cancelStart may advance the
+                            // request generation without retiring this still-live recorder.
+                            isCurrent = { owner === this && record === rec && running },
+                            stop = {
+                                Log.e("phosphor-mobil3", "microphone reader failed", error)
+                                stop()
+                            },
+                            publishFailure = {
+                                onFailed("Microphone stopped. Check microphone permission and the audio route, then select built-in mic again")
+                            },
+                        )
+                    } },
+                )
             }.also { it.start() }
         } catch (error: RuntimeException) {
             stop()
             onStarted("Microphone reader could not start: ${error.message}. Stop the source and retry")
             return
         }
+        onRecordingChanged(true)
         Log.i("phosphor-mobil3", "mic capture running")
         onStarted(null)
     }
 
     fun cancelStart() { ++generation }
+    internal fun isRecording(): Boolean = owner === this && running
     internal fun ownsSource(): Boolean = owner === this && (record != null || !stopped.isDone)
 
     fun stop() {
         ++generation
         running = false
+        onRecordingChanged(false)
         val oldRecord = record
         if (oldRecord == null && (!stopped.isDone || stopped.getNow(null) == null)) return
         if (oldRecord == null && stopped.getNow(null) != ReaderStop.TIMEOUT) return
@@ -151,5 +173,35 @@ class MicController {
             }
             if (Looper.myLooper() == main.looper) stop() else main.post { stop() }
         }
+    }
+}
+
+/** The real capture readers share this loop. A terminal read dispatches once, then exits. */
+internal fun readSourceSamples(
+    running: () -> Boolean,
+    read: () -> Int,
+    push: (Int) -> Unit,
+    failed: (RuntimeException) -> Unit,
+) {
+    try {
+        while (running()) {
+            val count = read()
+            if (count < 0) throw IllegalStateException("AudioRecord read failed: $count")
+            if (running() && count > 0) push(count)
+        }
+    } catch (error: RuntimeException) {
+        failed(error)
+    }
+}
+
+/** Called on the owner's main thread after a reader reports failure. */
+internal fun retireSourceReaderFailure(
+    isCurrent: () -> Boolean,
+    stop: () -> Unit,
+    publishFailure: () -> Unit = {},
+) {
+    if (isCurrent()) {
+        stop()
+        publishFailure()
     }
 }

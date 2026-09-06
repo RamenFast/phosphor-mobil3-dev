@@ -40,6 +40,7 @@ class CaptureService : Service() {
     private val micStopStatus = MicStopStatusToken()
     private val taskRevision = BackgroundLifecycle.policy.revision
     private val captureOwnerId = captureOwners.incrementAndGet()
+    private val sourceWake = SourceWakeLock.forOwner(this, "capture")
 
     override fun onCreate() {
         super.onCreate()
@@ -234,6 +235,12 @@ class CaptureService : Service() {
             )
             return START_NOT_STICKY
         }
+        if (rec.recordingState != AudioRecord.RECORDSTATE_RECORDING) {
+            finishCapture("recorder did not start", CaptureStatus.error(
+                "playback capture did not start", "Choose the source again and approve Android's capture prompt",
+            ))
+            return START_NOT_STICKY
+        }
         PhosphorNative.deckSetPaused(true) // capture takes the beam; deck resumes on stop
         PhosphorNative.setRingActive(true)
         running = true
@@ -244,13 +251,34 @@ class CaptureService : Service() {
                 .putExtra(EXTRA_CAPTURE_OWNER, captureOwnerId), taskRevision)
         )
         publishStatus(CaptureStatus.flowing())
-        reader = Thread {
-            val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
-            while (running) {
-                val n = rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING)
-                if (running && n > 0) PhosphorNative.pushCaptureSamples(chunk, n)
-            }
-        }.also { it.start() }
+        try {
+            reader = Thread {
+                val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
+                readSourceSamples(
+                    running = { running },
+                    read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
+                    push = { n -> PhosphorNative.pushCaptureSamples(chunk, n) },
+                    failed = { error -> main.post {
+                        retireSourceReaderFailure(
+                            isCurrent = { owner === this && !cleanedUp && record === rec && running },
+                            stop = {
+                                Log.e(TAG, "capture reader failed", error)
+                                finishCapture("capture reader failed", CaptureStatus.error(
+                                    "playback capture ended", "Choose the source again and approve Android's capture prompt",
+                                ))
+                            },
+                        )
+                    } },
+                )
+            }.also { it.start() }
+            sourceWake.captureChanged(recording = running, projection = projection === proj)
+        } catch (error: RuntimeException) {
+            Log.e(TAG, "capture reader could not start", error)
+            finishCapture("capture reader could not start", CaptureStatus.error(
+                "playback capture could not start", "Stop the source and try capture again",
+            ))
+            return START_NOT_STICKY
+        }
         Log.i(TAG, "playback capture running")
         // MediaProjection consent cannot be renewed silently after process death.
         return START_NOT_STICKY
@@ -258,6 +286,7 @@ class CaptureService : Service() {
 
     @Synchronized
     private fun finishCapture(reason: String, status: CaptureStatus, retry: Boolean = false) {
+        sourceWake.stop()
         if (cleanedUp) {
             if (retry && stopCompletion.result.isDone && stopCompletion.result.getNow(null) == ReaderStop.TIMEOUT) {
                 val completion = stopCompletion.retry()
@@ -321,6 +350,7 @@ class CaptureService : Service() {
 
     override fun onDestroy() {
         destroyed = true
+        sourceWake.destroy()
         if (!cleanedUp) finishCapture("service destroyed", CaptureStatus.idle())
         if (owner === this) owner = null
         super.onDestroy()
@@ -358,6 +388,7 @@ class CaptureService : Service() {
 
     companion object {
         private var owner: CaptureService? = null
+        internal fun hasLiveWakeSource(): Boolean = owner?.sourceWake?.live == true
         private val captureOwners = AtomicLong()
         private val retirement = SourceRetirement()
         internal const val EXTRA_CAPTURE_OWNER = "capture_owner"

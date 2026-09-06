@@ -41,8 +41,6 @@ object PhosphorNative {
     external fun setFocus(focus: Float)
     /** Beam brightness budget (1.0..30.0, desktop "Beam" slider). */
     external fun setBeamEnergy(energy: Float)
-    /** Bottom pull 0..1: raises real beam deposit energy; P7 textures own its decay. */
-    external fun setBloomPull(pull: Float)
     /** Beam-to-gravity quadrant (0..3) — UI-locked mode rotates the figure, not the chrome. */
     external fun setViewRotation(quadrant: Int)
     /** Geometry FX stage: 0 off · 1 kaleido · 2 spin · 3 tunnel · 4 pulse (phone-local). */

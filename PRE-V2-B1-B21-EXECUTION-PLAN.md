@@ -2,6 +2,16 @@
 
 **Status:** original B1-B21 execution is active. Ben authorized connected-phone validation at 22:36 UTC. The desktop remains quiet. Exact candidate and rollback checks precede installation. Live Linux deployment remains separate.
 
+### Display ownership checkpoint, 2026-09-06 03:48 UTC
+
+Phase 10's frozen source passed 348 Android unit tests, 33 selected native tests and separate source and isolated source-first intent reviews.
+The [Phase 10 receipt](docs/dev/receipts/pre-v2-b1-b21/phase-10-display.md) preserves the correction history, preparation failures and invalid earlier review attempts.
+The final independent map was frozen before any tests, retained results or prior review reports.
+Beam-breath is retired. Actual local termination, remote media freshness and retained microphone failure authority now feed source-owned wake.
+Exact committed packaging follows next. No Phase 10 phone action or Android/GPU acceptance is claimed.
+Chosen beam tuning survives surface changes, but changed-size GPU textures are recreated. Settled luminance remains a live check.
+All final B-cards and drift 21 remain open. Sequential Phase 11 follows Phase 10's exact offline artifact.
+
 ### Controls checkpoint, 2026-09-06 01:24 UTC
 
 Phase 9 source passed the frozen 308-test gate and separate source/intent reviews after bounded corrections.

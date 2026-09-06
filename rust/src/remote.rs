@@ -187,6 +187,7 @@ struct SessionShared {
     sock: TcpStream,
     writer_tx: std::sync::mpsc::SyncSender<WriterCmd>,
     hello_dirty: AtomicBool,
+    media: bridge_core::SessionMedia,
 }
 
 impl SessionShared {
@@ -194,6 +195,7 @@ impl SessionShared {
         self.cancel.load(Ordering::Relaxed)
     }
     fn trip(&self) {
+        self.media.retire();
         self.cancel.store(true, Ordering::SeqCst);
         let _ = self.sock.shutdown(std::net::Shutdown::Both);
     }
@@ -708,6 +710,15 @@ pub fn art_generation() -> u32 {
 
 pub fn status_json() -> String {
     let l = link();
+    let current = plock(&l.current).clone();
+    let media = current
+        .filter(|s| {
+            !l.quit.load(Ordering::Relaxed)
+                && l.generation.load(Ordering::SeqCst) == s.session_gen
+                && !s.cancelled()
+        })
+        .map(|s| s.media.status(monotonic_ms()))
+        .unwrap_or_default();
     let welcome = l.slots.welcome.lock().unwrap().clone();
     let error = l.slots.error.lock().unwrap().clone();
     let scope = plock(&l.slots.scope).clone();
@@ -735,13 +746,15 @@ pub fn status_json() -> String {
         ("null".to_string(), "null".to_string())
     };
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"remote_rms":{},"remote_rms_peak":{},"scope":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"media_received":{},"media_live":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"remote_rms":{},"remote_rms_peak":{},"scope":{},"welcome":{},"last_error":{}}}"#,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
         l.rx_bytes.load(Ordering::Relaxed),
         l.rx_a.load(Ordering::Relaxed),
         l.rx_g.load(Ordering::Relaxed),
+        media.received,
+        media.live,
         json_str(&l.slots.art_id.lock().unwrap()),
         l.meta_gen.load(Ordering::Relaxed),
         l.sources_gen.load(Ordering::Relaxed),
@@ -879,6 +892,10 @@ enum SessionEnd {
 fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let l = link();
     l.state.store(ST_CONNECTING, Ordering::Relaxed);
+    // A previous relay's loudness is not a measurement of this session.
+    l.remote_rms_known.store(false, Ordering::Relaxed);
+    l.remote_rms.store(0, Ordering::Relaxed);
+    l.remote_rms_peak.store(0, Ordering::Relaxed);
 
     let addr = match (host, port)
         .to_socket_addrs()
@@ -927,6 +944,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         sock: shutdown_clone,
         writer_tx,
         hello_dirty: AtomicBool::new(false),
+        media: bridge_core::SessionMedia::default(),
     });
 
     // Publish under the generation gate. A session that lost the race while
@@ -1171,12 +1189,18 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                 SessionEnd::Failed("link closed by peer".into())
             };
         }
-        let quiet_ms = monotonic_ms().saturating_sub(l.last_rx_ms.load(Ordering::Relaxed));
+        let now = monotonic_ms();
+        let quiet_ms = now.saturating_sub(l.last_rx_ms.load(Ordering::Relaxed));
         let st = l.state.load(Ordering::Relaxed);
         if st == ST_STREAMING {
             was_streaming = true;
         }
-        match bridge_core::watchdog_action(quiet_ms, st == ST_STREAMING, st == ST_STALLED) {
+        match bridge_core::watchdog_action(
+            quiet_ms,
+            shared.media.status(now),
+            st == ST_STREAMING,
+            st == ST_STALLED,
+        ) {
             bridge_core::WatchdogAction::Dead => {
                 return if was_streaming {
                     SessionEnd::Failed("10 s of silence — link presumed dead".into())
@@ -1322,7 +1346,9 @@ fn reader(
             break;
         }
         l.rx_bytes.fetch_add((5 + len) as u64, Ordering::Relaxed);
-        l.last_rx_ms.store(monotonic_ms(), Ordering::Relaxed);
+        let now = monotonic_ms();
+        l.last_rx_ms.store(now, Ordering::Relaxed);
+        let media = shared.media.accept(tag, &payload, now);
         match tag {
             b'W' => {
                 if let Ok(txt) = String::from_utf8(payload) {
@@ -1332,10 +1358,9 @@ fn reader(
             }
             b'A' => {
                 l.rx_a.fetch_add(1, Ordering::Relaxed);
-                let mut f32buf = Vec::with_capacity(payload.len() / 2);
-                for c in payload.chunks_exact(2) {
-                    f32buf.push(i16::from_le_bytes([c[0], c[1]]) as f32 / 32768.0);
-                }
+                let Some(bridge_core::RemoteMedia::Audio(f32buf)) = media else {
+                    continue;
+                };
                 // No audible consumer exists in music-off/visualizer flows, so
                 // receive-side scope feed is the explicit fallback. With audio
                 // enabled the callback owns scope truth after jitter/zero-fill.
@@ -1348,33 +1373,19 @@ fn reader(
             }
             b'G' => {
                 l.rx_g.fetch_add(1, Ordering::Relaxed);
-                if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
-                    let (tw, th) = v["trace_size"]
-                        .as_array()
-                        .and_then(|a| Some((a.first()?.as_f64()?, a.get(1)?.as_f64()?)))
-                        .unwrap_or((1.0, 1.0));
-                    let peak = v["peak"].as_f64().unwrap_or(0.6) as f32;
-                    if let Some(line) = v["polyline"].as_array() {
-                        let pts: Vec<[f32; 2]> = line
-                            .iter()
-                            .filter_map(|p| {
-                                let a = p.as_array()?;
-                                Some([
-                                    (a.first()?.as_f64()? / tw.max(1.0)) as f32,
-                                    (a.get(1)?.as_f64()? / th.max(1.0)) as f32,
-                                ])
-                            })
-                            .collect();
-                        if pts.len() >= 2 {
-                            let _ = crate::render::sender().send(
-                                crate::render::Cmd::GeometryFrame(crate::render::GeomFrame {
-                                    points: pts,
-                                    aspect: (tw / th.max(1.0)) as f32,
-                                    intensity: (0.8 * peak.clamp(0.2, 1.0)).max(0.15),
-                                }),
-                            );
-                        }
-                    }
+                if let Some(bridge_core::RemoteMedia::Geometry {
+                    points,
+                    aspect,
+                    intensity,
+                }) = media
+                {
+                    let _ = crate::render::sender().send(crate::render::Cmd::GeometryFrame(
+                        crate::render::GeomFrame {
+                            points,
+                            aspect,
+                            intensity,
+                        },
+                    ));
                 }
             }
             b'M' => {
@@ -1421,10 +1432,9 @@ fn reader(
                 if let Ok(v) = serde_json::from_slice::<serde_json::Value>(&payload) {
                     *plock(&l.slots.scope) =
                         v.get("scope").map(|s| s.to_string()).unwrap_or_default();
-                    // Loudness of what the relay actually sent. This is the only way to
-                    // tell a silent source from a dead link: both draw nothing, but only
-                    // one is still receiving frames. Relays predating this field omit it,
-                    // so absence stays distinct from a genuine zero.
+                    // Optional loudness labels silence after valid media proves flow.
+                    // K never refreshes the session's media receipt. Older relays omit
+                    // loudness, so absence stays distinct from a genuine zero.
                     if let Some(rms) = v.get("rms").and_then(|r| r.as_f64()) {
                         l.remote_rms
                             .store((rms * RMS_FIXED_POINT) as u64, Ordering::Relaxed);

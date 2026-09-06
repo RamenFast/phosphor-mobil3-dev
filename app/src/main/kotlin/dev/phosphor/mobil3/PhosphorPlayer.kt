@@ -5,6 +5,7 @@ import androidx.media3.common.C
 import androidx.media3.common.MediaItem
 import androidx.media3.common.MediaMetadata
 import androidx.media3.common.Player
+import androidx.media3.common.PlaybackException
 import androidx.media3.common.SimpleBasePlayer
 import androidx.media3.common.util.UnstableApi
 import com.google.common.util.concurrent.Futures
@@ -20,6 +21,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
 
     private val transportIntent = LocalTransportIntent()
+    private val output = LocalOutputState()
     private var playing: Boolean
         get() = transportIntent.playing
         set(value) { transportIntent.publish(value) }
@@ -31,7 +33,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     internal fun recordTransportIntent(play: Boolean) = transportIntent.record(play)
     internal fun setPublishedPlaying(play: Boolean) {
         playing = play
-        PhosphorNative.deckSetPaused(!play)
+        PhosphorNative.deckSetPaused(!play || !output.ready)
         invalidateState()
     }
 
@@ -74,7 +76,15 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         val b = State.Builder()
             .setAvailableCommands(commands)
             .setPlayWhenReady(playing, Player.PLAY_WHEN_READY_CHANGE_REASON_USER_REQUEST)
-            .setPlaybackState(if (queue.isEmpty()) Player.STATE_IDLE else Player.STATE_READY)
+            .setPlaybackState(when {
+                queue.isEmpty() || output.failed -> Player.STATE_IDLE
+                !output.ready -> Player.STATE_ENDED
+                else -> Player.STATE_READY
+            })
+            .setPlayerError(if (output.failed) PlaybackException(
+                "Local audio stopped. Check the audio route or choose a readable file and retry",
+                null, PlaybackException.ERROR_CODE_UNSPECIFIED,
+            ) else null)
         if (queue.isNotEmpty()) {
             b.setPlaylist(queue.mapIndexed { i, e -> itemData(i, e) })
             b.setCurrentMediaItemIndex(index)
@@ -111,12 +121,22 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     /** Called (on the player looper) after the Rust deck opened the CURRENT queue entry. */
     fun onTrackOpened(selectedAt: Long? = null) {
+        output.opened()
         playing = selectedAt?.let { transportIntent.atPublication(it, autoplay = true) } ?: true
         invalidateState()
     }
 
     internal fun onNativeSeekCompleted() {
+        output.opened()
         nativeSeekPosition = PhosphorNative.deckPositionMs()
+        invalidateState()
+    }
+
+    internal fun onNativeTerminal(result: PlaybackTruth.Terminal) {
+        output.ended(result)
+        nativeSeekPosition = null
+        playing = false
+        PhosphorNative.deckSetPaused(true)
         invalidateState()
     }
 
@@ -165,7 +185,8 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
         recordTransportIntent(playWhenReady)
         playing = playWhenReady
-        PhosphorNative.deckSetPaused(!playWhenReady)
+        if (playWhenReady && !output.ready) onSeek?.invoke(index, 0L)
+        else PhosphorNative.deckSetPaused(!playWhenReady)
         return Futures.immediateVoidFuture()
     }
 
