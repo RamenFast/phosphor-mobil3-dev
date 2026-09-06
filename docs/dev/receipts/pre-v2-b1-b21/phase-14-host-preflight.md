@@ -47,3 +47,15 @@ Evidence under ignored `dev/scratch/pre-v2-20260829T072841Z/phase-14/` includes 
 - Keep exact artifacts, settings preservation, physical behavior receipts and the user visibility gate open. No push, tag, release signing or store submission occurred.
 
 Rollback is a new commit reverting only the expression change if needed. No shared source, protected archive, device setting or private backup was changed by this preflight.
+
+## Full scoreboard and test-text clarification, 12:02 UTC
+
+Task357680b2vz built the exact debug artifact from mobile `89367f4d653429831914c37ef601dfa8615f65e5` and the shared commit above. Its six-entry artifact manifest reverified successfully. APK SHA256: `104dc6ad671fdb76fadfdd1379b7c87844b352ecc49790a0960a747d2dcb604a`. This APK is retained, not installed on the S25.
+
+The first full scoreboard reported 17 green, four red and zero skipped. Its unexpected privacy failure matched only two test-text lines: a remote gain-status comment and the letters `sentry` spanning words in a dismissal test method name. Root inspected both exact matches. The test comment now names remote gain status, and the test name describes following the chosen edge. Assertions, production code, dependencies and the privacy scanner are unchanged.
+
+Fresh task992854niea verified exactly these two substitutions, froze all tracked inputs in both repositories, and ran the complete existing scoreboard. Result: **18 green, three external reds, zero skipped**. The red set is exactly `provenance.release`, `release.bundle`, and `signing.release`. The scoreboard correctly returns exit2 for those reds. The validating wrapper returns exit0. Root independently parsed 420 JVM cases with zero failures, errors or skips, including the renamed test. Every frozen input rehashed after execution.
+
+Release signing credentials were unset during the debug-only check. No release signing, publisher, device activation or external publication occurred. The earlier four-red result remains preserved. `root-privacy-evidence01.sha256` binds 45 retained files, SHA256 `ab888905371d52216c1a621c8dc791ec20470d2f13cc7eb6da70e96e61ec21fa`.
+
+This closes the unexpected privacy marker failure and establishes the required scoreboard result for this test-text snapshot. It does not close the separate shared formatting, missing publisher fixture, whole shared-workspace tests or Android acceptance requirements.

@@ -88,7 +88,7 @@ class SheetEntryPolicyTest {
     }
 
     @Test
-    fun gestureExitContinuesLocalDownForEveryEntryAndNormalExitUsesEntry() {
+    fun gestureExitContinuesLocalDownForEveryEntryAndNormalExitFollowsChosenEdge() {
         for (entry in SheetEntry.entries) {
             assertEquals(SheetEntry.FROM_BOTTOM, SheetEntryPolicy.exit(entry, fromDrag = true, committed = null))
             assertEquals(entry, SheetEntryPolicy.exit(entry, fromDrag = false, committed = null))

@@ -265,7 +265,7 @@ class KnownDefaultsTest {
         assertTrue(local.contains("prefs().getBoolean(\"auto_gain\", true)"))
         assertTrue(local.contains("PhosphorNative.setGain(gainValue)"))
         assertTrue(activity.contains("remoteGain?.let { ui.autoGain = it.optBoolean(\"auto\", false) }"))
-        // Remote telemetry may still display false. Direct typed preference reads keep
+        // Remote gain status may still display false. Direct typed preference reads keep
         // explicit local false authoritative and use true only when the key is absent.
         // No relay, SharedPreferences, or Activity lifecycle is executed by this check.
     }
