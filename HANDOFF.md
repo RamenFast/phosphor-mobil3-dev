@@ -1,10 +1,11 @@
-# Handoff: S25 testing and three installed corrections
+# Handoff: S25 testing and four installed corrections
 
 **Updated:** 2026-09-06. **Status:** partial device acceptance, not release-ready and not all B1-B21 passed.
 
 ## Read first
 
-- [Current phone receipt and per-card gaps](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md).
+- [Latest continuation and precise remaining gaps](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-continuation-2026-09-06.md).
+- [Earlier phone receipt and per-card gaps](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md).
 - [Original execution plan](PRE-V2-B1-B21-EXECUTION-PLAN.md), especially Phases 15-17. Its old volume requirements are superseded.
 - [Receipt index](docs/dev/receipts/pre-v2-b1-b21/README.md).
 
@@ -16,17 +17,18 @@ The console volume slider is unwanted. It is removed, not moved elsewhere. Prese
 
 ## Installed now
 
-- Mobile implementation `6565585`, including volume removal `9b3cc62` and grid contract `9f65bd1`.
+- Mobile implementation `63fc7ef`, including final-item replay repair, volume removal `9b3cc62` and grid contract `9f65bd1`.
 - Shared implementation `297e88b`.
 - Debug package `dev.phosphor.mobil3.debug`, version `2.0.0-debug` (`2000000`).
-- APK SHA256 `43882efdc35d5e75a62ac3e5dce3817b05dd9e48109fdf8fe79e98fd10cc8f8a`.
+- APK SHA256 `f5afd99617e7a1abf21246c612590212adeed3a82b588c6235e8448a68b48834`.
 - Installed APK bytes and signer were verified through `dev/pm3 install`.
 - Exact APK and original installed rollback are retained under ignored `dev/scratch/phone-acceptance-20260906T1720Z/`.
 
-Three corrections are installed:
+Four corrections are installed:
 1. No console VOL row, percentage, spare row or app-owned volume adapter. The console contracts without restyling its other controls.
 2. Shared minor/axis grid coefficients are 0.035/0.08. Three matched low-brightness captures improved minor-line contrast from 8 to 43 sRGB code values while the background stayed at 1. This is measured improvement, not Ben's visual acceptance.
 3. SOURCE queue taps now reach the existing track-switch handler through the previously missing Media3 command. Actual selection of the nested left-only fixture passed.
+4. Final-item playback now drains to native ENDED instead of pausing its tail early. Actual Play after completion restarts the item near zero.
 
 ## Verified and still open
 
@@ -34,7 +36,7 @@ Three corrections are installed:
 
 **B8 is not closed.** Stable Spotify checks matched the icon to the session, but they did not reproduce Ben's reported inversion. A later final-candidate attempt lost the external Spotify session. No speculative glyph fix was made. Investigate that exact path before claiming completion.
 
-Paused local seek position can still report zero until resume. Last-item replay needs follow-up. Full multi-pointer timing, slider/style variants, timeout/PiP combinations, all source/linger lifecycle cases, clean-emulator defaults and fresh-Linux relay acceptance remain open. The current receipt names each limitation. Keep `drift: 21`.
+Paused local seek position had an intermittent zero observation, although four later paused seeks published correct positions. Final-item replay is now repaired. Additional right-only dBFS, style persistence, PiP on/off/manual entry, local recents removal, and main/PiP wake beyond a shortened timeout passed bounded checks. A suspected PiP-return defect failed matched-control diagnosis, so the experimental patch was discarded. Full multi-pointer timing, motion animation, source/linger lifecycle combinations, clean-emulator defaults and fresh-Linux relay acceptance remain open. The latest receipt names each limitation. Keep `drift: 21`.
 
 ## Restoration
 

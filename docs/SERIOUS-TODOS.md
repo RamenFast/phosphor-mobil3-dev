@@ -90,3 +90,7 @@ The next two major core features are intentionally absent from this backlog unti
 - [ ] Fix paused local seek publication: real drags sometimes report position zero until resume. Also recheck the captured source/mirror position disagreement.
 - [ ] Fix/retest replay at the last local item's end. One real Play attempt emitted immediate native unpause/pause and stayed at the end.
 - [ ] Finish the exact open B-card cases in the September 6 phone receipt. Do not replace real gesture, timeout, style, source/linger or emulator acceptance with host assertions.
+
+## 2026-09-06 continued phone checkpoint
+
+Final-item replay is repaired in 63fc7ef with real before/after proof. Four later paused seeks were correct but do not erase the prior intermittent-zero report. PiP manual/auto controls and accelerated main/PiP wake passed bounded checks. The alleged PiP-return chrome defect did not survive matched-control timing checks, so no speculative patch remains. B8 inversion/buffering, exact gesture timing and the other gaps in the [continuation receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-continuation-2026-09-06.md) remain open. The scratch UI helper must wait for settled chrome rather than interpreting a missing SRC node as a product failure.
