@@ -35,11 +35,11 @@ When `double_tap_playback=false`, the tap recognizer must have no double-tap han
 
 ## 4. Sheets and popouts
 
-A sheet must enter from the physical edge associated with its control and current orientation.
+A sheet must enter from the physical edge associated with its control and current orientation. UI-locked landscape is the explicit exception: it enters from viewer-right in both landscape directions. In UI-locked portrait with a relative half-turn, local-top entry and anchoring preserve the physical control edge instead of arriving from the opposite edge.
 
 The sheet must respect safe drawing insets, display cutouts, and rounded physical corners. Android 10 and 11 devices without rounded-corner metrics use safe-drawing fallbacks.
 
-Back, scrim, close control, and dismissal gestures must converge on one exit path.
+Back, scrim, close control, and dismissal gestures must converge on one completion path. The first committed dismissal retains its direction and actually applied displacement until completion. Header and content-remainder drags continue along their tracked local positive-Y axis from that displacement. Back, scrim, and close use the current entry edge. A pull restored before commitment does not select a later exit direction. Later pointer callbacks and queued tracking or restoration work must not move the committed base. A running restore stops at commitment, and repeated close requests do not redirect the exit.
 
 The quick popout stays anchored above the measured console until an explicit action or dismissal drag closes it. Its viewport uses the remaining safe height in the current rotated chrome frame. All destinations and quick toggles, including AUTO PiP, share one vertical scroll owner. Content consumes normal scrolling first. Only a downward remainder at the top pulls the existing reveal closed. Reversing that pull restores the popout before scrolling content. A content fling must not initiate dismissal. Short frames and larger text must retain scroll recovery without shrinking the 44dp slider lanes.
 
@@ -49,7 +49,21 @@ Android system rotation lock has final authority.
 
 When system rotation is locked, the app must show its dependent orientation controls as unavailable and explain why. The app must preserve the current usable orientation instead of fighting the system.
 
+System authority is transient, not a saved app preference. Activity requests must hold the observed current orientation, never impose a stored cardinal while Android rotation is locked. Chrome, labels, sheets, and beam must retain their current rotation. Imports may update saved app lock choices, but must not change the held presentation. Disabled controls must also reject stale setter callbacks before changing preferences.
+
+The existing foreground tick and lifecycle callbacks refresh system authority even when gravity does not change. When Android permits rotation again, the existing app preferences and detent resume. Unknown gravity must not invent a cardinal. Detent tolerances, gravity filtering, and sensor ownership remain unchanged.
+
+The foreground tick publishes the existing volume readback first, then refreshes rotation authority. Both remain unconditional within the existing tick.
+
+Sensor cardinals and Android Surface rotation use opposite landscape conventions. Convert them once at presentation routing. On a portrait-natural display, aligned observations C0/D0, C270/D1, C180/D2, and C90/D3 produce zero relative rotation in every app-lock combination. A display pinned at D0 retains the existing C0/90/180/270 to q0/1/2/3 mapping. Screen targets, Compose rotation signs, and native rotation signs do not change.
+
 On large screens, foldables, desktop windows, and multi-window layouts, the interface must remain usable when Android ignores requested orientation.
+
+Layout uses observed configuration and measured constraints, not a requested or saved orientation as proof of display geometry. A system-driven resize may adapt layout without applying a new gravity rotation.
+
+Safe drawing and rounded-corner insets are physical left/top/right/bottom edges, including under RTL. Map their union once into the actual applied frame. Chrome uses its applied quadrant. Nested sheets use the total chrome plus sheet quadrant. Odd frames swap the content gutters before calculating physical corner clearance. A popout that maps explicitly must request physical insets first, without an inherited second rotation. Zero rotation preserves existing safe and corner clearance.
+
+The settings pull keeps its gesture host across recomposition. Each begin reads current applied chrome geometry and UI placement through updated state, not captured initial booleans or imported saved choices. Its provisional axis uses current chrome-frame dimensions. Odd sheet rotation swaps both dimensions and sheet landscape, preserving that axis choice. Actual measured card travel remains the final authority. System-held imports change saved preferences without changing this applied gesture frame until authority resumes.
 
 ## 6. Capture consent
 

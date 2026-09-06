@@ -62,7 +62,10 @@ import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.rememberCoroutineScope
+import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
+import androidx.compose.ui.AbsoluteAlignment
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
@@ -80,6 +83,7 @@ import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
@@ -173,6 +177,74 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
 
 // ── Sheet mechanics (shared): a safe-area floating card over the live scope;
 // fill-driven top curl; drag-down / scrim-tap / ✕ / Back to dismiss. ──
+internal class SheetDismissState(private val scope: CoroutineScope) {
+    data class Commitment(val edge: SheetEntry, val offsetPx: Float)
+
+    val animation = Animatable(0f)
+    var rawPx by mutableFloatStateOf(0f)
+        private set
+    var committed by mutableStateOf<Commitment?>(null)
+        private set
+    val offsetPx: Float get() = committed?.offsetPx ?: animation.value.coerceAtLeast(0f)
+
+    fun begin() {
+        if (committed != null) return
+        rawPx = animation.value.coerceAtLeast(0f)
+        scope.launch { if (committed == null) animation.stop() }
+    }
+
+    fun dragBy(delta: Float) {
+        if (committed != null) return
+        rawPx = (rawPx + delta).coerceAtLeast(0f)
+        val target = rawPx
+        scope.launch { if (committed == null) animation.snapTo(target) }
+    }
+
+    fun commit(entry: SheetEntry, fromDrag: Boolean): Boolean {
+        if (committed != null) return false
+        committed = Commitment(
+            SheetEntryPolicy.exit(entry, fromDrag, null),
+            animation.value.coerceAtLeast(0f),
+        )
+        scope.launch { animation.stop() }
+        return true
+    }
+
+    fun settle(
+        velocityY: Float,
+        distancePx: Float,
+        flickPx: Float,
+        reduced: Boolean,
+        style: RoomStyle,
+        commitDrag: () -> Unit,
+    ) {
+        if (committed != null) return
+        if (rawPx >= distancePx || velocityY >= flickPx) {
+            commitDrag()
+        } else {
+            rawPx = 0f
+            scope.launch {
+                if (committed != null) return@launch
+                animation.stop()
+                if (committed != null) return@launch
+                when {
+                    reduced || style.motion == MotionFeel.Cut -> animation.snapTo(0f)
+                    style.motion == MotionFeel.Springy -> animation.animateTo(
+                        0f,
+                        spring(dampingRatio = 0.72f, stiffness = 380f, visibilityThreshold = 0.5f),
+                    )
+                    else -> animation.animateTo(
+                        0f,
+                        styleSpec(false, style, Motion.settle, Motion.decelerate),
+                    )
+                }
+            }
+        }
+    }
+}
+
+internal val LocalSheetEntryQuadrant = staticCompositionLocalOf { 0 }
+
 @Composable
 fun SheetHost(
     p: Palette,
@@ -186,21 +258,14 @@ fun SheetHost(
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
     val uiLocked = LocalUiPlacementLocked.current
-    // Where the card lives, and therefore where it must come FROM.
-    //
-    // Locked landscape: the phone is held sideways and the transport bar is at one
-    // edge, so the card anchors there and slides in horizontally — it should look like
-    // it came out of the bar the finger is on. One fixed edge in BOTH rotations: the
-    // side used to flip with ROTATION_270, so the same gesture behaved differently
-    // depending which way the phone had been turned.
-    //
-    // Unlocked landscape: the console is centred (Console.kt uses BottomCenter), so a
-    // card arriving from the right edge has no relationship to what was touched. Centre
-    // it and let it rise, exactly like portrait.
-    val slidesSideways = SheetEntryPolicy.animatesHorizontally(landscape, uiLocked)
-    val sheetAlignment = when {
-        slidesSideways -> Alignment.BottomEnd
-        else -> Alignment.BottomCenter
+    val entry = SheetEntryPolicy.entry(landscape, uiLocked, LocalSheetEntryQuadrant.current)
+    val currentEntry by rememberUpdatedState(entry)
+    val slidesSideways = entry == SheetEntry.FROM_EDGE
+    val entrySign = if (entry == SheetEntry.FROM_TOP) -1 else 1
+    val sheetAlignment = when (entry) {
+        SheetEntry.FROM_EDGE -> AbsoluteAlignment.BottomRight
+        SheetEntry.FROM_TOP -> Alignment.TopCenter
+        SheetEntry.FROM_BOTTOM -> Alignment.BottomCenter
     }
     val density = LocalDensity.current
     val scope = rememberCoroutineScope()
@@ -218,41 +283,23 @@ fun SheetHost(
     val openState = remember {
         MutableTransitionState(entryReveal != null).apply { targetState = true }
     }
-    val dismiss = {
-        if (openState.targetState) openState.targetState = false
+    val dismissal = remember { SheetDismissState(scope) }
+    val commitDismiss: (Boolean) -> Unit = { fromDrag ->
+        if (openState.targetState && dismissal.commit(currentEntry, fromDrag)) {
+            openState.targetState = false
+        }
     }
-    val dismissOffset = remember { Animatable(0f) }
-    var rawDismissPx by remember { mutableFloatStateOf(0f) }
+    val dismiss = { commitDismiss(false) }
+    val exit = dismissal.committed?.edge ?: entry
+    val exitSign = if (exit == SheetEntry.FROM_TOP) -1 else 1
+    val dismissOffset = dismissal.animation
     val dismissDistancePx = with(density) { Dim.sheetDismissDistance.toPx() }
     val dismissFlickPx = with(density) { Dim.chromeFlickVelocity.toPx() }
-    val beginDismiss = {
-        rawDismissPx = dismissOffset.value.coerceAtLeast(0f)
-        scope.launch { dismissOffset.stop() }
-    }
-    val dragDismissBy: (Float) -> Unit = { delta ->
-        rawDismissPx = (rawDismissPx + delta).coerceAtLeast(0f)
-        val target = rawDismissPx
-        scope.launch { dismissOffset.snapTo(target) }
-    }
+    val beginDismiss = { dismissal.begin() }
+    val dragDismissBy: (Float) -> Unit = { delta -> dismissal.dragBy(delta) }
     val settleDismiss: (Float) -> Unit = { velocityY ->
-        if (rawDismissPx >= dismissDistancePx || velocityY >= dismissFlickPx) {
-            dismiss()
-        } else {
-            rawDismissPx = 0f
-            scope.launch {
-                dismissOffset.stop()
-                when {
-                    reduced || style.motion == MotionFeel.Cut -> dismissOffset.snapTo(0f)
-                    style.motion == MotionFeel.Springy -> dismissOffset.animateTo(
-                        0f,
-                        spring(dampingRatio = 0.72f, stiffness = 380f, visibilityThreshold = 0.5f),
-                    )
-                    else -> dismissOffset.animateTo(
-                        0f,
-                        styleSpec(false, style, Motion.settle, Motion.decelerate),
-                    )
-                }
-            }
+        dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style) {
+            commitDismiss(true)
         }
     }
     // A scroll child first consumes every ordinary scroll delta. Only its unconsumed
@@ -260,10 +307,11 @@ fun SheetHost(
     val dismissNestedScroll = remember(style.motion, reduced, dismissDistancePx, dismissFlickPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (rawDismissPx <= 0f || available.y >= 0f) return Offset.Zero
+                if (dismissal.committed != null) return Offset.Zero
+                if (dismissal.rawPx <= 0f || available.y >= 0f) return Offset.Zero
                 // A reversal first pushes the displaced sheet home; only the remainder
                 // scrolls content away from its top edge.
-                val consumedY = available.y.coerceAtLeast(-rawDismissPx)
+                val consumedY = available.y.coerceAtLeast(-dismissal.rawPx)
                 dragDismissBy(consumedY)
                 return Offset(0f, consumedY)
             }
@@ -273,14 +321,16 @@ fun SheetHost(
                 available: Offset,
                 source: NestedScrollSource,
             ): Offset {
+                if (dismissal.committed != null) return Offset.Zero
                 if (available.y <= 0f) return Offset.Zero
-                if (rawDismissPx == 0f) beginDismiss()
+                if (dismissal.rawPx == 0f) beginDismiss()
                 dragDismissBy(available.y)
                 return Offset(0f, available.y)
             }
 
             override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (rawDismissPx <= 0f) return Velocity.Zero
+                if (dismissal.committed != null) return Velocity.Zero
+                if (dismissal.rawPx <= 0f) return Velocity.Zero
                 settleDismiss(available.y.coerceAtLeast(0f))
                 return if (available.y > 0f) Velocity(0f, available.y) else Velocity.Zero
             }
@@ -306,7 +356,11 @@ fun SheetHost(
                 .windowInsetsPadding(
                     chromeSafeDrawingInsets(Dim.cardMarginH, Dim.cardMarginBottom)
                 )
-                .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
+                .padding(
+                    start = Dim.cardMarginH, end = Dim.cardMarginH,
+                    top = if (entry == SheetEntry.FROM_TOP) Dim.cardMarginBottom else 0.dp,
+                    bottom = if (entry == SheetEntry.FROM_TOP) 0.dp else Dim.cardMarginBottom,
+                )
                 .onSizeChanged { availableHeightPx = it.height },
             contentAlignment = sheetAlignment,
         ) {
@@ -321,15 +375,15 @@ fun SheetHost(
                     slideInVertically(
                         spring(dampingRatio = 0.72f, stiffness = 380f,
                             visibilityThreshold = IntOffset.VisibilityThreshold)
-                    ) { it / 3 } + fadeIn(styleSpec(false, style, Motion.sheet))
+                    ) { entrySign * (it / 3) } + fadeIn(styleSpec(false, style, Motion.sheet))
                 else
-                    slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { it / 3 } +
+                    slideInVertically(styleSpec(false, style, Motion.sheet, Motion.decelerate)) { entrySign * (it / 3) } +
                         fadeIn(styleSpec(false, style, Motion.sheet)),
-                exit = if (reduced) fadeOut() else if (slidesSideways)
+                exit = if (reduced) fadeOut() else if (exit == SheetEntry.FROM_EDGE)
                     slideOutHorizontally(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
                         fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate))
                 else
-                    slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { it / 2 } +
+                    slideOutVertically(styleSpec(false, style, Motion.settle, Motion.accelerate)) { exitSign * (it / 2) } +
                         fadeOut(styleSpec(false, style, Motion.settle, Motion.accelerate)),
             ) {
                 Column(
@@ -337,7 +391,7 @@ fun SheetHost(
                         .offset {
                             IntOffset(
                                 0,
-                                dismissOffset.value.coerceAtLeast(0f).roundToInt(),
+                                dismissal.offsetPx.roundToInt(),
                             )
                         }
                         .then(
@@ -363,17 +417,16 @@ fun SheetHost(
                             )
                         }
                         .graphicsLayer {
+                            translationX = 0f
+                            translationY = 0f
+                            alpha = 1f
                             entryReveal?.let { reveal ->
                                 val progress = reveal.progress
                                 alpha = progress
-                                // Anchored to an edge: come in from that edge. Centred:
-                                // rise. Animating Y for an edge-anchored card is what
-                                // made it appear from the screen bottom instead of from
-                                // the transport bar under the finger.
                                 if (slidesSideways) {
                                     translationX = (1f - progress) * sheetWidthPx
                                 } else {
-                                    translationY = (1f - progress) * sheetHeightPx
+                                    translationY = entrySign * (1f - progress) * sheetHeightPx
                                 }
                             }
                         }
@@ -401,7 +454,7 @@ fun SheetHost(
                                     onDragEnd = { settleDismiss(0f) },
                                     onDragCancel = { settleDismiss(0f) },
                                 ) { change, delta ->
-                                    if (delta > 0f || rawDismissPx > 0f) {
+                                    if (delta > 0f || dismissal.rawPx > 0f) {
                                         change.consume()
                                         dragDismissBy(delta)
                                     }
@@ -1141,6 +1194,7 @@ fun SettingsSheet(
                         "SCOPE ROTATION · " +
                             (if (actions.isScopeRotationLocked()) "locked" else "free"),
                         active = actions.isScopeRotationLocked(), p = p, small = true,
+                        enabled = !state.systemRotationLocked,
                     ) {
                         actions.setScopeRotationLocked(!actions.isScopeRotationLocked())
                     }
@@ -1150,6 +1204,7 @@ fun SettingsSheet(
                         "UI PLACEMENT · " +
                             (if (actions.isUiPlacementLocked()) "locked" else "follow"),
                         active = actions.isUiPlacementLocked(), p = p, small = true,
+                        enabled = !state.systemRotationLocked,
                     ) {
                         actions.setUiPlacementLocked(!actions.isUiPlacementLocked())
                     }
@@ -1172,12 +1227,15 @@ fun SettingsSheet(
                 }
             }
             Prose(
-                "Scope lock pins the exact current orientation; free returns rotation " +
-                    "to Android. UI placement lock freezes the portrait/landscape card " +
-                    "layout while the scope keeps resizing underneath. Text stays upright " +
-                    "and safety caps may tighten a card: one Activity cannot hold chrome " +
-                    "on an absolute handset edge while rotating only its native surface " +
-                    "without counter-rotating the labels.",
+                if (state.systemRotationLocked) {
+                    "Android rotation lock is on. Enable system auto-rotate to change these controls. " +
+                        "Your app choices are saved; the current orientation stays put."
+                } else {
+                    "Scope lock pins the current orientation. When both app locks are off, " +
+                        "rotation follows the gravity detent. UI placement lock holds the Activity " +
+                        "while labels face the viewer. Layout fits the actual window if Android " +
+                        "ignores an orientation request."
+                },
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
             Spacer(Modifier.height(Dim.gap))

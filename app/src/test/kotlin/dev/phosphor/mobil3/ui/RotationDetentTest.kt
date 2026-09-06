@@ -3,6 +3,7 @@ package dev.phosphor.mobil3.ui
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
+import kotlin.test.assertSame
 import kotlin.test.assertTrue
 
 /**
@@ -129,6 +130,176 @@ class RotationDetentTest {
             RotationDetent.ScreenTarget.UNSPECIFIED,
             RotationDetent.screenTarget(RotationDetent.NONE),
         )
+    }
+
+    @Test
+    fun systemLockHoldsEveryAppliedPresentationDespiteNewAppChoicesAndGravity() {
+        for (priorScope in listOf(false, true)) for (priorUi in listOf(false, true)) {
+            for (priorCardinal in listOf(0, 90, 180, 270)) {
+                val current = RotationDetent.presentation(
+                    false, RotationDetent.Presentation(), priorScope, priorUi, priorCardinal, 0,
+                )
+                for (scope in listOf(false, true)) for (ui in listOf(false, true)) {
+                    for (cardinal in listOf(RotationDetent.NONE, 0, 90, 180, 270)) {
+                        for (display in 0..3) {
+                            assertSame(current, RotationDetent.presentation(
+                                true, current, scope, ui, cardinal, display,
+                            ))
+                        }
+                    }
+                }
+            }
+        }
+    }
+
+    @Test
+    fun permittedRoutingRetainsAllFourAppLockCombinations() {
+        val current = RotationDetent.Presentation()
+        assertEquals(current, RotationDetent.presentation(false, current, false, false, 90, 0))
+        assertEquals(
+            RotationDetent.Presentation(chromeQuadrant = 1),
+            RotationDetent.presentation(false, current, true, false, 90, 0),
+        )
+        assertEquals(
+            RotationDetent.Presentation(uiPlacementLocked = true, uprightQuadrant = 1, beamQuadrant = 1),
+            RotationDetent.presentation(false, current, false, true, 90, 0),
+        )
+        assertEquals(
+            RotationDetent.Presentation(uiPlacementLocked = true, uprightQuadrant = 1),
+            RotationDetent.presentation(false, current, true, true, 90, 0),
+        )
+    }
+
+    @Test
+    fun systemUnlockUsesImportedChoicesWithoutAnotherGravityChange() {
+        val current = RotationDetent.presentation(
+            false, RotationDetent.Presentation(), true, false, 90, 0,
+        )
+        val held = RotationDetent.presentation(true, current, false, true, 90, 0)
+        assertSame(current, held)
+        assertEquals(
+            RotationDetent.Presentation(uiPlacementLocked = true, uprightQuadrant = 1, beamQuadrant = 1),
+            RotationDetent.presentation(false, held, false, true, 90, 0),
+        )
+        assertEquals(
+            RotationDetent.Presentation(),
+            RotationDetent.presentation(false, held, false, false, 90, 0),
+        )
+    }
+
+    @Test
+    fun unknownGravityDoesNotInventOrResetPresentation() {
+        val current = RotationDetent.Presentation(uiPlacementLocked = true, uprightQuadrant = 3, beamQuadrant = 3)
+        for (locked in listOf(false, true)) {
+            for (scope in listOf(false, true)) for (ui in listOf(false, true)) {
+                for (invalid in listOf(RotationDetent.NONE, -90, 45, 360)) {
+                    assertSame(current, RotationDetent.presentation(locked, current, scope, ui, invalid, 0))
+                }
+            }
+        }
+    }
+
+    @Test
+    fun physicalCardinalAndObservedSurfaceTableRoutesEveryAppLockCombination() {
+        // Columns are observed Surface D0/D1/D2/D3 on a portrait-natural display.
+        // D0 pins the original sensor signs. Each aligned physical diagonal is zero.
+        val rows = listOf(
+            Triple("portrait", 0, listOf(0, 1, 2, 3)),
+            Triple("reverse landscape", 90, listOf(1, 2, 3, 0)),
+            Triple("reverse portrait", 180, listOf(2, 3, 0, 1)),
+            Triple("landscape", 270, listOf(3, 0, 1, 2)),
+        )
+        val prior = RotationDetent.Presentation(true, 3, 2, 1)
+        for ((physical, cardinal, relative) in rows) for (display in 0..3) {
+            for (scope in listOf(false, true)) for (ui in listOf(false, true)) {
+                val q = relative[display]
+                val expected = when {
+                    ui -> RotationDetent.Presentation(true, q, 0, if (scope) 0 else q)
+                    scope -> RotationDetent.Presentation(chromeQuadrant = q)
+                    else -> RotationDetent.Presentation()
+                }
+                assertEquals(expected, RotationDetent.presentation(
+                    false, prior, scope, ui, cardinal, display,
+                ), "$physical D$display scope=$scope ui=$ui")
+            }
+        }
+    }
+
+    @Test
+    fun alignedPhysicalOrientationsActivelyClearNonzeroRotationInEveryLockMode() {
+        val aligned = listOf(
+            Triple(RotationDetent.ScreenTarget.PORTRAIT, 0, 0),
+            Triple(RotationDetent.ScreenTarget.LANDSCAPE, 270, 1),
+            Triple(RotationDetent.ScreenTarget.REVERSE_PORTRAIT, 180, 2),
+            Triple(RotationDetent.ScreenTarget.REVERSE_LANDSCAPE, 90, 3),
+        )
+        val prior = RotationDetent.Presentation(true, 1, 2, 3)
+        for ((physical, cardinal, display) in aligned) {
+            assertEquals(physical, RotationDetent.screenTarget(cardinal))
+            for (scope in listOf(false, true)) for (ui in listOf(false, true)) {
+                assertEquals(RotationDetent.Presentation(uiPlacementLocked = ui),
+                    RotationDetent.presentation(false, prior, scope, ui, cardinal, display),
+                    "$physical scope=$scope ui=$ui must remove the previous rotation")
+            }
+        }
+    }
+
+    @Test
+    fun freeActivityToEitherLandscapeLockDoesNotAddAHalfTurn() {
+        for ((cardinal, display) in listOf(270 to 1, 90 to 3)) {
+            val free = RotationDetent.presentation(
+                false, RotationDetent.Presentation(true, 3, 2, 1), false, false, cardinal, display,
+            )
+            assertEquals(RotationDetent.Presentation(), free)
+            for (scope in listOf(false, true)) for (ui in listOf(false, true)) {
+                val locked = RotationDetent.presentation(false, free, scope, ui, cardinal, display)
+                assertEquals(RotationDetent.Presentation(uiPlacementLocked = ui), locked)
+                assertEquals(free, RotationDetent.presentation(false, locked, false, false, cardinal, display))
+            }
+        }
+    }
+
+    @Test
+    fun stationaryLandscapeUnlockAppliesImportedChoicesAfterHoldingTheOldFrame() {
+        // The display catches up while Android authority holds a previously pinned D0 frame.
+        for ((cardinal, display, pinnedQ) in listOf(Triple(270, 1, 3), Triple(90, 3, 1))) {
+            val pinned = RotationDetent.presentation(
+                false, RotationDetent.Presentation(), true, false, cardinal, 0,
+            )
+            assertEquals(RotationDetent.Presentation(chromeQuadrant = pinnedQ), pinned)
+            for (scope in listOf(false, true)) for (ui in listOf(false, true)) {
+                val held = RotationDetent.presentation(true, pinned, scope, ui, cardinal, display)
+                assertSame(pinned, held)
+                assertSame(held, RotationDetent.presentation(
+                    false, held, scope, ui, RotationDetent.NONE, display,
+                ))
+                assertEquals(RotationDetent.Presentation(uiPlacementLocked = ui),
+                    RotationDetent.presentation(false, held, scope, ui, cardinal, display))
+            }
+        }
+    }
+
+    @Test
+    fun resizedLayoutUsesActualGeometryEvenWithUiPlacementLocked() {
+        val held = RotationDetent.Presentation(uiPlacementLocked = true, uprightQuadrant = 1, beamQuadrant = 1)
+        assertFalse(RotationDetent.chromeLandscape(held, actualLandscape = false))
+        assertTrue(RotationDetent.chromeLandscape(held, actualLandscape = true))
+        for (quadrant in 0..3) for (landscape in listOf(false, true)) {
+            assertEquals(
+                landscape != (quadrant % 2 != 0),
+                RotationDetent.chromeLandscape(RotationDetent.Presentation(chromeQuadrant = quadrant), landscape),
+            )
+        }
+    }
+
+    @Test
+    fun systemAuthorityDoesNotChangeTheExactDetentTolerances() {
+        assertEquals(18, RotationDetent.COMMIT_TOLERANCE)
+        assertEquals(38, RotationDetent.HOLD_TOLERANCE)
+        assertEquals(0, RotationDetent.next(0, 71))
+        assertEquals(90, RotationDetent.next(0, 72))
+        assertTrue(RotationDetent.shouldCommit(0, 38))
+        assertFalse(RotationDetent.shouldCommit(0, 39))
     }
 
     private companion object {

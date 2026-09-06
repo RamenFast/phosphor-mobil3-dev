@@ -360,7 +360,7 @@ internal object OverflowPopoutPolicy {
 
     // Left, top, right, bottom in the CCW-rotated chrome's coordinates.
     fun rotatedInsets(physical: List<Int>, quadrant: Int): List<Int> =
-        List(4) { physical[Math.floorMod(it - quadrant, 4)] }
+        ChromeInsetPolicy.rotatedInsets(physical, quadrant)
 
     fun reverseDelta(delta: Float, dismissPx: Float): Float =
         if (dismissPx <= 0f) 0f else delta.coerceIn(-dismissPx, 0f)

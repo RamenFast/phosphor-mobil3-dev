@@ -6,9 +6,9 @@ import android.view.View
 import androidx.annotation.RequiresApi
 import androidx.compose.foundation.layout.WindowInsets
 import androidx.compose.foundation.layout.safeDrawing
-import androidx.compose.foundation.layout.union
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.DisposableEffect
+import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -20,18 +20,24 @@ import androidx.compose.ui.unit.Dp
 import kotlin.math.ceil
 import kotlin.math.sqrt
 
-private data class CornerRadii(
+internal data class CornerRadii(
     val topLeft: Int = 0,
     val topRight: Int = 0,
     val bottomLeft: Int = 0,
     val bottomRight: Int = 0,
 )
 
+internal val LocalChromeInsetQuadrant = compositionLocalOf { 0 }
+
 // ── Chrome insets — system-safe plus all four physical panel corners. ──
 // Rotation moves the S25's physical corner arcs onto the left/right chrome edges;
 // only accounting for the portrait bottom pair clips cards in landscape.
 @Composable
-fun chromeSafeDrawingInsets(horizontalPadding: Dp, verticalPadding: Dp): WindowInsets {
+fun chromeSafeDrawingInsets(
+    horizontalPadding: Dp,
+    verticalPadding: Dp,
+    appliedQuadrant: Int = LocalChromeInsetQuadrant.current,
+): WindowInsets {
     val view = LocalView.current
     val density = LocalDensity.current
     val layoutDirection = LocalLayoutDirection.current
@@ -44,56 +50,81 @@ fun chromeSafeDrawingInsets(horizontalPadding: Dp, verticalPadding: Dp): WindowI
         view.addOnLayoutChangeListener(listener)
         onDispose { view.removeOnLayoutChangeListener(listener) }
     }
-    val horizontalPaddingPx = with(density) { horizontalPadding.toPx() }
-    val verticalPaddingPx = with(density) { verticalPadding.toPx() }
+    val insets = ChromeInsetPolicy.safeInsets(
+        physicalSafe = listOf(
+            safeDrawing.getLeft(density, layoutDirection), safeDrawing.getTop(density),
+            safeDrawing.getRight(density, layoutDirection), safeDrawing.getBottom(density),
+        ),
+        corners = corners,
+        horizontalPaddingPx = with(density) { horizontalPadding.toPx() },
+        verticalPaddingPx = with(density) { verticalPadding.toPx() },
+        quadrant = appliedQuadrant,
+    )
+    return WindowInsets(left = insets[0], top = insets[1], right = insets[2], bottom = insets[3])
+}
+
+internal object ChromeInsetPolicy {
+    // Physical L/T/R/B into the local CCW frame, shared with the explicit popout path.
+    fun rotatedInsets(physical: List<Int>, quadrant: Int): List<Int> =
+        List(4) { physical[Math.floorMod(it - quadrant, 4)] }
+
+    fun safeInsets(
+        physicalSafe: List<Int>,
+        corners: CornerRadii,
+        horizontalPaddingPx: Float,
+        verticalPaddingPx: Float,
+        quadrant: Int,
+    ): List<Int> {
+        val odd = quadrant % 2 != 0
+        val physicalHorizontalPadding = if (odd) verticalPaddingPx else horizontalPaddingPx
+        val physicalVerticalPadding = if (odd) horizontalPaddingPx else verticalPaddingPx
+        val safeLeft = physicalSafe[0].toFloat()
+        val safeTop = physicalSafe[1].toFloat()
+        val safeRight = physicalSafe[2].toFloat()
+        val safeBottom = physicalSafe[3].toFloat()
+        val physicalLeft = ceil(
+            maxOf(
+                requiredInset(corners.topLeft, safeTop + physicalVerticalPadding, physicalHorizontalPadding),
+                requiredInset(corners.bottomLeft, safeBottom + physicalVerticalPadding, physicalHorizontalPadding),
+            )
+        ).toInt()
+        val physicalTop = ceil(
+            maxOf(
+                requiredInset(corners.topLeft, safeLeft + physicalHorizontalPadding, physicalVerticalPadding),
+                requiredInset(corners.topRight, safeRight + physicalHorizontalPadding, physicalVerticalPadding),
+            )
+        ).toInt()
+        val physicalRight = ceil(
+            maxOf(
+                requiredInset(corners.topRight, safeTop + physicalVerticalPadding, physicalHorizontalPadding),
+                requiredInset(corners.bottomRight, safeBottom + physicalVerticalPadding, physicalHorizontalPadding),
+            )
+        ).toInt()
+        val physicalBottom = ceil(
+            maxOf(
+                requiredInset(corners.bottomLeft, safeLeft + physicalHorizontalPadding, physicalVerticalPadding),
+                requiredInset(corners.bottomRight, safeRight + physicalHorizontalPadding, physicalVerticalPadding),
+            )
+        ).toInt()
+        return rotatedInsets(
+            listOf(
+                maxOf(physicalSafe[0], physicalLeft), maxOf(physicalSafe[1], physicalTop),
+                maxOf(physicalSafe[2], physicalRight), maxOf(physicalSafe[3], physicalBottom),
+            ),
+            quadrant,
+        )
+    }
 
     // Android exposes the corner radius, not the panel's exact clip path. Model
     // each side as a quarter circle and solve its sagitta at the content gutter;
     // ordinary edge padding supplies the rest without pushing chrome inward by all of r.
-    fun requiredInset(radiusPx: Int, perpendicularClearancePx: Float, edgePaddingPx: Float): Float {
+    private fun requiredInset(radiusPx: Int, perpendicularClearancePx: Float, edgePaddingPx: Float): Float {
         if (radiusPx <= 0) return 0f
         val x = perpendicularClearancePx.coerceIn(0f, radiusPx.toFloat())
         val distanceFromCenter = radiusPx - x
         val sagitta = radiusPx - sqrt(radiusPx.toFloat() * radiusPx - distanceFromCenter * distanceFromCenter)
         return (sagitta - edgePaddingPx).coerceAtLeast(0f)
     }
-
-    val safeLeft = safeDrawing.getLeft(density, layoutDirection).toFloat()
-    val safeTop = safeDrawing.getTop(density).toFloat()
-    val safeRight = safeDrawing.getRight(density, layoutDirection).toFloat()
-    val safeBottom = safeDrawing.getBottom(density).toFloat()
-    val physicalLeft = ceil(
-        maxOf(
-            requiredInset(corners.topLeft, safeTop + verticalPaddingPx, horizontalPaddingPx),
-            requiredInset(corners.bottomLeft, safeBottom + verticalPaddingPx, horizontalPaddingPx),
-        )
-    ).toInt()
-    val physicalTop = ceil(
-        maxOf(
-            requiredInset(corners.topLeft, safeLeft + horizontalPaddingPx, verticalPaddingPx),
-            requiredInset(corners.topRight, safeRight + horizontalPaddingPx, verticalPaddingPx),
-        )
-    ).toInt()
-    val physicalRight = ceil(
-        maxOf(
-            requiredInset(corners.topRight, safeTop + verticalPaddingPx, horizontalPaddingPx),
-            requiredInset(corners.bottomRight, safeBottom + verticalPaddingPx, horizontalPaddingPx),
-        )
-    ).toInt()
-    val physicalBottom = ceil(
-        maxOf(
-            requiredInset(corners.bottomLeft, safeLeft + horizontalPaddingPx, verticalPaddingPx),
-            requiredInset(corners.bottomRight, safeRight + horizontalPaddingPx, verticalPaddingPx),
-        )
-    ).toInt()
-    return safeDrawing.union(
-        WindowInsets(
-            left = physicalLeft,
-            top = physicalTop,
-            right = physicalRight,
-            bottom = physicalBottom,
-        )
-    )
 }
 
 private fun View.cornerRadii(): CornerRadii {

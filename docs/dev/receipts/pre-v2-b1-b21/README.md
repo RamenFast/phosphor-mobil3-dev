@@ -17,8 +17,10 @@ A B card passes only when its automated gate and named live receipt agree. A scr
 | B1, B18, B19 | `phase-08-gestures.md` | `phase-16-gestures.md` | frozen source review and exact clean 272-test artifact passed; six receipt hashes verified; installation and live gestures pending |
 | B10, B12, B13, B14 | `phase-09-ui.md` | `phase-16-ui.md` | committed 992c08a, separate reviews and exact 308-test APK passed; six artifact hashes verified; installation and Android acceptance pending |
 | B5, B11 | `phase-10-display.md` | `phase-16-display.md` | committed 7f70e29, separate reviews and exact 348-test APK passed; 33 native gate cases and six artifact hashes verified; installation and Android acceptance pending |
-| B15, B16, B20 | `phase-11-render.md` | `phase-16-render.md` | pending |
-| B17 | `phase-12-b17-settings.md` | `phase-16-settings.md` | pending |
+| B15, B16, B20 | `phase-11-render.md` | `phase-16-render.md` | exact two-commit artifact built and source/host reviewed; physical grid measurement, render checks and Ben visibility acceptance pending |
+| B17 | `phase-12-b17-settings.md` | `phase-16-settings.md` | committed859c674 exact debug artifact verified; partial emulator startup/persistence/PiP observed, native emulator rendering blocked; S25 preservation and full defaults remain OPEN |
+
+The supplemental [rotation and sheet-continuity receipt](phase-12-rotation.md) records the reviewed 420-case JVM correction, selected native/shared checks and remaining Android boundaries. It does not close a B card.
 
 The supplemental [exact Phase7 live checkpoint](phase-07-installed-live-checkpoint.md) records the settings-preserving upgrade, actual local/mic workflows, replay-verified log window and remaining gaps. Historical offline receipts retain their original timestamped limits.
 

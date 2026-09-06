@@ -78,8 +78,10 @@ class ScopeUiState {
                 controlsVisibilityRevision++
             }
         }
-    var uprightQuadrant by mutableIntStateOf(0)
-    var chromeQuadrant by mutableIntStateOf(0)
+    var systemRotationLocked by mutableStateOf(true)
+    var rotationPresentation by mutableStateOf(RotationDetent.Presentation())
+    val uprightQuadrant: Int get() = rotationPresentation.uprightQuadrant
+    val chromeQuadrant: Int get() = rotationPresentation.chromeQuadrant
     var viewLock by mutableStateOf(false)
     var latencyMode by mutableIntStateOf(2)
     var calDate by mutableStateOf("")

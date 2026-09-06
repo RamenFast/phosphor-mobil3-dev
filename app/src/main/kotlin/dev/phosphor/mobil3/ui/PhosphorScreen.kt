@@ -235,19 +235,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val density = LocalDensity.current
     val actualLandscape =
         LocalConfiguration.current.orientation == Configuration.ORIENTATION_LANDSCAPE
-    val scopeLocked = actions.isScopeRotationLocked()
-    val uiLocked = actions.isUiPlacementLocked()
-    // With a locked scope and following UI, rotate the whole chrome toward gravity.
-    val chromeQuadrant = if (scopeLocked && !uiLocked) state.chromeQuadrant else 0
-    // The chrome's layout profile follows the EFFECTIVE chrome orientation: activity
-    // orientation ⊕ container quadrant. An odd chrome rotation flips portrait↔landscape,
-    // so a landscape-held (but portrait-pinned) phone gets the landscape chrome inside
-    // the rotated container. UI-locked freezes the profile at its captured orientation.
-    val chromeLandscape = when {
-        uiLocked -> actions.lockedUiLandscape()
-        chromeQuadrant % 2 != 0 -> !actualLandscape
-        else -> actualLandscape
-    }
+    // Saved choices may change during import while Android holds the presentation.
+    val rotation = state.rotationPresentation
+    val uiLocked = rotation.uiPlacementLocked
+    val chromeQuadrant = rotation.chromeQuadrant
+    // Android may ignore an orientation request. Layout follows the observed frame.
+    val chromeLandscape = RotationDetent.chromeLandscape(rotation, actualLandscape)
     var consoleVisible by remember { mutableStateOf(true) }
     val consoleShown = ControlsVisibilityPolicy.visible(consoleVisible, state.controlsAlwaysVisible)
     LaunchedEffect(state.controlsAlwaysVisible) {
@@ -275,6 +268,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     val overflowGestureActive = remember { mutableStateOf(false) }
     val currentStyle = rememberUpdatedState(style)
     val currentReduced = rememberUpdatedState(reduced)
+    val currentChromeLandscape = rememberUpdatedState(chromeLandscape)
+    val currentUiLocked = rememberUpdatedState(uiLocked)
     val flickVelocityPx = with(density) { Dim.chromeFlickVelocity.toPx() }
     val popoutTravelPx = with(density) { Dim.popoutPullTravel.toPx() }
 
@@ -385,7 +380,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     }
 
     // Stable gesture hosts survive the recomposition triggered by beginning a pull.
-    // Their dynamic room/reduced values come through remembered state holders.
+    // Their current style, motion setting and applied frame use updated state holders.
     val settingsPullHost = remember(settingsReveal) {
         object : PullGestureHost {
             private var ignored = false
@@ -398,7 +393,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     // Locked landscape slides the card in sideways, so the travel is a
                     // width. Using height there made the drag feel like it had to cover
                     // the whole screen before the card appeared.
-                    if (chromeLandscape && uiLocked) {
+                    if (currentChromeLandscape.value && currentUiLocked.value) {
                         if (rootWidthPx > 0) rootWidthPx * 0.82f
                         else with(density) { 560.dp.toPx() }
                     } else if (rootHeightPx > 0) rootHeightPx * 0.82f
@@ -503,6 +498,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
           // custom layout swaps constraints on odd quadrants so the chrome lays out in
           // the transposed frame and pointer input stays correctly transformed. rootHeightPx
           // is measured INSIDE the container, so the settings pull travels in chrome space.
+          CompositionLocalProvider(LocalChromeInsetQuadrant provides chromeQuadrant) {
           Box(Modifier.fillMaxSize().uprightRotate(chromeQuadrant)) {
             Box(
                 Modifier
@@ -675,7 +671,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // The ⋯ overflow popout (Obsidian-persistent, anchored above the console).
             if (overflowComposed && sheet == Sheet.NONE) {
-                val physicalInsets = chromeSafeDrawingInsets(0.dp, 0.dp)
+                val physicalInsets = chromeSafeDrawingInsets(0.dp, 0.dp, appliedQuadrant = 0)
                 val direction = LocalLayoutDirection.current
                 val insets = OverflowPopoutPolicy.rotatedInsets(
                     listOf(
@@ -730,7 +726,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             val sheetLandscape = chromeLandscape != (sheetQuadrant % 2 != 0)
             CompositionLocalProvider(
                 LocalChromeLandscape provides sheetLandscape,
+                LocalChromeInsetQuadrant provides (chromeQuadrant + sheetQuadrant),
                 LocalUiPlacementLocked provides uiLocked,
+                LocalSheetEntryQuadrant provides sheetQuadrant,
                 LocalUiUpright provides 0, // content is already facing the viewer
             ) {
                 Box(Modifier.uprightRotate(sheetQuadrant)) {
@@ -786,6 +784,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             }
             } // inner chrome box (rootHeightPx / chrome-space layout)
           } // chrome container — rotates as a unit in the NEW mode
+          } // physical insets use the applied chrome frame
         } // outer box — holds the never-rotated scope SurfaceView
     }
 }

@@ -18,6 +18,39 @@ object RotationDetent {
         UNSPECIFIED,
     }
 
+    /** Applied presentation, independent of saved choices that an import can replace. */
+    data class Presentation(
+        val uiPlacementLocked: Boolean = false,
+        val uprightQuadrant: Int = 0,
+        val chromeQuadrant: Int = 0,
+        val beamQuadrant: Int = 0,
+    )
+
+    fun presentation(
+        systemRotationLocked: Boolean,
+        current: Presentation,
+        scopeLocked: Boolean,
+        uiLocked: Boolean,
+        cardinal: Int,
+        displayQuadrant: Int,
+    ): Presentation {
+        if (systemRotationLocked || cardinal !in setOf(0, 90, 180, 270)) return current
+        // Surface rotation runs opposite to the sensor cardinal. Convert only here.
+        val q = ((cardinal / 90 + displayQuadrant) % 4 + 4) % 4
+        return when {
+            uiLocked -> Presentation(
+                uiPlacementLocked = true,
+                uprightQuadrant = q,
+                beamQuadrant = if (scopeLocked) 0 else q,
+            )
+            scopeLocked -> Presentation(chromeQuadrant = q)
+            else -> Presentation()
+        }
+    }
+
+    fun chromeLandscape(presentation: Presentation, actualLandscape: Boolean): Boolean =
+        actualLandscape != (presentation.chromeQuadrant % 2 != 0)
+
     /**
      * How close to a NEW cardinal the phone must be turned before the chrome follows.
      * Tight, so leaving the current orientation takes a real turn rather than a lean.

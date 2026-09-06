@@ -65,3 +65,48 @@ An isolated emulator boot preflight passed using the existing project AVD, a rea
 Next acceptance requires the exact committed debug artifact, actual empty-data Application startup and visible defaults on the emulator, actual import/restore delivery and same-package S25 preference preservation. Use fresh stable private backups, retain Phase0 comparison and never clear the physical app. The current receipt does not claim installed bytes or any phone state change. Drift remains21 and the B17 ask remains open.
 
 Rollback uses a new revert commit for this scoped change, the retained exact Phase11 APK, and private preference restoration only if an update changed values. Do not overwrite newer user tuning or reset shared history.
+
+## Exact committed artifact and partial Android observations, 2026-09-06
+
+This append records observations after the source-only receipt above. It does not replace historical verdicts. **B17 remains OPEN.** The observations use the pre-rotation artifact, not the later rotation candidate.
+
+The exact settings implementation commit is `859c674b59ebe8655ac3965eb202baf6e8d2e841`, with shared dependency `aa09b8e14f8b8912b125e3312b4ddeec09404089`. The isolated build selected all regular tracked blobs from both exact commits: 364 mobile and 459 shared paths. Artifact input manifest SHA256 is `c41ff5ceffcd0a91f41d6085c6e2b1050e155788a03dc53a5fdc109ea2561d28`. It was not a working-tree export.
+
+Exact debug APK SHA256: `1323fa5e178ffe729bde65131fafc0575f4b2ec109b73103b0085647e17bb71d`.
+Package: `dev.phosphor.mobil3.debug`, version `2.0.0-debug`.
+Signer SHA256: `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`.
+The retained `emulator-defaults03/install.json` reports `status=ok` and identical local/installed APK hashes through the existing `dev/pm3` readback. This is an emulator debug installation, not a physical or signed production transfer.
+
+### Actual partial Android results
+
+The disposable API36 x86_64 emulator advertises arm64 translation. Empty-data Application startup wrote `hud_mode=1`. With emulator Vulkan disabled, Compose displayed `no source`, `xy45`, gain `1.83` with auto indication, and zero renderer FPS/segments. Native rendering did not initialize.
+
+Starting Android Settings produced an actual pinned PiP task and PAUSED Activity, not an onStop observation. Returning to the app and using ordinary Android BACK saved preferences. Parsing that captured Android XML verified the types and values of these 17 keys:
+
+| Keys | Captured values |
+|---|---|
+| room, mode, beam | AMOLED, 1, 7 |
+| hud_mode, band_mode | AUTO=1, AUTO=1 |
+| grid, fullscreen, scope_rotation_locked | false, true, true |
+| gain, auto_gain | 1.8332275, true |
+| focus, geom_amount, beam_random_range | 0.3, 0.6, `6.0,20.0` |
+| pip_auto_enter, controls_always_visible | true, false |
+| grid_data, double_tap_playback | false, true |
+
+No `custom_rgb` key was observed. Action-owned absent custom-count, LEG and linger keys do not prove visible controls or native setter delivery. Attempts to tap console overflow and SRC did not change the captured screenshots or expose useful Compose semantics. That observation remains unresolved, not a passed gesture or a diagnosed product defect.
+
+### Native emulator limits and preserved state
+
+Five bounded attempts used the same exact APK without product patches:
+
+1. SwiftShader Vulkan crashed in the guest translation path at `vk_common_SetDebugUtilsObjectNameEXT`.
+2. Lavapipe Vulkan reached the same translated failure.
+3. SwiftShader GLES with Vulkan disabled drew Compose, but device creation requested compute workgroups 65535 where the adapter allowed 0.
+4. Host GLES without a display failed emulator startup.
+5. Host GLES under private Xvfb initialized translated GLES3.1 llvmpipe, then `Surface::configure` panicked with `Invalid surface`.
+
+Process survival or a shell script's cleanup exit0 does not establish scope rendering. No native Android surface acceptance was obtained. Original AVD configuration and all seven image/config hashes were preserved. All owned emulator/display process groups stopped. Only their expendable temporary state was removed, with hash inventories retained. APKs, screenshots, logs, original images and private preference backups remain.
+
+Raw evidence is under ignored `dev/scratch/pre-v2-20260829T072841Z/phase-12/emulator-defaults01` through `emulator-defaults05`. Attempt03's `root-runtime-verdict.md`, `root-observed-defaults.txt`, `startup-prefs.xml`, `after-back-prefs.xml` and `install.json` bind the partial defaults claim. Attempt05's `root-runtime-verdict.txt` records the final renderer boundary.
+
+Physical same-package S25 preservation, visible full settings/LIGHT defaults, real import rollback/native refresh, LEG endpoints and physical gesture/render acceptance remain open. No physical installation or preference change follows from these emulator receipts.

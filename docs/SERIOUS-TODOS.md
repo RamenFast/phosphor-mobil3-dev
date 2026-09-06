@@ -67,3 +67,13 @@ The next two major core features are intentionally absent from this backlog unti
 - [ ] Check paused local seek position reporting: the mirror reads zero until playback resumes at the requested destination.
 - [x] Resolve the S25 logcat evidence gap. A temporary read-only logd client captured the complete B9 rerun. Raw replay matched exactly, and the helper was removed. No system file or mount changed. See the Phase 2 receipt addendum.
 - [ ] Investigate oversized-provider cancellation separately from the passed representative B4 path. A 20,001-file stress fixture caused an external-storage-provider ANR before app grant. Mic eventually won without stale local publication, but started about ten seconds after selection. The fixture was removed and normal picker recovery passed. Before another large stress run, assess cancellable provider queries and a bounded fixture. See the Phase 3 receipt.
+
+## Rotation and Android acceptance limits, 2026-09-06
+
+- [ ] Exercise system hold, stale setters, import while held, stationary unlock, all cardinal/app-lock combinations, local beam sign, asymmetric corners/RTL and short windows on the exact committed S25 candidate. The rotation receipt records source/host checks only.
+- [ ] Exercise real SheetHost partial drag followed by Back/close and late end/cancel/reversal/fling. Verify the committed base, continuation and exactly one completion across Compose scheduling/disposal. Actual state and Animatable host checks pass, but they do not deliver Android pointers.
+- [ ] Reconcile Activity recreation and retired gravity-listener authority. The current listener lifecycle can outlive an Activity, while applied presentation is transient. Keep this distinct from the bounded system-lock and dismissal corrections.
+- [ ] Disposition remote-geometry rotation separately. Remote geometry bypasses the local native view-rotation owner. Local beam checks and symmetric resting dots do not prove remote cardinal behavior.
+- [ ] Verify or correct actual header release velocity and cancellation semantics. Header velocity remains zero and cancellation uses the existing distance-based settle path. The committed-displacement fix does not close these precommit behaviors.
+- [ ] Distinguish an unreadable OS rotation setting from a known lock in user-facing status. Current fail-closed behavior is preserved, but its diagnostic text conflates the two states.
+- [ ] Complete B17 visible/native clean defaults on a supported Android runtime. The isolated translated emulator proves selected startup/persistence and PiP observations, not native rendering. Five backend attempts and their failures are preserved in the settings receipt.

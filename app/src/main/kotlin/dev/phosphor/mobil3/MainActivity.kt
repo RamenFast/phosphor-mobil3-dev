@@ -134,7 +134,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
      * feel twitchy.
      */
     private var committedCardinal = RotationDetent.NONE
-    private var lastRoutedQ = -1
+    private var rotationAuthorityNeedsRouting = true
     private var captureStatusReceiverRegistered = false
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
@@ -389,6 +389,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onResume() {
         super.onResume()
+        refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
         ui.volumeFraction = volumeFrac()
         // Resume only passive live sources once per process. Files and relays remain explicit choices.
@@ -413,6 +414,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        refreshRotationAuthority(force = true)
         // The SurfaceView is still full-bleed and receives its new buffer dimensions
         // through surfaceChanged. Only PiP's advertised frame needs explicit refresh.
         updatePictureInPictureParams()
@@ -571,6 +573,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private val uiTick = object : Runnable {
         override fun run() {
             ui.volumeFraction = volumeFrac()
+            refreshRotationAuthority()
             reassertSourceWake()
             controller?.let { c ->
                 val dur = c.duration
@@ -1461,6 +1464,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun isScopeRotationLocked(): Boolean = scopeRotationLockState
 
     override fun setScopeRotationLocked(locked: Boolean) {
+        if (!rotationAllowed()) return
         if (scopeRotationLockState == locked) return
         scopeRotationLockState = locked
         if (locked) lockedScopeOrientation = exactCurrentOrientation()
@@ -1477,6 +1481,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun lockedUiLandscape(): Boolean = lockedUiLandscape
 
     override fun setUiPlacementLocked(locked: Boolean) {
+        if (!rotationAllowed()) return
         if (uiPlacementLockState == locked) return
         if (locked) {
             lockedUiLandscape =
@@ -1493,7 +1498,37 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
+    /** Refresh before mutations, including callbacks retained before Android locked rotation. */
+    private fun rotationAllowed(): Boolean {
+        val locked = runCatching {
+            android.provider.Settings.System.getInt(
+                contentResolver,
+                android.provider.Settings.System.ACCELEROMETER_ROTATION,
+                0,
+            ) != 1
+        }.getOrDefault(true)
+        if (ui.systemRotationLocked != locked) rotationAuthorityNeedsRouting = true
+        ui.systemRotationLocked = locked
+        if (locked) {
+            // LOCKED holds Android's observed current orientation, not a saved cardinal.
+            if (requestedOrientation != ActivityInfo.SCREEN_ORIENTATION_LOCKED) {
+                requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_LOCKED
+            }
+        }
+        return !locked
+    }
+
+    private fun refreshRotationAuthority(force: Boolean = false) {
+        if (!rotationAllowed()) return
+        if (rotationAuthorityNeedsRouting || force) {
+            rotationAuthorityNeedsRouting = false
+            applyScopeRotationPreference()
+            routeOrientation(force = true)
+        }
+    }
+
     private fun applyScopeRotationPreference() {
+        if (!rotationAllowed()) return
         requestedOrientation = if (scopeRotationLockState) {
             if (lockedScopeOrientation in setOf(
                     ActivityInfo.SCREEN_ORIENTATION_PORTRAIT,
@@ -1579,40 +1614,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // q is the counter-clockwise quadrant from the pinned display to gravity-up.
     private fun routeOrientation(force: Boolean = false) {
-        val degrees = lastSensorDeg
-        if (degrees == OrientationEventListener.ORIENTATION_UNKNOWN) return
-        // NO LOCK is handled first and WITHOUT display.rotation. Once we pin the
-        // Activity the display stops rotating by definition, so a delta against it
-        // would collapse to zero and the detent could never see the phone turn again —
-        // it would latch on the first orientation and stay there. Gravity alone decides.
-        if (!scopeRotationLockState && !uiPlacementLockState) {
-            ui.uprightQuadrant = 0
-            ui.chromeQuadrant = 0
-            PhosphorNative.setViewRotation(0)
-            applyDetentedOrientation()
-            return
+        if (!rotationAllowed()) return
+        val next = RotationDetent.presentation(
+            systemRotationLocked = ui.systemRotationLocked,
+            current = ui.rotationPresentation,
+            scopeLocked = scopeRotationLockState,
+            uiLocked = uiPlacementLockState,
+            cardinal = committedCardinal,
+            displayQuadrant = currentDisplayRotation(),
+        )
+        if (next != ui.rotationPresentation || force) {
+            ui.rotationPresentation = next
+            PhosphorNative.setViewRotation(next.beamQuadrant)
         }
-        val deviceQ = ((degrees + 45) / 90) % 4          // clockwise from natural
-        val displayQ = currentDisplayRotation()
-        // Convert clockwise device rotation into the renderer's counter-clockwise quadrant convention.
-        val q = ((deviceQ - displayQ) % 4 + 4) % 4
-        if (q == lastRoutedQ && !force) return
-        lastRoutedQ = q
-        when {
-            uiPlacementLockState -> {
-                // Element-upright in BOTH UI-locked modes. Beam-to-gravity only when
-                // the scope is free; when the scope is also locked the beam stays put.
-                ui.uprightQuadrant = q
-                ui.chromeQuadrant = 0
-                PhosphorNative.setViewRotation(if (scopeRotationLockState) 0 else q)
-            }
-            scopeRotationLockState -> {
-                // Scope locked + UI follow: the whole chrome rotates to gravity; the
-                // scope stays pinned and upright (no beam rotation to gravity here).
-                ui.chromeQuadrant = q
-                ui.uprightQuadrant = 0
-                PhosphorNative.setViewRotation(0)
-            }
+        // The free Activity follows the committed gravity cardinal, not a display delta.
+        if (!scopeRotationLockState && !uiPlacementLockState) {
+            applyDetentedOrientation()
         }
     }
 
@@ -1624,17 +1641,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
      * its detent is.
      */
     private fun applyDetentedOrientation() {
+        if (!rotationAllowed()) return
         if (scopeRotationLockState || uiPlacementLockState) return
-        val systemAutoRotate = android.provider.Settings.System.getInt(
-            contentResolver,
-            android.provider.Settings.System.ACCELEROMETER_ROTATION,
-            0,
-        ) == 1
-        if (!systemAutoRotate) {
-            // The user asked their phone not to rotate. Honour that.
-            requestedOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
-            return
-        }
         val target = when (RotationDetent.screenTarget(committedCardinal)) {
             RotationDetent.ScreenTarget.PORTRAIT -> ActivityInfo.SCREEN_ORIENTATION_PORTRAIT
             RotationDetent.ScreenTarget.LANDSCAPE -> ActivityInfo.SCREEN_ORIENTATION_LANDSCAPE
@@ -1643,7 +1651,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             RotationDetent.ScreenTarget.REVERSE_LANDSCAPE ->
                 ActivityInfo.SCREEN_ORIENTATION_REVERSE_LANDSCAPE
             RotationDetent.ScreenTarget.UNSPECIFIED ->
-                ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
+                return // No credible gravity yet. Keep the current orientation.
         }
         if (requestedOrientation != target) {
             // Keep the detent decision observable during physical rotation tests.
@@ -1682,6 +1690,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         if (hasFocus) {
+            refreshRotationAuthority(force = true)
             applyImmersive()
             reassertSourceWake()
         }
