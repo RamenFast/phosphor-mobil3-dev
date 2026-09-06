@@ -82,3 +82,11 @@ The next two major core features are intentionally absent from this backlog unti
 
 - [ ] Resolve whole-sibling formatting drift across53 files before claiming the required workspace format gate. Keep the pinned shared implementation unchanged until the scope is explicitly dispositioned. The host-preflight receipt preserves all observed formatter differences.
 - [ ] Complete the planned public-publisher sanitization/confinement fixture and private scratch/estate-script omission proof before invoking publication or the force-link-state harness. Existing publisher code remains untouched and the fixture is absent. This is a release-path blocker, not permission to skip the gate.
+
+## 2026-09-06 observed phone follow-ups
+
+- [ ] Reproduce B8 against a stable live Spotify session with synchronized visible-symbol and source-state evidence. Stable checks passed, but the user-reported inversion is not resolved by this session.
+- [ ] Diagnose final-session disappearance after the Spotify Play request. Concurrent package-change callbacks were observed, not a proven cause.
+- [ ] Fix paused local seek publication: real drags sometimes report position zero until resume. Also recheck the captured source/mirror position disagreement.
+- [ ] Fix/retest replay at the last local item's end. One real Play attempt emitted immediate native unpause/pause and stayed at the end.
+- [ ] Finish the exact open B-card cases in the September 6 phone receipt. Do not replace real gesture, timeout, style, source/linger or emulator acceptance with host assertions.

@@ -419,3 +419,11 @@ The [Phase11 receipt](dev/receipts/pre-v2-b1-b21/phase-11-render.md#0917-utc-cal
 Ben rejected the console volume feature during S25 acceptance. The current experience and acceptance contracts now require its removal, without replacement or reserved row. Android retains volume ownership. This supersedes the older B13/B14 inline-volume requirements.
 
 The repeated B8 report concerns Spotify capture, not the already-correct local-file glyph. It remains open pending real source-state and visible-button agreement. Testing must keep phone MUSIC volume at or below 15 percent and leave PC audio silent.
+
+## 2026-09-06 S25 physical feedback and installed correction
+
+Ben repeated that the grid was unreadable. Three matched old/new captures at fixed low brightness now show minor-line contrast 8 to 43, with background unchanged. Shared 297e88b and mobile 6565585 are installed with verified bytes and signer. No user visibility approval is claimed.
+
+Actual SOURCE queue taps exposed a missing Media3 seek-to-item capability. The narrow correction passed Android tests and the real nested left-track selection. Paused seek position and last-item replay remain follow-ups. Stable-session Spotify checks matched their symbols, but the repeated B8 report remains open. The [phone receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md) records the final session-loss observation and all acceptance limits.
+
+419 JVM tests and 25 relevant shared renderer tests passed. Phone state was restored, except retaining the already-enabled grid and the new 2/15 music-volume ceiling. No PC audio, desktop service change or publication occurred. Drift remains 21.

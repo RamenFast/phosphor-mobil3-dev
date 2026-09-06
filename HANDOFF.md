@@ -1,71 +1,47 @@
-# Handoff: primetime cleanup
+# Handoff: S25 testing and three installed corrections
 
-**Date:** 2026-08-05
-**Branch:** `release/phosphor-2.0.0`
-**Rollback tag:** `checkpoint/phosphor-2.0.0-pre-primetime-cleanup`
-**Exact tested implementation commit:** `ba1871a51bfc8c8987f1aba0302d46ac6baebe32`
+**Updated:** 2026-09-06. **Status:** partial device acceptance, not release-ready and not all B1-B21 passed.
 
-The final receipt commit is documentation-only. The APK installed and field-tested on the S25 embeds the exact implementation commit above.
+## Read first
 
-## Current implementation
+- [Current phone receipt and per-card gaps](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md).
+- [Original execution plan](PRE-V2-B1-B21-EXECUTION-PLAN.md), especially Phases 15-17. Its old volume requirements are superseded.
+- [Receipt index](docs/dev/receipts/pre-v2-b1-b21/README.md).
 
-- One Android product with debug and release build types.
-- Debug package `dev.phosphor.mobil3.debug`; production package `dev.phosphor.mobil3`.
-- Minimum SDK 29, target and compile SDK 36, arm64-v8a.
-- Direct private preference state with a one-startup HUD migration and legacy-data scrub.
-- Developer-only `dev/pm3` v1 interface.
-- Empty first-run relay list and user-managed Tailscale endpoints.
-- Android and Tailscale own relay routing; the app has no process-wide Wi-Fi or mobile bind.
-- Privacy policy in `PRIVACY.md` and linked from the in-app manual.
-- No advertising, usage tracking, behavior tracking, or automatic reporting dependency.
-- Release provenance rejects dirty, untagged, unknown, mismatched, or dirty path-dependency source.
-- Canonical packaging verifies APK/AAB signers, bundletool, 16 KiB alignment, exact sources, build manifest, and checksums.
-- `dev/pm3 install` reads the installed base APK back and verifies its bytes and signer.
+## Ben's current boundaries
 
-## Verified
+Ben authorized comprehensive phone testing, then required quiet testing while sleeping. Keep Android MUSIC volume at **at most 15 percent**. It is currently **2/15, about 13 percent**. Do not restore the earlier higher volume. Keep PC audio silent. Do not manipulate the PIN/keyguard, publish, push, sign a release or deploy/restart Linux services under this phone-testing authorization.
 
-- Clean Android matrix: 76 unit tests, zero failures or errors; debug compilation, lint, assembly, and engine checks passed.
-- Mobile Rust: 34 tests, formatting, and strict Clippy passed.
-- PC relay: 26 tests, formatting, and strict Clippy passed.
-- Shell syntax and ShellCheck passed for `dev/pm3` and every release script.
-- Settings, routing-boundary, release-provenance, artifact-omission, false-green, and developer-CLI fixtures pass.
-- `scripts/test-pm3.sh`, `scripts/test-play-boundary.sh`, `scripts/check-play-boundary.sh source --json`, and `scripts/test-release-gates.sh` pass.
-- Exact S25 debug APK: package `dev.phosphor.mobil3.debug`, version `2.0.0-debug` (`2000000`), SHA-256 `582c57e5a0e29f9480be45a8832f5f40f114677ad93e14bdb428914562d46bf2`.
-- `dev/pm3` verified that the installed base APK bytes and signer exactly match the local artifact.
-- The S25 matrix passed upright landscape rotation, full-display capture grant, projection denial, microphone-before-projection denial, process death cleanup, true split-screen, relay audio over Tailscale, disconnect cleanup, and dormant-network checks.
-- The native device self-test passed with 3,999 segments and 42,197 lit pixels.
-- The canonical scoreboard is 18 of 21 gates green with zero skipped. Only approved signing, final-tag provenance, and the dependent release bundle are red.
-- Protected starting files still match `docs/dev/archive/2026-08-05-scope-reset/protected/SHA256SUMS`.
-- The public divergence ledger remains append-only relative to the rollback tag.
-- Detailed evidence is in `docs/dev/receipts/primetime-cleanup/phase-03-s25-validation.md`.
+The console volume slider is unwanted. It is removed, not moved elsewhere. Preserve the remaining UI design. The repeated Spotify play/pause-symbol and grid-visibility reports are priority requirements, not requests Ben should repeat.
 
-## Next execution order
+## Installed now
 
-1. Provision both approved release signing identities.
-2. Obtain explicit approval to create the final `v2.0.0` tag.
-3. Run `scripts/ship-check.sh --json --only=release.bundle`, then install and verify the exact signed production APK.
-4. Exercise the true keyguard callback only with explicit approval to manipulate the PIN-protected lock state.
-5. Preserve any wanted settings from `dev.phosphor.mobil3.fortress`, then uninstall it only after Ben explicitly approves the destructive package-data removal.
-6. Add Android 10 and large-screen field coverage on another device or emulator.
-7. Do not push or rewrite a protected remote branch without Ben's explicit approval.
+- Mobile implementation `6565585`, including volume removal `9b3cc62` and grid contract `9f65bd1`.
+- Shared implementation `297e88b`.
+- Debug package `dev.phosphor.mobil3.debug`, version `2.0.0-debug` (`2000000`).
+- APK SHA256 `43882efdc35d5e75a62ac3e5dce3817b05dd9e48109fdf8fe79e98fd10cc8f8a`.
+- Installed APK bytes and signer were verified through `dev/pm3 install`.
+- Exact APK and original installed rollback are retained under ignored `dev/scratch/phone-acceptance-20260906T1720Z/`.
 
-## External blockers
+Three corrections are installed:
+1. No console VOL row, percentage, spare row or app-owned volume adapter. The console contracts without restyling its other controls.
+2. Shared minor/axis grid coefficients are 0.035/0.08. Three matched low-brightness captures improved minor-line contrast from 8 to 43 sRGB code values while the background stayed at 1. This is measured improvement, not Ben's visual acceptance.
+3. SOURCE queue taps now reach the existing track-switch handler through the previously missing Media3 command. Actual selection of the nested left-only fixture passed.
 
-- Approved direct-release and Play-upload keystore inputs are not available in this workspace.
-- The final `v2.0.0` tag has not been approved or created.
-- The retired `dev.phosphor.mobil3.fortress` package remains installed; uninstalling it would delete package data.
-- The S25 has a real PIN, so a true lock-screen callback test requires explicit approval before changing keyguard state.
-- Play Console enrollment, declarations, listing assets, tester access, and submission require Ben.
-- Android 10 and large-screen compatibility need additional devices or emulators beyond the S25.
+## Verified and still open
 
-## Durable boundaries
+419 Android JVM tests, lint, builds, 15 renderer library cases, 10 actual GPU integration cases, selected strict Clippy, source privacy and protected archive checks passed. Actual phone evidence covers five earlier-candidate mic transitions, local seek stress, nested/corrupt file handling, fixed queue selection, left/stereo dBFS, a silent-gap gain hold, stable-session Spotify control/reattachment, permission recovery, temporary-allowed automatic PiP, existing relay connect/disconnect, and capture/mic recents removal.
 
-- The Gradle wrapper is the only Android build authority.
-- Release signing fails closed and verifies the expected certificate SHA-256.
-- Release builds fail closed on dirty, unknown, mismatched, or untagged source and on dirty sibling-engine source.
-- A selected required ship gate cannot report success by skipping unavailable evidence.
-- Relay traffic follows Android's Tailscale route and never binds the process to Wi-Fi or mobile data.
-- A fresh install makes no Phosphor-owned network connection until the user selects a saved PC relay.
-- The relay protocol is for Tailscale endpoints and must not be exposed to the public internet.
-- Historical decisions and receipts remain immutable at their existing paths.
-- The three protected starting files remain byte-identical in the private archive.
+**B8 is not closed.** Stable Spotify checks matched the icon to the session, but they did not reproduce Ben's reported inversion. A later final-candidate attempt lost the external Spotify session. No speculative glyph fix was made. Investigate that exact path before claiming completion.
+
+Paused local seek position can still report zero until resume. Last-item replay needs follow-up. Full multi-pointer timing, slider/style variants, timeout/PiP combinations, all source/linger lifecycle cases, clean-emulator defaults and fresh-Linux relay acceptance remain open. The current receipt names each limitation. Keep `drift: 21`.
+
+## Restoration
+
+Original tuning was restored byte-for-byte except retaining the grid's already-enabled state. Saved relay hosts are byte-identical. Test-only controls, double-tap, PiP auto-entry, grid-data and mode changes were restored. Android's original PiP denial and notification-listener membership were restored. Automatic brightness, timeout, screensaver and rotation policy were restored. Automatic brightness may adjust its live numeric value.
+
+Phone fixture files and owned diagnostic processes/files are cleaned up. The app was verified in no-source state and left in the background without PiP. MUSIC remains 2/15. Backups and raw evidence are private and retained. The final 240-second diagnostic window replayed 82,861 records exactly, with no fatal/ANR/panic candidates. Earlier failed/truncated logging attempts are explicitly not counted as complete evidence.
+
+## Release boundaries unchanged
+
+Approved signing inputs, final-tag approval and the dependent release bundle remain external blockers. No push, tag, signing, publication, production/Fortress removal or Play submission occurred. Historical August release evidence remains in `docs/dev/receipts/primetime-cleanup/`.

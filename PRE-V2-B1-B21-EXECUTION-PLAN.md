@@ -1,5 +1,7 @@
 # 🎯 Phosphor Mobile pre-v2 B1-B21 lived-repair plan
 
+**Current resume point:** See [HANDOFF.md](HANDOFF.md) and the [September 6 phone receipt](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-s25-2026-09-06.md). Final installed implementation is 6565585 with shared 297e88b. Physical acceptance is partial, not complete.
+
 **2026-09-06 user override:** Remove console volume entirely and preserve remaining UI design. Earlier B13/B14 volume steps are superseded by spec/EXPERIENCE.md. Prioritize real B8 Spotify symbol acceptance. Phone test volume stays at most 15 percent, including restoration. Keep PC audio silent.
 
 **Status:** original B1-B21 execution is active. Ben authorized connected-phone validation at 22:36 UTC. The desktop remains quiet. Exact candidate and rollback checks precede installation. Live Linux deployment remains separate.

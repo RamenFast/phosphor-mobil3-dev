@@ -1,5 +1,7 @@
 # Pre-v2 B1-B21 receipt index
 
+**Latest physical checkpoint:** [September 6 S25 testing and installed corrections](phase-15-16-s25-2026-09-06.md). Console volume is removed, the grid is measurably stronger, and actual SOURCE queue taps are repaired. B8 and the documented final-matrix gaps remain open.
+
 Status: B9 Phase 2 passed with replay-verified Android log evidence. Spotify permission recovery is recorded separately. Final behavior receipts remain pending.
 
 A B card passes only when its automated gate and named live receipt agree. A screenshot without state evidence is not a pass. A missing receipt keeps the card open.
