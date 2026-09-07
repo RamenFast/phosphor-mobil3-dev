@@ -1,5 +1,7 @@
 # Atomic requirement and changed-output traceability
 
+**04:40 continuation:** The [fresh local replay](phase-16-asus-local-replay-2026-09-07.md) supersedes prior-only device evidence for A1, C6, P2/P7 and the measured L3 import/authority workflow. Earlier rows retain their timestamped status. Other physical and capture/release limits remain unchanged.
+
 2026-09-07. Remaining-fixes continuation: capture61e0630,pinch18569be,listener743d8bb,fixture2367df3 and their guardrails. Not all historical B1-B21 acceptance.
 
 This is a mapping of observed checks, not a blanket end-to-end pass. The check level is explicit in every row.

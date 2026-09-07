@@ -566,3 +566,11 @@ Three fresh Activity replacements retained one gravity listener. Default-off emi
 Fresh fixture probe and both invalid gaps passed. Host input-manager failure returned its expected envelope and exit3.
 Fresh captured transport is blocked by the actual excluded-device Spotify Connect route, not relabeled as a pass.
 Every mapped ID now records whether its post-mapping result is fresh execution,prior-evidence revalidation or an exact blocker. Drift stays21.
+
+## 2026-09-07 fresh local acceptance after continuation
+
+The [new local receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-local-replay-2026-09-07.md) closes prior-only evidence for the measured gain,seek,camera and rotation-import workflows.
+Actual gain settled1.15 for loud and6.00 for quiet. Silence held6.00 through advancing time and EOF. Paused seek held9000ms in two system dumps.
+Actual slow3D pinches changed perspective and reversed at fixed gain1.83. Both disabled rotation controls rejected taps.
+Five landscape settings imported while portrait remained held. Android unlock produced landscape. Both original preferences and all URI grants were restored exactly.
+No production code changed. Spotify remained remote and was not controlled. Drift stays21.
