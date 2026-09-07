@@ -538,3 +538,13 @@ Android lock disabled both dependent controls, held portrait through a five-sett
 Exact implementation743d8bb is installed with readback-verified hash/signature.440 Android tests and lint pass.
 Both original preference files and permissions are restored, owned artifacts removed, and the app is stopped at MUSIC1/30.
 Remaining capture scenarios, physical poses, broader gesture timing and human/Linux/release gates remain open. Drift stays21.
+
+## 2026-09-07 final-artifact feedback-loop audit
+
+The [requirement matrix](dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md) records actual743d8bb workflows, not aggregate test claims.
+Ten capture commands produced ten glyph changes with no premature transitions. Listener loss and recovery updated actual transport availability.
+SOURCE dismissal sampled332ms blocked and340ms rebased, then slow gain rose1.833 to2.005. Final listener replacements retained one registration.
+Local paused seek held10848ms. VIEW LOCK held1.83. Delayed slow 3D pinches changed perspective reversibly without changing gain.
+An incorrect uniform-shrink hypothesis failed and is retained as excluded evidence. The camera controls perspective, not gain scaling.
+The input fixture now supports a bounded post-tap delay and structured argument errors. Both invalid gaps returned exit2 without input.
+Whole-result Android440, native73, relay43 and developer/privacy/release fixture gates passed. Exact phone state is restored. Drift stays21.

@@ -4,6 +4,8 @@
 
 ## Read first
 
+- **Final-artifact audit:** [Requirement-level real-path checks and exact cleanup](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md). The installed743d8bb replay produced ten capture commands, ten glyph changes and zero premature changes. Source-sheet timing, slow gain, 3D perspective, VIEW LOCK, paused seek and listener retirement were checked on that artifact. Remaining unobserved paths are explicit.
+
 - **Final installed checkpoint:** [Local gain, paused seek, held rotation import and exact restoration](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-final-checkpoint-2026-09-07.md). Source743d8bb is installed and readback verified. Temporary phone state is restored. Remaining scenario and human/release gates are explicit.
 
 - **Latest continuation:** [Activity sensor leak reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-sensor-retirement-2026-09-07.md). That tested candidate is superseded by the exact installed build below.440 Android tests pass. Ben confirmed exclusive ASUS ownership and autonomous takeover.

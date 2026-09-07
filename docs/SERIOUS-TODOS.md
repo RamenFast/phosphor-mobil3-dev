@@ -166,3 +166,12 @@ Still open: actual capture BUFFERING/CONNECTING and every sustained inversion va
 exact sheet/cardinal gesture deadlines and compositor scanout, human grid/design approval, and separately authorized Linux/release gates.
 The sheet-close fixture delivered no stage gesture callbacks, so its stable gain is not an exact333ms measurement.
 No current permission or cleanup blocker remains. Ben's dedicated-ASUS takeover authorization remains in force.
+
+## 2026-09-07 final-artifact audit limits
+
+The [new matrix](dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md) supersedes the sheet-callback gap above for one controlled portrait run.
+The source-sheet run now observed332ms blocked and340ms rebase. It did not sample exactly333ms or every orientation.
+The final APK passed real capture replay/recovery, local paused seek, slow gain, VIEW LOCK, camera perspective and same-process listener replacement checks.
+Actual capture BUFFERING/CONNECTING, sustained variants, physical gravity poses, broader timing, panel scanout and human design approval remain unobserved.
+Remote audio and release acceptance retain their explicit authorization boundaries. No branch merge, push, publication or deployment was performed.
+The malformed-input fixture error was corrected and verified on-device. No current audit cleanup blocker remains.

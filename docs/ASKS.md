@@ -97,3 +97,9 @@ PC audio remains silent and the S25 remains excluded.
 Ben clarified that the ASUS is an old test phone he does not actively use. Jcode is its only operator.
 Retake control after unexplained UI changes instead of pausing over suspected user activity.
 This supersedes the earlier availability hold, not the volume1/30 ceiling, S25 exclusion or release boundaries.
+
+## 2026-09-07 02:55 UTC: final-result acceptance audit
+
+The automatic continuation requested real observations for the whole result and a requirement-to-check map, without a user interruption.
+The [audit receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md) records final-artifact behavior, prior same-source checks and explicit unobserved paths separately.
+The final regression and exact restoration were completed. This does not convert remaining B1-B21 or release gates into passes.

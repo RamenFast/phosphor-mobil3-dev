@@ -46,4 +46,11 @@ With debug `PhosphorAcceptance` logging explicitly enabled, correlate actual `in
 `evaluated_ms`, card change times, and arbiter decisions. The guard is inclusive at 333ms.
 The first unblocked event rebases. Only later movement can apply a gain change.
 The fixture alone does not synchronize to Compose layout or establish exact timing.
+Version 4 adds `tap-pinch-wait tapX tapY gap` followed by the nine pinch arguments.
+The gap is validated within 0..1000ms before any input. It starts after the tap releases.
+This lets an exiting sheet release pointer ownership before the stage pinch begins.
+The measured card timestamp, not the requested gap, still determines acceptance.
+Invalid arguments return an error envelope and exit 2 before gesture injection.
+Input-manager or injection failures return an error envelope and exit 3.
+These errors name the next check instead of letting Android kill an uncaught exception.
 See the adjacent [receipt](../phase-15-16-gesture-recovery-2026-09-06.md) for observations and limits.
