@@ -72,3 +72,73 @@ It does not simulate a real device rejecting an injected gesture. The separate m
 The final live logs contain nine of the ten diagnostic event types. `capture_binding` is explicitly source-checked, not claimed as live-observed.
 Actual BUFFERING/CONNECTING, sustained variants, every physical orientation and deadline, live remote audio and release acceptance remain open.
 
+
+## Post-mapping rerun, 03:35-03:41 UTC
+
+The full Android gate ran with `--rerun-tasks`: all55 tasks executed,440 tests passed, and lint/assembly/checkEngine passed.
+Native73,relay43 and developer/privacy/release fixtures passed again. All30 named cases in this inventory passed in fresh XML.
+Each row below distinguishes fresh execution from retained-evidence revalidation. These are not interchangeable.
+
+A fresh captured-transport attempt reached generic capture with no local transport: zero routed requests and zero glyph changes.
+Opening Spotify on ASUS then showed active Spotify Connect playback on the excluded S25.
+No pause,play or device-transfer command was sent from Spotify. Taking over that route would cross the explicit exclusion.
+The earlier successful10-command final-artifact recording remains valid evidence, but is not relabeled as a successful fresh replay.
+
+| ID | Post-mapping check result |
+|---|---|
+| C1 | Fresh capture replay blocked by active Spotify Connect on excluded S25.0 local routed requests. Earlier10/10/0 oracle reran and passed. |
+| C2 | Fresh named source/policy cases passed. Actual generic capture showed no transport controls. Access was revoked and restored to baseline afterward. |
+| C3 | Fresh capture replay blocked by active Spotify Connect on excluded S25.0 local routed requests. Earlier10/10/0 oracle reran and passed. |
+| C4 | Fresh named source/policy cases passed. Actual generic capture showed no transport controls. Access was revoked and restored to baseline afterward. |
+| C5 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| C6 | Fresh noncapture policy case passed. Prior real paused-seek dumps were rechecked:PAUSED,10848ms,same timestamp. No new local decode run. |
+| C7 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| C8 | Fresh capture replay blocked by active Spotify Connect on excluded S25.0 local routed requests. Earlier10/10/0 oracle reran and passed. |
+| P1 | Fresh policy cases passed. Actual241-sample sheet pinch changed gain1.833 to2.0023825,rebase338ms,no deferred jump,max input lag12ms. |
+| P2 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| P3 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| P4 | Fresh policy cases passed. Actual241-sample sheet pinch changed gain1.833 to2.0023825,rebase338ms,no deferred jump,max input lag12ms. |
+| P5 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| P6 | Fresh actual broad VIEW LOCK pinch retained1.83. Source clamp remains0.1..7. |
+| P7 | Prior actual pixel oracle reran:perspective edge changed at least10px,returned within3px. No new3D source run. |
+| P8 | Fresh policy cases passed. Actual241-sample sheet pinch changed gain1.833 to2.0023825,rebase338ms,no deferred jump,max input lag12ms. |
+| L1 | Fresh actual same-process replacements0/1/2/3 each retained1 listener,PID1741. Named source test passed. |
+| L2 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| L3 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| D1 | Fresh actual cold launch and swipe with VERBOSE-capable reader:marker observed,0 diagnostic events. Named source test passed. |
+| D2 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| D3 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| D4 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| D5 | Fresh named JUnit cases passed. Linked earlier device evidence revalidated, not necessarily replayed. |
+| O-activity_player | Fresh live observation:2 events in postmap-sheet/capture logs. Generic capture has no routed transport. |
+| O-capture_binding | Direct source assertion reran successfully. No live event claimed. |
+| O-capture_callback | Referenced evidence exists and hashes were rechecked. Earlier observation retained, not a fresh physical replay. |
+| O-capture_glyph_draw | Referenced evidence exists and hashes were rechecked. Earlier observation retained, not a fresh physical replay. |
+| O-capture_mirror | Fresh live observation:1 events in postmap-sheet/capture logs. Generic capture has no routed transport. |
+| O-capture_observed_ui | Fresh live observation:1 events in postmap-sheet/capture logs. Generic capture has no routed transport. |
+| O-capture_publish | Fresh live observation:1 events in postmap-sheet/capture logs. Generic capture has no routed transport. |
+| O-capture_request | Referenced evidence exists and hashes were rechecked. Earlier observation retained, not a fresh physical replay. |
+| O-chrome | Fresh live observation:242 events in postmap-sheet/capture logs. Generic capture has no routed transport. |
+| O-gesture | Fresh live observation:241 events in postmap-sheet/capture logs. Generic capture has no routed transport. |
+| D6 | Referenced evidence exists and hashes were rechecked. Earlier observation retained, not a fresh physical replay. |
+| F1 | Fresh delayed physical fixture command completed with241 observed app gesture samples and gain change. |
+| F2 | Fresh device low/high invalid gaps returned parsed error envelopes,exit2 and0 input events. |
+| F3 | Fresh actual device probe returned ready,no input and exit0. |
+| F4 | Fresh real host CLI against Android stubs returned input_failed envelope and exit3. |
+| A1 | Referenced evidence exists and hashes were rechecked. Earlier observation retained, not a fresh physical replay. |
+| U1 | Fresh supported volume getter reports1/30. Excluded-device Spotify route was not taken over. |
+| U2 | Both preference files compared byte-for-byte after final launch. Four-line settings comparison passed. |
+| U3 | Fresh package dump:audio denied with baseline flags. Original4 notification listeners enabled. No URI grant added in this pass. |
+| U4 | Fresh getters confirmed stay-awake7,screensaver0,timeout600000ms. |
+| U5 | Asynchronous listener retirement settled,then actual source services were absent,projection null and only2 baseline preference files remained. |
+| U6 | Fresh installed base APK hash matches exact743d8bb artifact eba2a0bc. Rollback remains retained. |
+| U7 | Referenced evidence exists and hashes were rechecked. Earlier observation retained, not a fresh physical replay. |
+
+Fresh raw results: `postmap-android.log`, `postmap-native.log`, `postmap-relay.log`, `postmap-cli-results.json`,
+`postmap-sheet-analysis.json`, `postmap-sensor-result.txt`, `postmap-default-off.log`, `postmap-capture-analysis.json`,
+`postmap-restoration-settled.txt`, `postmap-oracle-results.json` and `postmap-atomic-checks.json`.
+The private `postmap-spotify.xml` establishes the active excluded-device route. Do not expose its personal media metadata.
+
+The whole-result automated rerun and named fresh physical checks passed. The broader fresh live matrix is not complete.
+Resume captured-transport testing only when Spotify is local to ASUS without commandeering playback on the excluded device.
+Prior local-gain/import/dolly observations remain labeled prior evidence. Physical gravity and release gates remain separate.

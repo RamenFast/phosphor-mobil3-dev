@@ -175,3 +175,12 @@ The final APK passed real capture replay/recovery, local paused seek, slow gain,
 Actual capture BUFFERING/CONNECTING, sustained variants, physical gravity poses, broader timing, panel scanout and human design approval remain unobserved.
 Remote audio and release acceptance retain their explicit authorization boundaries. No branch merge, push, publication or deployment was performed.
 The malformed-input fixture error was corrected and verified on-device. No current audit cleanup blocker remains.
+
+## 2026-09-07 03:38 UTC: fresh capture replay boundary
+
+The post-mapping real attempt reached generic capture with zero routed commands. It is not a transport pass.
+The actual Spotify screen on ASUS showed active Connect playback on the excluded S25.
+No Spotify play,pause or route-transfer command was sent. Do not take over excluded-device playback for an acceptance test.
+Repeat captured transport only when the source is local to ASUS without disturbing that route.
+Forced whole-result regression and fresh slow-pinch,VIEW LOCK,listener-retirement,default-off and fixture CLI checks passed.
+The [atomic receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-atomic-traceability-2026-09-07.md) distinguishes each fresh result from revalidated prior evidence.

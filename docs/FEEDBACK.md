@@ -557,3 +557,12 @@ The corrected VERBOSE-capable reader observed its marker and zero diagnostics du
 The real fixture on host Android stubs returned the expected input_failed envelope and exit3. This is not a device injection-failure claim.
 Nine diagnostic event types were observed live. The tenth, capture_binding, has a source check only.
 Both phone preference files were restored and compared again. MUSIC remains1/30. No production change or new release claim. Drift stays21.
+
+## 2026-09-07 post-mapping execution
+
+The complete Android gate reran with all55 tasks executed and440 passing cases. Native73,relay43 and CLI/privacy/release fixtures passed again.
+The new actual sheet sequence changed gain1.833 to2.0023825,rebase338ms,without a deferred jump. VIEW LOCK retained1.83.
+Three fresh Activity replacements retained one gravity listener. Default-off emitted zero events with a verified VERBOSE-capable reader.
+Fresh fixture probe and both invalid gaps passed. Host input-manager failure returned its expected envelope and exit3.
+Fresh captured transport is blocked by the actual excluded-device Spotify Connect route, not relabeled as a pass.
+Every mapped ID now records whether its post-mapping result is fresh execution,prior-evidence revalidation or an exact blocker. Drift stays21.

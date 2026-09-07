@@ -4,6 +4,8 @@
 
 ## Read first
 
+- **Post-mapping rerun:** The atomic receipt now reports every ID after a forced full regression and new physical checks. Slow gain again rose1.833 to2.0023825 without deferred travel. Three Activity replacements again retained one listener. Fresh Spotify transport replay is blocked: its actual Connect route is playing on the excluded S25. Do not transfer or pause that playback. Earlier capture evidence remains valid, not a fresh pass. ASUS test state is restored.
+
 - **Atomic traceability:** [47 requirements and changed outputs](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-atomic-traceability-2026-09-07.md). Each has a concrete check and observed result. The additional real-app default-off check passed with a VERBOSE reader. Host fixture failure returned its expected error envelope. Phone preferences were restored again. Source-only and unobserved live paths remain labeled.
 
 - **Final-artifact audit:** [Requirement-level real-path checks and exact cleanup](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md). The installed743d8bb replay produced ten capture commands, ten glyph changes and zero premature changes. Source-sheet timing, slow gain, 3D perspective, VIEW LOCK, paused seek and listener retirement were checked on that artifact. Remaining unobserved paths are explicit.
