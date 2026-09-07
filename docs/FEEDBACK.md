@@ -530,3 +530,11 @@ Same-process ASUS Activity replacements left one, two, then three active gravity
 Destruction now clears ownership and unregisters the listener. Queued callbacks and rotation actions reject retired owners.
 440 Android tests and lint passed. Three actual replacements now retain one listener with the same process.
 See the [sensor receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-sensor-retirement-2026-09-07.md). Drift stays21.
+
+## 2026-09-07 exact installed continuation checkpoint
+
+The [final receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-final-checkpoint-2026-09-07.md) records actual local gain reset, silence hold and paused-seek publication.
+Android lock disabled both dependent controls, held portrait through a five-setting landscape import, and applied landscape after unlock.
+Exact implementation743d8bb is installed with readback-verified hash/signature.440 Android tests and lint pass.
+Both original preference files and permissions are restored, owned artifacts removed, and the app is stopped at MUSIC1/30.
+Remaining capture scenarios, physical poses, broader gesture timing and human/Linux/release gates remain open. Drift stays21.

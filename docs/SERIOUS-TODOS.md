@@ -155,3 +155,14 @@ Rotation listener retirement remains under investigation. One live registration 
 The retained sensor-listener concern is reproduced and corrected. Settled connections grew1/2/3 before,
 and stayed1 through three Activity replacements afterward. Physical gravity poses and import presentation remain separate.
 Ben explicitly confirmed exclusive ASUS test ownership. The suspected-user-activity hold is resolved.
+
+## 2026-09-07 remaining acceptance after installed checkpoint
+
+Passed: actual loud-to-quiet local gain adaptation, silence hold, paused seek at9000ms, disabled Android-dependent controls,
+held landscape import in portrait, unlock-to-landscape, sensor listener retirement and exact final state restoration.
+See the [checkpoint](dev/receipts/pre-v2-b1-b21/phase-16-asus-final-checkpoint-2026-09-07.md).
+
+Still open: actual capture BUFFERING/CONNECTING and every sustained inversion variant, physical gravity/cardinal poses,
+exact sheet/cardinal gesture deadlines and compositor scanout, human grid/design approval, and separately authorized Linux/release gates.
+The sheet-close fixture delivered no stage gesture callbacks, so its stable gain is not an exact333ms measurement.
+No current permission or cleanup blocker remains. Ben's dedicated-ASUS takeover authorization remains in force.

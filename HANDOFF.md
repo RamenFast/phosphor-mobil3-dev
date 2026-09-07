@@ -4,7 +4,9 @@
 
 ## Read first
 
-- **Latest continuation:** [Activity sensor leak reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-sensor-retirement-2026-09-07.md). Current installed candidate SHA010a75f0 contains capture, pinch and sensor corrections.440 Android tests pass. Ben confirmed exclusive ASUS ownership and autonomous takeover.
+- **Final installed checkpoint:** [Local gain, paused seek, held rotation import and exact restoration](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-final-checkpoint-2026-09-07.md). Source743d8bb is installed and readback verified. Temporary phone state is restored. Remaining scenario and human/release gates are explicit.
+
+- **Latest continuation:** [Activity sensor leak reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-sensor-retirement-2026-09-07.md). That tested candidate is superseded by the exact installed build below.440 Android tests pass. Ben confirmed exclusive ASUS ownership and autonomous takeover.
 
 - **2026-09-07 slow-pinch checkpoint:** [Eight measured runs and correction](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md). Candidate SHA40f1a847 is installed, with capture fix61e0630 and slow-pinch accumulation. 438 tests and lint pass. Temporary state and remaining acceptance are not closed.
 
@@ -31,22 +33,24 @@ Keep ASUS MUSIC at **1/30 or lower**, with no increase. The excluded S25 was lef
 USB access resumed at 23:32 UTC. Ben explicitly requested persistent plugged-in wake settings.
 ASUS now has `stay_on_while_plugged_in=7`, `screensaver_enabled=0` and its unchanged 600000ms unplugged timeout.
 Do not restore those two requested settings as if they were temporary tests.
-The previous pass restored both preference files and stopped the app. The current continuation has temporary gesture preferences and opt-in debug observations enabled.
-Ben resolved the ownership question at02:25UTC: the ASUS is a dedicated test phone and Jcode is its only operator. Retake control autonomously. Temporary preferences and final exact-commit installation still require closeout.
+The current continuation restored both original preference files byte-for-byte and stopped the app. Debug observations are disabled and owned test artifacts are removed.
+Ben resolved the ownership question at02:25UTC: the ASUS is a dedicated test phone and Jcode is its only operator. Retake control autonomously. Exact installation and temporary-state restoration are complete for this checkpoint.
 Older S25 narratives below are historical. Their moving-trace recreation gap is superseded by the latest ASUS receipt.
 
 The console volume slider is unwanted. It is removed, not moved elsewhere. Preserve the remaining UI design. The repeated Spotify play/pause-symbol and grid-visibility reports are priority requirements, not requests Ben should repeat.
 
 ## Installed now on ASUS
 
-- Installed candidate contains capture correction `61e0630` and slow-pinch correction now committed as `18569be`.
+- Implementation `743d8bb`, including observed capture truth `61e0630` and slow pinch `18569be`.
 - Package `dev.phosphor.mobil3.debug`, version `2.0.0-debug`.
-- Installed/readback-verified APK SHA256: `40f1a8478d57213fd5d881244ced22012c76c35b46bb0bb11c02e790606cf984`.
-- Exact source-commit `18569be` was subsequently rebuilt with all 438 tests, lint, assembly and engine checks passing.
-- That **not-yet-installed** APK is `dev/scratch/asus-timeline-20260907T0113Z/pinch-18569be-committed.apk`.
-- Prepared APK SHA256: `86c7c39191d3e8e9ab05ecae6fdce88d56279dd0ed865df7ab0d6830e8649b14`.
-- Host pm3 fixtures, privacy boundary fixtures, isolated release-gate fixtures, mobile-native tests and relay tests pass. No release or Linux deployment occurred.
-- Phone availability, exact-commit reinstall and restoration remain pending. Keep MUSIC1/30 and the requested wake settings.
+- Installed APK SHA256: `eba2a0bc433055dec0a01650e49e5df0c4e8318fc1b227d4c50f8d933a3b57e5`.
+- Exact retained APK: `dev/scratch/asus-timeline-20260907T0113Z/final-743d8bb.apk`.
+- `dev/pm3 install` verified matching installed bytes and signer. Exact-source Android gate passed 440 tests, lint, assembly and checkEngine.
+- Earlier host-native 73, relay 43, mocked pm3, privacy and isolated release-gate fixtures passed. No deployment or release occurred.
+- Real source-item gain, silence hold, paused seek, disabled rotation controls, held import and unlock passed their named checks.
+- Final state: both baseline preference files restored exactly, app stopped, no source services/projection, MUSIC 1/30, requested wake settings preserved.
+- Owned test-tree permission, phone fixtures and opt-in diagnostics are removed. Three older URI grants remain unchanged.
+- Raw evidence and rollback stay private. This is not all B1-B21 acceptance or release approval.
 
 ## Previous ASUS checkpoint, superseded above
 
