@@ -1,6 +1,6 @@
-# Handoff: ASUS testing and two additional installed corrections
+# Handoff: ASUS capture and slow-pinch corrections
 
-**Updated:** 2026-09-06. **Status:** partial device acceptance, not release-ready and not all B1-B21 passed.
+**Updated:** 2026-09-07. **Status:** partial device acceptance, not release-ready and not all B1-B21 passed.
 
 ## Read first
 
@@ -22,19 +22,32 @@
 
 ## Ben's current boundaries
 
-**The S25 is excluded from further testing.** Ben supplied an ASUS_AI2202 Android14 replacement. Its current explicit route is recorded in the private ASUS helper under `dev/scratch/asus-acceptance-20260906T2051Z/`. Recheck identity before device actions. ASUS MUSIC is 0/30. No Phosphor package or app data existed on it before this session.
+**The S25 is excluded from further testing.** Ben supplied an ASUS_AI2202 Android14 replacement. The current verified USB serial is `NAAIB70036673ZC`. ASUS MUSIC is **1/30**, superseding the older muted baseline. No Phosphor package existed before this testing session, but the debug package is now installed.
 
-Ben authorized comprehensive phone testing, then required quiet testing while sleeping. Keep Android MUSIC volume at **at most 15 percent**. ASUS is muted at **0/30**. The excluded S25 was left at 2/15. Keep PC audio silent. Do not manipulate the PIN/keyguard, publish, push, sign a release or deploy/restart Linux services under this phone-testing authorization.
+Keep ASUS MUSIC at **1/30 or lower**, with no increase. The excluded S25 was left at 2/15. Keep PC audio silent. Do not manipulate the PIN/keyguard, publish, push, sign a release or deploy/restart Linux services under this phone-testing authorization.
 
 USB access resumed at 23:32 UTC. Ben explicitly requested persistent plugged-in wake settings.
 ASUS now has `stay_on_while_plugged_in=7`, `screensaver_enabled=0` and its unchanged 600000ms unplugged timeout.
 Do not restore those two requested settings as if they were temporary tests.
-The latest pass restored both app preference files byte-for-byte, removed owned test files and stopped the app.
+The previous pass restored both preference files and stopped the app. The current continuation has temporary gesture preferences and opt-in debug observations enabled.
+Do not overwrite later tuning: Settings and gain7 appeared outside the recorded fixture window. Root asked whether Ben is using the ASUS and awaits his answer.
+No further phone input, reinstall or preference restoration should occur until that ownership question is resolved.
 Older S25 narratives below are historical. Their moving-trace recreation gap is superseded by the latest ASUS receipt.
 
 The console volume slider is unwanted. It is removed, not moved elsewhere. Preserve the remaining UI design. The repeated Spotify play/pause-symbol and grid-visibility reports are priority requirements, not requests Ben should repeat.
 
 ## Installed now on ASUS
+
+- Installed candidate contains capture correction `61e0630` and slow-pinch correction now committed as `18569be`.
+- Package `dev.phosphor.mobil3.debug`, version `2.0.0-debug`.
+- Installed/readback-verified APK SHA256: `40f1a8478d57213fd5d881244ced22012c76c35b46bb0bb11c02e790606cf984`.
+- Exact source-commit `18569be` was subsequently rebuilt with all 438 tests, lint, assembly and engine checks passing.
+- That **not-yet-installed** APK is `dev/scratch/asus-timeline-20260907T0113Z/pinch-18569be-committed.apk`.
+- Prepared APK SHA256: `86c7c39191d3e8e9ab05ecae6fdce88d56279dd0ed865df7ab0d6830e8649b14`.
+- Host pm3 fixtures, privacy boundary fixtures, isolated release-gate fixtures, mobile-native tests and relay tests pass. No release or Linux deployment occurred.
+- Phone availability, exact-commit reinstall and restoration remain pending. Keep MUSIC1/30 and the requested wake settings.
+
+## Previous ASUS checkpoint, superseded above
 
 - Implementation `6183aa8`, including `1a0f6b9`. These add the LIGHT fast-TIMER guard repair and complete untouched-control exports.
 - Debug package `dev.phosphor.mobil3.debug`, version `2.0.0-debug`.

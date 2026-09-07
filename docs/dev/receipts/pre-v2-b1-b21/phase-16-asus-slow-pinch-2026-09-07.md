@@ -53,3 +53,19 @@ Private evidence remains in `dev/scratch/asus-timeline-20260907T0113Z/`:
 This proves the instrumented portrait overflow/console guard and slow two-pointer gain response.
 It does not prove compositor scanout timing, every card/orientation, physical locked/3D behavior, or all B1/B18/B19 variants.
 Final exact-commit installation, state restoration and the remaining rotation/auto-gain acceptance still belong to closeout.
+
+## 02:03 UTC host-only follow-through
+
+Exact source commit `18569bef1239c8606cd62ba3bebc4d44c66f1fe8` passed the full Android gate again.
+Its retained APK SHA256 is `86c7c39191d3e8e9ab05ecae6fdce88d56279dd0ed865df7ab0d6830e8649b14`.
+This APK is prepared, not installed. The previously verified candidate remains on the ASUS.
+
+Additional host checks passed:
+- 73 mobile-native tests and 43 relay tests, with offline locked Cargo resolution.
+- pm3 developer CLI fixtures using mocked ADB, with the original built APK restored byte-for-byte afterward.
+- Production privacy boundary fixtures and isolated release-provenance/artifact gate fixtures.
+- Four negative analyzer checks rejected wrong sequence decisions, gain during blocking, gain on rebase and unpaired timestamps.
+
+These checks caused no phone input, deployment, service restart, signing, release or push.
+The exact logs and negative-check JSON are beside the physical evidence in the private scratch directory.
+Remaining work is phone acceptance and restoration after the unanswered phone-availability question.
