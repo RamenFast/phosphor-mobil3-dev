@@ -4,6 +4,7 @@
 
 ## Read first
 
+- [Real ASUS Spotify capture and permission restoration](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-spotify-2026-09-07.md). Repeated source/mirror/glyph agreement passed. B8 remains unreproduced, not fixed.
 - [All eleven grid modes, asymmetric trace angles and raw channels](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-mode-grid-2026-09-07.md). Pixel-based mode checks and left/right labels passed on ASUS, with exact restoration.
 - [ASUS moving-trace recreation and version 2 physical gestures](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md). Two complete surface cycles and held-margin checks passed. Exact physical 333ms remains open.
 - [ASUS clean-start acceptance and two installed repairs](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-asus-2026-09-06.md).

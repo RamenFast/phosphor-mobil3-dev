@@ -500,3 +500,12 @@ GRID DATA off removed both rows. GRID off left a clear screenshot region at maxi
 An initial verifier incorrectly treated onStop preferences as immediate mode state. Actual live HUD labels supplied the correct evidence.
 Both app preference files were restored byte-for-byte. Audio stayed muted, test files were removed and requested wake settings remain enabled.
 This narrows the render matrix, not B8, exact physical timing or all release gates. See the [mode receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-mode-grid-2026-09-07.md). Drift stays21.
+
+## 2026-09-07 00:18 UTC: real ASUS Spotify capture
+
+Spotify was logged in and explicitly routed to This phone. Muted real playback, the initial Pause and four further capture button transitions matched source state, mirror state and visible glyph.
+Before notification access the console withheld unsupported transport. After confirmed revocation it returned to the generic capture face.
+The ASUS secure listener cache lagged authoritative revocation. Both the original cache bytes and authoritative four-component set were restored.
+The temporary audio grant and ONE_TIME flag required a normal while-in-use grant, cancelled projection and targeted revoke to restore the original denied flags.
+No global permission reset or account change occurred. Phosphor preferences were restored byte-for-byte, projection stopped and Spotify left paused.
+B8 still did not reproduce. No speculative patch or overall acceptance is claimed. See the [capture receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-spotify-2026-09-07.md). Drift stays21.

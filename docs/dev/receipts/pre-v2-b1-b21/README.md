@@ -152,3 +152,7 @@ Do not change `drift` from 21 to 0 until every B1-B21 row has its final PASS rec
 ### ASUS complete mode-grid matrix, 2026-09-07 00:03 UTC
 
 [Mode-grid receipt](phase-16-asus-mode-grid-2026-09-07.md): all eleven actual grid orientations, four asymmetric trace axes, independent left/right peak labels and both opt-outs. Native screenshot measurements pass. Broader cardinal/source and human gates remain open.
+
+### Real ASUS Spotify capture, 2026-09-07 00:18 UTC
+
+[Spotify receipt](phase-16-asus-spotify-2026-09-07.md): repeated actual source/mirror/glyph agreement, no-listener and post-revocation fallback, exact permission/tuning restoration. B8 remains unreproduced. Stable transitions are not a claimed fix.

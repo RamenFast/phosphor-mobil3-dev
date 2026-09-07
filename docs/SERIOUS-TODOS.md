@@ -128,3 +128,10 @@ The full eleven-mode grid matrix, asymmetric XY/Xy45 trace rotation, both raw ch
 These supersede those specific untested variants. System-lock/import/cardinal presentation, broader source/item auto-gain resets,
 translated-emulator failures, exact physical333ms, B8 and human/release gates remain open.
 The [mode receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-mode-grid-2026-09-07.md) records pixel measurements and test assumptions without declaring complete B20 or visual signoff.
+
+## 2026-09-07 00:18 UTC: ASUS capture reproduction result
+
+Real logged-in Spotify capture, the initial Pause and four later transitions matched actual source/mirror states and UI glyphs.
+No-listener fallback and eventual post-revocation fallback also appeared. Revocation latency was not bounded.
+B8 remains unreproduced, with no speculative fix. See the [capture receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-spotify-2026-09-07.md).
+The original permission states, listener membership/cache and app tuning were restored. Spotify remains paused on the same track.
