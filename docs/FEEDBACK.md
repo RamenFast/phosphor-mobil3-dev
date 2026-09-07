@@ -490,3 +490,13 @@ The actual ASUS free-stage, bottom-band latch, held-margin and adjacent-stage co
 An initial margin trajectory left the protected margin, so it did not establish held-margin rejection. The corrected fixed-height comparison did.
 No app-runtime change or installation was needed. Tuning/runtime preferences were restored byte-for-byte, audio stayed muted and owned files were removed.
 Exact physical 333ms, B8 and broader acceptance remain open. The [receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md) records limits and restoration. Drift stays 21.
+
+## 2026-09-07 00:03 UTC: eleven-mode grid and asymmetric trace checks
+
+All eleven modes passed actual grid-orientation measurements: only Xy45 was diagonal, with the other ten Cartesian.
+Left/right PCM fixtures produced measured axes 0°/90° in XY and −45°/+45° in Xy45.
+The real raw-meter rows labeled the active channel 0.100/−20.0dBFS and the silent channel 0.000/−∞.
+GRID DATA off removed both rows. GRID off left a clear screenshot region at maximum red intensity1.
+An initial verifier incorrectly treated onStop preferences as immediate mode state. Actual live HUD labels supplied the correct evidence.
+Both app preference files were restored byte-for-byte. Audio stayed muted, test files were removed and requested wake settings remain enabled.
+This narrows the render matrix, not B8, exact physical timing or all release gates. See the [mode receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-mode-grid-2026-09-07.md). Drift stays21.

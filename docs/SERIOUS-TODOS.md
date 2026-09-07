@@ -121,3 +121,10 @@ The ASUS-adapted finite driver passed a no-input probe, free pinch, latched bott
 held console-margin rejection and an adjacent allowed-stage comparison. Seventeen host timing tests passed.
 The exact physical 333ms timestamp remains unobserved, not a failed product check or a completed test.
 B8, exhaustive variants and human/release gates remain open. See the [new receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md).
+
+## 2026-09-07 00:03 UTC: narrower render variants
+
+The full eleven-mode grid matrix, asymmetric XY/Xy45 trace rotation, both raw channel labels and GRID/GRID DATA opt-outs now pass on ASUS.
+These supersede those specific untested variants. System-lock/import/cardinal presentation, broader source/item auto-gain resets,
+translated-emulator failures, exact physical333ms, B8 and human/release gates remain open.
+The [mode receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-mode-grid-2026-09-07.md) records pixel measurements and test assumptions without declaring complete B20 or visual signoff.

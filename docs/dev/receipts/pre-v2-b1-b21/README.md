@@ -148,3 +148,7 @@ Do not change `drift` from 21 to 0 until every B1-B21 row has its final PASS rec
 ### ASUS USB continuation, 2026-09-06 23:37 UTC
 
 [Recreation and gesture receipt](phase-15-16-asus-recreation-2026-09-06.md): 18 moving-trace screenshots across two full native surface cycles, ASUS-dimensioned physical gesture checks, fixture bounds regressions, exact restoration and requested keep-awake settings. Physical 333ms and broader gates remain open.
+
+### ASUS complete mode-grid matrix, 2026-09-07 00:03 UTC
+
+[Mode-grid receipt](phase-16-asus-mode-grid-2026-09-07.md): all eleven actual grid orientations, four asymmetric trace axes, independent left/right peak labels and both opt-outs. Native screenshot measurements pass. Broader cardinal/source and human gates remain open.
