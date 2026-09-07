@@ -26,6 +26,22 @@ class StageGesturePolicyTest {
         assertFalse(StageChromeBounds().blocks(clear, 24f, 0L))
     }
 
+    @Test fun observationPreservesFinalMotionTimestampAndNeverExtendsTheGuard() {
+        val (chrome, owner) = mounted()
+        chrome.motion(card, owner, true, 2000L)
+        chrome.motion(card, owner, false, 2100L)
+        chrome.sample(card, owner, cardRect, 2200L)
+        assertTrue(chrome.observation().contains("Console=2100,false,true,100.0,500.0,300.0,600.0"))
+        repeat(5) { chrome.observation() }
+        assertTrue(chrome.blocks(clear, 24f, 2433L))
+        assertFalse(chrome.blocks(clear, 24f, 2434L))
+        chrome.dismiss(card, owner, 3000L)
+        assertTrue(chrome.observation().contains("Console=3000,false,false,"))
+        chrome.sample(card, Any(), cardRect, 3200L)
+        assertTrue(chrome.blocks(clear, 24f, 3333L))
+        assertFalse(chrome.blocks(clear, 24f, 3334L))
+    }
+
     @Test fun movementBlocksThrough332And333ButNot334Milliseconds() {
         val (chrome, owner) = mounted()
         chrome.sample(card, owner, cardRect.translate(0f, -20f), 2000L)

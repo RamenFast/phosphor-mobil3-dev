@@ -16,6 +16,12 @@ internal class StageChromeBounds {
 
     private val slots = Card.entries.map { Slot() }
 
+    /** Read-only timing evidence, formatted only by the enabled debug observer. */
+    fun observation(): String = slots.mapIndexed { index, slot ->
+        val rect = slot.bounds?.let { "${it.left},${it.top},${it.right},${it.bottom}" } ?: "none"
+        "${Card.entries[index]}=${slot.changedAt ?: -1},${slot.moving},${slot.owner != null},$rect"
+    }.joinToString(" ")
+
     fun mount(card: Card, owner: Any, now: Long) {
         slots[card.ordinal].apply {
             this.owner = owner

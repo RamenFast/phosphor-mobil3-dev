@@ -1,5 +1,7 @@
 package dev.phosphor.mobil3.ui
 
+import dev.phosphor.mobil3.AcceptanceTrace
+
 import android.view.View
 import android.os.SystemClock
 import androidx.compose.animation.AnimatedVisibility
@@ -359,10 +361,15 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
 
                 val physicalPoints = pressed.mapNotNull { host.physicalPosition(it.position) }
                 val root = host.physicalBounds().takeIf { physicalPoints.size == pressed.size }
+                val evaluatedAt = SystemClock.uptimeMillis()
                 val scopeFrame = policy.frame(
                     physicalPoints, root, Dim.bottomGestureBand.toPx(),
-                    host.chromeBlocks(physicalPoints, SystemClock.uptimeMillis()),
+                    host.chromeBlocks(physicalPoints, evaluatedAt),
                 )
+                AcceptanceTrace.record("gesture") {
+                    "evaluated_ms=$evaluatedAt input_ms=${pressed.first().uptimeMillis} pointers=${pressed.size} " +
+                        "decision=$scopeFrame gain=${host.currentGain()} locked=${host.gainLocked()} mode=$mode"
+                }
 
                 // This existing door is an exception to scope rejection, not a second owner.
                 if (pressed.size == 1 && bottomCandidate && physicalOrigin != null) {

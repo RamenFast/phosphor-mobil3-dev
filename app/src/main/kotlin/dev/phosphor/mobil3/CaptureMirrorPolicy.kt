@@ -3,6 +3,7 @@ package dev.phosphor.mobil3
 import android.media.session.PlaybackState
 
 internal object CaptureMirrorPolicy {
+    const val OBSERVED_STATE = "phosphor.capture.observed_state"
     fun playing(state: Int): Boolean = state in PlaybackService.ACTIVE_PLATFORM_STATES
 
     fun available(state: Int): Boolean = state != PlaybackState.STATE_NONE && state != PlaybackState.STATE_ERROR
@@ -14,8 +15,8 @@ internal object CaptureMirrorPolicy {
         available(state) && durationMs in 1..(Long.MAX_VALUE / 1000) &&
             actions and PlaybackState.ACTION_SEEK_TO != 0L
 
-    fun displayedPlaying(capture: Boolean, isPlaying: Boolean, playWhenReady: Boolean): Boolean =
-        if (capture) playWhenReady else isPlaying
+    fun displayedPlaying(capture: Boolean, isPlaying: Boolean, observedState: Int): Boolean =
+        if (capture) playing(observedState) else isPlaying
 
     fun canPlayPause(state: Int, actions: Long): Boolean {
         val direct = if (playing(state)) PlaybackState.ACTION_PAUSE else PlaybackState.ACTION_PLAY

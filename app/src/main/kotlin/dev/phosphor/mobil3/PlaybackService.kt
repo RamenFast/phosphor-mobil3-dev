@@ -413,6 +413,7 @@ class PlaybackService : MediaSessionService() {
         clearExternalCaptureController()
         unregisterCaptureSessionsListener()
         capturePlayer.reset()
+        publishObservedCaptureState(PlatformPlaybackState.STATE_NONE)
     }
 
     private fun unregisterCaptureSessionsListener() {
@@ -469,6 +470,9 @@ class PlaybackService : MediaSessionService() {
             }
         )
         if (chosen !== externalCaptureController) {
+            AcceptanceTrace.record("capture_binding") {
+                "old=${System.identityHashCode(externalCaptureController)} new=${System.identityHashCode(chosen)}"
+            }
             clearExternalCaptureController()
             val isCurrent = captureBinding.bind(chosen)
             if (chosen != null) {
@@ -478,6 +482,9 @@ class PlaybackService : MediaSessionService() {
                     }
 
                     override fun onPlaybackStateChanged(state: PlatformPlaybackState?) {
+                        AcceptanceTrace.record("capture_callback") {
+                            "owner=${System.identityHashCode(chosen)} current=${captureActive && isCurrent()} state=${state?.state}"
+                        }
                         if (captureActive && isCurrent()) {
                             publishCaptureMetadata(chosen.metadata)
                             publishCapturePlayback(state)
@@ -583,6 +590,9 @@ class PlaybackService : MediaSessionService() {
 
     private fun publishCapturePlayback(state: PlatformPlaybackState?) {
         if (!captureActive) return
+        AcceptanceTrace.record("capture_publish") {
+            "owner=${System.identityHashCode(externalCaptureController)} state=${state?.state} actions=${state?.actions}"
+        }
         if (state == null || !CaptureMirrorPolicy.available(state.state)) publishCaptureMetadata(null)
         capturePlayer.updatePlayback(
             state = state?.state ?: PlatformPlaybackState.STATE_NONE,
@@ -590,6 +600,17 @@ class PlaybackService : MediaSessionService() {
             positionMs = state?.position ?: C.TIME_UNSET,
             positionUpdateElapsedMs = state?.lastPositionUpdateTime ?: SystemClock.elapsedRealtime(),
         )
+        publishObservedCaptureState(state?.state ?: PlatformPlaybackState.STATE_NONE)
+    }
+
+    private fun publishObservedCaptureState(state: Int) {
+        val current = session ?: return
+        val extras = current.sessionExtras
+        if (extras.containsKey(CaptureMirrorPolicy.OBSERVED_STATE) &&
+            extras.getInt(CaptureMirrorPolicy.OBSERVED_STATE) == state) return
+        current.setSessionExtras(Bundle(extras).apply {
+            putInt(CaptureMirrorPolicy.OBSERVED_STATE, state)
+        })
     }
 
     /** Resolve either platform Bitmap or ART_URI off-main, then publish compressed bytes. */
@@ -648,6 +669,7 @@ class PlaybackService : MediaSessionService() {
     }.getOrNull()
 
     private fun routeCapturePlayPause(play: Boolean) {
+        AcceptanceTrace.record("capture_request") { "play=$play" }
         localPlayer.recordTransportIntent(play)
         val controller = externalCaptureController ?: return
         val state = controller.playbackState ?: return
@@ -1655,6 +1677,7 @@ internal class CaptureMirrorPlayer(looper: android.os.Looper) : SimpleBasePlayer
         platformState = state
         this.actions = if (CaptureMirrorPolicy.available(state)) actions else 0L
         playing = CaptureMirrorPolicy.playing(state)
+        AcceptanceTrace.record("capture_mirror") { "state=$state playing=$playing actions=${this.actions}" }
         this.positionMs = positionMs
         this.positionUpdateElapsedMs = positionUpdateElapsedMs
         invalidateState()

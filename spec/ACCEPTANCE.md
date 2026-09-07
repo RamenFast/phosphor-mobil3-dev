@@ -2,6 +2,17 @@
 
 A release passes only when every applicable must-level check below has evidence.
 
+## Local acceptance observations
+
+Debug builds may emit opt-in `PhosphorAcceptance` logcat observations for B1 and B8.
+The default is off. Release uses a no-op source-set implementation with no logger.
+Record monotonic uptime, controller identity, numeric playback state, drawn glyph choice,
+chrome timestamps and geometry, and gesture decisions. Do not record metadata, audio,
+account identifiers or relay endpoints. This adds no receiver, command or runtime administration API.
+Correlate a glyph draw with screenshots or recordings. A draw callback is not proof of panel scanout.
+Judge gesture timing from actual Compose evaluation timestamps, not requested shell delays.
+Restore the log property after testing. Instrumented timing must disclose measurement overhead.
+
 ## A. Product boundary
 
 - [ ] One production package exists: `dev.phosphor.mobil3`.

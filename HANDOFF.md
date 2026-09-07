@@ -4,6 +4,9 @@
 
 ## Read first
 
+- **2026-09-07 continuation:** [Capture prediction race reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md). Five premature glyph flips before the fix, zero across seven routed commands afterward. This supersedes the blanket “unreproduced” description for that transient failure only. Gesture and other acceptance work is ongoing.
+- **Current volume override:** Ben set ASUS MUSIC to **1/30** and asked that it not be raised. Do not restore historical 0/30. S25 exclusion and requested keep-awake remain binding.
+
 - [Real ASUS Spotify capture and permission restoration](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-spotify-2026-09-07.md). Repeated source/mirror/glyph agreement passed. B8 remains unreproduced, not fixed.
 - [All eleven grid modes, asymmetric trace angles and raw channels](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-mode-grid-2026-09-07.md). Pixel-based mode checks and left/right labels passed on ASUS, with exact restoration.
 - [ASUS moving-trace recreation and version 2 physical gestures](docs/dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md). Two complete surface cycles and held-margin checks passed. Exact physical 333ms remains open.

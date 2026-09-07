@@ -48,6 +48,7 @@ import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.viewinterop.AndroidView
 import dev.phosphor.mobil3.PhosphorNative
+import dev.phosphor.mobil3.AcceptanceTrace
 import kotlinx.coroutines.delay
 
 /** Layout handles stay at this boundary. The arbiter sees only root-space numbers. */
@@ -523,7 +524,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                         stageGeometry.refresh(now)
                                         return stageGeometry.bounds.blocks(
                                             points, with(density) { StageGesturePolicy.MARGIN_DP.dp.toPx() }, now,
-                                        )
+                                        ).also { blocked ->
+                                            AcceptanceTrace.record("chrome") {
+                                                "evaluated_ms=$now blocked=$blocked ${stageGeometry.bounds.observation()}"
+                                            }
+                                        }
                                     }
 
                                     override fun currentGain() = state.gain

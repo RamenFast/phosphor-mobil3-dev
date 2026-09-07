@@ -13,12 +13,12 @@ class CaptureMirrorPolicyTest {
             PlaybackState.STATE_SKIPPING_TO_PREVIOUS, PlaybackState.STATE_SKIPPING_TO_QUEUE_ITEM)
         for (state in active) {
             assertTrue(CaptureMirrorPolicy.playing(state))
-            assertTrue(CaptureMirrorPolicy.displayedPlaying(true, false, CaptureMirrorPolicy.playing(state)))
+            assertTrue(CaptureMirrorPolicy.displayedPlaying(true, false, state))
         }
         for (state in listOf(PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED,
             PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR)) assertFalse(CaptureMirrorPolicy.playing(state))
-        assertFalse(CaptureMirrorPolicy.displayedPlaying(true, false, false))
-        assertTrue(CaptureMirrorPolicy.displayedPlaying(true, true, true))
+        assertFalse(CaptureMirrorPolicy.displayedPlaying(true, false, PlaybackState.STATE_PAUSED))
+        assertTrue(CaptureMirrorPolicy.displayedPlaying(true, true, PlaybackState.STATE_PLAYING))
     }
 
     @Test fun missingNotificationAccessCannotReproduceOptimisticInvertedToggle() {
@@ -115,11 +115,51 @@ class CaptureMirrorPolicyTest {
     }
 
     @Test fun captureBufferingToPausedLocalOrRemoteUsesUnchangedNoncaptureTruth() {
-        assertTrue(CaptureMirrorPolicy.displayedPlaying(true, false, true))
+        assertTrue(CaptureMirrorPolicy.displayedPlaying(true, false, PlaybackState.STATE_BUFFERING))
         for (source in listOf("local", "remote")) {
-            assertFalse(CaptureMirrorPolicy.displayedPlaying(source == "capture", false, true))
-            assertTrue(CaptureMirrorPolicy.displayedPlaying(source == "capture", true, false))
+            assertFalse(CaptureMirrorPolicy.displayedPlaying(source == "capture", false, PlaybackState.STATE_PLAYING))
+            assertTrue(CaptureMirrorPolicy.displayedPlaying(source == "capture", true, PlaybackState.STATE_PAUSED))
         }
+    }
+
+    @Test fun optimisticControllerPredictionsCannotFlipTheCaptureGlyph() {
+        // Actual ASUS sequence: prediction, rollback, then the Spotify callback.
+        val pauseRequest = listOf(
+            false to PlaybackState.STATE_PLAYING,
+            true to PlaybackState.STATE_PLAYING,
+            false to PlaybackState.STATE_PAUSED,
+        )
+        assertEquals(listOf(true, true, false), pauseRequest.map { (predicted, observed) ->
+            CaptureMirrorPolicy.displayedPlaying(true, predicted, observed)
+        })
+        val playRequest = listOf(
+            true to PlaybackState.STATE_PAUSED,
+            false to PlaybackState.STATE_PAUSED,
+            true to PlaybackState.STATE_PLAYING,
+        )
+        assertEquals(listOf(false, false, true), playRequest.map { (predicted, observed) ->
+            CaptureMirrorPolicy.displayedPlaying(true, predicted, observed)
+        })
+        assertFalse(CaptureMirrorPolicy.displayedPlaying(true, true, PlaybackState.STATE_NONE))
+        assertFalse(CaptureMirrorPolicy.displayedPlaying(true, true, PlaybackState.STATE_ERROR))
+    }
+
+    @Test fun observedStateTravelsThroughSessionExtrasWithActivityOwnershipChecks() {
+        val base = File("src/main/kotlin/dev/phosphor/mobil3")
+        val service = File(base, "PlaybackService.kt").readText()
+        val activity = File(base, "MainActivity.kt").readText()
+        assertTrue(service.contains("publishObservedCaptureState(state?.state ?: PlatformPlaybackState.STATE_NONE)"))
+        val leave = service.substringAfter("private fun leaveCaptureMirror()").substringBefore("private fun unregisterCaptureSessionsListener")
+        assertTrue(leave.contains("publishObservedCaptureState(PlatformPlaybackState.STATE_NONE)"))
+        assertTrue(service.contains("current.setSessionExtras(Bundle(extras)"))
+        val callback = activity.substringAfter("override fun onExtrasChanged(").substringBefore("}).buildAsync()")
+        assertTrue(callback.contains("taskIsCurrent() && controllerBinding.accepts(bindingRevision) && controller === current"))
+        assertTrue(callback.contains("ui.playing = sessionPlaying(current)"))
+        val display = activity.substringAfter("private fun sessionPlaying(").substringBefore("override fun onDestroy()")
+        assertTrue(display.contains("observedState = player.sessionExtras.getInt(CaptureMirrorPolicy.OBSERVED_STATE)"))
+        assertFalse(display.contains("playWhenReady"))
+        val toggle = activity.substringAfter("override fun togglePlay()").substringBefore("override fun next()")
+        assertTrue(toggle.contains("sessionPlaying(c) else c.playWhenReady"))
     }
 
     @Test fun productionCallbacksObserverAndSeekRouterUseTheTestedPolicies() {

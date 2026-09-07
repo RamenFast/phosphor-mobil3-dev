@@ -509,3 +509,9 @@ The ASUS secure listener cache lagged authoritative revocation. Both the origina
 The temporary audio grant and ONE_TIME flag required a normal while-in-use grant, cancelled projection and targeted revoke to restore the original denied flags.
 No global permission reset or account change occurred. Phosphor preferences were restored byte-for-byte, projection stopped and Spotify left paused.
 B8 still did not reproduce. No speculative patch or overall acceptance is claimed. See the [capture receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-spotify-2026-09-07.md). Drift stays21.
+
+## 2026-09-07 B8 prediction race
+
+The [synchronized ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md) supersedes “unreproduced” for the observed transient case.
+Media3 prediction caused five premature visible glyph changes before source callbacks. The observed-state correction produced zero premature changes across seven actual routed commands.
+Other original variants remain open. No blanket B8 or release PASS is claimed. Keep drift21.

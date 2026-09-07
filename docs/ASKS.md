@@ -76,3 +76,18 @@ Ben fixed the cable and requested phone settings that keep testing connected.
 ASUS USB authorization is working. Plugged-in stay-awake is 7, the screensaver is disabled, and Android confirms Awake with StayOn true.
 The unplugged timeout and lock/security policy are unchanged. These requested settings remain enabled after cleanup.
 The [continuation receipt](dev/receipts/pre-v2-b1-b21/phase-15-16-asus-recreation-2026-09-06.md) records resumed moving-trace and gesture checks.
+
+## 2026-09-07 01:11 UTC: approved remaining acceptance plan
+
+Ben approved finishing the existing ASUS acceptance gaps before the separate mobile expansion.
+Priority is synchronized Spotify truth, physical gesture settling, rotation/import variants and auto-gain item ownership.
+Small evidence-led corrections are authorized. Preserve the UI, muted ASUS, excluded S25 and requested keep-awake settings.
+Debug-only opt-in timeline observations may close measurement gaps without adding runtime administration.
+Workers and release operations retain their separate approval gates.
+
+## 2026-09-07 01:18 UTC: updated ASUS audio ceiling
+
+Ben changed the ASUS volume and asked that testing never raise it further.
+The explicit ASUS readback at 01:19 UTC is MUSIC 1/30 (3.3 percent).
+Keep that level, do not restore the earlier 0/30 baseline or raise above 1/30.
+PC audio remains silent and the S25 remains excluded.

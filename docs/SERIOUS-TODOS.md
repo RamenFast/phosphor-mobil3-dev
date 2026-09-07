@@ -135,3 +135,9 @@ Real logged-in Spotify capture, the initial Pause and four later transitions mat
 No-listener fallback and eventual post-revocation fallback also appeared. Revocation latency was not bounded.
 B8 remains unreproduced, with no speculative fix. See the [capture receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-spotify-2026-09-07.md).
 The original permission states, listener membership/cache and app tuning were restored. Spotify remains paused on the same track.
+
+## 2026-09-07 observed capture race correction
+
+The [new ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md) records a reproduced transient B8 race and an installed candidate correction.
+The earlier “unreproduced” wording is no longer accurate for that specific failure. Real buffering and sustained-inversion variants remain open.
+A dense physical pinch also exposed discarded sub-threshold scale movement. The 333ms guard blocked correctly at observed 332/333ms and rebased at334ms, but slow pinch movement needs correction and revalidation before closing the fixture pass.

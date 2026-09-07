@@ -473,7 +473,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
         PhosphorNative.setRenderPaused(false)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
-        val future = MediaController.Builder(this, token).buildAsync()
+        val future = MediaController.Builder(this, token)
+            .setListener(object : MediaController.Listener {
+                override fun onExtrasChanged(current: MediaController, extras: Bundle) {
+                    if (taskIsCurrent() && controllerBinding.accepts(bindingRevision) && controller === current) {
+                        ui.playing = sessionPlaying(current)
+                        AcceptanceTrace.record("capture_observed_ui") {
+                            "state=${extras.getInt(CaptureMirrorPolicy.OBSERVED_STATE)} ui=${ui.playing}"
+                        }
+                    }
+                }
+            }).buildAsync()
         future.addListener({
             if (!taskIsCurrent() || !controllerBinding.accepts(bindingRevision)) {
                 runCatching { future.get().release() }
@@ -485,7 +495,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
             controller = connected.also { c ->
                 c.addListener(object : Player.Listener {
-                    override fun onEvents(player: Player, events: Player.Events) { reassertSourceWake() }
+                    override fun onEvents(player: Player, events: Player.Events) {
+                        reassertSourceWake()
+                        AcceptanceTrace.record("activity_player") {
+                            "capture=${c.mediaMetadata.extras?.getString("source") == "capture"} " +
+                                "state=${c.playbackState} ready=${c.playWhenReady} playing=${c.isPlaying} ui=${ui.playing}"
+                        }
+                    }
                     override fun onIsPlayingChanged(isPlaying: Boolean) { ui.playing = sessionPlaying(c) }
                     override fun onPlayWhenReadyChanged(playWhenReady: Boolean, reason: Int) {
                         if (c.mediaMetadata.extras?.getString("source") == "capture") ui.playing = sessionPlaying(c)
@@ -543,10 +559,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         super.onStop()
     }
 
-    private fun sessionPlaying(player: Player): Boolean = CaptureMirrorPolicy.displayedPlaying(
+    private fun sessionPlaying(player: MediaController): Boolean = CaptureMirrorPolicy.displayedPlaying(
         capture = player.mediaMetadata.extras?.getString("source") == "capture",
         isPlaying = player.isPlaying,
-        playWhenReady = player.playWhenReady,
+        observedState = player.sessionExtras.getInt(CaptureMirrorPolicy.OBSERVED_STATE),
     )
 
     override fun onDestroy() {
@@ -818,7 +834,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // screen, earbuds and the console are therefore the same code path.
     override fun togglePlay() {
         val c = controller
-        if (c != null) { if (c.playWhenReady) c.pause() else c.play() }
+        if (c != null) {
+            val playing = if (c.mediaMetadata.extras?.getString("source") == "capture") sessionPlaying(c) else c.playWhenReady
+            if (playing) c.pause() else c.play()
+        }
         else ui.playing = PhosphorNative.deckToggle() // no session yet (nothing loaded)
     }
 

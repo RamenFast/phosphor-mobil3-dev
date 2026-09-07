@@ -39,6 +39,8 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
+import androidx.compose.ui.draw.drawWithContent
+import dev.phosphor.mobil3.AcceptanceTrace
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.graphicsLayer
 import androidx.compose.ui.geometry.Offset
@@ -252,7 +254,13 @@ fun Console(
                     Spacer(Modifier.width(Dim.gap))
                 }
                 if (!capture || state.captureCanPlay) {
-                    StoneKey(if (state.playing) "❚❚" else "▶", p, reduced = reduced, designator = "S1") {
+                    val drawnPlaying = state.playing
+                    StoneKey(if (drawnPlaying) "❚❚" else "▶", p, reduced = reduced, designator = "S1",
+                        modifier = Modifier.drawWithContent {
+                            drawContent()
+                            if (capture) AcceptanceTrace.record("capture_glyph_draw") { "playing=$drawnPlaying" }
+                        },
+                    ) {
                         Haptics.light(view); onPlay()
                     }
                 }

@@ -102,6 +102,13 @@ A black beam alone is not enough to communicate these states.
 
 Captured-media title and artist must come from the active Android MediaSession. Generic capture remains `everything playing` when no session metadata exists. The in-app play/pause glyph must match the captured session across playing, buffering, paused, and resumed states.
 
+The capture glyph and toggle use the latest observed platform playback state published through
+the existing MediaSession extras. Media3 may optimistically change a controller's playWhenReady
+and isPlaying before the source accepts a command. Those predictions cannot change the capture glyph.
+Publish observed state on platform callbacks, clear it when capture retires, and resynchronize it
+when an Activity reconnects. Missing observed state means unavailable, not predicted playback.
+Ignore callbacks from retired Activity/controller bindings. Local and remote playback retain their existing truth.
+
 The capture seek rule appears only when the active session advertises seek, supplies a real duration, and accepts the routed command. A non-seekable session must not show a dead seek rule.
 
 ## 8. Picture-in-picture
