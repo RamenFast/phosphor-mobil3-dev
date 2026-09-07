@@ -515,3 +515,11 @@ B8 still did not reproduce. No speculative patch or overall acceptance is claime
 The [synchronized ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md) supersedes “unreproduced” for the observed transient case.
 Media3 prediction caused five premature visible glyph changes before source callbacks. The observed-state correction produced zero premature changes across seven actual routed commands.
 Other original variants remain open. No blanket B8 or release PASS is claimed. Keep drift21.
+
+## 2026-09-07 slow-pinch correction
+
+Dense physical input exposed discarded sub-threshold pinch movement. The accumulator now retains it until the existing threshold is crossed.
+Eight ASUS runs passed per-card guard checks and produced gain growth. Exact 333ms samples stayed blocked, with no deferred jump after rebase.
+The analyzer accounts for renewed console movement and exact native milli-unit telemetry truncation, not a generic tolerance.
+438 Android tests, lint, debug assembly and engine checks passed. See the [receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md).
+Other card/orientation variants and final closeout remain open. Drift stays21.

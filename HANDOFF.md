@@ -4,6 +4,8 @@
 
 ## Read first
 
+- **2026-09-07 slow-pinch checkpoint:** [Eight measured runs and correction](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md). Candidate SHA40f1a847 is installed, with capture fix61e0630 and slow-pinch accumulation. 438 tests and lint pass. Temporary state and remaining acceptance are not closed.
+
 - **2026-09-07 continuation:** [Capture prediction race reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md). Five premature glyph flips before the fix, zero across seven routed commands afterward. This supersedes the blanket “unreproduced” description for that transient failure only. Gesture and other acceptance work is ongoing.
 - **Current volume override:** Ben set ASUS MUSIC to **1/30** and asked that it not be raised. Do not restore historical 0/30. S25 exclusion and requested keep-awake remain binding.
 

@@ -29,6 +29,11 @@ A scope adjustment must not activate while the user is opening, moving, or dismi
 
 The stage recognizer owns scope gain and orbit arbitration. It must map the console, active sheet, and overflow bounds through the current rotation, then add a 24dp exclusion margin. Scope pinch and drag remain blocked through exactly 333ms after that chrome moves or dismisses. This block must not consume chrome reveal or an armed mode-6 console pull.
 
+The existing 0.001 relative pinch threshold rejects jitter, not slow deliberate movement.
+Retain the last applied distance while individual samples stay below that threshold so their movement accumulates.
+Blocked and rebase events replace the reference distance. Movement made during exclusion never applies later as a jump.
+Zero or invalid distances reset the reference without publishing a scale. Keep gain limits and view-lock behavior unchanged.
+
 If any pointer enters the existing 88dp Android bottom-edge band, scope gain and orbit must not change. The one-finger armed upward console pull remains available from that band.
 
 When `double_tap_playback=false`, the tap recognizer must have no double-tap handler. Disabled double tap must not delay a single tap.

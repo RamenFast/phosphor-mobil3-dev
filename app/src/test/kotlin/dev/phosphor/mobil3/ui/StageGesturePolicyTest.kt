@@ -213,7 +213,7 @@ class StageGesturePolicyTest {
             assertTrue(owner.indexOf(setter) > guard, setter)
         }
         val rebase = owner.substringAfter("if (scopeFrame != StageGesturePolicy.ScopeFrame.Apply)").substringBefore("val a = pressed[0].position")
-        for (baseline in listOf("gain = host.currentGain()", "glow = host.currentGlow()", "origin = pressed[0].position", "twoStartDist = lastDist", "twoOrigin = (pressed[0].position + pressed[1].position) / 2f", "continue")) {
+        for (baseline in listOf("gain = host.currentGain()", "glow = host.currentGlow()", "origin = pressed[0].position", "twoStartDist = (pressed[0].position - pressed[1].position).getDistance()", "pinchScale.reset(twoStartDist)", "twoOrigin = (pressed[0].position + pressed[1].position) / 2f", "continue")) {
             assertTrue(baseline in rebase, baseline)
         }
         assertFalse("physicalOrigin =" in rebase)

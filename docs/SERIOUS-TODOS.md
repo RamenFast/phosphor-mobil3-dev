@@ -141,3 +141,11 @@ The original permission states, listener membership/cache and app tuning were re
 The [new ASUS receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md) records a reproduced transient B8 race and an installed candidate correction.
 The earlier “unreproduced” wording is no longer accurate for that specific failure. Real buffering and sustained-inversion variants remain open.
 A dense physical pinch also exposed discarded sub-threshold scale movement. The 333ms guard blocked correctly at observed 332/333ms and rebased at334ms, but slow pinch movement needs correction and revalidation before closing the fixture pass.
+
+## 2026-09-07 physical slow-pinch checkpoint
+
+The discarded slow movement is corrected and verified across eight ASUS overflow-dismissal runs.
+The [receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md) narrows the exact333ms gap to untested hosts/orientations and panel scanout.
+One-pixel console movements restart the global stage guard as specified. Their ergonomics are not independently signed off.
+A later Settings/gain7 observation occurred outside the fixture window. Preserve possible newer user tuning until ownership is resolved.
+Rotation listener retirement remains under investigation. One live registration is observed, but recreation leakage is not yet reproduced.

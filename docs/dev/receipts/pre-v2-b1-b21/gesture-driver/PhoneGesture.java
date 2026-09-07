@@ -51,24 +51,29 @@ public final class PhoneGesture {
       if(gap<40 || gap>500) throw new IllegalArgumentException("gap 40..500 ms");
       validate(new float[]{x,y});
       tap(x,y); SystemClock.sleep(gap); tap(x,y);
-    } else if(a.length==10 && a[0].equals("pinch")) {
+    } else if((a.length==10 && a[0].equals("pinch")) || (a.length==12 && a[0].equals("tap-pinch"))) {
+      boolean preceded = a[0].equals("tap-pinch");
+      int offset = preceded ? 3 : 1;
+      float[] trigger = preceded ? new float[]{Float.parseFloat(a[1]),Float.parseFloat(a[2])} : null;
       float[] start=new float[4], end=new float[4];
-      for(int i=0;i<4;i++){ start[i]=Float.parseFloat(a[1+i]); end[i]=Float.parseFloat(a[5+i]); }
-      int duration=Integer.parseInt(a[9]); if(duration<100 || duration>2000) throw new IllegalArgumentException("duration 100..2000 ms");
+      for(int i=0;i<4;i++){ start[i]=Float.parseFloat(a[offset+i]); end[i]=Float.parseFloat(a[offset+4+i]); }
+      int duration=Integer.parseInt(a[offset+8]); if(duration<100 || duration>2000) throw new IllegalArgumentException("duration 100..2000 ms");
       validate(start); validate(end);
+      if (trigger != null) { validate(trigger); tap(trigger[0],trigger[1]); }
+      int steps = preceded ? 240 : 20;
       down=SystemClock.uptimeMillis();
       try {
         emit(MotionEvent.ACTION_DOWN,new float[]{start[0],start[1]});
         emit(MotionEvent.ACTION_POINTER_DOWN | (1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),start);
-        for(int n=1;n<=20;n++) {
-          long target=down+(long)duration*n/20; SystemClock.sleep(Math.max(0,target-SystemClock.uptimeMillis()));
-          float[] xy=new float[4]; for(int i=0;i<4;i++) xy[i]=start[i]+(end[i]-start[i])*n/20f;
+        for(int n=1;n<=steps;n++) {
+          long target=down+(long)duration*n/steps; SystemClock.sleep(Math.max(0,target-SystemClock.uptimeMillis()));
+          float[] xy=new float[4]; for(int i=0;i<4;i++) xy[i]=start[i]+(end[i]-start[i])*n/(float)steps;
           emit(MotionEvent.ACTION_MOVE,xy);
         }
         emit(MotionEvent.ACTION_POINTER_UP | (1<<MotionEvent.ACTION_POINTER_INDEX_SHIFT),end);
         emit(MotionEvent.ACTION_UP,new float[]{end[0],end[1]});
       } catch(Exception e) { emit(MotionEvent.ACTION_CANCEL,start); throw e; }
-    } else throw new IllegalArgumentException("doubletap x y gap | pinch x1 y1 x2 y2 endX1 endY1 endX2 endY2 duration");
-    System.out.println("{\"status\":\"ok\",\"tool\":\"phone-gesture-test\",\"version\":\"2\",\"ts\":\""+java.time.Instant.now()+"\"}");
+    } else throw new IllegalArgumentException("doubletap x y gap | pinch x1 y1 x2 y2 endX1 endY1 endX2 endY2 duration | tap-pinch tapX tapY followed by pinch arguments");
+    System.out.println("{\"status\":\"ok\",\"tool\":\"phone-gesture-test\",\"version\":\"3\",\"ts\":\""+java.time.Instant.now()+"\"}");
   }
 }

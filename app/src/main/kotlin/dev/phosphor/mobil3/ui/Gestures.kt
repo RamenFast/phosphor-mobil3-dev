@@ -315,7 +315,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
             var mode = 0
             var gain = host.currentGain()
             var glow = host.currentGlow()
-            var lastDist = -1f
+            val pinchScale = StagePinchScale()
             var origin = first.position
             var twoOrigin = Offset.Zero
             var twoStartDist = 0f
@@ -400,7 +400,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
 
                 if (pressed.size >= 2 && (mode == 0 || mode == 1)) {
                     mode = 2
-                    lastDist = -1f
+                    pinchScale.reset()
                     twoOrigin = (pressed[0].position + pressed[1].position) / 2f
                     twoStartDist = (pressed[0].position - pressed[1].position).getDistance()
                     glow = host.currentGlow()
@@ -411,10 +411,10 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     glow = host.currentGlow()
                     origin = pressed[0].position
                     if (pressed.size >= 2) {
-                        lastDist = (pressed[0].position - pressed[1].position).getDistance()
-                        twoStartDist = lastDist
+                        twoStartDist = (pressed[0].position - pressed[1].position).getDistance()
+                        pinchScale.reset(twoStartDist)
                         twoOrigin = (pressed[0].position + pressed[1].position) / 2f
-                    } else lastDist = -1f
+                    } else pinchScale.reset()
                     if (pressed.size >= 2 || (pressed[0].position - first.position).getDistance() > slop) {
                         pressed.forEach { it.consume() }
                     }
@@ -455,9 +455,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         pressed.forEach { it.consume() }
                         continue
                     }
-                    if (lastDist > 0f) {
-                        val zoom = dist / lastDist
-                        if (abs(zoom - 1f) > 0.001f) {
+                    pinchScale.sample(dist)?.let { zoom ->
                             if (host.is3d()) {
                                 host.dollyBy((1f - zoom) * 2.2f)
                             } else if (host.gainLocked()) {
@@ -475,9 +473,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             ribbon.at = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
                             ribbon.visible = true
                             ribbon.lastTouchMs = System.currentTimeMillis()
-                        }
                     }
-                    lastDist = dist
                     pressed.forEach { it.consume() }
                 } else if (pressed.size == 1) {
                     val ch = pressed[0]
