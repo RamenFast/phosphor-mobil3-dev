@@ -215,6 +215,23 @@ Each preset needs a design contract, not just different colors:
 - Keep publication, store submission, destructive operations, and shared-branch pushes behind their existing explicit gates.
 - If workers are useful, follow the model/effort confirmation ritual first. Keep shared device actions and integration with the root coordinator.
 
+### Section-level independent critique
+
+Added at Ben's request on 2026-09-07. Review substantial sections, not every small edit or control. Use the numbered approach sections as checkpoints, with separate checkpoints for settings dismissal, expandable settings, and theme consolidation in section 6. Review the remaining section-6 controls/manual work together.
+
+- Assign a critique agent separate from the implementing agent. The critic reads the implementation and evidence but does not edit the work it rates.
+- Follow the existing worker model/effort confirmation ritual before the first assignment. This requirement does not itself select a model or waive that confirmation.
+- Judge originating intent from vision/PHOSPHOR-LIVING-INSTRUMENT.md, the active specs, Ben's requests, and this approved plan. New approved direction supersedes old exclusions such as the original root-capture ban.
+- The central question is: does this section make sound into a truthful, immediate, private, beam-first instrument, with controls that help rather than distract?
+- Give one overall score from 1 to 10, supported by findings on intent fidelity, functional accuracy, interaction/accessibility, and lifecycle/performance/privacy where relevant. Mark genuinely inapplicable dimensions rather than inventing evidence.
+- Anchor scores: 1–3 substantially misses intent or is broken, 4–5 delivers a partial outcome with major gaps, 6–7 mostly works but has material gaps, 8 meets intent with verified main paths and minor polish remaining, 9 has strong edge/integration evidence, and 10 has no material gap found within the tested scope. A 10 is not proof of perfection.
+- Cite exact requirements, files, observations, and test receipts. Name the largest mismatch to originating intent and the smallest changes that would improve it. Do not inflate a score because code compiles or because a feature is complex.
+- Run up to four critique rounds total per checkpoint. If a round scores below 8, the implementer addresses actionable findings, reruns the relevant checks, and requests the next independent critique. Stop early when the score reaches at least 8.
+- If round four remains below 8, continue to the next planned section as Ben requested. Retain the last score, unresolved findings, attempted fixes, and their evidence in the plan's execution ledger. Do not restart an indefinite review loop or quietly mark the section fully accepted.
+- Missing hardware/runtime evidence must remain explicit. A numeric rating cannot substitute for a required acceptance check. Continuing development does not waive correctness, privacy, or release gates.
+- Store a short receipt per round under docs/plans/mobile-expansion/critiques/ during implementation: section, source commit, reviewer/model/effort, round, score, intent comparison, evidence, prioritized findings, and disposition. Keep a compact section/score/remaining-gaps summary in the execution ledger.
+- Final integration checks include every carried finding. Report unresolved sub-8 sections honestly instead of claiming complete acceptance.
+
 ## Validation
 
 | Requirement | Required evidence |
@@ -232,6 +249,7 @@ Each preset needs a design contract, not just different colors:
 | HDR | FP16/scRGB surface and compositor evidence, linear-output tests, SDR regression images, real-panel HDR/SDR comparison. Screenshots alone do not prove luminance. |
 | Brightness pin | Auto-brightness enabled during light changes, brightness slider changes, recreation/resume, exit/crash, and unchanged global settings. Record thermal/system constraints separately. |
 | Integration | Existing source/gesture/lifecycle tests, Gradle unit tests/lint/build/checkEngine, locked Cargo tests, revised boundary/release checks, same-package update, and exact installed-artifact verification. |
+| Independent critique | Each substantial section has a separate critic's evidence-backed 1–10 rating. Sub-8 work receives fixes and re-review up to four rounds total. Remaining gaps carry forward explicitly without blocking unrelated development or waiving acceptance gates. |
 
 Use a rooted handset for root acceptance, the non-root S25 for normal-path regression, and API 29 coverage for guarded fallbacks. Confirm actual device availability before activation.
 
