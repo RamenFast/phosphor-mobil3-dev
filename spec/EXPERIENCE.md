@@ -56,7 +56,9 @@ When system rotation is locked, the app must show its dependent orientation cont
 
 System authority is transient, not a saved app preference. Activity requests must hold the observed current orientation, never impose a stored cardinal while Android rotation is locked. Chrome, labels, sheets, and beam must retain their current rotation. Imports may update saved app lock choices, but must not change the held presentation. Disabled controls must also reject stale setter callbacks before changing preferences.
 
-The existing foreground tick and lifecycle callbacks refresh system authority even when gravity does not change. When Android permits rotation again, the existing app preferences and detent resume. Unknown gravity must not invent a cardinal. Detent tolerances, gravity filtering, and sensor ownership remain unchanged.
+The existing foreground tick and lifecycle callbacks refresh system authority even when gravity does not change. When Android permits rotation again, the existing app preferences and detent resume. Unknown gravity must not invent a cardinal. Detent tolerances and gravity filtering remain unchanged.
+
+Each Activity owns its gravity listener. Destruction clears that ownership before unregistering the listener. Queued sensor callbacks and rotation mutations must reject retired task/Activity owners. Replacing an Activity within one process must leave exactly one active listener for the replacement, not retain the old Activity or let it change native beam orientation.
 
 The foreground tick refreshes rotation authority unconditionally. Android owns music volume. The app does not poll or display a volume fraction.
 

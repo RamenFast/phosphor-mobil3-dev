@@ -523,3 +523,10 @@ Eight ASUS runs passed per-card guard checks and produced gain growth. Exact 333
 The analyzer accounts for renewed console movement and exact native milli-unit telemetry truncation, not a generic tolerance.
 438 Android tests, lint, debug assembly and engine checks passed. See the [receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md).
 Other card/orientation variants and final closeout remain open. Drift stays21.
+
+## 2026-09-07 Activity sensor retention
+
+Same-process ASUS Activity replacements left one, two, then three active gravity listeners after UI settling.
+Destruction now clears ownership and unregisters the listener. Queued callbacks and rotation actions reject retired owners.
+440 Android tests and lint passed. Three actual replacements now retain one listener with the same process.
+See the [sensor receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-sensor-retirement-2026-09-07.md). Drift stays21.

@@ -4,6 +4,8 @@
 
 ## Read first
 
+- **Latest continuation:** [Activity sensor leak reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-sensor-retirement-2026-09-07.md). Current installed candidate SHA010a75f0 contains capture, pinch and sensor corrections.440 Android tests pass. Ben confirmed exclusive ASUS ownership and autonomous takeover.
+
 - **2026-09-07 slow-pinch checkpoint:** [Eight measured runs and correction](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md). Candidate SHA40f1a847 is installed, with capture fix61e0630 and slow-pinch accumulation. 438 tests and lint pass. Temporary state and remaining acceptance are not closed.
 
 - **2026-09-07 continuation:** [Capture prediction race reproduced and corrected](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-capture-race-2026-09-07.md). Five premature glyph flips before the fix, zero across seven routed commands afterward. This supersedes the blanket “unreproduced” description for that transient failure only. Gesture and other acceptance work is ongoing.
@@ -30,8 +32,7 @@ USB access resumed at 23:32 UTC. Ben explicitly requested persistent plugged-in 
 ASUS now has `stay_on_while_plugged_in=7`, `screensaver_enabled=0` and its unchanged 600000ms unplugged timeout.
 Do not restore those two requested settings as if they were temporary tests.
 The previous pass restored both preference files and stopped the app. The current continuation has temporary gesture preferences and opt-in debug observations enabled.
-Do not overwrite later tuning: Settings and gain7 appeared outside the recorded fixture window. Root asked whether Ben is using the ASUS and awaits his answer.
-No further phone input, reinstall or preference restoration should occur until that ownership question is resolved.
+Ben resolved the ownership question at02:25UTC: the ASUS is a dedicated test phone and Jcode is its only operator. Retake control autonomously. Temporary preferences and final exact-commit installation still require closeout.
 Older S25 narratives below are historical. Their moving-trace recreation gap is superseded by the latest ASUS receipt.
 
 The console volume slider is unwanted. It is removed, not moved elsewhere. Preserve the remaining UI design. The repeated Spotify play/pause-symbol and grid-visibility reports are priority requirements, not requests Ben should repeat.

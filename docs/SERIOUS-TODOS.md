@@ -149,3 +149,9 @@ The [receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-slow-pinch-2026-09-07.md)
 One-pixel console movements restart the global stage guard as specified. Their ergonomics are not independently signed off.
 A later Settings/gain7 observation occurred outside the fixture window. Preserve possible newer user tuning until ownership is resolved.
 Rotation listener retirement remains under investigation. One live registration is observed, but recreation leakage is not yet reproduced.
+
+## 2026-09-07 sensor retirement and autonomy update
+
+The retained sensor-listener concern is reproduced and corrected. Settled connections grew1/2/3 before,
+and stayed1 through three Activity replacements afterward. Physical gravity poses and import presentation remain separate.
+Ben explicitly confirmed exclusive ASUS test ownership. The suspected-user-activity hold is resolved.

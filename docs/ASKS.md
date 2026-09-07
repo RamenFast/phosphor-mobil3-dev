@@ -91,3 +91,9 @@ Ben changed the ASUS volume and asked that testing never raise it further.
 The explicit ASUS readback at 01:19 UTC is MUSIC 1/30 (3.3 percent).
 Keep that level, do not restore the earlier 0/30 baseline or raise above 1/30.
 PC audio remains silent and the S25 remains excluded.
+
+## 2026-09-07 02:25 UTC: dedicated ASUS autonomy
+
+Ben clarified that the ASUS is an old test phone he does not actively use. Jcode is its only operator.
+Retake control after unexplained UI changes instead of pausing over suspected user activity.
+This supersedes the earlier availability hold, not the volume1/30 ceiling, S25 exclusion or release boundaries.

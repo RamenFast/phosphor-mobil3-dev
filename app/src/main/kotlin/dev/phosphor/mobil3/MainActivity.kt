@@ -570,6 +570,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
             runtimePrefs().edit { putString("last_source", "none") }
         }
         activityDestroyed = true
+        val retiredGravityListener = gravityListener
+        gravityListener = null
+        retiredGravityListener?.let {
+            getSystemService(android.hardware.SensorManager::class.java)?.unregisterListener(it)
+        }
         micWake.destroy()
         activityStarted = false
         reassertSourceWake()
@@ -1522,6 +1527,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     /** Refresh before mutations, including callbacks retained before Android locked rotation. */
     private fun rotationAllowed(): Boolean {
+        if (!taskIsCurrent()) return false
         val locked = runCatching {
             android.provider.Settings.System.getInt(
                 contentResolver,
@@ -1582,6 +1588,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // for anyone who had not turned a lock on. Ben reported
     // rotation "still super sensitive" for exactly this reason.
     private fun updateOrientationSensor() {
+        if (!taskIsCurrent()) return
         run {
             if (gravityListener == null) {
                 val sm = getSystemService(android.hardware.SensorManager::class.java)
@@ -1591,6 +1598,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         private var gx = 0f; private var gy = 0f; private var gz = 0f
                         override fun onAccuracyChanged(s: android.hardware.Sensor?, a: Int) {}
                         override fun onSensorChanged(e: android.hardware.SensorEvent) {
+                            if (!taskIsCurrent() || gravityListener !== this) return
                             // Low-pass to gravity, then two gates before any quadrant
                             // moves: (1) FLATNESS — a phone within ~20° of lying flat has
                             // no meaningful "up"; a desk phone must never rotate its

@@ -10,6 +10,28 @@ import kotlin.test.fail
 class RotationDetentReachabilityTest {
 
     @Test
+    fun sourceOnlyDestructionClearsListenerOwnershipBeforeUnregistering() {
+        val destroy = method(source("MainActivity.kt"), "override fun onDestroy()")
+        val destroyed = destroy.indexOf("activityDestroyed = true")
+        val capture = destroy.indexOf("val retiredGravityListener = gravityListener")
+        val clear = destroy.indexOf("gravityListener = null")
+        val unregister = destroy.indexOf("unregisterListener(it)")
+        assertTrue(destroyed >= 0 && capture > destroyed && clear > capture && unregister > clear)
+        assertTrue(unregister < destroy.indexOf("super.onDestroy()"))
+    }
+
+    @Test
+    fun sourceOnlyRetiredActivityCannotRegisterOrMutateRotation() {
+        val activity = source("MainActivity.kt")
+        val register = method(activity, "private fun updateOrientationSensor()")
+        assertTrue(register.substringAfter("{").trimStart().startsWith("if (!taskIsCurrent()) return"))
+        val authority = method(activity, "private fun rotationAllowed(): Boolean")
+        assertTrue(authority.substringAfter("{").trimStart().startsWith("if (!taskIsCurrent()) return false"))
+        val callback = register.substringAfter("override fun onSensorChanged(e: android.hardware.SensorEvent) {")
+        assertTrue(callback.trimStart().startsWith("if (!taskIsCurrent() || gravityListener !== this) return"))
+    }
+
+    @Test
     fun sourceOnlyGravitySensorRemainsAvailableForEveryAppLockCombination() {
         val fn = method(source("MainActivity.kt"), "private fun updateOrientationSensor()")
         assertFalse(fn.contains("scopeRotationLockState || uiPlacementLockState"))
