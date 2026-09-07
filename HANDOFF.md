@@ -4,6 +4,8 @@
 
 ## Read first
 
+- **Atomic traceability:** [47 requirements and changed outputs](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-atomic-traceability-2026-09-07.md). Each has a concrete check and observed result. The additional real-app default-off check passed with a VERBOSE reader. Host fixture failure returned its expected error envelope. Phone preferences were restored again. Source-only and unobserved live paths remain labeled.
+
 - **Final-artifact audit:** [Requirement-level real-path checks and exact cleanup](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md). The installed743d8bb replay produced ten capture commands, ten glyph changes and zero premature changes. Source-sheet timing, slow gain, 3D perspective, VIEW LOCK, paused seek and listener retirement were checked on that artifact. Remaining unobserved paths are explicit.
 
 - **Final installed checkpoint:** [Local gain, paused seek, held rotation import and exact restoration](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-final-checkpoint-2026-09-07.md). Source743d8bb is installed and readback verified. Temporary phone state is restored. Remaining scenario and human/release gates are explicit.

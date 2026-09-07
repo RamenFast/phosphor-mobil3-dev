@@ -20,6 +20,10 @@ The adjacent [SHA-256 manifest](phase-16-asus-final-artifact-audit-2026-09-07.sh
 
 ## Requirement-to-observation matrix
 
+The [atomic inventory](phase-16-asus-atomic-traceability-2026-09-07.md) expands this workflow map into 47 requirement/output rows.
+It resolves 30 named passing test cases individually and inventories all ten diagnostic events, including the one not captured live.
+Source, policy, actual-device and earlier same-source evidence remain distinct. Complete mapping does not mean complete end-to-end acceptance.
+
 | Requirement or changed output | Actual check and observed result | Evidence and limits |
 |---|---|---|
 | Capture glyph follows observed source state, not Media3 predictions | Real Spotify routed to this phone. Ten physical console taps produced ten routed commands and ten glyph changes, with zero premature changes. Before the fix, five commands produced five premature changes. | `audit-final-capture-analysis.json`, `audit-final-capture.log`, `audit-final-capture.mp4`. Draw-time observation, not panel scanout or source internals. |

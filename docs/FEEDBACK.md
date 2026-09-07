@@ -548,3 +548,12 @@ Local paused seek held10848ms. VIEW LOCK held1.83. Delayed slow 3D pinches chang
 An incorrect uniform-shrink hypothesis failed and is retained as excluded evidence. The camera controls perspective, not gain scaling.
 The input fixture now supports a bounded post-tap delay and structured argument errors. Both invalid gaps returned exit2 without input.
 Whole-result Android440, native73, relay43 and developer/privacy/release fixture gates passed. Exact phone state is restored. Drift stays21.
+
+## 2026-09-07 atomic traceability follow-through
+
+The [atomic inventory](dev/receipts/pre-v2-b1-b21/phase-16-asus-atomic-traceability-2026-09-07.md) maps 47 explicit requirements and changed outputs.
+Thirty named JUnit cases were checked individually against their passing XML. Every named private evidence file exists and was hashed.
+The corrected VERBOSE-capable reader observed its marker and zero diagnostics during an actual default-off launch and swipe.
+The real fixture on host Android stubs returned the expected input_failed envelope and exit3. This is not a device injection-failure claim.
+Nine diagnostic event types were observed live. The tenth, capture_binding, has a source check only.
+Both phone preference files were restored and compared again. MUSIC remains1/30. No production change or new release claim. Drift stays21.
