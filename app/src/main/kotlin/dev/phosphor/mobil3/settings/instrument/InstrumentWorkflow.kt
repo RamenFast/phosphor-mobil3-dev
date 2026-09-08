@@ -24,6 +24,9 @@ class InstrumentWorkflow(
     private var request: Request? = null
     private var depth = 0
     private var closed = false
+    class SettingsImport internal constructor(internal val revision: Any)
+    private var authoredRevision = Any()
+    private var settingsImport: SettingsImport? = null
     var association: Association? = null
         private set
     var undoSetup: InstrumentSetup? = null
@@ -40,6 +43,7 @@ class InstrumentWorkflow(
         private set
     val editsBlocked: Boolean get() = uncertain || storageUncertain
     val pending: Boolean get() = request != null
+    val automaticPersistenceAllowed: Boolean get() = !closed && !pending && !unsaved && !editsBlocked
     val modified: Boolean get() = association?.let { it.setup != snapshot() } ?: false
 
     private fun owner() { check(Thread.currentThread() === thread) { "Instrument workflow needs its Activity owner" } }
@@ -49,6 +53,7 @@ class InstrumentWorkflow(
         if (closed) return
         settle("Superseded by another apply")
         if (editsBlocked) { changed(); return }
+        authoredRevision = Any()
         if (!canApply()) {
             status = "Desktop geometry owns shape and gain. Choose a local or audio-only source before APPLY."
             changed()
@@ -77,6 +82,7 @@ class InstrumentWorkflow(
     fun undo() {
         owner()
         settle("Superseded by undo")
+        authoredRevision = Any()
         undoSetup?.let { apply(it, undo = true) }
     }
 
@@ -102,6 +108,7 @@ class InstrumentWorkflow(
         try {
             if (result == 1) {
                 // The exact committed setup is reconciled before any later edit.
+                authoredRevision = Any()
                 publish(pending.setup)
                 undoSetup = if (pending.undo) null else pending.before
                 association = pending.association
@@ -138,6 +145,7 @@ class InstrumentWorkflow(
             rapidReview = null
         }
         check(!editsBlocked) { "Instrument state is uncertain. Recover it before tuning." }
+        if (depth == 0) authoredRevision = Any()
         depth++
         return try { block() } finally {
             depth--
@@ -155,6 +163,7 @@ class InstrumentWorkflow(
         owner()
         check(!pending) { "Settle native work before restoring saved tuning" }
         check(!editsBlocked) { "Instrument state is uncertain. Recover it before restoring tuning." }
+        authoredRevision = Any()
         unsaved = false
         changed()
     }
@@ -164,8 +173,61 @@ class InstrumentWorkflow(
             PersistenceFailure("Saving failed and recovery is unconfirmed.", false)
         }
         unsaved = failure != null
-        storageUncertain = failure != null && (storageUncertain || !failure.restored)
+        if (failure == null) storageUncertain = false else notePersistenceFailure(failure)
         return failure
+    }
+
+    private fun notePersistenceFailure(failure: PersistenceFailure) {
+        if (!failure.restored) {
+            storageUncertain = true
+            unsaved = true
+            authoredRevision = Any()
+        }
+        status = if (storageUncertain)
+            "Saved settings are uncertain. Use RETRY SAVE CURRENT before further tuning. ${failure.message}"
+        else failure.message
+    }
+
+    /** Every settings transaction reports its typed rollback result to the same owner. */
+    fun persistenceFailed(failure: PersistenceFailure) {
+        owner()
+        if (closed) return
+        notePersistenceFailure(failure)
+        changed()
+    }
+
+    /** Settle before opening the picker, then bind its eventual reply to authored intent. */
+    fun beginSettingsImport(): SettingsImport? {
+        owner()
+        if (closed || settingsImport != null) return null
+        settle("Pending apply settled before choosing settings.")
+        if (editsBlocked) return null
+        return SettingsImport(authoredRevision).also { settingsImport = it }
+    }
+
+    fun settingsImportPicked(ticket: SettingsImport): Boolean {
+        owner()
+        if (settingsImport !== ticket) return false
+        if (closed || editsBlocked || ticket.revision !== authoredRevision) {
+            settingsImport = null
+            return false
+        }
+        return true
+    }
+
+    /** Provider replies consume only their own slot. No stale reply may enter a write. */
+    fun finishSettingsImport(ticket: SettingsImport, accept: () -> Unit): Boolean {
+        owner()
+        if (settingsImport !== ticket) return false
+        settingsImport = null
+        if (closed || editsBlocked || ticket.revision !== authoredRevision) return false
+        edit(accept)
+        return true
+    }
+
+    fun cancelSettingsImport(ticket: SettingsImport) {
+        owner()
+        if (settingsImport === ticket) settingsImport = null
     }
 
     /** Explicit recovery establishes the complete current tuple as durable without native setters. */
@@ -174,6 +236,7 @@ class InstrumentWorkflow(
         if (closed || uncertain) return
         settle()
         if (uncertain) return
+        authoredRevision = Any()
         val failure = save(snapshot())
         status = failure?.let { "Active, not saved. ${it.message} Retry when storage is available." }
             ?: "Current authored setup saved. Tuning unchanged."
@@ -197,6 +260,7 @@ class InstrumentWorkflow(
         if (closed) return
         settle("Activity closed. Pending setup cancelled.")
         closed = true
+        authoredRevision = Any()
         rapidReview = null
     }
 }

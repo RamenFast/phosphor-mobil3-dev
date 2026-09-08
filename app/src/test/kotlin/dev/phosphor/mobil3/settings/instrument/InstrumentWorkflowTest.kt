@@ -1,6 +1,7 @@
 package dev.phosphor.mobil3.settings.instrument
 
 import dev.phosphor.mobil3.settings.SettingsWriteOwner
+import dev.phosphor.mobil3.settings.SettingsArchive
 import dev.phosphor.mobil3.ui.LightSettings
 import org.junit.Assert.*
 import org.junit.Test
@@ -409,6 +410,205 @@ class InstrumentWorkflowTest {
             assertFalse(owner.pending)
             assertFalse(owner.status.contains("applied"))
         }
+    }
+
+    @Test fun failedPresetPreservesEverySavedKeyAcrossAutomaticSourceAndGainWrites() {
+        val r = Rig(original)
+        var preferences = original.preferenceValues() - "focus"
+        val prior = preferences
+        r.persistenceError = InstrumentWorkflow.PersistenceFailure("Restored prior tuple", true)
+        r.owner.apply(ambient)
+        r.admit(); r.reply()
+        var sourceSelections = 0
+        repeat(2) {
+            r.owner.settle("Select relay")
+            if (r.owner.automaticPersistenceAllowed) preferences = preferences + ("gain" to r.current.gain)
+            sourceSelections++
+        }
+        assertEquals(prior, preferences)
+        assertEquals(2, sourceSelections)
+        assertFalse(r.owner.editsBlocked)
+        r.persistenceError = null
+        r.persistenceAction = { preferences = it.preferenceValues(); null }
+        r.owner.retryPersistence()
+        assertEquals(ambient.preferenceValues(), preferences)
+        assertTrue(r.owner.automaticPersistenceAllowed)
+        r.manualFocus(1.9f)
+        if (r.owner.automaticPersistenceAllowed) preferences = preferences + ("focus" to r.current.focus)
+        assertEquals(1.9f, preferences["focus"])
+    }
+
+    @Test fun delayedSettingsReplyCannotOverwriteApplyManualOrEqualValueRoundTrip() {
+        for (edit in listOf("apply", "manual", "roundtrip", "undo")) {
+            val r = Rig(original)
+            val ticket = r.owner.beginSettingsImport()!!
+            assertTrue(r.owner.settingsImportPicked(ticket))
+            when (edit) {
+                "apply" -> { r.owner.apply(ambient); r.admit(); r.reply() }
+                "manual" -> r.manualFocus(1.7f)
+                "roundtrip" -> { r.manualFocus(1.7f); r.manualFocus(original.focus) }
+                "undo" -> r.owner.undo()
+            }
+            val expected = r.current
+            var mutations = 0
+            assertFalse(edit, r.owner.finishSettingsImport(ticket) { mutations++; r.current = spectral })
+            assertEquals(0, mutations)
+            assertEquals(expected, r.current)
+            assertNotNull(r.owner.beginSettingsImport())
+        }
+    }
+
+    @Test fun importBeginsAfterReconcilingAlreadyCommittedApplyAndAcceptsUnchangedBaselineOnce() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.admit()
+        val ticket = r.owner.beginSettingsImport()!!
+        assertEquals(ambient, r.current)
+        assertFalse(r.owner.pending)
+        r.reply()
+        assertTrue(r.owner.settingsImportPicked(ticket))
+        var writes = 0
+        assertTrue(r.owner.finishSettingsImport(ticket) {
+            r.settings.write { writes++; r.current = spectral }
+            r.owner.externalRestoreSaved()
+        })
+        assertFalse(r.owner.finishSettingsImport(ticket) { writes++ })
+        assertEquals(1, writes)
+        assertEquals(spectral, r.current)
+    }
+
+    @Test fun actualArchiveDecodeBehindProviderBarrierCannotOverwriteLaterPreset() {
+        val r = Rig(original)
+        val ticket = r.owner.beginSettingsImport()!!
+        assertTrue(r.owner.settingsImportPicked(ticket))
+        val document = SettingsArchive.export("dev.phosphor.mobil3", "2", "debug", "2026-09-08T00:00:00Z",
+            original.preferenceValues()).json
+        val reading = CountDownLatch(1)
+        val releaseRead = CountDownLatch(1)
+        val result = AtomicReference<SettingsArchive.ImportResult>()
+        val failure = AtomicReference<Throwable>()
+        val provider = Thread {
+            try {
+                reading.countDown()
+                check(releaseRead.await(2, TimeUnit.SECONDS))
+                result.set(SettingsArchive.decode(document))
+            } catch (error: Throwable) { failure.set(error) }
+        }
+        provider.start()
+        try {
+            assertTrue(reading.await(2, TimeUnit.SECONDS))
+            r.owner.apply(ambient); r.admit(); r.reply()
+        } finally {
+            releaseRead.countDown()
+            provider.join(2000)
+        }
+        assertFalse(provider.isAlive)
+        assertNull(failure.get())
+        assertNotNull(result.get())
+        var writes = 0
+        assertFalse(r.owner.finishSettingsImport(ticket) {
+            r.settings.write {
+                writes++
+                SettingsArchive.merge(result.get(), r.saved.preferenceValues())
+                r.current = original
+            }
+        })
+        assertEquals(0, writes)
+        assertEquals(ambient, r.current)
+        assertEquals(ambient, r.saved)
+    }
+
+    @Test fun cancelledStaleAndRetiredPickersCannotClaimReplacementOperation() {
+        val r = Rig(original)
+        val old = r.owner.beginSettingsImport()!!
+        assertNull(r.owner.beginSettingsImport())
+        r.owner.cancelSettingsImport(old)
+        val next = r.owner.beginSettingsImport()!!
+        assertFalse(r.owner.settingsImportPicked(old))
+        r.owner.cancelSettingsImport(old)
+        assertTrue(r.owner.settingsImportPicked(next))
+        r.manualFocus(1.5f)
+        assertFalse(r.owner.settingsImportPicked(next))
+        val last = r.owner.beginSettingsImport()!!
+        r.owner.close()
+        assertFalse(r.owner.finishSettingsImport(last) { fail("Retired owner wrote") })
+        assertFalse(r.owner.automaticPersistenceAllowed)
+        assertNull(r.owner.beginSettingsImport())
+    }
+
+    @Test fun pendingLaterApplyInvalidatesImportBeforeNativeReplyOrSettingsMutation() {
+        val r = Rig(original)
+        val ticket = r.owner.beginSettingsImport()!!
+        r.owner.apply(ambient)
+        assertFalse(r.owner.finishSettingsImport(ticket) { fail("Stale import entered write owner") })
+        assertTrue(r.owner.pending)
+        r.admit(); r.reply()
+        assertEquals(ambient, r.current)
+    }
+
+    @Test fun lightAndArchiveFailedRollbacksShareTheWorkflowRecoveryLatch() {
+        for (adapter in listOf("light", "archive")) {
+            val r = Rig(original)
+            var preferences = original.preferenceValues()
+            val prior = preferences
+            val ticket = r.owner.beginSettingsImport()!!
+            val transaction = {
+                r.settings.write {
+                    val failure = r.settings.commit(
+                        commit = { preferences = ambient.preferenceValues(); false },
+                        publish = { fail("Failed commit cannot publish"); false },
+                        rollback = { false },
+                    )!!
+                    r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure(failure.message(), failure.restored))
+                }
+            }
+            if (adapter == "archive") assertTrue(r.owner.finishSettingsImport(ticket, transaction))
+            else { r.owner.cancelSettingsImport(ticket); r.owner.edit(transaction) }
+            assertNotEquals(prior, preferences)
+            assertTrue(r.owner.storageUncertain)
+            assertTrue(r.owner.unsaved)
+            assertFalse(r.owner.automaticPersistenceAllowed)
+            assertThrows(IllegalStateException::class.java) { r.manualFocus(2f) }
+            r.owner.apply(spectral); r.owner.undo()
+            assertEquals(0L, r.sequence)
+            assertNull(r.owner.beginSettingsImport())
+            var sourceStops = 0
+            r.owner.settle("Stop source"); sourceStops++
+            assertEquals(1, sourceStops)
+            r.persistenceAction = { preferences = it.preferenceValues(); null }
+            r.owner.retryPersistence()
+            assertEquals(prior, preferences)
+            assertFalse(r.owner.editsBlocked)
+            assertFalse(r.owner.unsaved)
+            assertEquals(0L, r.sequence)
+        }
+    }
+
+    @Test fun verifiedExternalRollbackDoesNotInventUncertaintyOrClearExistingUncertainty() {
+        val r = Rig(original)
+        r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure("Restored", true))
+        assertTrue(r.owner.automaticPersistenceAllowed)
+        r.manualFocus(1.8f)
+        r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure("Unknown rollback", false))
+        r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure("Later restored", true))
+        assertTrue(r.owner.storageUncertain)
+        assertTrue(r.owner.unsaved)
+        assertFalse(r.owner.automaticPersistenceAllowed)
+    }
+
+    @Test fun storageRecoveryCannotRepairUnknownNativeReceiptOrAcceptOldImport() {
+        val r = Rig(original)
+        val ticket = r.owner.beginSettingsImport()!!
+        r.owner.apply(ambient)
+        r.outcomes[1] = 4
+        r.reply()
+        r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure("Unknown rollback", false))
+        val trace = r.trace.toList()
+        r.owner.retryPersistence()
+        assertEquals(trace, r.trace)
+        assertTrue(r.owner.uncertain)
+        assertTrue(r.owner.storageUncertain)
+        assertFalse(r.owner.finishSettingsImport(ticket) { fail("Uncertain owner wrote") })
     }
 
     @Test fun waitLaunchFailureResolvesExactCommittedReceiptInsteadOfRetrying() {
