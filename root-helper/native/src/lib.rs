@@ -1,3 +1,4 @@
+pub mod classpath;
 pub mod sha256;
 pub const MAGIC: u32 = 0x31524150;
 pub const MAX_PAYLOAD: usize = 4096;

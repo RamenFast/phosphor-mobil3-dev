@@ -1,12 +1,13 @@
 # Handoff: mobile expansion execution
 
-**Updated:** 2026-09-08. **Status:** section 1 accepted at `3e5e00e`, independent round 3 score 9/10. Section 2 fixed root-audio helper passes its first Android build and awaits exact committed install and PCM trials. No expanded runtime feature is accepted and no release is claimed.
+**Updated:** 2026-09-08,03:05 UTC. **Status:** section1 accepted at `3e5e00e`, independent score9/10. Exact `4f8e5ec` helper is installed and proves native UID0 with unchanged mount namespace. ART aborted before audio because boot classpaths were missing. The source-backed read-only correction passes16native tests and awaits its exact Android build. No expanded runtime feature or release is accepted.
 
 ## Read first
 
 - Start with the canonical [MOBILE-EXPANSION-PLAN.md](MOBILE-EXPANSION-PLAN.md), [active expansion contract](spec/EXPANSION.md), and [single execution ledger](docs/plans/mobile-expansion/EXECUTION.md).
 - Ben approved implementation and reversible S25 work at 00:18:19 UTC. This supersedes the prior S25 exclusion for this task. Preserve unrelated ASUS volume, PC-audio, signing, publication, and irreversible-action boundaries.
 - Ben's 02:47 UTC boundary forbids writes to `/system`, including `/system/bin`, `/vendor`, and boot/vbmeta partitions through any path. Reads are allowed. No remount, flash or bootloader change. Use only installed app code and owned private data for the helper.
+- [Current helper trial receipt](docs/plans/mobile-expansion/section-02-helper-trials.md) supersedes the earlier installed-probe and muted-route details below. App APK `40b0712d...e95bf` is installed, signer unchanged. No helper/policy remains after the diagnosed ART abort. The latest user-selected route is idle Bluetooth A2DP, MUSIC7/15. Preserve it.
 - Exact debug probe checkpoint `ff7067e` is installed, SHA-256 `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`, signer readback verified and preferences unchanged. All 17 probe tests and full Android gates passed. Baseline native 73 and relay 43 tests remain separate evidence.
 - App-origin KernelSU execution is verified: the fixed provider command returned UID 0, exit 0, in 210 ms with confirmed cleanup. Standard su paths remain absent. Root audio PCM is still unproven. Do not modify kernel/system state or the logcat override, and do not turn the diagnostic compatibility path into a product dependency.
 - Ben confirmed Astra/high routing at 01:11:40 UTC. Section 1 reviews scored 7, 7 and 9 after corrections. All reviewers and the helper writer are stopped after retained handoffs. Coordinator now owns source integration, the only Gradle slot, device checks and commits. Two live workers maximum, one implementation writer. Do not repeat the beacon.

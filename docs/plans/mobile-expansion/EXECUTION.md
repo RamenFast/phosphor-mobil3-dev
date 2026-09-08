@@ -50,6 +50,8 @@ At 02:11 UTC read-only audio preflight showed MODE_NORMAL, speaker selection, no
 
 The current logcat executable has the previously documented override. Its separately verified compatibility identity probe establishes authorization only. Reuse the noninvasive ignored logd diagnostic for logs. Do not replace the executable or depend on its override in the product.
 
+At02:56 the exact clean `4f8e5ec` app APK was installed and readback-verified. Both debug APKs were built together. [Helper trial1](section-02-helper-trials.md) proved the installed native PIE obtained UID0 with unchanged mount namespace. ART then aborted before READY because its fixed environment lacked boot classpaths. No tone or policy started, no helper remained, and preferences stayed byte-identical. The read-only platform-export correction passes16native tests and awaits its exact Android build. At02:54 the user-selected route was idle Bluetooth A2DP at MUSIC7/15, not the earlier muted speaker. Preserve that current state.
+
 ## Section and requirement matrix
 
 Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. A planned owner is not an active worker.

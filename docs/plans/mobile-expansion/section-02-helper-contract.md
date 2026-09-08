@@ -1,8 +1,8 @@
 # Section 2 fixed root audio feasibility contract
 
-spec-version: root-audio-feasibility-1
+spec-version: root-audio-feasibility-2
 compile-count: 1
-drift: 0
+drift: 1
 
 ## Context and vision
 
@@ -36,7 +36,11 @@ The initial provider compatibility table contains only version32525, UAPI2, flag
 
 After grant, all three UIDs must be zero. Native rearms and reads back PDEATHSIG because credential changes may clear it. The mount namespace link must equal the pregrant link. Before/after credential, GID, SELinux, seccomp and namespace evidence travels as bounded aggregate status. No configuration repair occurs. The existing Default/inherited profile evidence is a coordinator prerequisite already satisfied, not a request to change it.
 
-The single-threaded native process forks exactly one direct helper. The child sets PDEATHSIG before exec and verifies its parent. It closes unrelated descriptors, including the KSU FD. Only stdin/stdout/stderr, and pinned DEX fd6 survive. The executable is `/system/bin/app_process`, argv is exactly that path, `/`, and `dev.phosphor.mobil3.root.AudioPolicyMain`. Environment is fixed Android runtime roots plus fd6 CLASSPATH. No inherited caller environment enters ART.
+The single-threaded native process forks exactly one direct helper. The child sets PDEATHSIG before exec and verifies its parent. It closes unrelated descriptors, including the KSU FD. Only stdin/stdout/stderr, and pinned DEX fd6 survive. The executable is `/system/bin/app_process`, argv is exactly that path, `/`, and `dev.phosphor.mobil3.root.AudioPolicyMain`. Environment contains fixed Android runtime roots, fd6 CLASSPATH and two validated platform boot-classpath exports. No inherited caller environment enters ART.
+
+After grant and before fork, native reads only `/data/system/environ/classpath`, the existing Android-generated export file. Check each parent and the no-follow file for root/system ownership, trusted group and no world-write. Require a bounded regular file of at most64KiB. Parse data, never shell syntax. Accept only the four named Android exports, reject duplicates and require nonempty BOOTCLASSPATH and DEX2OATBOOTCLASSPATH. Preserve their exact order. Pass only those two exports to ART. Every required entry must be a bounded absolute JAR path directly under `/system/framework` or `/apex/<module>/javalib`. Validate canonical placement, regular root-owned type and no group/world-write before exec. Missing, malformed or inaccessible platform exports fail with a named stage. Do not regenerate, edit or repair the file, and do not substitute caller environment or writable app paths.
+
+This follows Android16 `packages/modules/SdkExtensions/derive_classpath/derive_classpath.cpp`, blob `c1faec2e28c69bb464dab961b0fb6daa890618aa`, `WriteClasspathExports`. On exact4f8e5ec, logd observed ART PID13206 abort before runtime creation because BOOTCLASSPATH and DEX2OATBOOTCLASSPATH were empty. The native supervisor reaped that child. No policy or fixture started, and independent process/policy checks found no residue.
 
 The native supervisor is the sole wait owner. It signals only its positive unreaped direct child PID. It queries saved original UID authorization once per second after root. EOF, STOP, missing heartbeat for two seconds, revocation/query failure, protocol error, backpressure, helper death or timeout initiates STOP. Grace is one second, then root SIGKILL and wait/reap. Ready deadline is ten seconds from supervisor session start. START is legal once after READY. Capture deadline is six seconds from START, allowing a five-second helper window. Total postgrant alarm is twenty seconds. Kernel parent-death SIGKILL is the last resort, not a cleanup success claim.
 

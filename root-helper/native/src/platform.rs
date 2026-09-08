@@ -210,6 +210,70 @@ fn pipe() -> Result<[i32; 2], String> {
         Ok(f)
     }
 }
+fn runtime_environment() -> Result<Vec<CString>, String> {
+    // Read the platform-generated init data, never caller environment or shell syntax.
+    for path in ["/data", "/data/system", "/data/system/environ"] {
+        let m = std::fs::symlink_metadata(path)
+            .map_err(|e| format!("platform_classpath_parent: {e}"))?;
+        if !m.is_dir()
+            || !matches!(m.uid(), 0 | 1000)
+            || !matches!(m.gid(), 0 | 1000)
+            || m.mode() & 0o002 != 0
+        {
+            return Err("platform_classpath_parent_owner_type_mode".into());
+        }
+    }
+    let mut file = OpenOptions::new()
+        .read(true)
+        .custom_flags(0x20000 | 0x80000)
+        .open("/data/system/environ/classpath")
+        .map_err(|e| format!("platform_classpath_open: {e}"))?;
+    let m = file
+        .metadata()
+        .map_err(|e| format!("platform_classpath_stat: {e}"))?;
+    if !m.is_file()
+        || !matches!(m.uid(), 0 | 1000)
+        || !matches!(m.gid(), 0 | 1000)
+        || m.mode() & 0o022 != 0
+        || m.len() == 0
+        || m.len() > classpath::LIMIT as u64
+    {
+        return Err(format!(
+            "platform_classpath_file_owner_type_mode_size: uid={} gid={} mode={:o} size={}",
+            m.uid(),
+            m.gid(),
+            m.mode(),
+            m.len()
+        ));
+    }
+    let mut bytes = Vec::new();
+    (&mut file)
+        .take((classpath::LIMIT + 1) as u64)
+        .read_to_end(&mut bytes)
+        .map_err(|e| format!("platform_classpath_read: {e}"))?;
+    let text = std::str::from_utf8(&bytes).map_err(|_| "platform_classpath_utf8")?;
+    let exports = classpath::parse(text).map_err(str::to_owned)?;
+    for export in &exports {
+        let (_, value) = export.split_once('=').ok_or("platform_classpath_export")?;
+        for path in value.split(':') {
+            let real = std::fs::canonicalize(path)
+                .map_err(|e| format!("platform_classpath_jar_realpath: {e}"))?;
+            if !real.to_str().is_some_and(classpath::jar_path) {
+                return Err("platform_classpath_jar_resolves_outside_platform".into());
+            }
+            let m = std::fs::metadata(&real)
+                .map_err(|e| format!("platform_classpath_jar_stat: {e}"))?;
+            if !m.is_file() || m.uid() != 0 || m.mode() & 0o022 != 0 {
+                return Err("platform_classpath_jar_owner_type_mode".into());
+            }
+        }
+    }
+    ENV.iter()
+        .map(|s| (*s).to_owned())
+        .chain(exports)
+        .map(|s| CString::new(s).map_err(|_| "platform_environment_nul".to_owned()))
+        .collect()
+}
 fn setup() -> Result<(File, File, u32, String), String> {
     // sigset_t storage is oversized and aligned for bionic LP64.
     let mut set = [0u64; 16];
@@ -313,6 +377,7 @@ pub fn run() -> i32 {
 fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, String> {
     // All fallible setup is before fork. Afterwards every exit uses the one wait owner.
     send(1, 13, detail.as_bytes())?;
+    let env = runtime_environment()?;
     let input = pipe()?;
     let output = pipe()?;
     nonblock(input[1])?;
@@ -325,10 +390,6 @@ fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, St
     let argv = [EXECUTABLE, "/", CLASS].map(|s| CString::new(s).unwrap());
     let mut ap = argv.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
     ap.push(std::ptr::null());
-    let env = ENV
-        .iter()
-        .map(|s| CString::new(*s).unwrap())
-        .collect::<Vec<_>>();
     let mut ep = env.iter().map(|s| s.as_ptr()).collect::<Vec<_>>();
     ep.push(std::ptr::null());
     let fds = std::fs::read_dir("/proc/self/fd")
