@@ -25,8 +25,8 @@ impl Selection {
         let mode = u32::from_le_bytes(p[8..].try_into().unwrap());
         if generation == 0
             || generation > i64::MAX as u64
-            || mode > 3
-            || (!debug && (mode == 0 || mode == 3))
+            || mode > 5
+            || (!debug && (mode == 0 || mode >= 3))
         {
             return Err("selection_mode_or_generation");
         }
@@ -169,6 +169,7 @@ pub struct Session {
     pub sequence: u64,
     pub pcm_at: u64,
     pub progress_sequence: u64,
+    pub protocol_clean: bool,
 }
 impl Default for Session {
     fn default() -> Self {
@@ -186,10 +187,15 @@ impl Default for Session {
             sequence: 0,
             pcm_at: 0,
             progress_sequence: 0,
+            protocol_clean: true,
         }
     }
 }
 impl Session {
+    pub fn reject(&mut self, now: u64, cause: &'static str) {
+        self.protocol_clean = false;
+        self.stop(now, Some(cause));
+    }
     pub fn stop(&mut self, now: u64, cause: Option<&'static str>) {
         if self.failure.is_none() {
             self.failure = cause;
@@ -257,7 +263,7 @@ impl Session {
                     .ok_or("pcm_sequence_overflow")?;
                 self.pcm_at = now;
             }
-            16 if self.selection.stream()
+            16 if (self.selection.stream() || self.selection.mode >= 4)
                 && matches!(self.phase, Phase::Capture(_) | Phase::Stopping(_))
                 && !self.result =>
             {
@@ -293,7 +299,7 @@ impl Session {
                 self.stop(now, Some("capture_timeout"));
             }
         }
-        if self.selection.stream()
+        if (self.selection.stream() || self.selection.mode >= 4)
             && matches!(self.phase, Phase::Capture(_))
             && now.saturating_sub(self.pcm_at) > 3000
         {
@@ -309,16 +315,77 @@ impl Session {
         self.phase = Phase::Reaped;
     }
     pub fn success(&self) -> bool {
-        self.phase == Phase::Reaped
+        self.cleanup_confirmed()
             && self.exit == Some(0)
-            && self.result
-            && !self.killed
             && self.failure.is_none()
+    }
+    pub fn cleanup_confirmed(&self) -> bool {
+        self.phase == Phase::Reaped && self.result && !self.killed && self.protocol_clean
     }
 }
 #[cfg(test)]
 mod tests {
     use super::*;
+    #[test]
+    fn rejected_terminal_protocol_cannot_be_cleaned_by_natural_exit() {
+        let id = Selection { generation: 9, mode: 4 }.tag(10401, &"a".repeat(64));
+        let result = [id.as_slice(), b"{\"cleanup_confirmed\":true}"].concat();
+        let mut s = Session::default();
+        s.helper(12, &result, &id, 10).unwrap();
+        let failure = s.helper(12, &result, &id, 11).unwrap_err();
+        s.reject(11, failure);
+        s.reaped(0);
+        assert!(!s.cleanup_confirmed());
+        assert!(!s.success());
+        s.stop(12, None);
+        assert!(!s.cleanup_confirmed());
+    }
+    #[test]
+    fn partial_terminal_frame_and_control_rejection_latch_cleanup_uncertain() {
+        let mut decoder = Decoder::default();
+        decoder.push(&[1]).unwrap();
+        assert!(decoder.eof().is_err());
+        for cause in ["terminal_helper_protocol", "app_protocol", "control_payload", "missing_terminal_helper_frame"] {
+            let mut s = Session { result: true, ..Session::default() };
+            s.reject(1, cause);
+            s.reaped(0);
+            assert!(!s.cleanup_confirmed(), "{cause}");
+        }
+    }
+    #[test]
+    fn clean_helper_failure_or_eof_is_not_confused_with_protocol_corruption() {
+        for cause in [None, Some("app_eof"), Some("revoked")] {
+            let mut s = Session { result: true, ..Session::default() };
+            s.stop(1, cause);
+            s.reaped(4 << 8);
+            assert!(s.cleanup_confirmed());
+            assert!(!s.success());
+            s.killed = true;
+            assert!(!s.cleanup_confirmed());
+        }
+        let mut s = Session::default();
+        s.reaped(0);
+        assert!(!s.cleanup_confirmed());
+    }
+    #[test]
+    fn stereo_fixed_modes() {
+        for mode in [4u32, 5] {
+            let payload = [7u64.to_le_bytes().as_slice(), mode.to_le_bytes().as_slice()].concat();
+            assert_eq!(Selection::parse(20, &payload, true).unwrap().mode, mode);
+            assert!(Selection::parse(20, &payload, false).is_err());
+            let selection = Selection { generation: 7, mode };
+            assert!(!selection.stream());
+            let id = selection.tag(10401, &"a".repeat(64));
+            let mut s = Session { selection, phase: Phase::Capture(0), ..Session::default() };
+            let p = [id.as_slice(), 0u64.to_le_bytes().as_slice()].concat();
+            assert!(s.helper(16, &p, &id, 250).is_ok());
+            assert!(s.helper(15, &p, &id, 251).is_err());
+            assert!(s.helper(16, &p, &id, 252).is_err());
+            s.heartbeat = 5500;
+            s.tick(5500);
+            assert_eq!(s.failure, Some("helper_progress_timeout"));
+        }
+    }
     #[test]
     fn uapi_layout() {
         assert_eq!(std::mem::size_of::<Info>(), 16);
@@ -509,7 +576,7 @@ mod product_tests {
     }
     #[test]
     fn release_rejects_fixed_debug_modes_before_grant() {
-        for mode in 0u32..5 {
+        for mode in 0u32..7 {
             let p = [
                 42u64.to_le_bytes().as_slice(),
                 mode.to_le_bytes().as_slice(),
@@ -519,7 +586,7 @@ mod product_tests {
                 Selection::parse(20, &p, false).is_ok(),
                 mode == 1 || mode == 2
             );
-            assert_eq!(Selection::parse(20, &p, true).is_ok(), mode <= 3);
+            assert_eq!(Selection::parse(20, &p, true).is_ok(), mode <= 5);
         }
         assert!(Selection::parse(20, &[0; 12], true).is_err());
         assert!(Selection::parse(1, &[0; 12], true).is_err());

@@ -13,7 +13,7 @@ internal object RootAudioProtocol {
             .putInt(MAGIC).putInt(kind).putInt(payload.size).put(payload).array()
     }
     fun select(generation: Long, mode: Int): ByteArray {
-        require(generation > 0 && mode in 0..3)
+        require(generation > 0 && mode in 0..5)
         return frame(20, ByteBuffer.allocate(12).order(ByteOrder.LITTLE_ENDIAN).putLong(generation).putInt(mode).array())
     }
     fun control(kind: Int, generation: Long = 1): ByteArray {
@@ -40,7 +40,7 @@ internal object RootAudioProtocol {
         fun eof() { require(count == 0) { "Partial frame at EOF" } }
     }
     fun tagged(payload: ByteArray, uid: Int, build: String, generation: Long, mode: Int): ByteBuffer {
-        require(payload.size in 80..MAX && generation > 0 && mode in 0..3) { "Helper payload length invalid" }
+        require(payload.size in 80..MAX && generation > 0 && mode in 0..5) { "Helper payload length invalid" }
         val h = ByteBuffer.wrap(payload).order(ByteOrder.LITTLE_ENDIAN)
         require(h.int == uid) { "Helper original UID mismatch" }
         val identity = ByteArray(64).also(h::get).toString(Charsets.US_ASCII)
@@ -61,6 +61,7 @@ internal object RootAudioProtocol {
         var progressSequence = 0L
             private set
         fun pcm(payload: ByteArray): ShortArray {
+            require(mode == 2 || mode == 3) { "PCM forbidden for aggregate probe" }
             val b = tagged(payload, uid, build, generation, mode)
             require(b.remaining() >= 24) { "PCM header incomplete" }
             require(b.long == sequence && sequence < Long.MAX_VALUE) { "PCM sequence mismatch" }

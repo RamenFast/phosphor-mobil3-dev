@@ -28,7 +28,7 @@ public final class ProtocolToneTest {
         try { Protocol.read(new InputStream(){public int read(){return 0;}public int read(byte[] b,int o,int n) throws IOException {throw new IOException("read cause retained");}}); throw new AssertionError(); } catch(IOException expected) {check(expected.getMessage().equals("read cause retained"));}
         check(id.length==80 && Protocol.generation(id)==1 && Protocol.mode(id)==0);
         rejects(()->Protocol.identity(10401,build,0,2),"identity");
-        rejects(()->Protocol.identity(10401,build,1,4),"identity");
+        rejects(()->Protocol.identity(10401,build,1,6),"identity");
         byte[] stream=Protocol.identity(10401,build,42,2);
         byte[] pcm=Protocol.pcm(stream,0,new short[]{-32768,0,32767},3);
         check(pcm.length==110);

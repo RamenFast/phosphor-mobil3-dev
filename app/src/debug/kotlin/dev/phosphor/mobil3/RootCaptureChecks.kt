@@ -154,14 +154,13 @@ internal object RootCaptureChecks {
             check(tone.head >= 64000) { "Fixture AudioTrack did not advance for four seconds" }
             val pcm = signal.json()
             if (allowSystem) {
-                check(signal.frames in 64000..80000 && pcm.getDouble("rms") > 0.00001 && pcm.getDouble("frequency_hz") in 975.0..1019.0) { "BY_SYSTEM expected 997 Hz PCM not proven" }
+                check(signal.frames in 64000..80000 && pcm.getDouble("rms") > 0.00001 && pcm.getDouble("frequency_hz") in 975.0..1019.0) { "BY_SYSTEM expected 997 Hz PCM not proven: $pcm" }
                 check(snapshot?.optDouble("rms", 0.0)?.let { it > 0.00001 } == true && snapshot!!.getDouble("frequency_hz") in 975.0..1019.0) { "Post-JNI ring tone not proven" }
             } else {
                 check(data.getLong("read_progress") >= 4) { "Exclusion needs a progressing helper, not a dead reader" }
                 check(signal.nonzero == 0L) { "BY_NONE unexpectedly produced nonzero PCM" }
                 if (signal.frames > 0) check(snapshot?.getDouble("rms") == 0.0) { "Post-JNI silence not proven" }
             }
-            data.put("pcm", pcm).put("native_ring", snapshot ?: JSONObject.NULL)
         } catch (error: Exception) { failure = error.message ?: error.toString() }
         finally {
             gate.cancel()
@@ -174,6 +173,7 @@ internal object RootCaptureChecks {
                     check(main { CaptureService.quiescent() } && RootHelperLease.available())
                 }.onFailure { cleanup = false; failure = failure ?: it.message }
             }
+            data.put("pcm", signal.json()).put("native_ring", snapshot ?: JSONObject.NULL)
             if (before != prefs.all) { failure = failure ?: "Fixture changed local runtime preferences"; data.put("preferences_unchanged", false) }
             else data.put("preferences_unchanged", true)
             write(context, if (allowSystem) "root-capture-system.json" else "root-capture-none.json", data, failure, cleanup)

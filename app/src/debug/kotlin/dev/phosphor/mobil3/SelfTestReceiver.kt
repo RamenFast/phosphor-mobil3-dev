@@ -14,6 +14,8 @@ class SelfTestReceiver : BroadcastReceiver() {
         internal fun accepts(action: String?) = action == "dev.phosphor.mobil3.SELFTEST" ||
             action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || action == "dev.phosphor.mobil3.KSU_AUTH_PROBE" ||
             action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE" ||
+            action == "dev.phosphor.mobil3.ROOT_STEREO_SYSTEM_TEST" ||
+            action == "dev.phosphor.mobil3.ROOT_STEREO_NONE_TEST" ||
             action == "dev.phosphor.mobil3.ROOT_CAPTURE_SYSTEM_TEST" ||
             action == "dev.phosphor.mobil3.ROOT_CAPTURE_NONE_TEST" ||
             action == "dev.phosphor.mobil3.ROOT_CAPTURE_TONE"
@@ -24,7 +26,11 @@ class SelfTestReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                if (intent.action == "dev.phosphor.mobil3.ROOT_CAPTURE_SYSTEM_TEST") {
+                if (intent.action == "dev.phosphor.mobil3.ROOT_STEREO_SYSTEM_TEST") {
+                    RootStereoProbe.run(context, allowSystem = true)
+                } else if (intent.action == "dev.phosphor.mobil3.ROOT_STEREO_NONE_TEST") {
+                    RootStereoProbe.run(context, allowSystem = false)
+                } else if (intent.action == "dev.phosphor.mobil3.ROOT_CAPTURE_SYSTEM_TEST") {
                     RootCaptureChecks.run(context, allowSystem = true)
                 } else if (intent.action == "dev.phosphor.mobil3.ROOT_CAPTURE_NONE_TEST") {
                     RootCaptureChecks.run(context, allowSystem = false)

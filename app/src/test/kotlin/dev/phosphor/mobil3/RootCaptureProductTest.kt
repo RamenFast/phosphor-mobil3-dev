@@ -191,4 +191,14 @@ class RootCaptureProductTest {
         assertTrue(main("CaptureService").contains("android.os.Build.VERSION.SDK_INT >= 34"))
         assertTrue(main("CaptureService").contains("else startForeground(NOTIF_ID, buildNotification())"))
     }
+
+    @Test fun failedProductChecksRetainMeasuredSignalAndRingEvidence() {
+        val checks = source("src/debug/kotlin/dev/phosphor/mobil3/RootCaptureChecks.kt")
+            .substringAfter("fun run(context:").substringBefore("fun tone(context:")
+        val cleanup = checks.substringAfter("} finally {")
+        assertTrue(cleanup.contains("data.put(\"pcm\", signal.json()).put(\"native_ring\", snapshot ?: JSONObject.NULL)"))
+        assertTrue(cleanup.indexOf("data.put(\"pcm\"") < cleanup.indexOf("write(context,"))
+        assertTrue(checks.contains("signal.frames in 64000..80000"))
+        assertTrue(checks.contains("signal.nonzero == 0L"))
+    }
 }

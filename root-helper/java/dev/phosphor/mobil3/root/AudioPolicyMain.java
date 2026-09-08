@@ -24,23 +24,23 @@ public final class AudioPolicyMain {
     private static byte[] identity;
     private static long generation;
     private static int mode;
-    private static boolean stopped;
+    static boolean stopped;
     private static String stage = "init";
     private static JSONObject evidence;
-    private static Object invoke(Object target, String method, Class<?>[] types, Object... args) throws Exception {
+    static Object invoke(Object target, String method, Class<?>[] types, Object... args) throws Exception {
         Class<?> owner = target instanceof Class<?> ? (Class<?>) target : target.getClass();
         Method m = owner.getMethod(method, types);
         try { return m.invoke(target instanceof Class<?> ? null : target, args); }
         catch (InvocationTargetException e) { Throwable c = e.getCause(); if (c instanceof Exception) throw (Exception)c; throw e; }
     }
-    private static Object make(String name, Class<?>[] types, Object... args) throws Exception {
+    static Object make(String name, Class<?>[] types, Object... args) throws Exception {
         return Class.forName(name).getConstructor(types).newInstance(args);
     }
-    private static void require(boolean value, String cause) { if (!value) throw new IllegalStateException(cause); }
-    private static void send(int kind, JSONObject data) throws Exception {
+    static void require(boolean value, String cause) { if (!value) throw new IllegalStateException(cause); }
+    static void send(int kind, JSONObject data) throws Exception {
         sendBytes(kind, Protocol.tagged(identity, data.toString()));
     }
-    private static void sendBytes(int kind, byte[] payload) throws Exception {
+    static void sendBytes(int kind, byte[] payload) throws Exception {
         byte[] frame = Protocol.encode(kind, payload);
         // RuntimeInit redirects System.out. Write the inherited pipe explicitly.
         for (int n = 0; n < frame.length;) {
@@ -54,7 +54,7 @@ public final class AudioPolicyMain {
         p.events = (short)(OsConstants.POLLIN | OsConstants.POLLHUP | OsConstants.POLLERR);
         return Os.poll(new StructPollfd[]{p}, timeout) > 0;
     }
-    private static boolean control(boolean waiting) throws Exception {
+    static boolean control(boolean waiting) throws Exception {
         if (!inputReady(waiting ? 20 : 0)) return false;
         Protocol.Frame f = Protocol.read(INPUT);
         Protocol.control(f, generation);
@@ -62,7 +62,7 @@ public final class AudioPolicyMain {
         require(waiting && f.kind == 2, "helper_control_state");
         return true;
     }
-    private static String cause(Throwable e) {
+    static String cause(Throwable e) {
         StringBuilder s = new StringBuilder();
         for (int i = 0; e != null && i < 4; i++, e = e.getCause()) {
             if (i > 0) s.append(" <- ");
@@ -96,11 +96,12 @@ public final class AudioPolicyMain {
             int uid = Protocol.validateInit(init, HelperBuild.ID);
             identity = init.payload;
             generation = Protocol.generation(identity); mode = Protocol.mode(identity);
-            require(mode == 0 || mode == 2 || mode == 3, "capture_mode_required");
+            require(mode == 0 || mode == 2 || mode == 3 || mode == 4 || mode == 5, "capture_mode_required");
             evidence.put("protocol",2).put("generation",generation).put("mode",mode).put("build",HelperBuild.ID).put("original_uid",uid)
                 .put("uid",Process.myUid()).put("pid",Process.myPid()).put("sdk",Build.VERSION.SDK_INT);
             stage = "attribution"; if (Build.VERSION.SDK_INT >= 31) evidence.put("attribution",attribution());
             stage = "permissions"; evidence.put("permissions",permissions());
+            if (mode >= 4) { System.exit(StereoProbe.run(uid, identity, evidence)); return; }
             stage = "reflection_rule";
             Class<?> ruleClass = Class.forName("android.media.audiopolicy.AudioMixingRule");
             Object rule = make("android.media.audiopolicy.AudioMixingRule$Builder",new Class<?>[0]);
@@ -145,7 +146,7 @@ public final class AudioPolicyMain {
                 if (stopped) break;
                 if (mode==0 && stats.frames==ToneStats.LIMIT) { SystemClock.sleep(2); continue; }
                 if (mode==3 && streamFrames>=80000) break;
-                int count=record.read(block,0,mode==0 ? Math.min(block.length,ToneStats.LIMIT-stats.frames) : block.length,AudioRecord.READ_NON_BLOCKING);
+                int count=record.read(block,0,mode==0 ? Math.min(block.length,ToneStats.LIMIT-stats.frames) : Protocol.readCount(mode,block.length,streamFrames),AudioRecord.READ_NON_BLOCKING);
                 require(count>=0,"AudioRecord.read="+count);
                 if (mode==0) stats.add(block,count);
                 else {

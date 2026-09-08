@@ -508,7 +508,7 @@ fn supervise(
                             }
                         }
                         Ok(false) => {}
-                        Err(e) => s.stop(now, Some(e)),
+                        Err(e) => s.reject(now, e),
                     }
                 }
                 if eof {
@@ -517,7 +517,7 @@ fn supervise(
             }
             Err(e) => {
                 detail_error = e;
-                s.stop(now, Some("app_protocol"));
+                s.reject(now, "app_protocol");
             }
         }
         if !pipe_eof {
@@ -531,19 +531,19 @@ fn supervise(
                                     s.stop(now, Some("backpressure"));
                                 }
                             }
-                            Err(e) => s.stop(now, Some(e)),
+                            Err(e) => s.reject(now, e),
                         }
                     }
                     if eof {
                         pipe_eof = true;
                         if !s.result {
-                            s.stop(now, Some("helper_eof"));
+                            s.reject(now, "helper_eof");
                         }
                     }
                 }
                 Err(e) => {
                     detail_error = e;
-                    s.stop(now, Some("helper_protocol"));
+                    s.reject(now, "helper_protocol");
                 }
             }
         }
@@ -585,20 +585,20 @@ fn supervise(
                                         s.stop(now, Some("backpressure"));
                                     }
                                 }
-                                Err(e) => s.stop(now, Some(e)),
+                                Err(e) => s.reject(now, e),
                             }
                         }
                         pipe_eof = eof;
                     }
                     Err(e) => {
                         detail_error = e;
-                        s.stop(now, Some("terminal_helper_protocol"));
+                        s.reject(now, "terminal_helper_protocol");
                         break;
                     }
                 }
             }
             if !pipe_eof || !s.result {
-                s.stop(now, Some("missing_terminal_helper_frame"));
+                s.reject(now, "missing_terminal_helper_frame");
             }
             s.reaped(status);
             break;
@@ -624,7 +624,7 @@ fn supervise(
         close(input[1]);
         close(output[0]);
     }
-    let cleanup = s.phase == Phase::Reaped;
+    let cleanup = s.cleanup_confirmed();
     let ok = s.success();
     let cause = s
         .failure

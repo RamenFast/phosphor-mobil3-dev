@@ -39,7 +39,7 @@ public final class Protocol {
         return b;
     }
     public static byte[] identity(int uid, String build, long generation, int mode) throws IOException {
-        if (generation <= 0 || mode < 0 || mode > 3 || uid % 100000 < 10000 || uid % 100000 > 19999 || !build.matches("[a-f0-9]{64}"))
+        if (generation <= 0 || mode < 0 || mode > 5 || uid % 100000 < 10000 || uid % 100000 > 19999 || !build.matches("[a-f0-9]{64}"))
             throw new IOException("identity_invalid");
         return ByteBuffer.allocate(80).order(ByteOrder.LITTLE_ENDIAN).putInt(uid)
             .put(build.getBytes(StandardCharsets.US_ASCII)).putLong(generation).putInt(mode).array();
@@ -63,11 +63,15 @@ public final class Protocol {
         if (f.payload.length != 8 || ByteBuffer.wrap(f.payload).order(ByteOrder.LITTLE_ENDIAN).getLong() != generation)
             throw new IOException("control_generation");
     }
+    public static int readCount(int mode, int block, long frames) {
+        if (block < 0 || frames < 0 || (mode == 3 && frames > 80000)) throw new IllegalArgumentException("finite_read_limit");
+        return mode == 3 ? (int)Math.min(block, 80000 - frames) : block;
+    }
     public static byte[] progress(byte[] id, long sequence) {
         return ByteBuffer.allocate(88).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence).array();
     }
     public static byte[] pcm(byte[] id, long sequence, short[] block, int count) throws IOException {
-        if (id.length != 80 || sequence < 0 || count < 1 || count > 160 || count > block.length) throw new IOException("pcm_contract");
+        if (id.length != 80 || mode(id) >= 4 || sequence < 0 || count < 1 || count > 160 || count > block.length) throw new IOException("pcm_contract");
         ByteBuffer b = ByteBuffer.allocate(104 + count*2).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence)
             .putInt(16000).putInt(1).putInt(2).putInt(count);
         for (int i=0;i<count;i++) b.putShort(block[i]);

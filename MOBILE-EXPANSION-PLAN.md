@@ -102,6 +102,8 @@ Ben's04:17:59 UTC clarification preserves true any-app audio, specifically Sound
 
 Ben required original stereo and truthful rate handling at04:21, then minimal added latency and alignment with heard music at04:38. Duplicated mono is not success. Compare actual capture, transport and reconstruction rates separately. Measure normal playback and the candidate on the same output, optimize measured buffering, and retain unresolved acoustic/display timing rather than inventing a latency claim.
 
+At04:56 and04:58 Ben authorized a conditional fallback after bounded investigation: retain an encouraging root-ready surface with a real authorization check if full stereo remains blocked. Label the missing audio capability honestly. Preserve standard capture and continue independent expansion work. This does not convert mono, an authorization result or an untested button into R01 stereo acceptance.
+
 - Inspect the target Android build, root manager, SELinux context, audio policy, routes, and existing authorization. Do not infer backend support merely from `su` succeeding.
 - Prototype a packaged fixed-purpose app_process helper with an authorized session supervisor. Store sealed DEX in private app data, but execute the native bootstrap from installed app-nonwritable code under the API 29 execution rule. Require no LSPosed, system/boot writes, remount, boot patch, reboot persistence, or global SELinux disable.
 - Test privileged AudioPolicy loopback-with-render first, keeping audio audible on the phone. Investigate actual policy options against ordinary and opted-out applications and the OEM implementation.
