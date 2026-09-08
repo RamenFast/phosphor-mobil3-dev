@@ -129,3 +129,8 @@ Ben approved the complete [canonical expansion plan](../MOBILE-EXPANSION-PLAN.md
 | R17 | Read-only on-demand signal check showing measured input health and dark-beam causes | open |
 
 All worker workstreams use proposed Astra/high reasoning, at most two live workers and one implementation writer. The required routing beacon appeared once and expired without a new confirmation. Do not infer approval from that expiry or repeat the same unanswered notification. Publication, signing, irreversible changes, and unrelated relay work keep their existing boundaries.
+
+## 2026-09-08 execution clarifications
+
+- At 01:11:40 UTC Ben confirmed continuation after the routing question. Astra/high routing is now confirmed, not inferred from beacon expiry. The execution ledger owns current worker state.
+- At 02:47:30 UTC Ben required read-only access to `/system`, including `/system/bin`, `/vendor`, and boot/vbmeta partitions. This applies through raw block-device aliases and both slots. Reads are allowed. The active expansion contract and helper contract now state this boundary explicitly. No remount, flash or bootloader change is authorized.

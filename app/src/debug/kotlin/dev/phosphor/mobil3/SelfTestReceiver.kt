@@ -12,7 +12,8 @@ class SelfTestReceiver : BroadcastReceiver() {
     companion object {
         private val active = AtomicBoolean(false)
         internal fun accepts(action: String?) = action == "dev.phosphor.mobil3.SELFTEST" ||
-            action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || action == "dev.phosphor.mobil3.KSU_AUTH_PROBE"
+            action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || action == "dev.phosphor.mobil3.KSU_AUTH_PROBE" ||
+            action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -20,7 +21,10 @@ class SelfTestReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                if (intent.action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || intent.action == "dev.phosphor.mobil3.KSU_AUTH_PROBE") {
+                if (intent.action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE") {
+                    RootAudioProbe.run(context)
+                    Log.i("phosphor-mobil3", "ROOT_AUDIO_PROBE receipt written")
+                } else if (intent.action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || intent.action == "dev.phosphor.mobil3.KSU_AUTH_PROBE") {
                     RootAuthorizationProbe.run(context, kernelSu = intent.action == "dev.phosphor.mobil3.KSU_AUTH_PROBE")
                     Log.i("phosphor-mobil3", "ROOT_AUTH_PROBE receipt written")
                 } else {

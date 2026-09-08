@@ -25,3 +25,7 @@ Keep the authorized root capability private, reversible and local to one capture
 - [Installed app-origin authorization and recovery](../docs/plans/mobile-expansion/section-02-authorization.md)
 
 The prior baseline APK and preferences remain retained and hash-verified. A same-package, same-signer debug replacement is the rollback unit. Do not uninstall, clear data or repair system/root configuration. Expansion drift remains 17 until requirement acceptance, regardless of successful developer probes.
+
+## 02:47 UTC user boundary clarification
+
+Ben explicitly permits reads but forbids writes to `/system`, including `/system/bin`, `/vendor`, and boot/vbmeta partitions. The partition boundary includes raw block devices, aliases and both slots. Do not remount or flash. This clarification does not authorize changes to unrelated applications, grants, root profiles, volume or bootloader configuration. Helper writes remain restricted to installed app code and owned private app data.

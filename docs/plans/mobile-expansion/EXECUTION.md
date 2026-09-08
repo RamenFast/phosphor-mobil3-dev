@@ -7,13 +7,15 @@ Authority: [2026-09-08 execution decision](../../../decisions/2026-09-08-mobile-
 ## Current checkpoint
 
 - Execution approved 2026-09-08 at 00:18:19 UTC.
+- At 02:47 UTC Ben explicitly made `/system`, including `/system/bin`, `/vendor`, and boot/vbmeta partitions read-only. Raw block aliases and both slots are included. Reads remain allowed. Existing no-remount, no-flash and no-root-configuration-change boundaries remain in force.
 - Coordinator: current Jcode root session. Ben's human continuation at 01:11:40 UTC confirms the proposed routing after the required ritual.
 - One beacon at 00:19:40 UTC reported `visible:true` and expired. No repeat beacon was used. The later human confirmation, not expiry or automatic notifications, opened worker routing.
 - Confirmed mapping: `openai-oauth:gpt-6-astra`, explicit `high`, for audio, presentation, experience, and independent critique. The route and enforced model pin were rechecked before spawning.
 - At most two live workers, one implementation writer. Coordinator owns shared files, real device actions, verification, commits, and cleanup.
-- Section 1 [round 1](critiques/section-01-round-01.md) and [round 2](critiques/section-01-round-02.md) each scored 7/10. Round 2 confirmed all first-round corrections, then reproduced missing/duplicate SDK declarations passing artifact checks. The narrow SDK correction and round 3 follow. No expanded app feature is accepted yet.
+- Section 1 is accepted at `3e5e00e`. [Round 1](critiques/section-01-round-01.md) and [round 2](critiques/section-01-round-02.md) each scored 7/10. After both corrections, independent [round 3](critiques/section-01-round-03.md) scored 9/10 with no material findings. Stop corrective review early. No expanded runtime feature or release is accepted yet.
 - The round 1 critic, two root researchers, and section 1 correction worker are stopped after retained handoffs. The correction worker completed its eight-file patch and released ownership at 01:50 UTC. Coordinator verification precedes the correction commit and independent round 2. Next implementation scope is the fixed packaged root-audio feasibility helper, not product acceptance.
 - At 02:08 UTC `session_skunk_1788833286980_595eb5eac5d15851` became sole implementation writer for the fixed debug helper. It also owns the narrow SDK correction subset. The coordinator does not edit those files. Section 1 reviewer `session_hedgehog_1788833218692_8aebcc68229bc347` finished and was stopped at 02:15 UTC.
+- The helper worker released all implementation files at 02:35 UTC and was stopped at 02:42 UTC. The coordinator now owns all source integration and the only Gradle build slot. Its released 17-file receipt is `/home/ben/.jcode/scratch/section2-helper-source.sha256`, hash `be2e1f71175fa741a82188273d05a1c4ed6bf9d84a69b9d2af663fbdcb376305`. That receipt predates coordinator corrections and is not the current source/APK identity.
 
 ## Baseline and recovery
 
@@ -54,7 +56,7 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 
 | Section | Requirement | Planned owner | Status | Required evidence | Critique |
 |---|---|---|---|---|---|
-| 1 | Baseline/contracts | Coordinator + boundary corrections | in progress | Round 1 found actual packaged-manifest binding and error-contract gaps. Corrections active | Round 1: 7/10, round 2 pending |
+| 1 | Baseline/contracts | Coordinator + boundary corrections | accepted | Coordinator and independent real-format gates passed, exact backup/history hashes preserved | Rounds 1/2: 7/10. Round 3: 9/10 |
 | 2 | R01 root | Coordinator | in progress | App-origin UID 0 proven on exact ff7067e, unchanged settings. Fixed helper and non-diverting PCM still unproven | Not started |
 | 3 | R09 mic/mix | Audio | pending | Actual accessory route, two signals, rate/drift/buffer/clipping and partial-loss checks | Not started |
 | 4 | R02 HUD | Presentation | pending | Real transparency, touch isolation, owner transfer, teardown and no duplicate source | Not started |
@@ -71,7 +73,7 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 | 12 | R05 HDR | Presentation | pending | Real FP16/compositor/panel evidence, SDR and transparency/hold regression | Not started |
 | 13 | R06 brightness | Presentation | pending | Full-app-only window override, pause/no-source, restoration, global settings unchanged | Not started |
 | 14 | R14 startup | Audio + coordinator | pending | Launch decision table, consent sequence, stale callbacks, root direct start, inert imports | Not started |
-| All | R15 critique | Independent critic | in progress | Astra route/effort, pinned section, score/round/evidence, four-round cap | Section 1 round 1: 7/10 |
+| All | R15 critique | Independent critic | in progress | Astra route/effort, pinned section, score/round/evidence, four-round cap | Section 1 accepted at round 3: 9/10. Later sections pending |
 | 15 | Integration/install | Coordinator | pending | Full gates, five-cycle owners, 30-minute soak, exact installed bytes/settings, cleanup | Not started |
 
 ## Verified baseline checks
@@ -104,7 +106,7 @@ The coordinator inspected the eight-file correction and independently ran `scrip
 
 The coordinator independently verified the five-file SDK correction after source ownership was released. Task `960508e89v` passed 107 parser cases, 70 real-format/public CLI cases, the original boundary fixtures, shellcheck, source checks, diff checks and exact generated-APK preservation in 83.65 seconds. Missing SDK in actual APK/AAB and duplicate SDK in an actual APK now return exit 4. Source omission remains valid. The artifact hash is unchanged. No app build or install occurred. Raw output is `section1-sdk-coordinator.log` in private recovery. Round 3 must review the correction commit independently.
 
-1. Finish and independently review section 1 corrections. Preserve the real debug-APK/mismatched-XML regression.
+1. Preserve accepted section 1 gates and regressions. No fourth review is needed for its `3e5e00e` checkpoint.
 2. Keep normal root-off startup inert and avoid system/kernel/security changes.
 3. Exact section 1 Android unit/lint/build/checkEngine passed at `283a017`, task `509140jwt7`, 55 tasks, exit 0. Retained log and built APK hash are in the private recovery directory.
 4. After source ownership returns, implement the fixed packaged AudioPolicy feasibility helper. Keep one implementation writer and at most two live workers.
@@ -112,5 +114,7 @@ The coordinator independently verified the five-file SDK correction after source
 6. Retain the source-backed AOSP finding: privileged loopback-with-render is limited to 16 kHz mono PCM16 and bypasses projection opt-out, not NO_SYSTEM_CAPTURE. Normalized stereo does not create stereo input. Capture quality and exclusions must be truthful.
 
 ## Blocked outcome and release boundary
+
+The final freeze builds the application and androidTest APKs together from the same reviewed clean source. Hash both artifacts and the source before installation. A skipped androidTest task or missing APK is not dual-artifact proof. The helper candidate build now produces both APKs, but the source has no handwritten instrumentation tests yet. A generated test APK is not device-test coverage. One explicit build-slot owner runs all Gradle tasks. Source/test preparation may proceed during an isolated build, but no second Gradle invocation starts until that slot is released.
 
 Record cause, evidence, alternatives tested, useful verified partial result, and smallest next step. Continue independent work while keeping the requirement open. Four sub-8 critiques do not waive correctness/privacy/device gates. Signing inputs, exact release-tag approval, store evidence, publication, and irreversible operations remain separate gates.

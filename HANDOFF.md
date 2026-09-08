@@ -1,14 +1,16 @@
 # Handoff: mobile expansion execution
 
-**Updated:** 2026-09-08. **Status:** section 1 boundary implemented, section 2 normal-app authorization feasibility in progress. No expansion feature is accepted and no release is claimed.
+**Updated:** 2026-09-08. **Status:** section 1 accepted at `3e5e00e`, independent round 3 score 9/10. Section 2 fixed root-audio helper passes its first Android build and awaits exact committed install and PCM trials. No expanded runtime feature is accepted and no release is claimed.
 
 ## Read first
 
 - Start with the canonical [MOBILE-EXPANSION-PLAN.md](MOBILE-EXPANSION-PLAN.md), [active expansion contract](spec/EXPANSION.md), and [single execution ledger](docs/plans/mobile-expansion/EXECUTION.md).
 - Ben approved implementation and reversible S25 work at 00:18:19 UTC. This supersedes the prior S25 exclusion for this task. Preserve unrelated ASUS volume, PC-audio, signing, publication, and irreversible-action boundaries.
+- Ben's 02:47 UTC boundary forbids writes to `/system`, including `/system/bin`, `/vendor`, and boot/vbmeta partitions through any path. Reads are allowed. No remount, flash or bootloader change. Use only installed app code and owned private data for the helper.
 - Exact debug probe checkpoint `ff7067e` is installed, SHA-256 `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`, signer readback verified and preferences unchanged. All 17 probe tests and full Android gates passed. Baseline native 73 and relay 43 tests remain separate evidence.
 - App-origin KernelSU execution is verified: the fixed provider command returned UID 0, exit 0, in 210 ms with confirmed cleanup. Standard su paths remain absent. Root audio PCM is still unproven. Do not modify kernel/system state or the logcat override, and do not turn the diagnostic compatibility path into a product dependency.
-- Ben confirmed Astra/high routing at 01:11:40 UTC. Section 1 independent round 1 scored 7/10. The separate correction worker completed all three findings and is stopped. Coordinator verification and round 2 precede acceptance. Root launch and AudioPolicy research are retained. Two live workers maximum, one implementation writer, coordinator-only device actions. Do not repeat the beacon.
+- Ben confirmed Astra/high routing at 01:11:40 UTC. Section 1 reviews scored 7, 7 and 9 after corrections. All reviewers and the helper writer are stopped after retained handoffs. Coordinator now owns source integration, the only Gradle slot, device checks and commits. Two live workers maximum, one implementation writer. Do not repeat the beacon.
+- At 02:11 UTC the S25 had MODE_NORMAL, speaker output, no registered policy mix and user-set MUSIC 0/15. Preserve this current muted state. First helper tests can prove PCM and route cleanup, not physical audibility. Existing `no_backup` is Android-managed 0771 and must not be chmodded. New helper directories alone use 0700.
 - The [fixed debug authorization probe](docs/plans/mobile-expansion/section-02-authorization.md) distinguishes normal-app root execution from the observed manager grant and failed `run-as` lookup. It cannot execute caller commands or capture audio.
 
 ## Previous repair receipts

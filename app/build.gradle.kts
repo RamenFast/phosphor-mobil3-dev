@@ -85,6 +85,27 @@ val debugGitCommit = when {
 val debugJniLibsDir = layout.buildDirectory.dir("generated/jniLibs/debug")
 val releaseJniLibsDir = layout.buildDirectory.dir("generated/jniLibs/release")
 
+// Independent content identity stays identical across dirty/clean Git transitions.
+val rootAudioInputs = files(
+    rootProject.fileTree("root-helper") { include("java/**/*.java", "native/src/**/*.rs", "native/Cargo.toml", "native/Cargo.lock", "native/rust-toolchain.toml") },
+    rootProject.file("docs/plans/mobile-expansion/section-02-helper-contract.md"),
+    file("build.gradle.kts"),
+    fileTree("src/debug") { include("**/RootAudio*.kt", "**/SelfTestReceiver.kt", "AndroidManifest.xml") },
+)
+val rootAudioBuild = MessageDigest.getInstance("SHA-256").run {
+    rootAudioInputs.files.sortedBy { it.relativeTo(rootProject.projectDir).invariantSeparatorsPath }.forEach {
+        update(it.relativeTo(rootProject.projectDir).invariantSeparatorsPath.toByteArray())
+        update(0.toByte())
+        update(it.readBytes())
+        update(0.toByte())
+    }
+    digest().joinToString("") { "%02x".format(it.toInt() and 0xff) }
+}
+val rootAudioAssets = objects.directoryProperty().convention(layout.buildDirectory.dir("generated/rootAudio/assets"))
+val rootAudioJni = objects.directoryProperty().convention(layout.buildDirectory.dir("generated/rootAudio/jniLibs"))
+val rootAudioJava = layout.buildDirectory.dir("generated/rootAudio/java")
+val rootAudioClasses = layout.buildDirectory.dir("generated/rootAudio/classes")
+
 fun normalizedSha256(value: String): String = value.lowercase().replace(":", "").trim()
 
 fun buildConfigString(value: String): String = "\"" + value
@@ -165,6 +186,7 @@ android {
             applicationIdSuffix = ".debug"
             versionNameSuffix = "-debug"
             buildConfigField("String", "BUILD_COMMIT", buildConfigString(debugGitCommit))
+            buildConfigField("String", "ROOT_AUDIO_BUILD", buildConfigString(rootAudioBuild))
         }
         release {
             isMinifyEnabled = false
@@ -188,6 +210,72 @@ android {
         getByName("debug").jniLibs.directories.add(debugJniLibsDir.get().asFile.absolutePath)
         getByName("release").jniLibs.directories.add(releaseJniLibsDir.get().asFile.absolutePath)
     }
+}
+
+val generateRootAudioIdentity = tasks.register("generateRootAudioIdentity") {
+    inputs.property("identity", rootAudioBuild)
+    outputs.dir(rootAudioJava)
+    doLast {
+        rootAudioJava.get().file("dev/phosphor/mobil3/root/HelperBuild.java").asFile.apply {
+            parentFile.mkdirs()
+            writeText("package dev.phosphor.mobil3.root; final class HelperBuild { static final String ID = \"$rootAudioBuild\"; }\n")
+        }
+    }
+}
+val rootAudioAndroidJar = File(ndkHome()).parentFile.parentFile.resolve("platforms/android-36/android.jar")
+val compileRootAudioJava = tasks.register<JavaCompile>("compileRootAudioJava") {
+    dependsOn(generateRootAudioIdentity)
+    source(rootProject.fileTree("root-helper/java") { include("**/*.java") }, rootAudioJava)
+    classpath = files(rootAudioAndroidJar)
+    destinationDirectory.set(rootAudioClasses)
+    sourceCompatibility = "17"
+    targetCompatibility = "17"
+    options.encoding = "UTF-8"
+    options.compilerArgs.addAll(listOf("-Xlint:all", "-Werror"))
+}
+val dexRootAudioHelper = tasks.register<Exec>("dexRootAudioHelper") {
+    dependsOn(compileRootAudioJava)
+    inputs.dir(rootAudioClasses)
+    inputs.file(rootAudioAndroidJar)
+    outputs.dir(rootAudioAssets)
+    doFirst {
+        val jar = rootAudioAssets.get().file("root-audio/helper.jar").asFile
+        jar.parentFile.mkdirs()
+        commandLine(listOf(
+            rootAudioAndroidJar.parentFile.parentFile.parentFile.resolve("build-tools/36.0.0/d8").absolutePath,
+            "--min-api", "29", "--lib", rootAudioAndroidJar.absolutePath, "--output", jar.absolutePath,
+        ) + rootAudioClasses.get().asFile.walkTopDown().filter { it.isFile && it.extension == "class" }.map { it.absolutePath }.sorted().toList())
+    }
+    doLast {
+        val jar = rootAudioAssets.get().file("root-audio/helper.jar").asFile
+        val hash = MessageDigest.getInstance("SHA-256").digest(jar.readBytes()).joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        rootAudioAssets.get().file("root-audio/helper.sha256").asFile.writeText(hash)
+    }
+}
+val buildRootAudioLauncher = tasks.register<Exec>("buildRootAudioLauncher") {
+    dependsOn(dexRootAudioHelper)
+    inputs.files(rootAudioInputs)
+    inputs.dir(rootAudioAssets)
+    inputs.property("identity", rootAudioBuild)
+    outputs.dir(rootAudioJni)
+    val target = layout.buildDirectory.dir("rootAudioCargo").get().asFile
+    workingDir = rootProject.file("root-helper/native")
+    environment("ANDROID_NDK_HOME", ndkHome())
+    environment("CARGO_TARGET_DIR", target.absolutePath)
+    environment("ROOT_HELPER_BUILD", rootAudioBuild)
+    environment("RUSTFLAGS", "-C link-arg=-Wl,-z,max-page-size=16384 -C link-arg=-Wl,-z,common-page-size=4096")
+    commandLine("cargo", "ndk", "-t", "arm64-v8a", "-P", "29", "build", "--release", "--locked", "--bin", "phosphor-root-launcher")
+    doFirst { environment("ROOT_HELPER_SHA256", rootAudioAssets.get().file("root-audio/helper.sha256").asFile.readText().trim()) }
+    doLast {
+        val destination = rootAudioJni.get().file("arm64-v8a/libphosphor_root_launcher.so").asFile
+        destination.parentFile.mkdirs()
+        target.resolve("aarch64-linux-android/release/phosphor-root-launcher").copyTo(destination, overwrite = true)
+    }
+}
+androidComponents.onVariants(androidComponents.selector().withBuildType("debug")) { variant ->
+    variant.packaging.jniLibs.useLegacyPackaging.set(true)
+    variant.sources.assets?.addGeneratedSourceDirectory(dexRootAudioHelper) { rootAudioAssets }
+    variant.sources.jniLibs?.addGeneratedSourceDirectory(buildRootAudioLauncher) { rootAudioJni }
 }
 
 fun registerCargoTask(

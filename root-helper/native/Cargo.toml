@@ -1,0 +1,13 @@
+[package]
+name = "phosphor-root-launcher"
+version = "0.1.0"
+edition = "2021"
+publish = false
+
+[profile.release]
+panic = "abort"
+strip = true
+lto = true
+codegen-units = 1
+
+[workspace]
