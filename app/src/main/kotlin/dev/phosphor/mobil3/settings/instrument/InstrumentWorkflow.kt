@@ -37,6 +37,8 @@ class InstrumentWorkflow(
         private set
     var status = ""
         private set
+    var sourceControlsRequired = false
+        private set
     var unsaved = false
         private set
     var uncertain = false
@@ -60,7 +62,9 @@ class InstrumentWorkflow(
 
     private fun submit(setup: InstrumentSetup, recalled: Association?, undo: Boolean, restoring: Boolean) {
         authoredRevision = Any()
+        sourceControlsRequired = false
         if (!canApply()) {
+            sourceControlsRequired = true
             status = "Desktop geometry owns shape and gain. Choose a local or audio-only source before APPLY."
             changed()
             return
@@ -126,6 +130,7 @@ class InstrumentWorkflow(
                     else if (pending.restoring) "Displayed setup restored to the renderer and saved."
                     else "Instrument setup applied and saved."
             } else {
+                sourceControlsRequired = result == 3
                 if (result !in 2..3) {
                     uncertain = true
                     unsaved = true

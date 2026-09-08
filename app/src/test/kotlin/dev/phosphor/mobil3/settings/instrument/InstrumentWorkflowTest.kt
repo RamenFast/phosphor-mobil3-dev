@@ -73,6 +73,39 @@ class InstrumentWorkflowTest {
         }
     }
 
+    @Test fun nativeCapabilityRefusalOffersSourceRecoveryDespiteStaleUiCapability() {
+        val r = Rig(original)
+        r.owner.apply(ambient) // UI capability allows reservation.
+        val old = r.sequence
+        r.capable = false // Native observes the actual geometry owner.
+        assertFalse(r.admit())
+        r.reply()
+        assertTrue(r.owner.sourceControlsRequired)
+        assertEquals(original, r.current)
+        assertEquals(original, r.saved)
+        assertFalse(r.trace.any { it.startsWith("publish:") || it.startsWith("persist:") })
+
+        r.capable = true
+        r.owner.apply(spectral)
+        assertFalse(r.owner.sourceControlsRequired)
+        r.reply(old) // Released rejection cannot replace current recovery state.
+        assertFalse(r.owner.sourceControlsRequired)
+        assertTrue(r.admit())
+        r.reply()
+        assertEquals(spectral, r.current)
+        assertFalse(r.owner.sourceControlsRequired)
+    }
+
+    @Test fun localCapabilityRefusalOffersTheSameRecoveryWithoutNativeReservation() {
+        val r = Rig(original)
+        r.capable = false
+        r.owner.apply(ambient)
+        assertTrue(r.owner.sourceControlsRequired)
+        assertEquals(0L, r.sequence)
+        assertEquals(original, r.current)
+        assertEquals(original, r.saved)
+    }
+
     @Test fun delayedCommitPublishesOnlyCompleteExactCandidate() {
         val r = Rig(original)
         r.owner.apply(ambient)

@@ -65,6 +65,8 @@ fun InstrumentPresetSheet(state: ScopeUiState, p: Palette, reduced: Boolean,
                 else "Local authored tuning only. Source, audio, camera and inspection stay unchanged.", p.muted)
             if (state.remote && state.remoteGeometry) {
                 Prose("Desktop geometry cannot accept a complete local setup. Saving local authored tuning is still available.", p.ink)
+            }
+            if ((state.remote && state.remoteGeometry) || state.instrumentSourceRequired) {
                 PresetKey("SOURCE CONTROLS", p) { actions.instrumentSourceControls() }
             }
             if (state.instrumentPending) PresetKey("CANCEL PENDING APPLY", p) { actions.cancelInstrumentApply() }

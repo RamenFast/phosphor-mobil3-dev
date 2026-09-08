@@ -10,6 +10,15 @@ class InstrumentActivityWiringTest {
         File("src/main/kotlin/dev/phosphor/mobil3/$relative")).first { it.isFile }.readText()
     private fun section(start: String, end: String) = source("MainActivity.kt").substringAfter(start).substringBefore(end)
 
+    @Test fun typedNativeRefusalReachesSourceNavigationWithoutStatusStringInference() {
+        val refresh = section("private fun refreshInstrumentState()", "private fun instrumentEdit(")
+        assertTrue(refresh.contains("ui.instrumentSourceRequired = owner.sourceControlsRequired"))
+        val sheet = source("ui/InstrumentPresetSheet.kt")
+        assertTrue(sheet.contains("if ((state.remote && state.remoteGeometry) || state.instrumentSourceRequired)"))
+        assertTrue(sheet.contains("PresetKey(\"SOURCE CONTROLS\", p) { actions.instrumentSourceControls() }"))
+        assertFalse(sheet.contains("instrumentApplyStatus.contains"))
+    }
+
     @Test fun authoredSnapshotDoesNotUseMeasuredOrRemoteGain() {
         val capture = section("private fun captureInstrument()", "private fun publishInstrument(")
         assertTrue(capture.contains("gainValue, ui.localAutoGain, ui.focus"))

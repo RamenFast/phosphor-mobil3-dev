@@ -350,6 +350,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.instrumentRapid = owner.rapidReview != null
         ui.instrumentUnsaved = owner.unsaved && !owner.uncertain
         ui.instrumentRestoreRequired = owner.restoreRequired
+        ui.instrumentSourceRequired = owner.sourceControlsRequired
         ui.instrumentApplyStatus = owner.status
         ui.instrumentRecall = owner.association?.let {
             "${it.name} · ${if (owner.modified) "modified" else "recalled"}"
