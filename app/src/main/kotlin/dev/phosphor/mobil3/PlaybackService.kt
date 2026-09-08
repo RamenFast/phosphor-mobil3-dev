@@ -78,6 +78,15 @@ class PlaybackService : MediaSessionService() {
     private val taskRevision = BackgroundLifecycle.policy.revision
     private val captureOwner = CaptureOwnerToken()
     private val priorShutdown = retirement.pending
+    private var signalLink: RemoteLinkReading? = null
+    private var signalLinkSession: Long? = null
+    private var signalLinkAt: Long? = null
+    private var signalLinkRevision: Long? = null
+    private var signalCaptureTransport: Boolean? = null
+    private var signalCaptureTransportAt: Long? = null
+    private var signalCaptureController: PlatformMediaController? = null
+    private var signalCaptureOwner: Long? = null
+    private var signalLocalOpen: Long? = null
 
     private sealed interface LocalDeckRequest {
         data class Tree(val uri: String, val start: Int, val transportRevision: Long) : LocalDeckRequest
@@ -600,6 +609,14 @@ class PlaybackService : MediaSessionService() {
 
     private fun publishCapturePlayback(state: PlatformPlaybackState?) {
         if (!captureActive) return
+        signalCaptureController = externalCaptureController
+        signalCaptureOwner = CaptureService.currentOwnerId()
+        signalCaptureTransport = when (state?.state) {
+            PlatformPlaybackState.STATE_PLAYING -> true
+            PlatformPlaybackState.STATE_PAUSED -> false
+            else -> null
+        }
+        signalCaptureTransportAt = SystemClock.elapsedRealtime()
         AcceptanceTrace.record("capture_publish") {
             "owner=${System.identityHashCode(externalCaptureController)} state=${state?.state} actions=${state?.actions}"
         }
@@ -1049,12 +1066,14 @@ class PlaybackService : MediaSessionService() {
                     reportLocal("Seek failed, retry this track", isLatest)
                     publishNativeFailure(isLatest)
                 } else {
+                    val observedOpen = PhosphorNative.deckOpenIdentity()
                     val publishOpen = playbackTruth.opened(
-                        path, request.titles[index], isLatest, PhosphorNative.deckOpenIdentity(), newItem = false,
+                        path, request.titles[index], isLatest, observedOpen, newItem = false,
                     )
                     main.post {
                         if (!destroying && !stopping && isLatest()) {
                             if (!publishOpen()) return@post
+                            signalLocalOpen = observedOpen
                             PhosphorNative.deckPublish(!localPlayer.playWhenReady)
                             localPlayer.onNativeSeekCompleted()
                             sourceSurvival.published()
@@ -1089,12 +1108,14 @@ class PlaybackService : MediaSessionService() {
                     return
                 }
             }
+            val observedOpen = PhosphorNative.deckOpenIdentity()
             val publishOpen = playbackTruth.opened(
-                path, request.titles[index], isLatest, PhosphorNative.deckOpenIdentity(), newItem = true,
+                path, request.titles[index], isLatest, observedOpen, newItem = true,
             )
             main.post {
                 if (destroying || stopping || !isLatest()) return@post
                 if (!publishOpen()) return@post
+                signalLocalOpen = observedOpen
                 queueUris = request.queueUris
                 queuePaths = request.queuePaths
                 queueTitles = request.titles
@@ -1284,6 +1305,10 @@ class PlaybackService : MediaSessionService() {
                 }
                 val status = runCatching { JSONObject(PhosphorNative.remoteStatus()) }.getOrNull()
                 val reading = status?.let { RemoteLinkTruth.read(it) }
+                signalLink = reading
+                signalLinkSession = status?.optLong("signal_session")?.takeIf { it > 0 }
+                signalLinkAt = SystemClock.elapsedRealtime()
+                signalLinkRevision = localSourcePublication.current.revision
                 synchronized(sourceSurvival) {
                     sourceWake.remoteChanged(
                         owned = !stopping && !destroying && !sourceSurvival.loss().native && remoteEndpoint != null,
@@ -1454,6 +1479,37 @@ class PlaybackService : MediaSessionService() {
     }
 
     companion object {
+        /** Main-thread owner read. Does not pump events, poll native state, or send transport. */
+        internal fun signalObservation(): SignalPlayback? {
+            val current = owner ?: return null
+            val revision = localSourcePublication.current.revision
+            val kind = when {
+                current.captureActive -> if (CaptureService.currentStatus().backend == CaptureBackend.ROOT) SignalKind.ROOT else SignalKind.CAPTURE
+                current.session?.player === current.remotePlayer -> SignalKind.RELAY
+                current.session?.player === current.localPlayer -> SignalKind.LOCAL
+                else -> return null
+            }
+            val player = current.session?.player
+            val error = player?.playerError?.message.orEmpty()
+            val life = when {
+                error.isNotBlank() -> SignalLife.FAILED
+                current.stopping || current.destroying -> SignalLife.STOPPING
+                player?.playbackState == Player.STATE_ENDED -> SignalLife.ENDED
+                kind == SignalKind.RELAY && current.remoteEndpoint == null -> SignalLife.DISCONNECTED
+                player?.playbackState == Player.STATE_BUFFERING -> SignalLife.STARTING
+                else -> SignalLife.RUNNING
+            }
+            val transportCurrent = current.captureActive && current.signalCaptureController === current.externalCaptureController &&
+                current.signalCaptureOwner != null && current.signalCaptureOwner == CaptureService.currentOwnerId()
+            val linkCurrent = current.signalLinkRevision == revision
+            return SignalPlayback(kind, revision, life, error, player?.playWhenReady,
+                if (transportCurrent) current.signalCaptureTransport else null,
+                if (transportCurrent) current.signalCaptureTransportAt else null,
+                if (linkCurrent) current.signalLinkSession else null,
+                if (linkCurrent) current.signalLink else null,
+                if (linkCurrent) current.signalLinkAt else null, current.signalLocalOpen)
+                .takeIf { owner === current && localSourcePublication.accepts(revision) }
+        }
         private var owner: PlaybackService? = null
         internal fun hasLiveWakeSource(): Boolean = owner?.sourceWake?.live == true
         private val retirement = SourceRetirement()

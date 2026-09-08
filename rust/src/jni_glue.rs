@@ -898,6 +898,17 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_scopeStats(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_signalObservation(
+    env: JNIEnv,
+    _cls: JClass,
+) -> jstring {
+    let scope = crate::render::RAW_STEREO.try_lock().ok().map(|meter| meter.signal_snapshot());
+    let value = serde_json::json!({"scope": scope, "local": crate::deck::signal_json(),
+        "relay": crate::remote::signal_json()});
+    env.new_string(value.to_string()).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setDisplayPaused(
     _env: JNIEnv,
     _class: JClass,

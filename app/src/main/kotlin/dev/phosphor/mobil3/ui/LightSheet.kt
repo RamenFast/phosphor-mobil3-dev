@@ -59,6 +59,7 @@ fun LightSheetV2(
     onRoll: () -> Unit,
     epilepsyAcknowledged: () -> Boolean,
     ackEpilepsy: () -> Unit,
+    onRecallInstrument: () -> Unit,
     onDismiss: () -> Unit,
 ) {
     var editSlot by remember { mutableIntStateOf(-1) }
@@ -66,6 +67,8 @@ fun LightSheetV2(
     val light = state.light
     SheetHost(p, "LIGHT", reduced, { state.lightPending = null; onDismiss() }, glyph = SettingsGlyph.BeamColor) {
         Column(Modifier.verticalScroll(rememberScrollState())) {
+            LightKey("RECALL INSTRUMENT", p, action = onRecallInstrument)
+            Prose("Recall a complete saved setup, not only its beam color. Opening does not apply it.", p.muted)
             val pending = state.lightPending
             if (pending != null) {
                 Prose("Below one second, full-screen color changes can trigger photosensitive seizures. " +

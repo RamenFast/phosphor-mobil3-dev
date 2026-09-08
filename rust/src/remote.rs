@@ -179,6 +179,10 @@ fn set_link_error(err: &str, fix: &str) {
 /// callable from any thread. Scope retirement uses only the ring/meter critical
 /// section. Socket FIN and all worker joins happen outside those locks.
 struct SessionShared {
+    signal_id: u64,
+    signal: Mutex<RelaySignal>,
+    signal_output: Arc<crate::engine::SignalOutput>,
+    signal_skips: AtomicU64,
     #[allow(dead_code)]
     session_gen: u64,
     cancel: AtomicBool,
@@ -191,7 +195,44 @@ struct SessionShared {
     media: bridge_core::SessionMedia,
 }
 
+#[derive(Default, Clone)]
+struct RelaySignal {
+    input: crate::engine::SignalAggregate,
+    geometry_points: u64,
+    geometry_at: Option<u64>,
+    rms: Option<(f64, u64)>,
+    rms_peak: Option<(f64, u64)>,
+    transport: Option<(bool, u64)>,
+}
+
+pub fn signal_json() -> serde_json::Value {
+    let l = link();
+    let current = plock(&l.current).clone();
+    let Some(s) = current.filter(|s| s.scope_live()) else { return serde_json::Value::Null; };
+    let now = monotonic_ms();
+    let signal = match s.signal.try_lock() {
+        Ok(value) => value.clone(),
+        Err(_) => return serde_json::Value::Null,
+    };
+    let field = |value: Option<(f64, u64)>| value.map(|(value, at)| serde_json::json!({"value": value, "age_ms": now.checked_sub(at)}));
+    let result = serde_json::json!({"session": s.signal_id, "input": signal.input.json(now),
+        "geometry_points": signal.geometry_points, "geometry_age_ms": signal.geometry_at.and_then(|at| now.checked_sub(at)),
+        "relay_rms": field(signal.rms), "relay_rms_peak": field(signal.rms_peak),
+        "transport_playing": signal.transport.map(|(playing, _)| playing),
+        "transport_age_ms": signal.transport.and_then(|(_, at)| now.checked_sub(at)),
+        "output": s.signal_output.json(), "muted": l.muted.load(Ordering::Relaxed),
+        "audio_enabled": l.cfg_audio.load(Ordering::Relaxed), "geometry_enabled": l.cfg_geometry.load(Ordering::Relaxed),
+        "diagnostic_blocks_skipped": s.signal_skips.load(Ordering::Relaxed),
+        "scope": s.scope.signal_json(&crate::render::RAW_STEREO)});
+    if s.scope_live() { result } else { serde_json::Value::Null }
+}
+
 impl SessionShared {
+    fn observe_signal(&self, observe: impl FnOnce(&mut RelaySignal)) {
+        // Telemetry never parks the receive thread behind the UI. A missed block is explicit.
+        if let Ok(mut signal) = self.signal.try_lock() { observe(&mut signal); }
+        else { let _ = self.signal_skips.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| Some(n.saturating_add(1))); }
+    }
     fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::Relaxed)
     }
@@ -403,6 +444,7 @@ impl ScopeTap {
 
 // ── Oboe output (with mute + route-change restart) ───────────────────────────
 struct RemoteOutput {
+    signal: Arc<crate::engine::SignalOutput>,
     tap: AudioTap,
     scope: ScopeSink,
     scratch: Vec<f32>,
@@ -435,6 +477,7 @@ impl AudioOutputCallback for RemoteOutput {
             .set_mode(self.latency_mode.load(Ordering::Relaxed));
         self.tap.catch_up(&mut self.jitter, frames.len()); // index math only
         let got = self.tap.pop_into(&mut self.scratch[..need]);
+        self.signal.observe(got / 2, frames.len());
         self.scratch[got..need].fill(0.0);
         let audio_enabled = self.audio_enabled.load(Ordering::Relaxed);
         if audio_enabled {
@@ -491,6 +534,7 @@ impl AudioOutputCallback for RemoteOutput {
 
 fn open_output(
     path: &AudioPath,
+    signal: Arc<crate::engine::SignalOutput>,
     muted: Arc<AtomicBool>,
     restart_tx: std::sync::mpsc::Sender<()>,
 ) -> Result<AudioStreamAsync<Output, RemoteOutput>, String> {
@@ -505,6 +549,7 @@ fn open_output(
         .set_format::<f32>()
         .set_channel_count::<Stereo>()
         .set_callback(RemoteOutput {
+            signal,
             tap: path.tap(),
             scope: path.scope_sink(),
             // Preallocated above the largest expected AAudio burst. The callback
@@ -761,6 +806,7 @@ pub fn art_generation() -> u32 {
 pub fn status_json() -> String {
     let l = link();
     let current = plock(&l.current).clone();
+    let signal_session = current.as_ref().filter(|s| s.scope_live()).map_or(0, |s| s.signal_id);
     let media = current
         .filter(|s| {
             !l.quit.load(Ordering::Relaxed)
@@ -796,7 +842,8 @@ pub fn status_json() -> String {
         ("null".to_string(), "null".to_string())
     };
     format!(
-        r#"{{"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"media_received":{},"media_live":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"remote_rms":{},"remote_rms_peak":{},"scope":{},"welcome":{},"last_error":{}}}"#,
+        r#"{{"signal_session":{},"state":{},"host":{},"port":{},"rx_bytes":{},"rx_a":{},"rx_g":{},"media_received":{},"media_live":{},"art_id":{},"meta_gen":{},"sources_gen":{},"listing_gen":{},"art_gen":{},"leaked_threads":{},"audio_buf_ms":{},"audio_skips":{},"audio_skip_ms":{},"a_drops":{},"scope_drops":{},"audio_latency_mode":{},"audio_target_ms":{},"audio_underruns":{},"remote_rms":{},"remote_rms_peak":{},"scope":{},"welcome":{},"last_error":{}}}"#,
+        signal_session,
         json_str(state_name(l.state.load(Ordering::Relaxed))),
         json_str(&l.host.lock().unwrap()),
         l.port.load(Ordering::Relaxed),
@@ -975,7 +1022,8 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let path = AudioPath::new(RATE);
     let muted = Arc::new(AtomicBool::new(l.muted.load(Ordering::Relaxed)));
     let (restart_tx, restart_rx) = std::sync::mpsc::channel::<()>();
-    let out = match open_output(&path, muted.clone(), restart_tx.clone()) {
+    let signal_output = Arc::new(crate::engine::SignalOutput::default());
+    let out = match open_output(&path, signal_output.clone(), muted.clone(), restart_tx.clone()) {
         Ok(o) => o,
         Err(e) => return SessionEnd::Failed(e),
     };
@@ -990,7 +1038,12 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
         Err(e) => return SessionEnd::Failed(format!("clone shutdown handle: {e}")),
     };
     let (writer_tx, writer_rx) = std::sync::mpsc::sync_channel::<WriterCmd>(32);
+    static SIGNAL_SESSIONS: AtomicU64 = AtomicU64::new(1);
     let shared = Arc::new(SessionShared {
+        signal_id: SIGNAL_SESSIONS.fetch_add(1, Ordering::Relaxed),
+        signal: Mutex::new(RelaySignal::default()),
+        signal_output,
+        signal_skips: AtomicU64::new(0),
         session_gen: my_gen,
         cancel: AtomicBool::new(false),
         scope,
@@ -1107,7 +1160,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                                 }
                             }
                         }
-                        match open_output(&path, muted_flag.clone(), restart_tx.clone()) {
+                        match open_output(&path, shared_s.signal_output.clone(), muted_flag.clone(), restart_tx.clone()) {
                             Ok(new_out) => {
                                 // Install under the slot lock. Teardown sets cancellation before
                                 // taking this lock, so a late install loses. An earlier install is
@@ -1426,6 +1479,7 @@ fn reader(
                 let Some(bridge_core::RemoteMedia::Audio(f32buf)) = media else {
                     continue;
                 };
+                shared.observe_signal(|signal| signal.input.observe(&f32buf, now));
                 // No audible consumer exists in music-off/visualizer flows, so
                 // receive-side scope feed is the explicit fallback. With audio
                 // enabled the callback owns scope truth after jitter/zero-fill.
@@ -1444,6 +1498,10 @@ fn reader(
                     intensity,
                 }) = media
                 {
+                    shared.observe_signal(|signal| {
+                        signal.geometry_points = signal.geometry_points.saturating_add(points.len() as u64);
+                        signal.geometry_at = Some(now);
+                    });
                     crate::render::geometry_frame(crate::render::GeomFrame {
                         epoch: visual_epoch,
                         owner: GeometryOwner(Arc::downgrade(&shared)),
@@ -1460,6 +1518,7 @@ fn reader(
                             .ok()
                             .and_then(|v| v.get("playing").and_then(|v| v.as_bool()))
                         {
+                            shared.observe_signal(|signal| signal.transport = Some((playing, now)));
                             crate::pause::observe_transport_from(
                                 display_generation,
                                 !playing,
@@ -1524,11 +1583,13 @@ fn reader(
                     // K never refreshes the session's media receipt. Older relays omit
                     // loudness, so absence stays distinct from a genuine zero.
                     if let Some(rms) = v.get("rms").and_then(|r| r.as_f64()) {
+                        if rms.is_finite() && rms >= 0.0 { shared.observe_signal(|signal| signal.rms = Some((rms, now))); }
                         l.remote_rms
                             .store((rms * RMS_FIXED_POINT) as u64, Ordering::Relaxed);
                         l.remote_rms_known.store(true, Ordering::Relaxed);
                     }
                     if let Some(peak) = v.get("rms_peak").and_then(|p| p.as_f64()) {
+                        if peak.is_finite() && peak >= 0.0 { shared.observe_signal(|signal| signal.rms_peak = Some((peak, now))); }
                         l.remote_rms_peak
                             .store((peak * RMS_FIXED_POINT) as u64, Ordering::Relaxed);
                     }

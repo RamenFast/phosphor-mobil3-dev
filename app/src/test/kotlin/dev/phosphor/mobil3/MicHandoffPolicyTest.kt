@@ -342,10 +342,11 @@ class MicHandoffPolicyTest {
         assertTrue("if (!isCurrent()) return" in mic)
         assertTrue("PlaybackService.localSourcePublication.accepts(revision)" in activity)
         val startCapture = activity.substringAfter("override fun startCapture()").substringBefore("private fun launchCaptureConsent")
-        assertTrue(startCapture.indexOf("selectSource()") < startCapture.indexOf("if (alreadyCapturing) return"))
+        assertTrue(startCapture.contains("selectSource("))
+        assertTrue(startCapture.indexOf("selectSource(") < startCapture.indexOf("if (alreadyCapturing) return"))
         for (entry in listOf("private fun loadUri", "private fun openDeck", "override fun startRemoteHost", "override fun disconnectRemote",
             "override fun startCapture", "override fun openFile", "override fun openFolder")) {
-            assertTrue("selectSource()" in activity.substringAfter(entry).substringBefore("\n    }"), entry)
+            assertTrue("selectSource(" in activity.substringAfter(entry).substringBefore("\n    }"), entry)
         }
     }
 }

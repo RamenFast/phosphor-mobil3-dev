@@ -57,6 +57,19 @@ pub(crate) struct StereoWindow {
     started_ms: u64,
     remote_boundary: Option<Arc<()>>,
     capture_owner: u64,
+    pub(crate) local_owner: u64,
+    pub(crate) admitted_frames: u64,
+    pub(crate) rejected_epoch_frames: u64,
+    pub(crate) consumed_frames: u64,
+}
+
+#[derive(Clone, Copy, serde::Serialize)]
+pub(crate) struct SignalPathSnapshot {
+    capture_owner: u64,
+    local_owner: u64,
+    admitted_stereo_frames: u64,
+    rejected_epoch_stereo_frames: u64,
+    consumed_stereo_frames: u64,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -67,6 +80,10 @@ impl StereoWindow {
             started_ms: 0,
             remote_boundary: None,
             capture_owner: 0,
+            local_owner: 0,
+            admitted_frames: 0,
+            rejected_epoch_frames: 0,
+            consumed_frames: 0,
         }
     }
 
@@ -81,6 +98,16 @@ impl StereoWindow {
     pub(crate) fn clear_visual_measurement(&mut self) {
         self.peak = None;
         self.started_ms = 0;
+    }
+
+    pub(crate) fn signal_json(&self) -> serde_json::Value {
+        serde_json::to_value(self.signal_snapshot()).unwrap_or(serde_json::Value::Null)
+    }
+
+    pub(crate) fn signal_snapshot(&self) -> SignalPathSnapshot {
+        SignalPathSnapshot { capture_owner: self.capture_owner, local_owner: self.local_owner,
+            admitted_stereo_frames: self.admitted_frames, rejected_epoch_stereo_frames: self.rejected_epoch_frames,
+            consumed_stereo_frames: self.consumed_frames }
     }
 
     pub(crate) fn observe(&mut self, peak: Option<StereoPeak>, now_ms: u64) {
@@ -134,12 +161,15 @@ pub(crate) fn publish_capture_read(
     samples: &[f32],
 ) -> bool {
     with_stereo_window(ring, meter, |ring, meter| {
-        if owner == 0 || meter.capture_owner != owner || !active.load(Ordering::Relaxed)
-            || epoch.load(Ordering::Acquire) != read_epoch
-        {
+        if owner == 0 || meter.capture_owner != owner || !active.load(Ordering::Relaxed) {
+            return false;
+        }
+        if epoch.load(Ordering::Acquire) != read_epoch {
+            meter.rejected_epoch_frames = meter.rejected_epoch_frames.saturating_add((samples.len() / 2) as u64);
             return false;
         }
         ring.push_interleaved(samples);
+        meter.admitted_frames = meter.admitted_frames.saturating_add((samples.len() / 2) as u64);
         true
     })
 }
@@ -300,6 +330,7 @@ impl RemoteScopeLease {
                 return false;
             }
             ring.push_interleaved(samples);
+            meter.admitted_frames = meter.admitted_frames.saturating_add((samples.len() / 2) as u64);
             true
         })
     }
@@ -319,6 +350,172 @@ impl RemoteScopeLease {
             active.store(false, Ordering::Relaxed);
             true
         })
+    }
+
+    pub(crate) fn signal_json(&self, meter: &Mutex<StereoWindow>) -> Option<serde_json::Value> {
+        let snapshot = {
+            let meter = meter.try_lock().ok()?;
+            Self::matches(&meter, &self.owner).then(|| meter.signal_snapshot())?
+        };
+        serde_json::to_value(snapshot).ok()
+    }
+}
+
+/// Fixed metadata at the existing relay receive boundary, before mute and zero-fill.
+#[derive(Default, Clone)]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) struct SignalAggregate {
+    start: Option<u64>,
+    measured: Option<u64>,
+    positive: Option<u64>,
+    frames: u64,
+    valid: u64,
+    invalid: u64,
+    squares: [f64; 2],
+    peaks: [f64; 2],
+    rails: [u64; 2],
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl SignalAggregate {
+    pub(crate) fn observe(&mut self, samples: &[f32], now: u64) {
+        if self.start.is_none_or(|start| now < start || now - start >= 500) {
+            self.start = Some(now);
+            self.measured = None;
+            self.valid = 0;
+            self.invalid = 0;
+            self.squares = [0.0; 2];
+            self.peaks = [0.0; 2];
+            self.rails = [0; 2];
+        }
+        if !samples.is_empty() { self.positive = Some(now); }
+        self.frames = self.frames.saturating_add((samples.len() / 2) as u64);
+        self.invalid = self.invalid.saturating_add((samples.len() % 2) as u64);
+        for frame in samples.chunks_exact(2) {
+            if !frame.iter().all(|s| s.is_finite()) {
+                self.invalid = self.invalid.saturating_add(2);
+                continue;
+            }
+            self.valid = self.valid.saturating_add(1);
+            self.measured = Some(now);
+            for (channel, value) in frame.iter().enumerate() {
+                let value = f64::from(*value);
+                self.squares[channel] += value * value;
+                self.peaks[channel] = self.peaks[channel].max(value.abs());
+                if value.abs() >= 1.0 { self.rails[channel] = self.rails[channel].saturating_add(1); }
+            }
+        }
+    }
+
+    pub(crate) fn json(&self, now: u64) -> serde_json::Value {
+        let age = |at: Option<u64>| at.and_then(|at| now.checked_sub(at));
+        serde_json::json!({"input_stereo_frames": self.frames, "valid_frames": self.valid,
+            "invalid_samples": self.invalid, "positive_age_ms": age(self.positive), "level_age_ms": age(self.measured),
+            "channels": (self.valid > 0).then(|| (0..2).map(|c| serde_json::json!({
+                "samples": self.valid, "rms": (self.squares[c] / self.valid as f64).sqrt(),
+                "peak": self.peaks[c], "full_scale": self.rails[c]})).collect::<Vec<_>>())})
+    }
+}
+
+/// Callback-only scalar counters. No allocation, clock read, lock, or JSON on the output thread.
+#[derive(Default)]
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) struct SignalOutput {
+    sequence: std::sync::atomic::AtomicU64,
+    popped: std::sync::atomic::AtomicU64,
+    finalized: std::sync::atomic::AtomicU64,
+    zero_filled: std::sync::atomic::AtomicU64,
+}
+
+#[cfg(test)]
+mod signal_tests {
+    use super::*;
+    use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn signal_window_silence_invalid_and_full_scale_are_distinct() {
+        let mut meter = SignalAggregate::default();
+        assert!(meter.json(0)["channels"].is_null());
+        meter.observe(&[0.0, 0.0], 0);
+        assert_eq!(meter.json(0)["channels"][0]["rms"], 0.0);
+        meter.observe(&[1.0, -1.0, f32::NAN, 0.0, 0.4], 10);
+        let value = meter.json(20);
+        assert_eq!(value["valid_frames"], 2);
+        assert_eq!(value["invalid_samples"], 3);
+        assert_eq!(value["channels"][0]["full_scale"], 1);
+        assert_eq!(value["positive_age_ms"], 10);
+        meter.observe(&[f32::INFINITY, 0.0], 500);
+        assert!(meter.json(500)["channels"].is_null());
+        assert_eq!(meter.json(500)["input_stereo_frames"], 4);
+    }
+
+    #[test]
+    fn signal_window_finite_unequal_channels_and_staleness() {
+        let mut meter = SignalAggregate::default();
+        meter.observe(&[0.5, 0.25, -0.5, -0.25], 100);
+        let first = meter.json(101);
+        assert_eq!(first["channels"][0]["rms"], 0.5);
+        assert_eq!(first["channels"][1]["peak"], 0.25);
+        assert_eq!(meter.json(5000)["level_age_ms"], 4900);
+        assert_eq!(meter.json(101), first); // reads do not reset
+        assert!(meter.json(99)["level_age_ms"].is_null());
+    }
+
+    #[test]
+    fn signal_capture_epoch_rejection_preserves_input_owner_not_admission() {
+        let ring = Mutex::new(phosphor_audio::SampleRing::new(48_000));
+        let meter = Mutex::new(StereoWindow::new());
+        let active = AtomicBool::new(true);
+        let epoch = AtomicU64::new(2);
+        let owner = meter.lock().unwrap().activate_capture();
+        assert!(!publish_capture_read(&ring, &meter, &active, &epoch, owner, 1, &[1.0, 1.0]));
+        assert!(publish_capture_read(&ring, &meter, &active, &epoch, owner, 2, &[0.0, 0.0]));
+        let first = meter.lock().unwrap().signal_json();
+        assert_eq!(first["admitted_stereo_frames"], 1);
+        assert_eq!(first["rejected_epoch_stereo_frames"], 1);
+        assert_eq!(first["consumed_stereo_frames"], 0);
+        meter.lock().unwrap().clear_visual_measurement();
+        assert_eq!(meter.lock().unwrap().signal_json(), first);
+        *meter.lock().unwrap() = StereoWindow::new();
+        let next = meter.lock().unwrap().activate_capture();
+        assert_ne!(owner, next);
+        assert!(!publish_capture_read(&ring, &meter, &active, &epoch, owner, 2, &[1.0, 1.0]));
+        assert_eq!(meter.lock().unwrap().signal_json()["admitted_stereo_frames"], 0);
+    }
+
+    #[test]
+    fn signal_output_counts_real_pops_separately_from_synthetic_zeros() {
+        let output = SignalOutput::default();
+        output.observe(0, 100);
+        output.observe(80, 100);
+        let value = output.json();
+        assert_eq!(value["popped_stereo_frames"], 80);
+        assert_eq!(value["finalized_stereo_frames"], 200);
+        assert_eq!(value["zero_filled_stereo_frames"], 120);
+        assert_eq!(output.json(), value);
+    }
+}
+
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+impl SignalOutput {
+    pub(crate) fn observe(&self, popped: usize, finalized: usize) {
+        self.sequence.fetch_add(1, Ordering::AcqRel);
+        for (counter, count) in [(&self.popped, popped), (&self.finalized, finalized),
+            (&self.zero_filled, finalized.saturating_sub(popped))] {
+            let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
+                |n| Some(n.saturating_add(count as u64)));
+        }
+        self.sequence.fetch_add(1, Ordering::Release);
+    }
+    pub(crate) fn json(&self) -> serde_json::Value {
+        let before = self.sequence.load(Ordering::Acquire);
+        if before & 1 != 0 { return serde_json::Value::Null; }
+        let popped = self.popped.load(Ordering::Relaxed);
+        let finalized = self.finalized.load(Ordering::Relaxed);
+        let zero_filled = self.zero_filled.load(Ordering::Relaxed);
+        if before != self.sequence.load(Ordering::Acquire) { return serde_json::Value::Null; }
+        serde_json::json!({"popped_stereo_frames": popped, "finalized_stereo_frames": finalized,
+            "zero_filled_stereo_frames": zero_filled})
     }
 }
 

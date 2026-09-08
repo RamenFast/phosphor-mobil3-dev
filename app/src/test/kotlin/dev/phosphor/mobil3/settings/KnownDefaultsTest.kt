@@ -306,7 +306,11 @@ class KnownDefaultsTest {
     @Test fun sourceOnlyFirstRemoteSessionCannotPersistDisplayGainAsLocalAuthority() {
         val activity = source("MainActivity.kt")
         val start = section(activity, "override fun startRemoteHost(", "override fun setRemoteStreams(")
-        assertTrue(start.contains("prefs().edit { putFloat(\"gain\", gainValue) }"))
+        assertTrue(start.contains("persistAutomaticGain()"))
+        val automatic = section(activity, "private fun persistAutomaticGain()", "private fun saveTuning()")
+        assertTrue(automatic.contains("prefs().edit { putFloat(\"gain\", gainValue) }"))
+        assertTrue(automatic.indexOf("automaticPersistenceAllowed == false") < automatic.indexOf("prefs().edit"))
+        assertFalse(automatic.contains("ui.gain"))
         assertFalse(start.contains("ui.autoGain"))
         val poll = source("PlaybackService.kt").substringAfter("private fun startRemotePoll()")
         assertTrue(poll.contains("if (p.getBoolean(\"auto_gain\", true)) \"auto\""))

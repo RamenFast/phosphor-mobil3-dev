@@ -43,6 +43,9 @@ open class CaptureService : Service() {
     private val micStopStatus = MicStopStatusToken()
     private val taskRevision = BackgroundLifecycle.policy.revision
     private val captureOwnerId = captureOwners.incrementAndGet()
+    @Volatile private var signalMeter: SignalAggregate? = null
+    @Volatile private var signalDescriptor = SignalDescriptor()
+    @Volatile private var signalNativeOwner: Long? = null
     private val sourceWake = SourceWakeLock.forOwner(this, "capture")
 
     override fun onCreate() {
@@ -253,6 +256,11 @@ open class CaptureService : Service() {
         }
         PhosphorNative.deckSetPaused(true) // capture takes the beam; deck resumes on stop
         val readOwner = PhosphorNative.setRingActive(true)
+        signalNativeOwner = readOwner
+        signalDescriptor = observeSignalRecorder(rec)
+        val meter = signalDescriptor.format?.takeIf { it.channels in 1..2 && it.encoding == "float PCM" }
+            ?.let { SignalAggregate(captureOwnerId, it.channels) }
+        signalMeter = meter
         running = true
         metadataBridgeActive = true
         startService(
@@ -263,12 +271,23 @@ open class CaptureService : Service() {
         publishStatus(CaptureStatus.flowing())
         try {
             reader = Thread {
+                var routeAt = android.os.SystemClock.elapsedRealtime()
                 val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
                 readSourceSamples(
                     running = { running },
                     readEpoch = { PhosphorNative.captureReadEpoch() },
                     read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
                     push = { n, epoch -> PhosphorNative.pushCaptureRead(chunk, n, readOwner, epoch) },
+                    observed = { n ->
+                        if (owner === this && !cleanedUp && record === rec && running) {
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            meter?.floats(chunk, n, now)
+                            if (now - routeAt >= 500) {
+                                signalDescriptor = observeSignalRecorder(rec)
+                                routeAt = now
+                            }
+                        }
+                    },
                     failed = { error -> main.post {
                         retireSourceReaderFailure(
                             isCurrent = { owner === this && !cleanedUp && record === rec && running },
@@ -326,6 +345,7 @@ open class CaptureService : Service() {
                                     (check == null || (check.accepts() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay()))) {
                                     PhosphorNative.deckSetPaused(true)
                                     val readOwner = PhosphorNative.setRingActive(true)
+                                    signalNativeOwner = readOwner
                                     running = true
                                     metadataBridgeActive = true
                                     startService(BackgroundLifecycle.stamp(Intent(this, PlaybackService::class.java)
@@ -459,7 +479,7 @@ open class CaptureService : Service() {
 
     private fun publishStatus(status: CaptureStatus) {
         if (owner != null && owner !== this) return
-        val observed = status.copy(sequence = statusSequence.incrementAndGet(), backend = backend)
+        val observed = status.copy(sequence = statusSequence.incrementAndGet(), backend = backend, ownerId = captureOwnerId)
         lifecycleState = observed.state
         lastStatus = observed
         sendBroadcast(
@@ -472,6 +492,7 @@ open class CaptureService : Service() {
                 .putExtra(EXTRA_SEQUENCE, observed.sequence)
                 .putExtra(EXTRA_MIC_REQUEST, observed.micRequest)
                 .putExtra(EXTRA_BACKEND, backend.name)
+                .putExtra(EXTRA_CAPTURE_OWNER, captureOwnerId)
         )
     }
 
@@ -488,6 +509,28 @@ open class CaptureService : Service() {
     }
 
     companion object {
+        internal fun signalObservation(): SignalInput? {
+            val current = owner
+            val status = lastStatus
+            if (current != null && status.ownerId != current.captureOwnerId) return null
+            val kind = if (status.backend == CaptureBackend.ROOT) SignalKind.ROOT else SignalKind.CAPTURE
+            val life = when (status.state) {
+                STATE_ERROR -> SignalLife.FAILED
+                STATE_PERMISSION_NEEDED -> SignalLife.PERMISSION
+                STATE_FLOWING -> SignalLife.RUNNING
+                STATE_STARTING -> SignalLife.STARTING
+                else -> if (current?.cleanedUp == true && !current.stopCompletion.result.isDone) SignalLife.STOPPING else SignalLife.ENDED
+            }
+            val root = current?.rootSession?.signalObservation()
+            val result = (root ?: SignalInput(kind, status.ownerId,
+                descriptor = current?.signalDescriptor ?: SignalDescriptor(), window = current?.signalMeter?.latest)).copy(
+                owner = status.ownerId, nativeOwner = current?.signalNativeOwner,
+                life = if (life == SignalLife.RUNNING) root?.life ?: life else life,
+                reason = root?.reason?.takeIf { it.isNotBlank() && root.life != SignalLife.RUNNING } ?: status.message,
+                contributing = current?.running == true && life == SignalLife.RUNNING && (root == null || root.life == SignalLife.RUNNING),
+            )
+            return result.takeIf { owner === current && lastStatus === status && status.ownerId > 0 }
+        }
         @Volatile private var owner: CaptureService? = null
         internal fun stopIntent(context: android.content.Context) = Intent(context, owner?.javaClass ?: CaptureService::class.java).setAction(ACTION_STOP)
         internal fun rootOwned() = owner?.backend == CaptureBackend.ROOT
@@ -573,6 +616,7 @@ open class CaptureService : Service() {
             sequence = intent.getLongExtra(EXTRA_SEQUENCE, 0),
             micRequest = intent.getStringExtra(EXTRA_MIC_REQUEST),
             backend = if (intent.getStringExtra(EXTRA_BACKEND) == CaptureBackend.ROOT.name) CaptureBackend.ROOT else CaptureBackend.STANDARD,
+            ownerId = intent.getLongExtra(EXTRA_CAPTURE_OWNER, 0),
         )
     }
 
@@ -584,6 +628,7 @@ open class CaptureService : Service() {
         val sequence: Long = 0,
         val micRequest: String? = null,
         internal val backend: CaptureBackend = CaptureBackend.STANDARD,
+        internal val ownerId: Long = 0L,
     ) {
         companion object {
             fun idle() = CaptureStatus(STATE_IDLE, "", "", false)

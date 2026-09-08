@@ -357,7 +357,8 @@ class WakeOwnershipTest {
 
     @Test fun cancelledPickerAndConsentAdaptersPreserveTheExistingRecorder() {
         val activity = source("src/main/kotlin/dev/phosphor/mobil3/MainActivity.kt")
-        val selection = activity.substringAfter("private fun selectSource(): Long")
+        assertTrue(activity.contains("private fun selectSource("))
+        val selection = activity.substringAfter("private fun selectSource(")
             .substringBefore("private fun micRequestIsCurrent")
         assertTrue(selection.contains("micHandoffCancel()"))
         assertTrue(selection.contains("++sourceSelection"))

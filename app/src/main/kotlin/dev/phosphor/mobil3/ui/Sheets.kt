@@ -87,7 +87,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-enum class Sheet { NONE, SOURCE, MODE, LIGHT, INSTRUMENT, SETTINGS, ROOM, MANUAL }
+enum class Sheet { NONE, SOURCE, MODE, LIGHT, INSTRUMENT, SETTINGS, ROOM, MANUAL, SIGNAL_CHECK }
 
 private fun sheetCurlProgress(
     fillFraction: Float,
@@ -1104,8 +1104,9 @@ fun SettingsSheet(
         // One shared scroll preserves top-curl and nested-dismiss behavior.
         val signal: @Composable () -> Unit = {
             SettingsSectionHeading(
-                "SIGNAL", SettingsGlyph.Signal, p, Modifier.padding(top = 0.dp),
+                "SIGNAL & STARTUP", SettingsGlyph.Signal, p, Modifier.padding(top = 0.dp),
             )
+            SignalCheckEntry(state, p)
             DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
             DragRule(
                 "GAIN", state.gain, 0.1f, 7.0f, p, { "×%.2f".format(it) },

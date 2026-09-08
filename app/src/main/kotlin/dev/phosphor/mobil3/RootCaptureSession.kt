@@ -23,9 +23,13 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
         private set
     @Volatile var lastPcmAt = 0L
         private set
+    private val signalMeter = SignalAggregate(generation, 1)
+    @Volatile private var signal = SignalInput(SignalKind.ROOT, generation,
+        normalized = "48,000 Hz · stereo float transport · duplicated mono, not original stereo")
+    internal fun signalObservation(): SignalInput = signal
     data class Result(val error: String?, val cleanup: Boolean, val authorized: Boolean = false, val progress: Long = 0)
 
-    fun requestStop() { stopRequested = true }
+    fun requestStop() { stopRequested = true; signal = signal.copy(life = SignalLife.STOPPING) }
     fun awaitStop(): String? = try {
         val result = completion.get(8, TimeUnit.SECONDS)
         if (result.cleanup) null else "Root cleanup is unconfirmed. Restart Phosphor only after verifying the helper and policy ended"
@@ -79,9 +83,13 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         stream.ready(data)
                         gotReady = true
                         lastProgress = SystemClock.elapsedRealtime()
+                        signal = signal.copy(descriptor = SignalDescriptor(
+                            SignalFormat(data.getInt("sample_rate"), data.getInt("channels"), "PCM16"),
+                            observedAt = lastProgress), progressAt = lastProgress)
                         if (!stopRequested) {
                             live = true
                             visual = RootEpochNormalizer(ready())
+                            signal = signal.copy(life = SignalLife.RUNNING, nativeOwner = visual?.owner)
                             if (stopRequested) control(3) else epochControl(SystemClock.elapsedRealtime())
                         } else control(3)
                     }
@@ -90,6 +98,7 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         helper = RootAudioProtocol.helper(frame.second, Process.myUid(), BuildConfig.ROOT_AUDIO_BUILD, generation, mode)
                         stream.result()
                         live = false
+                        signal = signal.copy(life = SignalLife.ENDED)
                     }
                     13 -> {
                         check(!evidence && final == null) { "Duplicate root evidence" }
@@ -105,6 +114,7 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                             (data.has("generation") || data.optString("status") == "error")) { "Native final generation mismatch" }
                         final = data
                         live = false
+                        signal = signal.copy(life = SignalLife.ENDED)
                     }
                     15 -> {
                         check(gotReady && helper == null && final == null && mode in 2..3) { "PCM outside root session" }
@@ -112,12 +122,14 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         lastProgress = SystemClock.elapsedRealtime()
                         if (!stopRequested) {
                             val binding = checkNotNull(visual)
+                            signalMeter.pcm16(pcm.samples, lastProgress)
                             val desired = readEpoch()
                             stream.epoch.desire(desired)
                             val normalized = binding.convert(pcm, desired)
                             samples(pcm, normalized, binding.owner)
                             frames += pcm.samples.size
                             lastPcmAt = lastProgress
+                            signal = signal.copy(progressAt = lastProgress, window = signalMeter.latest)
                             idleShown = false
                         }
                     }
@@ -125,6 +137,8 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         check(gotReady && helper == null && final == null && mode in 2..3) { "Progress outside root session" }
                         stream.progress(frame.second)
                         lastProgress = SystemClock.elapsedRealtime()
+                        signalMeter.progress(lastProgress)
+                        signal = signal.copy(progressAt = lastProgress, window = signalMeter.latest)
                         if (!stopRequested && lastProgress - lastPcmAt > 1000 && !idleShown) { idleShown = true; idle() }
                     }
                     17 -> {
@@ -177,6 +191,7 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
             failure = cause
             protocolFailed = protocolFailed || cause.contains("frame", true) || cause.contains("generation", true) || cause.contains("sequence", true)
             live = false
+            signal = signal.copy(life = SignalLife.FAILED, reason = cause)
             runCatching { control(3) }
         } finally {
             live = false
@@ -200,6 +215,11 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
             if (failure == null && final?.optString("status") != "ok") failure = final?.optString("error")?.takeIf { it.isNotBlank() } ?: "Root helper ended without a confirmed result"
             if (failure == null && helper?.optString("status") == "error") failure = helper?.optString("error")
             if (lease) RootHelperLease.release(cleanup)
+            signal = signal.copy(life = when {
+                !cleanup -> SignalLife.CLEANUP_UNCONFIRMED
+                failure != null -> SignalLife.FAILED
+                else -> SignalLife.ENDED
+            }, reason = failure.orEmpty())
             completion.complete(Result(failure, cleanup, authorized, stream.progressSequence))
         }
     }

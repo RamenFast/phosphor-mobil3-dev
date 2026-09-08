@@ -673,6 +673,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                 Vec::new()
             };
             let raw_peak = crate::engine::StereoPeak::prepare(&mut samples);
+            if source_active {
+                meter.consumed_frames = meter.consumed_frames.saturating_add((samples.len() / 2) as u64);
+            }
             meter.observe(raw_peak, meter_ms());
             (source_active, samples, raw_peak)
         });

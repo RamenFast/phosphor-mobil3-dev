@@ -60,6 +60,7 @@ fn set_ring_state(active: bool) -> u64 {
 static DECK: Mutex<Option<Deck>> = Mutex::new(None);
 
 struct DeckOutput {
+    signal: Arc<crate::engine::SignalOutput>,
     audible: Arc<AudibleRing>,
     activation: Arc<DeckActivation>,
     terminal: Arc<DeckTerminal>,
@@ -87,6 +88,7 @@ impl AudioOutputCallback for DeckOutput {
         let got = self
             .terminal
             .pop_output(&self.audible, &self.activation, &mut self.scratch);
+        self.signal.observe(got / 2, frames.len());
         self.scratch[got..need].fill(0.0);
         for (i, frame) in frames.iter_mut().enumerate() {
             frame.0 = self.scratch[2 * i];
@@ -97,6 +99,7 @@ impl AudioOutputCallback for DeckOutput {
 }
 
 pub struct Deck {
+    signal: Arc<crate::engine::SignalOutput>,
     path: String,
     open: crate::deck_events::LocalOpen,
     session: PlayerSession,
@@ -130,6 +133,12 @@ pub fn poll_event_json() -> Option<String> {
 
 pub fn open_identity() -> u64 {
     DECK.lock().unwrap().as_ref().map_or(0, |deck| deck.open.id)
+}
+
+pub fn signal_json() -> serde_json::Value {
+    let guard = DECK.lock().unwrap();
+    guard.as_ref().map(|d| serde_json::json!({"open_id": d.open.id,
+        "playing_intent": d.activation.playing(), "output": d.signal.json()})).unwrap_or(serde_json::Value::Null)
 }
 
 /// The render command must still belong to the currently published native open.
@@ -191,7 +200,9 @@ fn open_at_state(
         events_tx,
     );
 
+    let signal = Arc::new(crate::engine::SignalOutput::default());
     let callback = DeckOutput {
+        signal: signal.clone(),
         audible,
         activation: activation.clone(),
         terminal: terminal.clone(),
@@ -220,14 +231,17 @@ fn open_at_state(
         return Err(format!("oboe start: {error}"));
     }
 
+    let open = crate::deck_events::LocalOpen::new(!prepared);
     crate::render::with_stereo_window(|ring, meter| {
         ring.clear_pending();
         *meter = crate::engine::StereoWindow::new();
+        meter.local_owner = open.id;
         DECK_ACTIVE.store(!prepared, Ordering::Relaxed);
     });
     *DECK.lock().unwrap() = Some(Deck {
+        signal,
         path: path.to_owned(),
-        open: crate::deck_events::LocalOpen::new(!prepared),
+        open,
         session,
         stream,
         activation,

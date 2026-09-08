@@ -261,3 +261,9 @@ Full frozen gate580618965w passed624 JVM tests across57 suites,121 native tests,
 Mushroom's bounded R17 source audit is verified and retained unchanged. The signal-check observation contract preceded runtime implementation. R17 remains pending implementation rather than being accepted from an evidence map.
 
 Ben's09:05 sleep handoff remains binding. The S25 has been undisturbed. Host-only USB/ADB enumeration at11:00 found no ASUS, and local ADB mDNS enumeration at11:03 found no service. Original stereo, SoundCloud, audibility, low added latency, actual Android persistence/SAF/HOLD/accessibility, and the whole expansion remain open. Fifteen executable milestones are still incomplete.
+
+## 12:07 UTC: corrected preset adapters and signal observations pass integration
+
+Clover released22 R17 paths at11:51, their hashes matched, and the worker stopped. Coordinator integrated the R16 typed rollback adapters, automatic persistence guard, pre-picker authored ticket through whole-settings decoding, and compact LIGHT recall. Gate783238n3mp passed653 JVM tests across58 suites,125 native tests,three offscreen GPU tests,lint,engine/release-helper checks,source boundary and both APK builds. Complete mobile/shared before/after source manifests matched. Both artifacts and XML/lint evidence are retained in the [combined receipt](section-07-08-integration-validation.md), not installed.
+
+The predecessor gate failed six stale source assertions. Corrected anchors preserve source ordering, exact local identity, no-mic-stop and gain obligations. No runtime code changed between those two gates. R16 original full round1 remains7/10, with corrected full round2 next. R17 full round1 is next. ASUS was absent at11:41 host enumeration. No phone action occurred. Root stereo, buffered source age, Android behavior and whole-expansion acceptance remain open. Section9's complete control inventory and settings-only dismissal contract precede runtime work.

@@ -103,7 +103,8 @@ class SettingsWriteOwnerTest {
         val source = file.readText()
         val decoded = source.substringAfter("private val openSettingsArchive").substringBefore("override fun onCreate")
         assertTrue(decoded.contains("SettingsArchive.decode(text)"))
-        assertTrue(decoded.contains("runOnUiThread { acceptSettingsArchive(decoded) }"))
+        assertTrue(decoded.contains("owner.finishSettingsImport(ticket) { acceptSettingsArchive(decoded) }"))
+        assertTrue(decoded.indexOf("runOnUiThread") < decoded.indexOf("owner.finishSettingsImport"))
         assertFalse(decoded.contains("SettingsArchive.merge("))
         assertFalse(decoded.contains("editor.commit()"))
         val accepted = source.substringAfter("private fun acceptSettingsArchive(").substringBefore("private val openSettingsArchive")
@@ -113,7 +114,7 @@ class SettingsWriteOwnerTest {
         assertTrue(accepted.contains("rollback = { restorePreferenceSnapshots(priorValues) }"))
         val edit = source.substringAfter("private fun applyLight(").substringBefore("override fun rollLight()")
         assertTrue(edit.contains("settingsWriteOwner.write"))
-        assertTrue(edit.contains("failure.message()"))
+        assertTrue(edit.contains("reportTuningWriteFailure(failure)"))
         assertTrue(edit.contains("rollback = { restorePreferenceSnapshots(prior) }"))
     }
 }

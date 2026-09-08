@@ -653,6 +653,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // The gesture readout ribbon rides above the stage.
             GestureRibbon(ribbon, p)
+            if (sheet == Sheet.NONE && !overflowComposed && !state.pip &&
+                (state.noSignal || state.sourceLabel == "no source" || (!state.live && state.captureStatus.isNotBlank()) || state.remoteFailure.isNotBlank())) {
+                Box(Modifier.align(Alignment.TopCenter).padding(top = 88.dp)) {
+                    SignalCheckAction("SIGNAL CHECK", p) { sheet = Sheet.SIGNAL_CHECK }
+                }
+            }
             if (state.displayPaused || state.displayPresentPending) Prose(state.pauseLabel, p.muted,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp))
 
@@ -797,8 +803,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onRoll = { actions.rollLight() },
                     epilepsyAcknowledged = { actions.epilepsyAcknowledged() },
                     ackEpilepsy = { actions.ackEpilepsy() },
+                    onRecallInstrument = { actions.openInstrumentPresets(); sheet = Sheet.INSTRUMENT },
                 ) { sheet = Sheet.NONE }
                 Sheet.INSTRUMENT -> InstrumentPresetSheet(state, p, reduced, actions) { sheet = Sheet.NONE }
+                Sheet.SIGNAL_CHECK -> SignalCheckSheet(state, p, reduced) { sheet = Sheet.NONE }
                 Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) }) {
                     sheet = Sheet.NONE
                 }

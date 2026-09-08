@@ -18,6 +18,17 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
     private var ownsRing = false
     private var generation = 0L
     private var stopped = CompletableFuture.completedFuture<String?>(null)
+    @Volatile private var signal: SignalInput? = null
+    @Volatile private var signalMeter: SignalAggregate? = null
+    @Volatile private var signalDescriptor = SignalDescriptor()
+
+    internal fun signalObservation(): SignalInput? {
+        val current = signal ?: return null
+        val meter = signalMeter?.takeIf { it.owner == current.session }
+        val result = current.copy(descriptor = signalDescriptor,
+            window = meter?.latest, contributing = isRecording() && current.life == SignalLife.RUNNING)
+        return result.takeIf { signal === current }
+    }
 
     @SuppressLint("MissingPermission") // caller gates on RECORD_AUDIO
     fun start(
@@ -31,6 +42,10 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
             return
         }
         val request = ++generation
+        val recorderId = signalSessions.incrementAndGet()
+        signalDescriptor = SignalDescriptor()
+        signalMeter = null
+        signal = SignalInput(SignalKind.MIC, recorderId)
         val previous = owner
         if (previous != null && previous !== this) {
             previous.stop()
@@ -48,6 +63,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
             return
         }
         stopped.getNow(null)?.let { error ->
+            signal = signal?.copy(life = SignalLife.CLEANUP_UNCONFIRMED, reason = error)
             Log.e("phosphor-mobil3", "mic remains stopped: $error")
             onStarted(error)
             return
@@ -67,6 +83,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
                 .setBufferSizeInBytes(min)
                 .build()
         } catch (error: RuntimeException) {
+            signal = signal?.copy(life = SignalLife.FAILED, reason = "Microphone could not open: ${error.message}")
             if (owner === this) owner = null
             onStarted("Microphone could not open: ${error.message}. Check microphone permission and retry")
             return
@@ -85,18 +102,35 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
         )
         if (error != null) {
             stop()
+            signal = signal?.copy(life = SignalLife.FAILED, reason = error)
             onStarted(error)
             return
         }
         running = true
+        signalDescriptor = observeSignalRecorder(rec)
+        val meter = signalDescriptor.format?.takeIf { it.channels in 1..2 && it.encoding == "float PCM" }
+            ?.let { SignalAggregate(recorderId, it.channels) }
+        signalMeter = meter
+        signal = SignalInput(SignalKind.MIC, recorderId, nativeOwner = readOwner, life = SignalLife.RUNNING)
         try {
             reader = Thread {
+                var routeAt = android.os.SystemClock.elapsedRealtime()
                 val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
                 readSourceSamples(
                     running = { running },
                     readEpoch = { PhosphorNative.captureReadEpoch() },
                     read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
                     push = { n, epoch -> PhosphorNative.pushCaptureRead(chunk, n, readOwner, epoch) },
+                    observed = { n ->
+                        if (owner === this && record === rec && running) {
+                            val now = android.os.SystemClock.elapsedRealtime()
+                            meter?.floats(chunk, n, now)
+                            if (now - routeAt >= 500) {
+                                signalDescriptor = observeSignalRecorder(rec)
+                                routeAt = now
+                            }
+                        }
+                    },
                     failed = { error -> main.post {
                         retireSourceReaderFailure(
                             // Recorder identity fences replacement. cancelStart may advance the
@@ -107,6 +141,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
                                 stop()
                             },
                             publishFailure = {
+                                signal = signal?.copy(life = SignalLife.FAILED, reason = "Microphone reader failed. Check permission and the audio route")
                                 onFailed("Microphone stopped. Check microphone permission and the audio route, then select built-in mic again")
                             },
                         )
@@ -115,6 +150,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
             }.also { it.start() }
         } catch (error: RuntimeException) {
             stop()
+            signal = signal?.copy(life = SignalLife.FAILED, reason = "Microphone reader could not start: ${error.message}")
             onStarted("Microphone reader could not start: ${error.message}. Stop the source and retry")
             return
         }
@@ -129,6 +165,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
 
     fun stop() {
         ++generation
+        signal = signal?.copy(life = SignalLife.STOPPING, contributing = false)
         running = false
         onRecordingChanged(false)
         val oldRecord = record
@@ -148,6 +185,8 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
                 cleanup = { cleanupOwnedSource(ownedRing) { PhosphorNative.setRingActive(false) } },
             )
             main.post {
+                if (record == null) signal = signal?.copy(life = if (error == null) SignalLife.ENDED else SignalLife.CLEANUP_UNCONFIRMED,
+                    reason = error.orEmpty())?.let { next -> if (signal?.life == SignalLife.FAILED) signal else next }
                 if (error == null && owner === this && record == null) owner = null
                 completion.complete(error)
                 if (error != null) Log.e("phosphor-mobil3", "mic stop: $error")
@@ -157,6 +196,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
 
     companion object {
         private val main = Handler(Looper.getMainLooper())
+        private val signalSessions = java.util.concurrent.atomic.AtomicLong()
         // Only a stop rendezvous. The activity's controller still owns AudioRecord and start.
         private var owner: MicController? = null
         internal fun quiescent() = owner == null
@@ -178,6 +218,18 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
         }
     }
 }
+
+/** Getters only. Called by the recorder owner after start and at bounded existing read boundaries. */
+internal fun observeSignalRecorder(rec: AudioRecord): SignalDescriptor = runCatching {
+    val encoding = when (rec.audioFormat) {
+        AudioFormat.ENCODING_PCM_FLOAT -> "float PCM"
+        AudioFormat.ENCODING_PCM_16BIT -> "PCM16"
+        else -> "encoding ${rec.audioFormat}"
+    }
+    val format = if (rec.sampleRate > 0 && rec.channelCount > 0) SignalFormat(rec.sampleRate, rec.channelCount, encoding) else null
+    val route = rec.routedDevice?.let { "${it.productName} · type ${it.type} · device ${it.id}" }
+    SignalDescriptor(format, route, android.os.SystemClock.elapsedRealtime())
+}.getOrElse { SignalDescriptor(unavailable = "Recorder observation unavailable: ${it.javaClass.simpleName}") }
 
 /** Called on the owner's main thread after a reader reports failure. */
 internal fun retireSourceReaderFailure(

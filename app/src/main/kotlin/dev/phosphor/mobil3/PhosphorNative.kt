@@ -5,6 +5,8 @@ import android.view.Surface
 // The one JNI seam. Grows per plan (command channel, events); M1 carries the surface
 // lifecycle + the engine handshake.
 object PhosphorNative {
+    /** Non-consuming source metadata. This does not acquire scopeStats or another audio tap. */
+    external fun signalObservation(): String
     init {
         System.loadLibrary("phosphor_mobil3_core")
     }

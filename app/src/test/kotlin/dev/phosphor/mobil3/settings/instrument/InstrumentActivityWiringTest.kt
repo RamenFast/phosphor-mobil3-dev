@@ -52,7 +52,7 @@ class InstrumentActivityWiringTest {
         val destroy = section("override fun onDestroy()", "private var baseRoom")
         assertTrue(destroy.indexOf("instrumentWorkflow?.close()") < destroy.indexOf("activityDestroyed = true"))
         assertTrue(destroy.contains("instrumentDocuments.close()"))
-        val source = section("private fun selectSource()", "private fun micRequestIsCurrent")
+        val source = section("private fun selectSource(", "private fun micRequestIsCurrent")
         assertTrue(source.indexOf("instrumentWorkflow?.settle") < source.indexOf("++sourceSelection"))
         val streams = section("override fun setRemoteStreams", "override fun disconnectRemote")
         assertTrue(streams.contains("instrumentWorkflow?.settle"))
@@ -72,5 +72,39 @@ class InstrumentActivityWiringTest {
         }
         assertTrue(preset.contains("heightIn(min = 48.dp)"))
         assertTrue(preset.contains("maxLines = Int.MAX_VALUE"))
+        assertTrue(source("ui/LightSheet.kt").contains("LightKey(\"RECALL INSTRUMENT\", p, action = onRecallInstrument)"))
+        assertTrue(screen.contains("onRecallInstrument = { actions.openInstrumentPresets(); sheet = Sheet.INSTRUMENT }"))
+    }
+
+    @Test fun wholeSettingsPickerAndProviderCarryTheSameAuthoredTicketBeforeMutation() {
+        val launch = section("override fun importSettings()", "override fun startMic()")
+        assertTrue(launch.indexOf("owner.beginSettingsImport()") < launch.indexOf("openSettingsArchive.launch"))
+        assertTrue(launch.contains("pendingSettingsImport = ticket"))
+        val decode = section("private val openSettingsArchive", "private val captureConsent")
+        assertTrue(decode.contains("val ticket = pendingSettingsImport ?: return@registerForActivityResult"))
+        assertTrue(decode.indexOf("owner.settingsImportPicked(ticket)") < decode.indexOf("Thread {"))
+        assertTrue(decode.contains("owner.finishSettingsImport(ticket) { acceptSettingsArchive(decoded) }"))
+        assertTrue(decode.contains("if (isFinishing || isDestroyed)"))
+        assertTrue(decode.contains("owner.cancelSettingsImport(ticket)"))
+    }
+
+    @Test fun allAutomaticGainAndLifecycleWritesUseTheRecoveryPolicy() {
+        val gain = section("private fun persistAutomaticGain()", "private fun saveTuning()")
+        assertTrue(gain.indexOf("automaticPersistenceAllowed == false") < gain.indexOf("prefs().edit"))
+        assertTrue(section("private val persistGain", "private val captureStatusReceiver").contains("persistAutomaticGain()"))
+        val relay = section("override fun startRemoteHost", "override fun setRemoteStreams")
+        assertTrue(relay.contains("persistAutomaticGain()"))
+        assertFalse(relay.contains("putFloat(\"gain\""))
+        assertTrue(section("private fun saveTuning()", "private fun restoreTuning").contains("automaticPersistenceAllowed == false"))
+    }
+
+    @Test fun bothSharedWriteAdaptersForwardTypedRollbackRatherThanOnlyAnErrorString() {
+        val bridge = section("private fun reportTuningWriteFailure", "private fun staleSettingsImport")
+        assertTrue(bridge.contains("InstrumentWorkflow.PersistenceFailure(message, failure.restored)"))
+        assertTrue(bridge.contains("instrumentWorkflow?.persistenceFailed"))
+        assertTrue(bridge.contains("tick.removeCallbacks(persistGain)"))
+        assertTrue(section("private fun acceptSettingsArchive", "private val openSettingsArchive")
+            .contains("error(reportTuningWriteFailure(it))"))
+        assertTrue(section("private fun applyLight", "override fun rollLight").contains("reportTuningWriteFailure(failure)"))
     }
 }

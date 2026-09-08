@@ -9,6 +9,9 @@ import androidx.compose.runtime.setValue
 
 /** Shared screen state for the activity and transient Compose chrome. */
 class ScopeUiState {
+    internal var signalCheck by mutableStateOf(dev.phosphor.mobil3.SignalCheckView())
+    internal var signalCheckExpanded by mutableStateOf(false)
+    internal var signalCheckVisible by mutableStateOf(false)
     var room by mutableStateOf(Amoled)
     var modeIndex by mutableIntStateOf(1)
     var randomModeArmed by mutableStateOf(false)

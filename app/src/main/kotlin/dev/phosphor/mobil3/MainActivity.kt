@@ -144,6 +144,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var gravityListener: android.hardware.SensorEventListener? = null
     private var lastSourceReopened = false
     private var sourceSelection = 0L
+    private var signalSelected = SignalKind.UNKNOWN
+    private var signalDenied: String? = null
+    private var signalCaptureStatus: CaptureService.CaptureStatus? = null
+    private var signalResumed = false
+    private var signalFocused = false
+    private val signalRefresh = SignalRefreshOwner()
+    private val signalNative = SignalNativeObservation()
     private var lastSensorDeg = OrientationEventListener.ORIENTATION_UNKNOWN
 
     /**
@@ -160,7 +167,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var captureStatusReceiverRegistered = false
     private val tick = Handler(Looper.getMainLooper())
     private val persistGain = Runnable {
-        prefs().edit { putFloat("gain", gainValue) }
+        persistAutomaticGain()
     }
     private val captureStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
@@ -239,6 +246,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val settingsWriteOwner = dev.phosphor.mobil3.settings.SettingsWriteOwner()
     private var instrumentWorkflow: InstrumentWorkflow? = null
+    private var pendingSettingsImport: InstrumentWorkflow.SettingsImport? = null
     private lateinit var instrumentStore: InstrumentPresetStore
     private val instrumentDocuments = InstrumentDocumentOwner()
     private var instrumentExport: Pair<InstrumentDocumentOwner.Ticket, String>? = null
@@ -570,6 +578,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
+    private fun reportTuningWriteFailure(failure: dev.phosphor.mobil3.settings.SettingsWriteOwner.Failure): String {
+        if (!failure.restored) tick.removeCallbacks(persistGain)
+        val message = if (failure.restored) failure.message() else
+            "${failure.stage} failed and rollback could not be confirmed. Open INSTRUMENT PRESETS and use RETRY SAVE CURRENT."
+        instrumentWorkflow?.persistenceFailed(InstrumentWorkflow.PersistenceFailure(message, failure.restored))
+        return message
+    }
+
+    private fun staleSettingsImport() {
+        ui.settingsTransferStatus = "Settings changed while the document was open. Nothing imported. Choose the archive again to review current settings."
+    }
+
     private fun acceptSettingsArchive(decoded: SettingsArchive.ImportResult) {
         if (isFinishing || isDestroyed) return
         instrumentWorkflow?.settle("Apply superseded by settings import.")
@@ -601,7 +621,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     commit = { editor.commit() },
                     publish = { guard == null || publishNativeLight(guard.safe) },
                     rollback = { restorePreferenceSnapshots(priorValues) },
-                )?.let { error(it.message()) }
+                )?.let { error(reportTuningWriteFailure(it)) }
                 if (guard != null && prefs().contains("custom_count")) prefs().edit().remove("custom_count").commit()
                 Triple(imported, guard?.pending, guard != null)
             }
@@ -626,9 +646,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private val openSettingsArchive =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
-            uri ?: return@registerForActivityResult
+            val ticket = pendingSettingsImport ?: return@registerForActivityResult
+            pendingSettingsImport = null
+            val owner = instrumentWorkflow ?: return@registerForActivityResult
+            if (uri == null) {
+                owner.cancelSettingsImport(ticket)
+                ui.settingsTransferStatus = "Import cancelled. Settings unchanged."
+                return@registerForActivityResult
+            }
+            if (!owner.settingsImportPicked(ticket)) {
+                staleSettingsImport()
+                return@registerForActivityResult
+            }
             ui.settingsTransferStatus = "checking settings…"
-            Thread {
+            runCatching { Thread {
                 runCatching {
                     val input = contentResolver.openInputStream(uri)
                         ?: error("Android did not provide a readable document")
@@ -653,13 +684,26 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     }
                     SettingsArchive.decode(text)
                 }.onSuccess { decoded ->
-                    runOnUiThread { acceptSettingsArchive(decoded) }
+                    runOnUiThread {
+                        if (isFinishing || isDestroyed) {
+                            owner.cancelSettingsImport(ticket)
+                            return@runOnUiThread
+                        }
+                        runCatching {
+                            owner.finishSettingsImport(ticket) { acceptSettingsArchive(decoded) }
+                        }.onSuccess { accepted -> if (!accepted) staleSettingsImport() }
+                            .onFailure(::reportImportFailure)
+                    }
                 }.onFailure { error ->
                     runOnUiThread {
+                        owner.cancelSettingsImport(ticket)
                         if (!isFinishing && !isDestroyed) reportImportFailure(error)
                     }
                 }
-            }.start()
+            }.start() }.onFailure {
+                owner.cancelSettingsImport(ticket)
+                reportImportFailure(it)
+            }
         }
 
     private val captureConsent =
@@ -699,6 +743,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             val purpose = pendingAudioPermission
             pendingAudioPermission = AudioPermissionPurpose.NONE
             if (!granted) {
+                if (purpose != AudioPermissionPurpose.NONE) signalDenied = "Microphone permission not granted"
                 if (purpose == AudioPermissionPurpose.PLAYBACK_CAPTURE) {
                     applyCaptureStatus(
                         CaptureService.CaptureStatus.permissionNeeded(
@@ -749,6 +794,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onResume() {
         super.onResume()
+        signalResumed = true
         if (FloatingHudService.active) FloatingHudService.hide(this)
         refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
@@ -762,6 +808,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 }
             }
         }
+    }
+
+    override fun onPause() {
+        signalResumed = false
+        super.onPause()
     }
 
     override fun onPictureInPictureModeChanged(
@@ -1012,6 +1063,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 }.getOrNull()
             } else null
             ui.gridReading = dev.phosphor.mobil3.ui.GridData.read(stats)
+            if (signalRefresh.take(android.os.SystemClock.elapsedRealtime(), ui.signalCheckVisible,
+                    signalResumed && activityStarted && !activityDestroyed, signalFocused,
+                    ui.presentationVisible && !hudConsentOpen, ui.pip)) refreshSignalCheck()
             if (ui.hudMode != 2) {
                 val rx = rs?.optLong("rx_bytes") ?: 0L
                 val mbps = if (lastRxBytes in 1 until rx) {
@@ -1082,7 +1136,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // Direct documents use the same serial staging and validation path as tree entries.
     private fun loadUri(uri: Uri) {
-        selectSource()
+        selectSource(SignalKind.LOCAL)
         runCatching { contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION) }
         applyLocalGainPolicy()
         startSourceService(Intent(this, PlaybackService::class.java)
@@ -1167,7 +1221,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun openDeck(path: String) {
-        selectSource()
+        selectSource(SignalKind.LOCAL)
         applyLocalGainPolicy()
         startSourceService(Intent(this, PlaybackService::class.java).putExtra(PlaybackService.EXTRA_OPEN, path))
     }
@@ -1178,7 +1232,61 @@ class MainActivity : ComponentActivity(), ScopeActions {
         micReleaseRevision = null
     }
 
-    private fun selectSource(): Long {
+    /** Observation only. Existing owners and one already-acquired display meter are the authorities. */
+    private fun refreshSignalCheck() {
+        val selection = sourceSelection
+        val publication = PlaybackService.localSourcePublication.current.revision
+        val now = android.os.SystemClock.elapsedRealtime()
+        val capture = CaptureService.signalObservation()
+        val microphone = mic.signalObservation()
+        val playback = PlaybackService.signalObservation()
+        val native = runCatching { org.json.JSONObject(PhosphorNative.signalObservation()) }.getOrNull()
+        val selected = when {
+            signalSelected != SignalKind.UNKNOWN -> signalSelected
+            ui.remote -> SignalKind.RELAY
+            ui.sourceLabel == "mic" -> SignalKind.MIC
+            ui.sourceLabel.startsWith("capture") -> if (ui.captureRoot) SignalKind.ROOT else SignalKind.CAPTURE
+            PlaybackService.ownsLocal() -> SignalKind.LOCAL
+            else -> SignalKind.NONE
+        }
+        val currentCapture = capture?.takeIf { it.contributing || it.kind == selected }
+        val currentMic = microphone?.takeIf { it.contributing || selected == SignalKind.MIC }
+        var input = when (selected) {
+            SignalKind.MIC -> currentMic ?: currentCapture
+            SignalKind.CAPTURE, SignalKind.ROOT -> currentCapture ?: currentMic
+            SignalKind.LOCAL -> signalNative.local(native, playback, now)
+            SignalKind.RELAY -> signalNative.relay(native, playback, now)
+            else -> currentMic?.takeIf { it.contributing } ?: currentCapture?.takeIf { it.contributing }
+        }
+        val localCapture = signalCaptureStatus?.takeIf { it.ownerId == 0L && selected in setOf(SignalKind.CAPTURE, SignalKind.ROOT) }
+        if (localCapture != null) input = SignalInput(selected, 0, life = when (localCapture.state) {
+            CaptureService.STATE_ERROR -> SignalLife.FAILED
+            CaptureService.STATE_PERMISSION_NEEDED -> SignalLife.PERMISSION
+            else -> SignalLife.STARTING
+        }, reason = localCapture.message)
+        signalDenied?.let { input = SignalInput(selected, 0, life = SignalLife.PERMISSION, reason = it) }
+        val ownerCurrent = when (input?.kind) {
+            SignalKind.MIC -> input?.owner == 0L || mic.signalObservation()?.session == input?.session
+            SignalKind.CAPTURE, SignalKind.ROOT -> input?.owner == 0L || CaptureService.signalObservation()?.let {
+                it.owner == input?.owner && it.session == input?.session
+            } == true
+            else -> true
+        }
+        val current = selection == sourceSelection && PlaybackService.localSourcePublication.accepts(publication) && ownerCurrent
+        val detail = signalNative.details(native, input, playback, now).toMutableList()
+        detail += "Selection revision" to "$selection · service source revision $publication"
+        detail += "Scope tap peak" to if (ui.displayPaused) "Unavailable · display consumption is paused, not proof of input silence"
+            else ui.gridReading?.let { "L ${it.left} · R ${it.right} · render-consumed normalized tap from the existing single UI read" }
+                ?: "Unavailable · no current measurement in the existing single UI stats read"
+        ui.signalCheck = SignalPresentation.present(selected, input, now,
+            SignalDisplay(ui.displayPaused, ui.pauseBlack, ui.heldFrameAvailable, ui.displayPresentPending),
+            current, pendingCaptureConsent == selection || pendingAudioPermission != AudioPermissionPurpose.NONE, detail)
+    }
+
+    private fun selectSource(signalKind: SignalKind = SignalKind.UNKNOWN): Long {
+        signalSelected = signalKind
+        signalDenied = null
+        signalCaptureStatus = null
         instrumentWorkflow?.settle("Source changed. Pending apply cancelled.")
         micHandoffCancel()
         pendingAudioPermission = AudioPermissionPurpose.NONE
@@ -1363,8 +1471,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
 
     override fun startRemoteHost(label: String, host: String, port: Int) {
-        selectSource()
-        prefs().edit { putFloat("gain", gainValue) }
+        selectSource(SignalKind.RELAY)
+        persistAutomaticGain()
         ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
         ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
         ui.remote = true
@@ -1397,7 +1505,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun openFile() {
-        selectSource()
+        selectSource(SignalKind.LOCAL)
         openFileLauncher.launch(arrayOf("audio/*"))
     }
 
@@ -1405,13 +1513,28 @@ class MainActivity : ComponentActivity(), ScopeActions {
         "phosphor-settings-${BuildConfig.VERSION_NAME}.phossettings"
     )
 
-    override fun importSettings() = openSettingsArchive.launch(
-        arrayOf("application/json", "application/octet-stream", "text/plain")
-    )
+    override fun importSettings() {
+        val owner = instrumentWorkflow ?: return
+        val ticket = owner.beginSettingsImport()
+        if (ticket == null) {
+            ui.settingsTransferStatus = if (owner.editsBlocked)
+                "Instrument state is uncertain. Recover it in INSTRUMENT PRESETS before importing settings."
+            else "A settings document is still open or being read. Wait for it before another import."
+            return
+        }
+        pendingSettingsImport = ticket
+        runCatching {
+            openSettingsArchive.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
+        }.onFailure {
+            pendingSettingsImport = null
+            owner.cancelSettingsImport(ticket)
+            reportImportFailure(it)
+        }
+    }
 
     override fun startMic() {
         if (!taskIsCurrent()) return
-        val selection = selectSource()
+        val selection = selectSource(SignalKind.MIC)
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -1438,7 +1561,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (!taskIsCurrent()) return
         val backend = if (!explicitStandard && RootCaptureSettings.enabled(this)) CaptureBackend.ROOT else CaptureBackend.STANDARD
         val alreadyCapturing = CaptureService.ownsCapture() && CaptureService.currentStatus().backend == backend && !micHandoff.isPending
-        val selection = selectSource()
+        val selection = selectSource(if (backend == CaptureBackend.ROOT) SignalKind.ROOT else SignalKind.CAPTURE)
         if (alreadyCapturing) return
         if (backend == CaptureBackend.ROOT) {
             withSourcesReleased(selection = selection) {
@@ -1540,6 +1663,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             observeMicCaptureStatus(status)
             return
         }
+        signalCaptureStatus = status
         val wasCapture = ui.sourceLabel.startsWith("capture")
         ui.captureRoot = status.backend == CaptureBackend.ROOT
         ui.captureStatus = status.message
@@ -1605,10 +1729,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun runtimePrefs() = getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)
 
     // ── Tuning persistence: the scope remembers its knobs across launches. ──
+    private fun persistAutomaticGain() {
+        if (instrumentWorkflow?.automaticPersistenceAllowed == false) return
+        prefs().edit { putFloat("gain", gainValue) }
+    }
+
     private fun saveTuning() {
         instrumentWorkflow?.settle("Saving current tuning. Pending apply cancelled.")
         // Do not silently make a failed preset durable during lifecycle autosave.
-        val preserved = if (instrumentWorkflow?.unsaved == true) {
+        val preserved = if (instrumentWorkflow?.automaticPersistenceAllowed == false) {
             preferenceValueSnapshots(prefs().all, CuratedInstrumentPresets.cleanXy.setup.preferenceValues().keys)
         } else emptyMap()
         prefs().edit {
@@ -2251,6 +2380,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // Android can reveal system bars when focus returns, so restore the selected immersive state.
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
+        signalFocused = hasFocus
         if (hasFocus) {
             refreshRotationAuthority(force = true)
             applyImmersive()
@@ -2294,7 +2424,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             rollback = { restorePreferenceSnapshots(prior) },
         )
         if (failure != null) {
-            ui.lightError = failure.message()
+            ui.lightError = reportTuningWriteFailure(failure)
             return@write false
         }
         // Copy-before-remove. A failed cleanup leaves a harmless rollback-readable key.
@@ -2363,7 +2493,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // ── Deck sheet verbs ──
     override fun openFolder() {
-        selectSource()
+        selectSource(SignalKind.LOCAL)
         openFolderLauncher.launch(null)
     }
     override fun jumpToQueue(index: Int) { controller?.seekTo(index, 0) }
