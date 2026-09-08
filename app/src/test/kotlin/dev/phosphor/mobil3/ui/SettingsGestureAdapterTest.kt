@@ -249,6 +249,52 @@ class SettingsGestureAdapterTest {
         assertEquals(SettingsDismissOwner.Release.RETURN, up(reverse, 64f, 130))
     }
 
+    @Test fun shortUpwardReleaseCannotBorrowTheEarlierDownwardVelocity() {
+        for (releaseTime in listOf(50L, 51L, 60L)) {
+            val adapter = SettingsGestureAdapter()
+            down(adapter)
+            move(adapter, 80f, 40) { adapter.header(80f) }
+            move(adapter, 70f, 50) { adapter.header(-10f) }
+            assertEquals(SettingsDismissOwner.Release.RETURN, up(adapter, 70f, releaseTime))
+        }
+    }
+
+    @Test fun renewedDownwardMotionUsesOnlyItsOwnVelocitySegment() {
+        for (fast in listOf(false, true)) {
+            val adapter = SettingsGestureAdapter()
+            down(adapter)
+            move(adapter, 80f, 40) { adapter.header(80f) }
+            move(adapter, 70f, 50) { adapter.header(-10f) }
+            val nextY = if (fast) 90f else 71f
+            move(adapter, nextY, 60) { adapter.header(nextY - 70f) }
+            assertEquals(
+                if (fast) SettingsDismissOwner.Release.CLOSE else SettingsDismissOwner.Release.RETURN,
+                up(adapter, nextY, 60),
+            )
+        }
+    }
+
+    @Test fun deliberateDistanceRemainsIndependentOfFlickDirection() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 210f, 1000) { adapter.header(210f) }
+        move(adapter, 200f, 1100) { adapter.header(-10f) }
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 200f, 1100))
+    }
+
+    @Test fun presentationOwnerIsRememberedBeforeHiddenAndPipBranches() {
+        val candidates = listOf(
+            java.io.File("src/main/kotlin/dev/phosphor/mobil3/ui/PhosphorScreen.kt"),
+            java.io.File("app/src/main/kotlin/dev/phosphor/mobil3/ui/PhosphorScreen.kt"),
+        )
+        val source = candidates.first { it.isFile }.readText()
+            .substringAfter("fun PhosphorScreen(state:")
+        val owner = source.indexOf("val settingsPresentation = rememberSettingsPresentationState()")
+        assertTrue(owner >= 0)
+        assertTrue(owner < source.indexOf("if (!state.presentationVisible) return"))
+        assertTrue(owner < source.indexOf("if (state.pip)"))
+    }
+
     @Test fun nonFiniteEligibleTravelCancelsRatherThanLeavingAQualifiedPull() {
         for (case in 0..2) {
             val adapter = SettingsGestureAdapter()

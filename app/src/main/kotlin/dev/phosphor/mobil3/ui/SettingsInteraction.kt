@@ -9,6 +9,7 @@ internal class SettingsDismissOwner {
     private var ticket: Ticket? = null
     private var latest: Sample? = null
     private val samples = ArrayDeque<Sample>()
+    private var direction = 0
     private var retired = false
     var committed = false
         private set
@@ -32,6 +33,14 @@ internal class SettingsDismissOwner {
         if (pointers != 1 || !y.isFinite() || millis < prior.millis) {
             cancel()
             return false
+        }
+        if (rawDp > 0f && y != prior.y) {
+            val nextDirection = if (y > prior.y) 1 else -1
+            if (direction != 0 && direction != nextDirection) {
+                samples.clear()
+                rememberSample(prior)
+            }
+            direction = nextDirection
         }
         latest = Sample(y, millis)
         if (rawDp > 0f) rememberSample(latest!!)
@@ -66,7 +75,10 @@ internal class SettingsDismissOwner {
         if (old == 0f && rawDp > 0f) {
             samples.clear()
             latest?.let(::rememberSample)
-        } else if (rawDp == 0f) samples.clear()
+        } else if (rawDp == 0f) {
+            samples.clear()
+            direction = 0
+        }
         return rawDp - old
     }
 
@@ -87,10 +99,11 @@ internal class SettingsDismissOwner {
         val velocity = if (elapsed > 0 && first != null && last != null)
             (last.y - first.y) * 1000f / elapsed else 0f
         val close = rawDp >= SLOW_DISTANCE_DP ||
-            (rawDp >= FLICK_DISTANCE_DP && velocity.isFinite() && velocity >= FLICK_DP_PER_SECOND)
+            (rawDp >= FLICK_DISTANCE_DP && direction > 0 && velocity.isFinite() && velocity >= FLICK_DP_PER_SECOND)
         ticket = null
         latest = null
         samples.clear()
+        direction = 0
         if (close) {
             committed = true
             return Release.CLOSE
@@ -103,6 +116,7 @@ internal class SettingsDismissOwner {
         ticket = null
         latest = null
         samples.clear()
+        direction = 0
         if (!committed) rawDp = 0f
     }
 

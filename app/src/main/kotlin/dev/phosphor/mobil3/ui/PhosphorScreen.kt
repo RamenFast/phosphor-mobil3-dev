@@ -224,6 +224,7 @@ interface ScopeActions : InstrumentPresetActions {
 
 @Composable
 fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean) {
+    val settingsPresentation = rememberSettingsPresentationState()
     if (!state.presentationVisible) return
     if (state.pip) {
         AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
@@ -265,7 +266,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         if (state.controlsAlwaysVisible) consoleVisible = true
     }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
-    val settingsPresentation = rememberSettingsPresentationState()
     LaunchedEffect(state.showSourcePicker) {
         if (state.showSourcePicker) { sheet = Sheet.SOURCE; state.showSourcePicker = false }
     }
