@@ -1,6 +1,6 @@
 # Phosphor Mobile: expanded instrument plan
 
-**Status:** execution approved by Ben on 2026-09-08 at 00:18:19 UTC. The feature direction was comprehensively recompiled on 2026-09-07, including instrument presets and signal check. Section 1 is accepted. R01 root capture and R02 floating HUD are in progress. Current installed evidence and remaining gaps live in the execution ledger and HANDOFF.md. Feature delivery remains subject to the evidence below.
+**Status:** execution approved by Ben on 2026-09-08 at 00:18:19 UTC. The feature direction was comprehensively recompiled on 2026-09-07, including instrument presets and signal check. Section 1 is accepted. R01 root capture, R02 floating HUD, and R13 HOLD/BLACK are in progress. Current installed evidence and remaining gaps live in the execution ledger and HANDOFF.md. Feature delivery remains subject to the evidence below.
 
 **Canonical plan:** `MOBILE-EXPANSION-PLAN.md` at the repository root. This replaces the earlier accumulated versions in this same file. Git retains their history. Do not create a competing expansion plan.
 
@@ -334,7 +334,7 @@ These are future implementation checks, not claims that this planning session ra
 | R17 Signal check | Real owner/route/rate/channel observations, measured flow/silence/clipping versus unavailable data, distinct consent/failure/paused-display states, mixed-input health, stale-callback rejection, existing recovery actions, no permission/source side effect on open, bounded visible-only refresh and no stored audio/behavior history. |
 | Integration | Existing source/gesture/lifecycle regression tests, Gradle unit/lint/build/checkEngine, locked Cargo tests, revised boundary/release checks, exact installed APK verification, same-package update/defaults/archive survival. |
 
-Use the authorized Galaxy S25 for root and root-disabled ordinary-path acceptance, API 29 for version fallbacks, and actual Bluetooth/USB accessories for route claims. Root-disabled testing on a modified handset is not an unmodified non-root OS receipt. On 2026-09-08, KernelSU reports a working jailbreak-mode driver, but the app/helper authorization and capture backend remain unproven. Confirm live availability before activation. Current capabilities cannot be inferred from old receipts.
+Use the authorized Galaxy S25 for root and root-disabled ordinary-path acceptance, API 29 for version fallbacks, and actual Bluetooth/USB accessories for route claims. Root-disabled testing on a modified handset is not an unmodified non-root OS receipt. The exact `a93db645e0c8` helper proved existing KernelSU authorization, bounded 16 kHz mono capture, repeat operation, and parent-death cleanup on this S25. The later installed `06f84e2` stereo probe initialized 48 kHz two-channel capture but failed its queue guard before proving stereo separation. Full-fidelity capture, audibility, latency, and SoundCloud acceptance remain open. Consult current exact-artifact receipts rather than inferring acceptance from root availability.
 
 Run sustained HUD + capture + mic + random-light sessions, with periodic pause/inspect/resume and route changes. Repeat HDR and brightness combinations where supported. Measure audio continuity, memory growth, frame pacing, thermal behavior, battery implications, and resource teardown.
 
