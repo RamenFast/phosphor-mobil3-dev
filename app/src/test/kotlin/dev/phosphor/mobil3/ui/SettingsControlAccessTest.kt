@@ -92,6 +92,23 @@ class SettingsControlAccessTest {
         assertEquals(listOf(2.5f), calls)
     }
 
+    @Test fun primarySettingsActionsInstallFocusDrawingBeforeTheClickableTarget() {
+        fun source(name: String): String = listOf(
+            java.io.File("src/main/kotlin/dev/phosphor/mobil3/ui/$name.kt"),
+            java.io.File("app/src/main/kotlin/dev/phosphor/mobil3/ui/$name.kt"),
+        ).first { it.isFile }.readText()
+        val primary = source("Controls").substringAfter("fun FlatKey(").substringBefore("fun SheetRow(")
+        val focus = "if (accessible) Modifier.settingsFocusBorder(p) else Modifier"
+        assertTrue(primary.indexOf(focus) >= 0)
+        assertTrue(primary.indexOf(focus) < primary.indexOf(".clickable("))
+        assertTrue(primary.contains("val accessible = LocalSettingsControlAccess.current"))
+        val drawing = source("SettingsControlAccess").substringAfter("fun Modifier.settingsFocusBorder(")
+            .substringBefore("internal class SettingsRangeAction")
+        assertTrue(drawing.contains("onFocusChanged { focused = it.isFocused }"))
+        assertTrue(drawing.contains("if (focused) drawRect(p.accent, style = Stroke(2.dp.toPx()))"))
+        // This checks actual source wiring. Attached key delivery and focus pixels need Android.
+    }
+
     @Test fun settingsOnlyContextKeepsLegacyLayoutsAndPointerSetters() {
         fun source(name: String): String = listOf(
             java.io.File("src/main/kotlin/dev/phosphor/mobil3/ui/$name.kt"),

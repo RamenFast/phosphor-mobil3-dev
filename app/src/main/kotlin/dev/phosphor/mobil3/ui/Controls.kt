@@ -332,6 +332,7 @@ fun FlatKey(
             .then(if (accessible) Modifier.settingsChoice(active) else Modifier)
             .background(if (pressed) p.accent.copy(alpha = 0.10f) else Color.Transparent)
             .border(Dim.hairline, if (active || pressed) p.accent else p.line)
+            .then(if (accessible) Modifier.settingsFocusBorder(p) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
             .padding(horizontal = 14.dp, vertical = if (accessible) 6.dp else 0.dp),
         contentAlignment = Alignment.Center,
