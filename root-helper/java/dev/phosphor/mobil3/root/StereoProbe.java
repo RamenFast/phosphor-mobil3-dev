@@ -30,11 +30,33 @@ final class StereoProbe {
         require(d!=null && d.isSink() && d.getType()!=AudioDeviceInfo.TYPE_REMOTE_SUBMIX && d.getType()!=AudioDeviceInfo.TYPE_UNKNOWN,"monitor_physical_route_not_proven");
         return new JSONObject().put("id",d.getId()).put("type",d.getType()).put("address",d.getAddress());
     }
+    private static int threshold(AudioTrack track) {
+        return android.os.Build.VERSION.SDK_INT>=31?track.getStartThresholdInFrames():track.getBufferSizeInFrames();
+    }
+    private static JSONObject monitorBuffers(AudioTrack track)throws Exception {
+        return new JSONObject().put("capacity_frames",track.getBufferCapacityInFrames())
+            .put("effective_frames",track.getBufferSizeInFrames()).put("start_threshold_frames",threshold(track))
+            .put("threshold_api",android.os.Build.VERSION.SDK_INT>=31).put("performance_mode",track.getPerformanceMode());
+    }
+    private static void configureMonitor(AudioTrack track,JSONObject e,String key)throws Exception {
+        JSONObject receipt=new JSONObject().put("before",monitorBuffers(track));e.put(key,receipt);
+        int sizeResult=track.setBufferSizeInFrames(StereoPending.BUFFER_FRAMES);
+        receipt.put("size_result",sizeResult);
+        int thresholdResult=android.os.Build.VERSION.SDK_INT>=31?
+            track.setStartThresholdInFrames(StereoPending.START_FRAMES):track.getBufferSizeInFrames();
+        receipt.put("threshold_result",thresholdResult);
+        JSONObject actual=monitorBuffers(track);receipt.put("after",actual);
+        StereoPending.monitorBounds(actual.getInt("capacity_frames"),actual.getInt("effective_frames"),
+            actual.getInt("start_threshold_frames"),sizeResult,thresholdResult);
+        e.put("monitor_actual_buffer_frames",actual.getInt("effective_frames"));
+    }
     private static void stable(AudioManager manager,AudioTrack track,int uid,JSONObject who,JSONObject where)throws Exception {
         require(manager.getMode()==AudioManager.MODE_NORMAL,"communication_mode_changed");
         JSONObject current=player(manager,track,uid);
         require(current!=null && current.toString().equals(who.toString()),"monitor_identity_changed");
         require(route(track).toString().equals(where.toString()),"monitor_route_changed");
+        int size=track.getBufferSizeInFrames(),start=threshold(track);
+        StereoPending.monitorBounds(track.getBufferCapacityInFrames(),size,start,size,start);
     }
     private static JSONObject timestamp(AudioRecord record,AudioTrack monitor,StereoPending pending)throws Exception {
         AudioTimestamp r=new AudioTimestamp(),m=new AudioTimestamp();
@@ -67,6 +89,7 @@ final class StereoProbe {
             require(monitor.setVolume(1f)==AudioTrack.SUCCESS,"monitor_gain_failed");
             e.put("monitor_actual_buffer_frames",monitor.getBufferSizeInFrames()).put("monitor_rate",monitor.getSampleRate())
                 .put("monitor_channels",monitor.getChannelCount()).put("monitor_encoding",monitor.getAudioFormat());
+            configureMonitor(monitor,e,"monitor_initial_buffers");
             monitor.play();
             long silence=0;
             while(who==null && SystemClock.elapsedRealtime()-setup<2000) {
@@ -81,7 +104,8 @@ final class StereoProbe {
             require(who!=null && where!=null,"monitor_actual_identity_missing");
             e.put("monitor_identity",who).put("monitor_route",where).put("startup_silence_frames",silence);
             // Reset playback-head/frame origin without releasing the proven player identity.
-            monitor.pause();monitor.flush();require(monitor.getPlaybackHeadPosition()==0,"startup_silence_not_cleared");monitor.play();
+            monitor.pause();monitor.flush();require(monitor.getPlaybackHeadPosition()==0,"startup_silence_not_cleared");
+            configureMonitor(monitor,e,"monitor_routed_buffers");monitor.play();
             stage="register_own_uid_loopback";
             Class<?> ruleClass=Class.forName("android.media.audiopolicy.AudioMixingRule"),mixClass=Class.forName("android.media.audiopolicy.AudioMix"),policyClass=Class.forName("android.media.audiopolicy.AudioPolicy");
             Object rule=make("android.media.audiopolicy.AudioMixingRule$Builder",NONE);
@@ -176,7 +200,9 @@ final class StereoProbe {
                     .put("separation_997_db",stats.separation(0)).put("separation_1499_db",stats.separation(1)).put("stereo_proven",stats.stereo());
                 e.put("steady_start_frame",StereoStats.RATE).put("phase_sine_997_l",stats.phase(0,0)).put("phase_sine_1499_r",stats.phase(1,1));
                 for(int c=0;c<2;c++)for(int f=0;f<2;f++)e.put("power_"+c+"_"+(f==0?997:1499),stats.power(c,f));
-                send(12,e);
+                StereoTerminal.Result terminal=StereoTerminal.prepare(identity,e.toString(),clean,Process.myUid());
+                sendBytes(12,terminal.payload);
+                if(terminal.compacted && failure==null)failure="terminal_receipt_overflow";
             }catch(Throwable t){clean=false;}
         }
         return failure==null&&clean?0:4;

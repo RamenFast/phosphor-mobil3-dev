@@ -36,6 +36,24 @@ public final class StereoProbeTest {
         pending.wrote(0);check(pending.offset==2);pending.wrote(958);check(!pending.pending());check(pending.readFrames==pending.writtenFrames);
         check(pending.queue(0)==480);check(pending.queueHighwater==480);pending.read(4);pending.wrote(4);check(pending.writtenFrames==482);
         rejects(()->pending.queue(483));rejects(()->pending.read(962));
+        StereoPending.monitorBounds(8793,960,480,960,480);check(true);
+        StereoPending.monitorBounds(8793,960,960,960,960);check(true);
+        StereoPending.monitorBounds(512,512,480,512,480);check(true);
+        rejects(()->StereoPending.monitorBounds(8793,8793,8793,8793,8793));
+        rejects(()->StereoPending.monitorBounds(8793,961,480,961,480));
+        rejects(()->StereoPending.monitorBounds(8793,960,961,960,961));
+        rejects(()->StereoPending.monitorBounds(8793,960,0,960,0));
+        rejects(()->StereoPending.monitorBounds(8793,960,480,-3,480));
+        rejects(()->StereoPending.monitorBounds(8793,960,480,960,-2));
+        rejects(()->StereoPending.monitorBounds(8793,960,480,512,480));
+        rejects(()->StereoPending.monitorBounds(8793,960,480,960,960));
+        rejects(()->StereoPending.monitorBounds(959,960,480,960,480));
+        rejects(()->StereoPending.monitorBounds(0,0,0,0,0));
+        StereoPending queue=new StereoPending();
+        for(int i=0;i<10;i++){queue.read(960);queue.wrote(960);}
+        check(queue.queue(0)==4800);queue.read(384);queue.wrote(384);
+        rejects(()->queue.queue(0));check(queue.queueHighwater==4992);
+        check(queue.queue(192)==4800);rejects(()->queue.queue(-1));
         String build="a".repeat(64);
         for(int mode:new int[]{4,5}) {
             byte[] id=Protocol.identity(10401,build,7,mode);check(Protocol.mode(id)==mode);
