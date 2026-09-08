@@ -61,7 +61,7 @@ fun InstrumentPresetSheet(state: ScopeUiState, p: Palette, reduced: Boolean,
             Prose(state.instrumentRecall, p.ink)
             if (state.instrumentApplyStatus.isNotBlank()) Prose(state.instrumentApplyStatus, p.ink)
             if (state.instrumentStatus.isNotBlank()) Prose(state.instrumentStatus, p.ink)
-            Prose(if (state.displayPaused) "HOLD keeps its retained image. Applied tuning is ready for LIVE."
+            Prose(if (state.displayPaused) "Display is paused. Applied tuning is ready for LIVE without changing the current pause presentation."
                 else "Local authored tuning only. Source, audio, camera and inspection stay unchanged.", p.muted)
             if (state.remote && state.remoteGeometry) {
                 Prose("Desktop geometry cannot accept a complete local setup. Saving local authored tuning is still available.", p.ink)
