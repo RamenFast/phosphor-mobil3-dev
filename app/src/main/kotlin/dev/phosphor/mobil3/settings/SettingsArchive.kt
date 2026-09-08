@@ -1,6 +1,8 @@
 package dev.phosphor.mobil3.settings
 
 import dev.phosphor.mobil3.ui.LightSettings
+import dev.phosphor.mobil3.settings.appearance.AppearanceDocumentCodec
+import dev.phosphor.mobil3.settings.appearance.AppearanceException
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
@@ -84,6 +86,7 @@ object SettingsArchive {
         "grid" to Spec(Kind.BOOLEAN),
         "grid_data" to Spec(Kind.BOOLEAN),
         "focus" to floatRange(0.3f, 3f),
+        "appearance_state" to string(AppearanceDocumentCodec.MAX_BYTES, ::validAppearance),
         "room" to string(80) { it.matches(Regex("[a-zA-Z0-9_.-]+")) },
         "auto_gain" to Spec(Kind.BOOLEAN),
         "hud_mode" to intRange(0, 2),
@@ -126,8 +129,15 @@ object SettingsArchive {
         "cycle_per_track" to Spec(Kind.BOOLEAN),
     )
 
-    private val v2Only = setOf("custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
+    private val v2Only = setOf("appearance_state", "custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
         "cycle_random_interval", "cycle_interval_min", "cycle_interval_max")
+
+    private fun validAppearance(text: String): Boolean = try {
+        AppearanceDocumentCodec.decode(text)
+        true
+    } catch (error: AppearanceException) {
+        throw ArchiveException("invalid_appearance_state", error.message, error.fix)
+    }
 
     private fun rangeString(min: Float, max: Float) = string(80) { text ->
         val values = text.split(',')
