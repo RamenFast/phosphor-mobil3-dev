@@ -16,6 +16,7 @@ Authority: [2026-09-08 execution decision](../../../decisions/2026-09-08-mobile-
 - The round 1 critic, two root researchers, and section 1 correction worker are stopped after retained handoffs. The correction worker completed its eight-file patch and released ownership at 01:50 UTC. Coordinator verification precedes the correction commit and independent round 2. Next implementation scope is the fixed packaged root-audio feasibility helper, not product acceptance.
 - At 02:08 UTC `session_skunk_1788833286980_595eb5eac5d15851` became sole implementation writer for the fixed debug helper. It also owns the narrow SDK correction subset. The coordinator does not edit those files. Section 1 reviewer `session_hedgehog_1788833218692_8aebcc68229bc347` finished and was stopped at 02:15 UTC.
 - The helper worker released all implementation files at 02:35 UTC and was stopped at 02:42 UTC. The coordinator now owns all source integration and the only Gradle build slot. Its released 17-file receipt is `/home/ben/.jcode/scratch/section2-helper-source.sha256`, hash `be2e1f71175fa741a82188273d05a1c4ed6bf9d84a69b9d2af663fbdcb376305`. That receipt predates coordinator corrections and is not the current source/APK identity.
+- At 03:28 UTC installed clean source `a93db64` passed three real root PCM captures, same-process repeat, real app-parent death cleanup and fresh-process recovery. [Exact trial evidence](section-02-helper-trials.md) supersedes prior startup failures and installed hashes. Full R01 remains in progress. All workers are stopped. The coordinator owns source, the build slot and device actions until the next explicit assignment.
 
 ## Baseline and recovery
 
@@ -59,7 +60,7 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 | Section | Requirement | Planned owner | Status | Required evidence | Critique |
 |---|---|---|---|---|---|
 | 1 | Baseline/contracts | Coordinator + boundary corrections | accepted | Coordinator and independent real-format gates passed, exact backup/history hashes preserved | Rounds 1/2: 7/10. Round 3: 9/10 |
-| 2 | R01 root | Coordinator | in progress | App-origin UID 0 proven on exact ff7067e, unchanged settings. Fixed helper and non-diverting PCM still unproven | Not started |
+| 2 | R01 root | Coordinator + audio writer | in progress | Exact a93db64: three real PCM passes, live render/loopback, repeat, parent death and recovery, unchanged preferences. Product streaming/service/UI and broader failure acceptance remain open | Full section not started. Separate bounded helper safety review retained |
 | 3 | R09 mic/mix | Audio | pending | Actual accessory route, two signals, rate/drift/buffer/clipping and partial-loss checks | Not started |
 | 4 | R02 HUD | Presentation | pending | Real transparency, touch isolation, owner transfer, teardown and no duplicate source | Not started |
 | 5 | R13 pause | Presentation | pending | Last-frame hold, BLACK, inspect/reset, no transport lie/backlog, recreation | Not started |
@@ -98,7 +99,7 @@ Unmodified baseline commands ran before source edits. Raw logs stay in the priva
 
 These checks do not accept any expansion feature or production release. New artifact/source identity must be recorded after each implementation checkpoint.
 
-## Next actions
+## Checkpoint history
 
 ### Section 1 correction verification, 02:05 UTC
 
