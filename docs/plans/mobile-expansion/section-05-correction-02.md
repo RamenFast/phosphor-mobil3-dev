@@ -27,3 +27,25 @@ A capture service can replace its mirrored MediaSession without retiring the aud
 ## Scoped observations before integration
 
 Task0647564sdz tested an immutable private Git-archive snapshot of1dbb3a9 plus the three owned Rust corrections. Locked/offline Rust1.96.0 passed94 tests, including two threaded in-flight render barriers and the repeated reset-token test. This did not compile Android-only renderer/deck callbacks. A separate cached Kotlin2.4.10/JUnit4.13.2 run passed eight tests against the actual pure capture-observation adapter and fixed source-wiring fixtures. Evidence is under `/home/ben/.jcode/scratch/r13-revision-20260908T0810/`, with source receipt, native.log, run-jvm.sh and jvm.log. The live six-color writer was not compiled. Full Android integration and independent correction acceptance are still open.
+
+## 08:21 UTC: exact committed integration gate
+
+Task514919zi9y passed in172.1 seconds from independent clean clones of mobile `0591d7345cdbc701dd2549ef62037959c1fbdaca` and shared `0ffd658d7f19e68180c2720e0500b23644619e90`. The live color writer was not part of this freeze. All526 JVM tests in46 suites passed with zero failures, errors or skips, counted from the actual Gradle XML. All94 native tests and three actual offscreen retained-frame GPU tests passed. Gradle unit/lint, both debug APKs together, checkEngine and release-helper build passed. The production source boundary passed. Complete source manifests and file sets were identical before and after, and both clone working trees remained clean.
+
+Evidence directory: `/home/ben/.jcode/scratch/hold-freeze-0591d73-0817/`.
+
+| Evidence | SHA256 |
+|---|---|
+| Mobile source archive | `382cbcc3284a924602f9caf23bc3bc57fc0cc676928efe463d4576ecb7d58234` |
+| Shared source archive | `c8a35001b41537def1b7d3777045ebe197526c73e423c1897d54c2ed9724915f` |
+| App debug APK | `dee32897b98e61f23d995b345d38bd35ab893b6ee963bb4050a2966ae4fe9977` |
+| Companion androidTest APK | `f0f741092e6a077f949ddc4a56d12e2ed9162257fb6867968be1b46806527a1d` |
+| Mobile full source manifest | `afdba83fc77181d1c79a56dfacf1cdd8d9b802a461136be9b32b7e24d926a119` |
+| Shared full source manifest | `581cd08f0a1fedcb8470e6848957edcec1017012bb772462e01280bc1d30acb9` |
+| Bounded runner | `ffe265f06436751632ddbc545dad457ff62e47ad219f27a2b9687ac1f4aa8ceb` |
+| Result envelope | `6805e9963034df28e98f2ca0400af12d00cce7d874eacc85b4ca1734797e194b` |
+| Native log | `9197946d2b0aab9814453b735eac588e6745d46f29743f555250b7ab13cc3e28` |
+| GPU log | `9e873c960d0b858dcd7dcfbabc8c05fed7ebe029d3f8bcc264bdab7b6f645daf` |
+| Gradle log | `f23170a8f01fabaa505dec449b6e02dfaa44dacad69a3c46a7bac350e8851bc0` |
+
+This is a clean host integration and artifact receipt, not installation, signing/publication acceptance, or Android behavior. The offscreen GPU tests ran on the host, not the S25 compositor. Root producer/source-time freshness, physical scanout, real callback interleavings and device acceptance remain open. Independent round3 reviews the exact0591/0ffd objects. The prior [round2 report](critiques/section-05-round-02.md) remains unchanged at7/10 for35d8/0ffd, SHA256 `e0d96fcbc7556c20528074112adc01903a7341f8947153bf47db16689c285f3b`.
