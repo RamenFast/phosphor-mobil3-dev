@@ -67,7 +67,7 @@ class SliderGeometryTest {
         assertTrue("SliderGeometry(size.width, density)" in controls)
         assertTrue("sliderAccent(p)" in controls)
         val lane = controls.substringAfter("internal fun SliderLane(").substringBefore("fun DragRuleInline(")
-        assertTrue(".height(SliderGeometry.HIT_LANE_DP.dp)" in lane)
+        assertTrue(".height(if (LocalSettingsControlAccess.current) 48.dp else SliderGeometry.HIT_LANE_DP.dp)" in lane)
         assertTrue(".consoleSeekGesture(" in lane)
         assertFalse("detectTapGestures" in lane)
         val rules = phase9Source("ui/Sheets.kt").substringAfter("fun DragRule(").substringBefore("fun SourceSheet(")

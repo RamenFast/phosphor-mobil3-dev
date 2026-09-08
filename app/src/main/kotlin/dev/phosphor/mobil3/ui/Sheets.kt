@@ -22,6 +22,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.gestures.detectTapGestures
 import androidx.compose.foundation.gestures.detectVerticalDragGestures
 import androidx.compose.foundation.layout.Arrangement
@@ -54,10 +55,12 @@ import androidx.compose.ui.layout.onSizeChanged
 import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.Role
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.CompositionLocalProvider
 import androidx.compose.runtime.DisposableEffect
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -531,12 +534,20 @@ fun DragRule(
     onChange: (Float) -> Unit,
 ) {
     val unit = remember { SliderGeometry(1f, 0f) }
+    val accessible = LocalSettingsControlAccess.current
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+        if (accessible) {
             Mono(label, p.ink2, Type.data)
             Mono(format(value), p.ink, Type.data)
+        } else {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
+                Mono(label, p.ink2, Type.data)
+                Mono(format(value), p.ink, Type.data)
+            }
         }
-        SliderLane(p, unit.fraction(value, min, max), Modifier.fillMaxWidth()) {
+        val range = if (accessible) Modifier.settingsFocusBorder(p).settingsRange(label, format(value),
+            SettingsRangeAction(value, min, max, onChange)) else Modifier
+        SliderLane(p, unit.fraction(value, min, max), Modifier.fillMaxWidth().then(range)) {
             onChange(unit.valueAt(it, min, max))
         }
     }
@@ -560,10 +571,13 @@ fun RangeDragRule(
 ) {
     val grab = remember { androidx.compose.runtime.mutableIntStateOf(0) }
     val unit = remember { SliderGeometry(1f, 0f) }
+    val accessible = LocalSettingsControlAccess.current
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
         Row(
             Modifier.fillMaxWidth().then(
-                if (onLabelTap != null) Modifier.clickable { onLabelTap() } else Modifier
+                if (onLabelTap != null && accessible) Modifier.heightIn(min = 48.dp)
+                    .toggleable(armed, role = Role.Checkbox) { onLabelTap() }
+                else if (onLabelTap != null) Modifier.clickable { onLabelTap() } else Modifier
             ),
             verticalAlignment = Alignment.CenterVertically,
         ) {
@@ -577,9 +591,16 @@ fun RangeDragRule(
                     }),
             )
             Spacer(Modifier.width(8.dp))
-            Mono(label, if (armed) p.accent else p.ink2, Type.data)
-            Spacer(Modifier.weight(1f))
-            Mono("${format(lo)}–${format(hi)}", p.ink, Type.dataXs)
+            if (accessible) {
+                Column(Modifier.weight(1f)) {
+                    Mono(label, if (armed) p.accent else p.ink2, Type.data)
+                    Mono("${format(lo)}–${format(hi)}", p.ink, Type.dataXs)
+                }
+            } else {
+                Mono(label, if (armed) p.accent else p.ink2, Type.data)
+                Spacer(Modifier.weight(1f))
+                Mono("${format(lo)}–${format(hi)}", p.ink, Type.dataXs)
+            }
         }
         SliderLane(
             p, unit.fraction(lo, min, max), Modifier.fillMaxWidth(),
@@ -588,6 +609,24 @@ fun RangeDragRule(
         ) {
             val moved = unit.moveThumb(grab.intValue, it, lo, hi, min, max)
             onChange(moved.first, moved.second)
+        }
+        if (accessible) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                    .settingsFocusBorder(p)
+                    .settingsRange("$label lower", format(lo), SettingsRangeAction(lo, min, hi) { onChange(it, hi) })
+                    .padding(6.dp)) {
+                    Mono("LOWER", p.muted, Type.dataXs)
+                    Mono(format(lo), p.ink)
+                }
+                Column(Modifier.weight(1f).heightIn(min = 48.dp)
+                    .settingsFocusBorder(p)
+                    .settingsRange("$label upper", format(hi), SettingsRangeAction(hi, lo, max) { onChange(lo, it) })
+                    .padding(6.dp)) {
+                    Mono("UPPER", p.muted, Type.dataXs)
+                    Mono(format(hi), p.ink)
+                }
+            }
         }
     }
 }
@@ -1127,6 +1166,7 @@ internal fun SettingsSheet(
     DisposableEffect(presentation) {
         onDispose { presentation.retire() }
     }
+    CompositionLocalProvider(LocalSettingsControlAccess provides true) {
     SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob,
         settingsScroll = scroll,
         settingsSourceKey = listOf(state.sourceLabel, state.live, state.remote, state.captureRoot),
@@ -1169,7 +1209,7 @@ internal fun SettingsSheet(
                 "BEAM", state.beamEnergy, 1.0f, 30.0f, p, { "×%.0f".format(it) },
             ) { actions.setBeamEnergy(it) }
             RangeDragRule(
-                "⚄ RANGE", state.beamRandomLo, state.beamRandomHi, 1.0f, 30.0f, p,
+                "BEAM RANGE", state.beamRandomLo, state.beamRandomHi, 1.0f, 30.0f, p,
                 armed = state.beamRandomArmed, onLabelTap = { actions.tapBeamRandom() },
                 format = { "×%.0f".format(it) },
             ) { lo, hi -> actions.setBeamRandomRange(lo, hi) }
@@ -1177,7 +1217,7 @@ internal fun SettingsSheet(
                 "GLOW", state.glow, 0.0f, 0.98f, p, { "%.0f %%".format(it * 100) },
             ) { actions.setGlow(it) }
             RangeDragRule(
-                "⚄ RANGE", state.glowRandomLo, state.glowRandomHi, 0.0f, 0.98f, p,
+                "GLOW RANGE", state.glowRandomLo, state.glowRandomHi, 0.0f, 0.98f, p,
                 armed = state.glowRandomArmed, onLabelTap = { actions.tapGlowRandom() },
                 format = { "%.0f %%".format(it * 100) },
             ) { lo, hi -> actions.setGlowRandomRange(lo, hi) }
@@ -1478,6 +1518,8 @@ internal fun SettingsSheet(
             }
         }
     }
+}
+
 }
 
 // What the sheets may ask of the host (grows per act).

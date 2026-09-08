@@ -36,7 +36,7 @@ fun Mono(
     color: Color,
     size: TextUnit = Type.data,
     modifier: Modifier = Modifier,
-    maxLines: Int = 1,
+    maxLines: Int = if (LocalSettingsControlAccess.current) Int.MAX_VALUE else 1,
     letterSpacing: TextUnit = TextUnit.Unspecified,
 ) {
     BasicText(

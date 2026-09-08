@@ -16,6 +16,7 @@ import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
@@ -90,7 +91,7 @@ internal fun SliderLane(
     onChange: (Float) -> Unit,
 ) {
     Box(
-        modifier.height(SliderGeometry.HIT_LANE_DP.dp)
+        modifier.height(if (LocalSettingsControlAccess.current) 48.dp else SliderGeometry.HIT_LANE_DP.dp)
             .consoleSeekGesture(
                 durationMs = 1L,
                 onStart = onStart,
@@ -324,13 +325,15 @@ fun FlatKey(
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
     val style = LocalRoomStyle.current
+    val accessible = LocalSettingsControlAccess.current
     Box(
         modifier
-            .height(Dim.flatKey)
+            .then(if (accessible) Modifier.heightIn(min = 48.dp) else Modifier.height(Dim.flatKey))
+            .then(if (accessible) Modifier.settingsChoice(active) else Modifier)
             .background(if (pressed) p.accent.copy(alpha = 0.10f) else Color.Transparent)
             .border(Dim.hairline, if (active || pressed) p.accent else p.line)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp),
+            .padding(horizontal = 14.dp, vertical = if (accessible) 6.dp else 0.dp),
         contentAlignment = Alignment.Center,
     ) {
         // UI-locked mode: the label stays upright toward the viewing edge, through
@@ -394,11 +397,13 @@ fun ChipCell(
     enabled: Boolean = true,
     onClick: () -> Unit,
 ) {
+    val accessible = LocalSettingsControlAccess.current
     Box(
         Modifier
             .padding(3.dp)
             .fillMaxWidth()
-            .height(if (small) 40.dp else 48.dp)
+            .then(if (accessible) Modifier.heightIn(min = 48.dp) else Modifier.height(if (small) 40.dp else 48.dp))
+            .then(if (accessible) Modifier.settingsChoice(active) else Modifier)
             .border(Dim.hairline, if (active && enabled) p.accent else p.line)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(6.dp),
