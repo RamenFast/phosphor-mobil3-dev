@@ -318,14 +318,14 @@ open class CaptureService : Service() {
                 var inputShown = false
                 session.run(
                     ready = {
-                        val accepted = CompletableFuture<Boolean>()
+                        val accepted = CompletableFuture<Long>()
                         main.post {
                             try {
                                 if (owner === this && !cleanedUp && rootSession === session && session.live &&
                                     PlaybackService.localSourcePublication.accepts(sourceRevision) &&
                                     (check == null || (check.accepts() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay()))) {
                                     PhosphorNative.deckSetPaused(true)
-                                    PhosphorNative.setRingActive(true)
+                                    val readOwner = PhosphorNative.setRingActive(true)
                                     running = true
                                     metadataBridgeActive = true
                                     startService(BackgroundLifecycle.stamp(Intent(this, PlaybackService::class.java)
@@ -333,18 +333,22 @@ open class CaptureService : Service() {
                                         .putExtra(EXTRA_CAPTURE_OWNER, captureOwnerId), taskRevision))
                                     sourceWake.rootChanged(recording = true, helper = session.live)
                                     publishStatus(CaptureStatus(STATE_FLOWING, "root connected · waiting for input", RootCapturePolicy.CAPABILITY, true))
-                                    accepted.complete(true)
-                                } else accepted.complete(false)
+                                    accepted.complete(readOwner)
+                                } else accepted.complete(0L)
                             } catch (error: Exception) { accepted.completeExceptionally(error) }
                         }
-                        check(accepted.get(2, java.util.concurrent.TimeUnit.SECONDS)) { "Root READY owner was retired" }
+                        val readOwner = accepted.get(2, java.util.concurrent.TimeUnit.SECONDS)
+                        check(readOwner != 0L) { "Root READY owner was retired" }
                         check?.ready(session.generation)
+                        readOwner
                     },
-                    samples = { pcm, normalized ->
+                    readEpoch = { PhosphorNative.captureReadEpoch() },
+                    samples = { batch, normalized, readOwner ->
                         if (running && rootSession === session && owner === this) {
-                            PhosphorNative.pushCaptureSamples(normalized, normalized.size)
-                            check?.samples(session.generation, pcm, normalized.size / 2)
-                            if (!inputShown) {
+                            // Controlled counters observe transport, not native visual admission.
+                            check?.samples(session.generation, batch.samples, batch.samples.size * 3)
+                            if (normalized != null) PhosphorNative.pushCaptureRead(normalized, normalized.size, readOwner, batch.readEpoch)
+                            if (normalized != null && !inputShown) {
                                 inputShown = true
                                 main.post {
                                     if (owner === this && !cleanedUp && rootSession === session && running)

@@ -68,12 +68,22 @@ public final class Protocol {
         return mode == 3 ? (int)Math.min(block, 80000 - frames) : block;
     }
     public static byte[] progress(byte[] id, long sequence) {
+        if ((mode(id) == 2 || mode(id) == 3) && (sequence < 0 || sequence == Long.MAX_VALUE)) throw new IllegalArgumentException("progress_sequence");
         return ByteBuffer.allocate(88).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence).array();
     }
-    public static byte[] pcm(byte[] id, long sequence, short[] block, int count) throws IOException {
-        if (id.length != 80 || mode(id) >= 4 || sequence < 0 || count < 1 || count > 160 || count > block.length) throw new IOException("pcm_contract");
-        ByteBuffer b = ByteBuffer.allocate(104 + count*2).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence)
-            .putInt(16000).putInt(1).putInt(2).putInt(count);
+    public static byte[] epochAck(byte[] id, RootEpoch.Binding binding, long nextPcmSequence) throws IOException {
+        if (id.length != 80 || (mode(id) != 2 && mode(id) != 3) || binding == null ||
+            binding.controlSequence < 1 || binding.controlSequence == Long.MAX_VALUE || nextPcmSequence < 0)
+            throw new IOException("epoch_ack_contract");
+        return ByteBuffer.allocate(104).order(ByteOrder.LITTLE_ENDIAN).put(id)
+            .putLong(binding.controlSequence).putLong(binding.epoch).putLong(nextPcmSequence).array();
+    }
+    public static byte[] pcm(byte[] id, long sequence, RootEpoch.Binding binding, short[] block, int count) throws IOException {
+        if (id.length != 80 || (mode(id) != 2 && mode(id) != 3) || sequence < 0 || sequence == Long.MAX_VALUE ||
+            binding == null || binding.controlSequence < 1 || binding.controlSequence == Long.MAX_VALUE ||
+            count < 1 || count > 160 || count > block.length) throw new IOException("pcm_contract");
+        ByteBuffer b = ByteBuffer.allocate(120 + count*2).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence)
+            .putInt(16000).putInt(1).putInt(2).putInt(count).putLong(binding.controlSequence).putLong(binding.epoch);
         for (int i=0;i<count;i++) b.putShort(block[i]);
         return b.array();
     }

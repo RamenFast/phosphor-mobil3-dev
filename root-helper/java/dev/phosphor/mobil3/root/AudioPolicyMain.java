@@ -62,6 +62,16 @@ public final class AudioPolicyMain {
         require(waiting && f.kind == 2, "helper_control_state");
         return true;
     }
+    private static boolean streamControl(RootEpoch epochs, boolean waiting, long nextSequence) throws Exception {
+        if (!inputReady(waiting ? 20 : 0)) return false;
+        RootEpoch.Action action = epochs.accept(Protocol.read(INPUT));
+        if (action == RootEpoch.Action.EPOCH) {
+            sendBytes(17, Protocol.epochAck(identity, epochs.adopted(), nextSequence));
+            return false;
+        }
+        if (action == RootEpoch.Action.STOP) stopped = true;
+        return true;
+    }
     static String cause(Throwable e) {
         StringBuilder s = new StringBuilder();
         for (int i = 0; e != null && i < 4; i++, e = e.getCause()) {
@@ -137,21 +147,24 @@ public final class AudioPolicyMain {
             require(record.getState()==AudioRecord.STATE_INITIALIZED,"sink_uninitialized");
             require(record.getSampleRate()==16000 && record.getChannelCount()==1 && record.getAudioFormat()==AudioFormat.ENCODING_PCM_16BIT,"actual_format_mismatch");
             stage="start_recording";record.startRecording();require(record.getRecordingState()==AudioRecord.RECORDSTATE_RECORDING,"not_recording");
+            RootEpoch epochs = mode == 2 || mode == 3 ? new RootEpoch(generation, mode) : null;
+            if (epochs != null) evidence.put("pcm_epoch_schema", 1);
             stage="ready";evidence.put("stage",stage);send(11,evidence);
-            while (!control(true)) { /* supervisor owns the ready deadline */ }
+            while (!(epochs == null ? control(true) : streamControl(epochs, true, 0))) { /* supervisor owns the ready deadline */ }
             stage="read";long start=SystemClock.elapsedRealtime();short[] block=new short[160];
             long sequence=0, progress=0, nextProgress=0, streamFrames=0;
             while (!stopped && ((elapsed=SystemClock.elapsedRealtime()-start)<5000 || mode==2)) {
-                control(false);
+                if (epochs == null) control(false); else streamControl(epochs, false, sequence);
                 if (stopped) break;
                 if (mode==0 && stats.frames==ToneStats.LIMIT) { SystemClock.sleep(2); continue; }
                 if (mode==3 && streamFrames>=80000) break;
+                RootEpoch.Binding readEpoch = epochs == null ? null : epochs.beforeRead();
                 int count=record.read(block,0,mode==0 ? Math.min(block.length,ToneStats.LIMIT-stats.frames) : Protocol.readCount(mode,block.length,streamFrames),AudioRecord.READ_NON_BLOCKING);
                 require(count>=0,"AudioRecord.read="+count);
                 if (mode==0) stats.add(block,count);
                 else {
-                    if (count>0) { sendBytes(15,Protocol.pcm(identity,sequence++,block,count)); streamFrames+=count; }
-                    if (elapsed>=nextProgress) { sendBytes(16,Protocol.progress(identity,progress++)); nextProgress=elapsed+250; }
+                    if (count>0) { sendBytes(15,Protocol.pcm(identity,sequence,readEpoch,block,count)); sequence++; streamFrames+=count; }
+                    if (elapsed>=nextProgress) { sendBytes(16,Protocol.progress(identity,progress)); progress++; nextProgress=elapsed+250; }
                 }
                 SystemClock.sleep(2);
             }

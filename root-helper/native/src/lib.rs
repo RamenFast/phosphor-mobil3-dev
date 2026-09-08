@@ -1,4 +1,7 @@
 pub mod classpath;
+pub mod root_epoch;
+#[cfg(test)]
+mod root_epoch_tests;
 pub mod sha256;
 pub mod signal;
 pub const MAGIC: u32 = 0x31524150;
@@ -170,6 +173,8 @@ pub struct Session {
     pub pcm_at: u64,
     pub progress_sequence: u64,
     pub protocol_clean: bool,
+    pub epoch: root_epoch::RootEpoch,
+    pub capture_started: bool,
 }
 impl Default for Session {
     fn default() -> Self {
@@ -188,6 +193,8 @@ impl Default for Session {
             pcm_at: 0,
             progress_sequence: 0,
             protocol_clean: true,
+            epoch: root_epoch::RootEpoch::default(),
+            capture_started: false,
         }
     }
 }
@@ -205,6 +212,13 @@ impl Session {
         }
     }
     pub fn app(&mut self, kind: u32, payload: &[u8], now: u64) -> Result<bool, &'static str> {
+        if kind == 4 {
+            if !self.selection.stream() || !matches!(self.phase, Phase::Ready | Phase::Capture(_)) || self.result {
+                return Err("epoch_control_state");
+            }
+            self.epoch.request(payload, self.selection.generation, now)?;
+            return Ok(true);
+        }
         if payload != self.selection.generation.to_le_bytes() {
             return Err("control_payload");
         }
@@ -214,7 +228,11 @@ impl Session {
                 Ok(false)
             }
             2 if self.phase == Phase::Ready => {
+                if self.selection.stream() && self.epoch.acknowledged.is_none() {
+                    return Err("epoch_start_unbound");
+                }
                 self.phase = Phase::Capture(now);
+                self.capture_started = true;
                 self.pcm_at = now;
                 Ok(true)
             }
@@ -232,28 +250,49 @@ impl Session {
         id: &[u8],
         now: u64,
     ) -> Result<(), &'static str> {
-        if payload.len() <= id.len() || !payload.starts_with(id) {
+        if payload.len() <= id.len() || !payload.starts_with(id)
+            || (self.selection.stream() && (id.len() != 80 || payload.len() > MAX_PAYLOAD)) {
             return Err("helper_identity");
         }
         match kind {
-            11 if self.phase == Phase::Waiting => self.phase = Phase::Ready,
+            11 if self.phase == Phase::Waiting => {
+                if self.selection.stream() && !root_epoch::schema_one(&payload[id.len()..]) {
+                    return Err("pcm_epoch_schema");
+                }
+                self.phase = Phase::Ready;
+            }
+            17 if self.selection.stream()
+                && matches!(self.phase, Phase::Ready | Phase::Capture(_) | Phase::Stopping(_))
+                && !self.result =>
+            {
+                if self.epoch.expired(now) {
+                    self.stop(now, Some("epoch_ack_timeout"));
+                }
+                self.epoch.ack(&payload[id.len()..], self.sequence)?;
+            }
             15 if self.selection.stream()
                 && matches!(self.phase, Phase::Capture(_) | Phase::Stopping(_))
+                && self.capture_started
                 && !self.result =>
             {
                 let pcm = &payload[id.len()..];
-                if pcm.len() < 24 {
+                if pcm.len() < 40 {
                     return Err("pcm_header");
                 }
                 let seq = u64::from_le_bytes(pcm[..8].try_into().unwrap());
                 let word = |i| u32::from_le_bytes(pcm[i..i + 4].try_into().unwrap());
                 let count = word(20) as usize;
                 if seq != self.sequence
+                    || seq >= i64::MAX as u64
                     || word(8) != 16000
                     || word(12) != 1
                     || word(16) != 2
                     || !(1..=160).contains(&count)
-                    || pcm.len() != 24 + count * 2
+                    || pcm.len() != 40 + count * 2
+                    || self.epoch.acknowledged != Some(root_epoch::Binding {
+                        control_sequence: u64::from_le_bytes(pcm[24..32].try_into().unwrap()),
+                        epoch: u64::from_le_bytes(pcm[32..40].try_into().unwrap()),
+                    })
                 {
                     return Err("pcm_sequence_format_count");
                 }
@@ -265,11 +304,13 @@ impl Session {
             }
             16 if (self.selection.stream() || self.selection.mode >= 4)
                 && matches!(self.phase, Phase::Capture(_) | Phase::Stopping(_))
+                && (!self.selection.stream() || self.capture_started)
                 && !self.result =>
             {
                 let progress = &payload[id.len()..];
                 if progress.len() != 8
                     || u64::from_le_bytes(progress.try_into().unwrap()) != self.progress_sequence
+                    || (self.selection.stream() && self.progress_sequence >= i64::MAX as u64)
                 {
                     return Err("progress_sequence");
                 }
@@ -281,6 +322,7 @@ impl Session {
             }
             12 if !self.result && !matches!(self.phase, Phase::Reaped) => {
                 self.result = true;
+                self.epoch.pending = None;
                 self.stop(now, None);
             }
             _ => return Err("helper_state"),
@@ -288,6 +330,9 @@ impl Session {
         Ok(())
     }
     pub fn tick(&mut self, now: u64) {
+        if self.epoch.expired(now) && !self.result {
+            self.stop(now, Some("epoch_ack_timeout"));
+        }
         if now.saturating_sub(self.heartbeat) > 2000 {
             self.stop(now, Some("heartbeat_timeout"));
         }
@@ -557,8 +602,13 @@ mod product_tests {
             selection,
             ..Session::default()
         };
-        s.helper(11, &[id.clone(), b"{}".to_vec()].concat(), &id, 0)
+        s.helper(11, &[id.clone(), br#"{"pcm_epoch_schema":1}"#.to_vec()].concat(), &id, 0)
             .unwrap();
+        if selection.stream() {
+            s.app(4, &[42u64.to_le_bytes(), 1u64.to_le_bytes(), 0u64.to_le_bytes()].concat(), 0).unwrap();
+            let ack = [id.clone(), [1u64.to_le_bytes(), 0u64.to_le_bytes(), 0u64.to_le_bytes()].concat()].concat();
+            s.helper(17, &ack, &id, 0).unwrap();
+        }
         s.app(2, &42u64.to_le_bytes(), 1).unwrap();
         (s, id)
     }
@@ -570,6 +620,8 @@ mod product_tests {
             1u32.to_le_bytes().to_vec(),
             2u32.to_le_bytes().to_vec(),
             count.to_le_bytes().to_vec(),
+            1u64.to_le_bytes().to_vec(),
+            0u64.to_le_bytes().to_vec(),
             vec![0; count as usize * 2],
         ]
         .concat()

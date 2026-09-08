@@ -20,6 +20,12 @@ internal object RootAudioProtocol {
         require(kind in 1..3 && generation > 0) { "Unknown fixed control" }
         return frame(kind, ByteBuffer.allocate(8).order(ByteOrder.LITTLE_ENDIAN).putLong(generation).array())
     }
+    fun epochControl(generation: Long, binding: RootEpoch.Binding): ByteArray {
+        require(generation > 0 && binding.controlSequence in 1 until Long.MAX_VALUE)
+        return frame(4, ByteBuffer.allocate(24).order(ByteOrder.LITTLE_ENDIAN)
+            .putLong(generation).putLong(binding.controlSequence).putLong(binding.epoch).array())
+    }
+    data class PcmBatch(val samples: ShortArray, val pcmSequence: Long, val controlSequence: Long, val readEpoch: Long)
     class Decoder {
         private val bytes = ByteArray(MAX + 12)
         private var count = 0
@@ -56,23 +62,59 @@ internal object RootAudioProtocol {
         }
     }
     class Stream(private val uid: Int, private val build: String, private val generation: Long, private val mode: Int) {
+        val epoch = RootEpoch()
+        private var ready = false
+        private var started = false
+        private var stopping = false
+        private var terminal = false
         var sequence = 0L
             private set
         var progressSequence = 0L
             private set
-        fun pcm(payload: ByteArray): ShortArray {
-            require(mode == 2 || mode == 3) { "PCM forbidden for aggregate probe" }
+        fun ready(data: JSONObject) {
+            require(!ready && !terminal && mode in 2..3 && data.opt("pcm_epoch_schema") == 1) { "Root PCM epoch schema missing or invalid" }
+            ready = true
+        }
+        fun request(now: Long): ByteArray? {
+            require(ready && !terminal && !stopping && mode in 2..3) { "Root epoch request outside session" }
+            return epoch.request(now)?.let { epochControl(generation, it) }
+        }
+        fun ack(payload: ByteArray, now: Long? = null) {
+            require(ready && !terminal && mode in 2..3) { "Root epoch ACK outside session" }
             val b = tagged(payload, uid, build, generation, mode)
-            require(b.remaining() >= 24) { "PCM header incomplete" }
+            require(b.remaining() == 24) { "Root epoch ACK length mismatch" }
+            val binding = RootEpoch.Binding(b.long, b.long)
+            require(b.long == sequence) { "Root epoch ACK PCM sequence mismatch" }
+            val expired = now?.let(epoch::expired) == true
+            epoch.ack(binding)
+            if (expired) throw RootEpochTimeout()
+        }
+        fun start() {
+            require(ready && !started && !stopping && !terminal && epoch.acknowledged != null) { "Root START before epoch ACK" }
+            started = true
+        }
+        fun stop() { stopping = true }
+        fun result() {
+            require(!terminal) { "Duplicate root RESULT" }
+            terminal = true
+            epoch.cancel()
+        }
+        fun pcm(payload: ByteArray): PcmBatch {
+            require(mode == 2 || mode == 3) { "PCM forbidden for aggregate probe" }
+            require(started && !terminal) { "PCM before START or after RESULT" }
+            val b = tagged(payload, uid, build, generation, mode)
+            require(b.remaining() >= 40) { "PCM header incomplete" }
             require(b.long == sequence && sequence < Long.MAX_VALUE) { "PCM sequence mismatch" }
             require(b.int == 16000 && b.int == 1 && b.int == 2) { "PCM actual format mismatch" }
             val count = b.int
+            val binding = RootEpoch.Binding(b.long, b.long)
+            require(binding == epoch.acknowledged) { "PCM epoch binding mismatch" }
             require(count in 1..160 && b.remaining() == count * 2) { "PCM count or size invalid" }
             val samples = ShortArray(count) { b.short }
-            sequence++
-            return samples
+            return PcmBatch(samples, sequence++, binding.controlSequence, binding.epoch)
         }
         fun progress(payload: ByteArray) {
+            require(!terminal && (mode !in 2..3 || started)) { "Progress outside root session" }
             val b = tagged(payload, uid, build, generation, mode)
             require(b.remaining() == 8 && b.long == progressSequence && progressSequence < Long.MAX_VALUE) { "Helper progress sequence mismatch" }
             progressSequence++

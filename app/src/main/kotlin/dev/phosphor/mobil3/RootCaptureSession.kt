@@ -11,7 +11,10 @@ import org.json.JSONObject
 
 /** One owner thread, fixed pipes, no privileged Process.destroy or asynchronous PCM queue. */
 internal class RootCaptureSession(private val context: Context, val mode: Int = 2) {
-    val generation = generations.incrementAndGet()
+    val generation = generations.updateAndGet {
+        check(it < Long.MAX_VALUE) { "Root generation exhausted" }
+        it + 1
+    }
     val completion = CompletableFuture<Result>()
     @Volatile private var stopRequested = false
     @Volatile var live = false
@@ -28,7 +31,12 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
         if (result.cleanup) null else "Root cleanup is unconfirmed. Restart Phosphor only after verifying the helper and policy ended"
     } catch (_: Exception) { "Root helper did not retire within eight seconds. Source replacement is blocked" }
 
-    fun run(ready: () -> Unit = {}, samples: (ShortArray, FloatArray) -> Unit = { _, _ -> }, idle: () -> Unit = {}) {
+    fun run(
+        ready: () -> Long = { 0L },
+        readEpoch: () -> Long = { PhosphorNative.captureReadEpoch() },
+        samples: (RootAudioProtocol.PcmBatch, FloatArray?, Long) -> Unit = { _, _, _ -> },
+        idle: () -> Unit = {},
+    ) {
         var child: java.lang.Process? = null
         var lease = false
         var gotReady = false
@@ -41,13 +49,22 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
         var stopAt: Long? = null
         val decoder = RootAudioProtocol.Decoder()
         val stream = RootAudioProtocol.Stream(Process.myUid(), BuildConfig.ROOT_AUDIO_BUILD, generation, mode)
-        val normalizer = RootPcmNormalizer()
+        var visual: RootEpochNormalizer? = null
+        var captureStarted = false
         val started = SystemClock.elapsedRealtime()
         var nextHeartbeat = started + 250
         var lastProgress = started
         var idleShown = false
         fun control(kind: Int) {
+            if (kind == 3) stream.stop()
             child?.outputStream?.apply { write(RootAudioProtocol.control(kind, generation)); flush() }
+        }
+        fun epochControl(now: Long) {
+            if (gotReady && mode in 2..3 && helper == null && final == null && !stopRequested) {
+                stream.epoch.desire(readEpoch())
+                stream.request(now)?.let { wire -> child?.outputStream?.apply { write(wire); flush() } }
+            }
+            stream.epoch.checkDeadline(now)
         }
         fun consume() {
             val p = child ?: return
@@ -59,13 +76,19 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         check(mode != 1 && !gotReady && helper == null && final == null) { "Duplicate or stale root READY" }
                         val data = RootAudioProtocol.helper(frame.second, Process.myUid(), BuildConfig.ROOT_AUDIO_BUILD, generation, mode)
                         check(data.getString("stage") == "ready" && data.getInt("sample_rate") == 16000 && data.getInt("channels") == 1 && data.getInt("encoding") == 2 && data.getInt("route_flags") == 3) { "Root actual format or render route mismatch" }
+                        stream.ready(data)
                         gotReady = true
                         lastProgress = SystemClock.elapsedRealtime()
-                        if (!stopRequested) { live = true; ready(); control(if (stopRequested) 3 else 2) } else control(3)
+                        if (!stopRequested) {
+                            live = true
+                            visual = RootEpochNormalizer(ready())
+                            if (stopRequested) control(3) else epochControl(SystemClock.elapsedRealtime())
+                        } else control(3)
                     }
                     12 -> {
                         check(helper == null && final == null && mode != 1) { "Duplicate root RESULT" }
                         helper = RootAudioProtocol.helper(frame.second, Process.myUid(), BuildConfig.ROOT_AUDIO_BUILD, generation, mode)
+                        stream.result()
                         live = false
                     }
                     13 -> {
@@ -88,9 +111,12 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         val pcm = stream.pcm(frame.second)
                         lastProgress = SystemClock.elapsedRealtime()
                         if (!stopRequested) {
-                            val normalized = normalizer.convert(pcm)
-                            samples(pcm, normalized)
-                            frames += pcm.size
+                            val binding = checkNotNull(visual)
+                            val desired = readEpoch()
+                            stream.epoch.desire(desired)
+                            val normalized = binding.convert(pcm, desired)
+                            samples(pcm, normalized, binding.owner)
+                            frames += pcm.samples.size
                             lastPcmAt = lastProgress
                             idleShown = false
                         }
@@ -100,6 +126,15 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
                         stream.progress(frame.second)
                         lastProgress = SystemClock.elapsedRealtime()
                         if (!stopRequested && lastProgress - lastPcmAt > 1000 && !idleShown) { idleShown = true; idle() }
+                    }
+                    17 -> {
+                        check(gotReady && helper == null && final == null && mode in 2..3) { "ACK outside root session" }
+                        stream.ack(frame.second, if (stopRequested) null else SystemClock.elapsedRealtime())
+                        if (!captureStarted && !stopRequested) {
+                            stream.start()
+                            control(2)
+                            captureStarted = true
+                        }
                     }
                     else -> error("Unknown root pipe frame")
                 }
@@ -119,8 +154,14 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
             process.outputStream.apply { write(RootAudioProtocol.select(generation, mode)); flush() }
             nextHeartbeat = SystemClock.elapsedRealtime() + 250
             while (exit == null) {
-                try { consume() } catch (error: Exception) { protocolFailed = true; throw error }
-                if (process.waitFor(1, TimeUnit.MILLISECONDS)) { consume(); decoder.eof(); exit = process.exitValue(); break }
+                epochControl(SystemClock.elapsedRealtime())
+                try {
+                    consume()
+                    if (process.waitFor(1, TimeUnit.MILLISECONDS)) { consume(); decoder.eof(); exit = process.exitValue(); break }
+                } catch (error: Exception) {
+                    protocolFailed = protocolFailed || error !is RootEpochTimeout
+                    throw error
+                }
                 val now = SystemClock.elapsedRealtime()
                 if (stopRequested && stopAt == null) { stopAt = now; live = false; control(3) }
                 if (now >= nextHeartbeat && final == null) { control(1); nextHeartbeat = now + 250 }

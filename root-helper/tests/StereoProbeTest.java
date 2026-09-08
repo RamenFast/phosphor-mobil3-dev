@@ -58,7 +58,7 @@ public final class StereoProbeTest {
         for(int mode:new int[]{4,5}) {
             byte[] id=Protocol.identity(10401,build,7,mode);check(Protocol.mode(id)==mode);
             check(Protocol.validateInit(Protocol.read(new java.io.ByteArrayInputStream(Protocol.encode(10,id))),build)==10401);
-            try{Protocol.pcm(id,0,new short[1],1);throw new AssertionError("probe PCM accepted");}catch(java.io.IOException expected){check(true);}
+            try{Protocol.pcm(id,0,new RootEpoch.Binding(1,0),new short[1],1);throw new AssertionError("probe PCM accepted");}catch(java.io.IOException expected){check(true);}
         }
         // A short prior read cannot allow the next finite-mode3 read to cross its cap.
         for(long frames:new long[]{79841,79900,79999,80000})check(Protocol.readCount(3,160,frames)==Math.min(160,80000-frames));

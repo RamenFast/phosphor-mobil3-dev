@@ -13,9 +13,18 @@ class RootCaptureProductTest {
     private val build = "a".repeat(64)
     private fun bytes(size: Int) = ByteBuffer.allocate(size).order(ByteOrder.LITTLE_ENDIAN)
     private fun pcm(generation: Long = 7, sequence: Long = 0, rate: Int = 16000, channels: Int = 1, encoding: Int = 2, count: Int = 2) =
-        bytes(104 + count * 2).putInt(10401).put(build.toByteArray()).putLong(generation).putInt(2)
+        bytes(120 + count * 2).putInt(10401).put(build.toByteArray()).putLong(generation).putInt(2)
             .putLong(sequence).putInt(rate).putInt(channels).putInt(encoding).putInt(count)
+            .putLong(1).putLong(0)
             .apply { repeat(count) { putShort(it.toShort()) } }.array()
+    private fun stream() = RootAudioProtocol.Stream(10401, build, 7, 2).also {
+        it.ready(org.json.JSONObject().put("pcm_epoch_schema", 1))
+        it.epoch.desire(0)
+        it.request(0)
+        it.ack(bytes(104).putInt(10401).put(build.toByteArray()).putLong(7).putInt(2)
+            .putLong(1).putLong(0).putLong(0).array())
+        it.start()
+    }
     private fun progress(sequence: Long) = bytes(88).putInt(10401).put(build.toByteArray()).putLong(7).putInt(2).putLong(sequence).array()
     private fun source(path: String): String = listOf(File(path), File("app", path)).first { it.isFile }.readText()
     private fun main(name: String) = source("src/main/kotlin/dev/phosphor/mobil3/$name.kt")
@@ -51,20 +60,20 @@ class RootCaptureProductTest {
     }
 
     @Test fun exactRootPcmFormatSequenceIdentityAndSizeFailClosed() {
-        val stream = RootAudioProtocol.Stream(10401, build, 7, 2)
-        assertArrayEquals(shortArrayOf(0, 1), stream.pcm(pcm()))
+        val stream = stream()
+        assertArrayEquals(shortArrayOf(0, 1), stream.pcm(pcm()).samples)
         assertEquals(1L, stream.sequence)
         assertThrows(IllegalArgumentException::class.java) { stream.pcm(pcm()) }
         for (invalid in listOf(pcm(generation = 6), pcm(sequence = 2), pcm(rate = 48000), pcm(channels = 2),
             pcm(encoding = 4), pcm(count = 161), pcm(count = 0), pcm().dropLast(1).toByteArray())) {
-            assertThrows(IllegalArgumentException::class.java) { RootAudioProtocol.Stream(10401, build, 7, 2).pcm(invalid) }
+            assertThrows(IllegalArgumentException::class.java) { stream().pcm(invalid) }
         }
         assertThrows(IllegalArgumentException::class.java) { RootAudioProtocol.Stream(10402, build, 7, 2).pcm(pcm()) }
         assertThrows(IllegalArgumentException::class.java) { RootAudioProtocol.Stream(10401, "b".repeat(64), 7, 2).pcm(pcm()) }
     }
 
     @Test fun healthyIdleAdvancesReadProgressWithoutInventingPcm() {
-        val stream = RootAudioProtocol.Stream(10401, build, 7, 2)
+        val stream = stream()
         repeat(100) { stream.progress(progress(it.toLong())) }
         assertEquals(0L, stream.sequence)
         assertEquals(100L, stream.progressSequence)
