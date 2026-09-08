@@ -133,6 +133,8 @@ Brightness pin uses only the full foreground app window's `screenBrightness=1.0`
 
 ## Light and instrument presets [R07, R08, R16]
 
+The exact R07/R08 field, migration, publication, timing and verification contract is [section-06-color-contract.md](../docs/plans/mobile-expansion/section-06-color-contract.md). Saved storage is zero to six RGB triples with independent membership, not a selected prefix. The coordinator-owned decisions there preserve legacy values and the runtime-only rapid-cycle acknowledgement. Implementation must validate the whole effective tuple before persistence and native activation.
+
 Each saved color can be edited or removed independently from selection. One selected color is solid. Zero selected colors returns to explicit preset mode. Shuffle uses selected saved slots without immediate repetition when at least two distinct slots are selected.
 
 Generated colors, saved-slot order, and random TIMER duration are separate controls. Generated color owns color selection while enabled but retains the inactive saved order. Rust owns the clock and random decisions at leg/track boundaries, never per frame. TIMER interpolates, TRACK steps, and interval controls are inactive in TRACK. Preserve the rapid-cycle acknowledgement across range edits, imports, presets, and mode changes.
