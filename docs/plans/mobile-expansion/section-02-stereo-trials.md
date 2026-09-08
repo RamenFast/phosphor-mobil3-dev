@@ -56,3 +56,26 @@ The monitor requested960frames but received8793frames, about183.2ms of client ca
 The helper reported clean monitor/record/policy teardown and the native supervisor reaped naturally, without forced kill. Independent process/policy/service checks found no residue. Preferences, volume, route and fixed-volume fields were preserved. No NONE or SoundCloud trial followed this failure. The failure is not permission to raise the queue limit.
 
 Pinned AOSP Android16 `AudioTrack.java` lines2306–2362 describe a relevant startup condition: a newly created stream defaults to its full buffer capacity before it starts. Explicit effective-buffer reduction or a per-track start-threshold change can reduce this condition. The observed8793frame capacity exceeds our4800frame guard. The candidate did not record the actual threshold, so this is a source-backed hypothesis, not a measured cause. The next correction will configure and report only the owned monitor's effective buffer and start threshold before capture, retain the100ms guard, and fail before policy if Android cannot honor the bounded configuration.
+
+## Reviewed startup-buffer freeze, 06:39 UTC
+
+Task `217974blpq` built both debug APKs together from an isolated, clean checkout of`15bcbe50931a8a21514c9f5b17570da7eff940ed`. The sibling engine was separately pinned to`7729990bb29f0167ef906d0fbdb44e1e91206955`. Complete source manifests for both checkouts matched before and after the gate. Both remained Git-clean. The active HUD writer's source was not part of this build. Only the ignored Cargo cache and installed toolchain were reused under the coordinator's exclusive build slot.
+
+| Evidence | SHA256 or result |
+|---|---|
+| Source archive | `298d19d2d887bfc0491176d842a20d4f18ab03a10e309e484b6991ed994b1354` |
+| App APK | `4708959a55ef2c3ccac0e3ea97c29ce2b8db7cf2a7294f39c8ebf6913c7c2e86` |
+| Companion androidTest APK | `611000a6516dbdb76ada7f984e43ea2d1297dec94d9496ffc8009545d2829903` |
+| App signer | `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d` |
+| apkanalyzer-decoded packaged manifest | `34b7a9996dbc13ed1cdf12ba6fb167d554c5918220055433d642f276772aac1e` |
+| Helper content identity | `9fe902ac2be2f56e7146bc2b4702dc6bf993d61aa769c78c5f785327bec18ae4` |
+| Packaged helper DEX JAR and declared digest | `5d844a3d7d50c6ccb240d5f349c7094ec3968f4442eeb56a462664343b0791c2` |
+| Retained freeze JSON | `d001f3ee9ea8f52ba1399f75443a0e4b856003a2ff64c3eb8ba3d57a46f5c285` |
+| Android unit gate | 487 tests, zero failures/errors |
+| Other Android gates | lint, engine check, both debug APKs and both native helper variants passed |
+| Root host checks | 30 locked native tests and436 Java assertions passed |
+| Source boundary | 12 checks passed |
+
+The retained files are `root-stereo-15bcbe50931a{,-androidTest}.apk`, `root-stereo-15bcbe50931a-freeze.json` and their checksum list in the existing private recovery directory. Build evidence is under `/home/ben/.jcode/scratch/stereo-freeze-15bcbe5.gyQcka`. Both BuildConfig files name`15bcbe50931a` without a dirty suffix. The companion APK was built, not installed or run as instrumentation.
+
+At06:34, bounded read-only preflight found an unrelated active MEDIA player on the current Bluetooth route. No helper or policy mix remained, and preferences still matched the original archive byte-for-byte. No installation or new test audio followed. The candidate remains uninstalled. A later quiet preflight may use this reviewed immutable candidate with the exact v2 runner SHA`d0102fc1fccddede249f955371efb27e18d0daeebeeac257721b9285797cc880`. Do not rebuild changing HUD source for that trial. Stereo separation, audibility, gain, latency and SoundCloud acceptance remain open.
