@@ -97,3 +97,40 @@ Keep existing measured source/UI ticks rather than adding a theme poller. A same
 | Motion | Visible versus hidden clocks, no idle busy glyph, reduced motion, rapid appearance changes, Activity/PiP/HUD transitions, no new audio reads or polling loop. |
 
 Passing host models or a render snapshot does not accept Android persistence, Compose lifecycle, accessibility, compositor Glass or the complete section. If exact legacy equivalence cannot be established, keep the original picker reachable and report the precise blocker instead of silently retiring its entries.
+
+## Exact legacy translation seam before implementation,13:21UTC
+
+`LegacyAppearanceInput` retains the nullable original room string and raw nullable override integers.
+Missing values stay distinct from explicit legacy sentinel values. It carries no device or runtime data.
+The translation resolves `paletteById(room ?: "amoled")`, then the existing production `style.overridden` function.
+Character/motion use the same ordinal getOrNull rule as MainActivity. Designators1/0 mean true/false, all other values follow the base.
+A nonnegative radius is preserved exactly when within the authored model's0..64 domain.
+An out-of-domain legacy radius fails translation rather than silently clamping or writing a changed appearance.
+That failure must leave existing preferences and visible legacy rendering untouched when the later migration owner is connected.
+
+`AppearancePalette` converts authored values into the existing Palette and RoomStyle roles.
+It does not infer style from a new appearance ID. The caller must provide its explicit resolved RoomStyle at the future root boundary.
+Legacy resolution only reads canonical palette rows, never a sampled `ui.room` or `withBeam` value.
+ARGB separator alpha is preserved. Transient beamAccent remains unspecified until the existing live tint path supplies it.
+No current root provider, picker, preference key or visible palette changes in this translation checkpoint.
+
+Verification compares all thirteen actual production palette rows and their exact resolved styles through round trips.
+Enumerate every supported character/motion/labels combination and all radius values, plus sentinel, absent and unknown identities.
+Use the original production resolver as the oracle, not a copied palette/style table.
+Later codec, collection migration, UI and real-device checks remain required for full section10 acceptance.
+
+### Legacy bridge gate observed13:24UTC
+
+Gate768672faau passed722 JVM tests across62 suites,126 native tests,three offscreen GPU tests, lint, engine/source checks and both APK builds.
+The six actual AppearancePalette tests passed, including64,350 combinations against the original production resolver.
+All thirteen actual palettes round-trip with exact authored colors, separator alpha and coupled styles.
+Unknown IDs and missing/sentinel provenance remain distinct. Sampled beam tint never enters migration values.
+Complete source manifests were unchanged during the gate. This adds a compiled translation boundary, not a running migration or editor.
+
+Evidence prefix: `dev/scratch/mobile-expansion-20260908T001819Z/appearance-legacy-integration-1323`.
+Runner SHA256: `7b7ac2e0fe103c87cf63d805132d09e6554865f8b7138ec6fc1b2dba370a4fbb`.
+Mobile manifest: `d6527a235e3ffbd54b4505f868bbd20a19b6835174465f34c6e057484b9be67b`.
+App APK: `f4817a4ba82602f429e58e77034b27a11d6fbf42cd06c2f53ee9f04f55208043`.
+androidTest APK: `a398effaa725bbbf36bc73f839f91a5d53df2a7c9d0ac928e97a36357d484af6`.
+JVM XML archive: `d33789afd0abe02031385d225e932712f91a54ab9aa36e96ca9a73812d8180cb`.
+Both artifacts remain uninstalled. Existing runtime Palette/RoomStyle definitions, root provider and preference writes are unchanged.
