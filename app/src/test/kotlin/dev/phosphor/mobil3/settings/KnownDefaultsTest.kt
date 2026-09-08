@@ -2,6 +2,7 @@ package dev.phosphor.mobil3.settings
 
 import dev.phosphor.mobil3.BackgroundLifecyclePolicy
 import dev.phosphor.mobil3.PictureInPicturePolicy
+import dev.phosphor.mobil3.ui.LightSettings
 import dev.phosphor.mobil3.ui.Amoled
 import dev.phosphor.mobil3.ui.ControlsVisibilityPolicy
 import dev.phosphor.mobil3.ui.GridData
@@ -33,8 +34,8 @@ class KnownDefaultsTest {
         assertEquals(3f, state.cycleSeconds)
         assertEquals(0, state.customCount)
         assertFalse(state.cyclePerTrack)
-        // Picker samples remain inactive. They are not recovered user colors.
-        assertEquals(3, state.customColors.size)
+        // Clean startup does not create saved colors from picker illustrations.
+        assertEquals(0, state.customColors.size)
     }
 
     @Test fun actualFiveKeyStateAndPoliciesKeepMissingDefaultsAndExplicitOpposites() {
@@ -70,7 +71,7 @@ class KnownDefaultsTest {
         val values = mapOf(
             "linger_background" to state.lingerBackground,
             "view_lock" to state.viewLock,
-            "custom_count" to state.customCount,
+            "custom_selected_mask" to LightSettings().selectedMask,
             "cycle_seconds" to state.cycleSeconds,
             "cycle_per_track" to state.cyclePerTrack,
         )
@@ -83,32 +84,34 @@ class KnownDefaultsTest {
             "custom_count" to 2, "cycle_seconds" to 60f, "cycle_per_track" to true,
             "custom_rgb" to "0,0,0,1,1,1,0,0,0",
         )
-        destination.putAll(SettingsArchive.decode(exported.json).values)
+        destination.putAll(SettingsArchive.merge(SettingsArchive.decode(exported.json), destination))
         for ((key, value) in values) assertEquals(value, destination[key], key)
-        assertFalse(exported.exportedKeys.contains("custom_rgb"))
-        assertEquals("0,0,0,1,1,1,0,0,0", destination["custom_rgb"])
+        assertTrue(exported.exportedKeys.contains("custom_rgb"))
+        assertEquals("", destination["custom_rgb"])
+        assertEquals(0, destination["custom_slot_count"])
+        // A legacy count-only import instead keeps every stored RGB triple.
+        val old = LightSettings.read(mapOf("custom_count" to 2, "custom_rgb" to "0,0,0,1,1,1,0,0,0"))
+        assertEquals(old.slots, LightSettings.merge(old, mapOf("custom_count" to 0), true).slots)
+
     }
 
     // The following tests inspect source only. They do not construct Activity, execute SharedPreferences,
     // load JNI, run Compose, or prove Android orientation, import delivery, or rendering behavior.
     @Test fun sourceOnlySnapshotIncludesUntouchedControlsWithoutInventingRgb() {
-        val save = section(source("MainActivity.kt"), "private fun saveTuning()", "private fun restoreTuning()")
+        val save = section(source("MainActivity.kt"), "private fun saveTuning()", "private fun restoreTuning(")
         for (write in listOf(
             "putBoolean(\"linger_background\", ui.lingerBackground)",
             "putBoolean(\"view_lock\", ui.viewLock)",
-            "putInt(\"custom_count\", ui.customCount)",
-            "putFloat(\"cycle_seconds\", ui.cycleSeconds)",
-            "putBoolean(\"cycle_per_track\", ui.cyclePerTrack)",
         )) assertTrue(save.contains(write), write)
         assertFalse(save.contains("putString(\"custom_rgb\""))
     }
 
     @Test fun sourceOnlyActivityFallbacksReadExistingPreferencesWithoutSeedingWrites() {
         val activity = source("MainActivity.kt")
-        val restore = section(activity, "private fun restoreTuning()", "override fun captureConsentNeeded()")
+        val restore = section(activity, "private fun restoreTuning(", "override fun captureConsentNeeded()")
         for (read in listOf(
             "ui.modeIndex = p.getInt(\"mode\", 1).also { PhosphorNative.setMode(it) }",
-            "ui.beamIndex = p.getInt(\"beam\", 7).also { PhosphorNative.setBeamColor(it) }",
+            "ui.beamIndex = p.getInt(\"beam\", 7)",
             "gainValue = p.getFloat(\"gain\", 1.8332275f)",
             "val autoGain = p.getBoolean(\"auto_gain\", true)",
             "ui.grid = p.getBoolean(\"grid\", false).also { PhosphorNative.setGrid(it) }",
@@ -118,8 +121,7 @@ class KnownDefaultsTest {
             "ui.fullscreen = p.getBoolean(\"fullscreen\", true)",
             "ui.geomAmount = p.getFloat(\"geom_amount\", 0.6f)",
             "range(\"beam_random_range\", 1f, 30f, 6f, 20f)",
-            "ui.cycleSeconds = p.getFloat(\"cycle_seconds\", 3.0f)",
-            "p.getInt(\"custom_count\", 0)",
+            "LightSettings.read(p.all)",
             "paletteById(p.getString(\"room\", \"amoled\") ?: \"amoled\")",
         )) assertTrue(restore.contains(read), read)
         assertTrue(activity.contains("private var gainValue = 1.8332275f"))
@@ -141,7 +143,7 @@ class KnownDefaultsTest {
 
     @Test fun sourceOnlyScopeLockCapturesMissingOrientationAndUsesActualOrientationOwner() {
         val activity = source("MainActivity.kt")
-        val restore = section(activity, "private fun restoreTuning()", "override fun captureConsentNeeded()")
+        val restore = section(activity, "private fun restoreTuning(", "override fun captureConsentNeeded()")
         assertTrue(activity.contains("private var scopeRotationLockState by mutableStateOf(true)"))
         assertTrue(restore.contains("scopeRotationLockState = p.getBoolean(\"scope_rotation_locked\", true)"))
         assertTrue(restore.contains("lockedScopeOrientation = p.getInt("))
@@ -155,13 +157,13 @@ class KnownDefaultsTest {
         }
         val create = section(activity, "override fun onCreate(savedInstanceState: Bundle?)", "override fun onResume()")
         assertTrue(create.indexOf("restoreTuning()") < create.indexOf("applyScopeRotationPreference()"))
-        val imported = section(activity, "val imported = SettingsArchive.decode(text)", "override fun onCreate(savedInstanceState: Bundle?)")
-        assertTrue(imported.indexOf("restoreTuning()") < imported.indexOf("applyScopeRotationPreference()"))
+        val imported = section(activity, "val decoded = SettingsArchive.decode(text)", "override fun onCreate(savedInstanceState: Bundle?)")
+        assertTrue(imported.indexOf("restoreTuning(lightPublished)") < imported.indexOf("applyScopeRotationPreference()"))
     }
 
     @Test fun sourceOnlyManualGainAndRuntimeRecordingGuardsRemainSeparateFromPortableMerge() {
         val activity = source("MainActivity.kt")
-        val save = section(activity, "private fun saveTuning()", "private fun restoreTuning()")
+        val save = section(activity, "private fun saveTuning()", "private fun restoreTuning(")
         val portable = save.substringBefore("runtimePrefs().edit")
         assertTrue(portable.contains("putFloat(\"gain\", gainValue)"))
         assertFalse(portable.contains("putFloat(\"gain\", ui.gain)"))
@@ -173,7 +175,7 @@ class KnownDefaultsTest {
         assertTrue(save.contains("runtimeInputSource(ui, mic.isRecording())"))
         assertTrue(activity.contains("private fun prefs() = getSharedPreferences(PhosphorApplication.PREFERENCES_NAME, MODE_PRIVATE)"))
         assertTrue(activity.contains("private fun runtimePrefs() = getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)"))
-        val imported = section(activity, "val imported = SettingsArchive.decode(text)", "imported\n                }.onSuccess")
+        val imported = section(activity, "val decoded = SettingsArchive.decode(text)", "Triple(imported, guard?.pending, guard != null)")
         assertTrue(imported.contains("preferenceValueSnapshots(prefs().all, imported.values.keys)"))
         assertEquals(1, Regex(Regex.escape("imported.values.forEach")).findAll(imported).count())
         for (type in listOf("Boolean", "Int", "Float", "String")) {
@@ -186,7 +188,7 @@ class KnownDefaultsTest {
     }
 
     @Test fun sourceOnlyStrictRestoreRetiresCustomModeWithoutSeedingIllustrativeRgb() {
-        val restore = section(source("MainActivity.kt"), "private fun restoreTuning()", "override fun captureConsentNeeded()")
+        val restore = section(source("MainActivity.kt"), "private fun restoreTuning(", "override fun captureConsentNeeded()")
         val range = section(restore, "fun range(", "range(\"beam_random_range\"")
         assertTrue(range.contains("if (parts.size != 2) return dLo to dHi"))
         assertTrue(range.contains("val lo = parts[0].toFloatOrNull() ?: return dLo to dHi"))
@@ -195,31 +197,36 @@ class KnownDefaultsTest {
         assertTrue(range.contains("return lo to hi"))
         assertFalse(range.contains("mapNotNull"))
         assertFalse(range.contains("coerceIn"))
-        val custom = restore.substringAfter("val customCount =")
-        assertTrue(custom.contains("p.getInt(\"custom_count\", 0).takeIf { it in 1..3 } ?: 0"))
-        assertTrue(custom.contains("values.size == 9 && values.all { it != null && it.isFinite() && it in 0f..1f }"))
-        assertFalse(custom.contains("mapNotNull"))
-        assertTrue(custom.contains("if (customRgb != null) {\n            ui.customColors ="))
-        assertTrue(custom.contains("ui.customCount = if (customRgb != null) customCount else 0"))
-        assertTrue(custom.contains("PhosphorNative.setCustomBeam(customRgb?.toFloatArray() ?: FloatArray(9), ui.customCount)"))
-        assertTrue(custom.contains("PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)"))
-        assertTrue(custom.indexOf("ui.customCount =") < custom.indexOf("PhosphorNative.setCustomBeam("))
-        assertFalse(custom.contains("putString(\"custom_rgb\""))
-        assertFalse(custom.contains("setCustomBeam(ui.customColors"))
-        // This is source evidence of the existing JNI command path, not native execution.
+        assertTrue(restore.contains("LightSettings.read(p.all)"))
+        assertTrue(restore.contains("else setLight(it)"))
+        val activity = source("MainActivity.kt")
+        val apply = section(activity, "private fun applyLight(", "override fun rollLight()")
+        assertTrue(apply.indexOf("LightCycleGuard.evaluate") < apply.indexOf("editor.putLight(safe)"))
+        assertTrue(apply.indexOf("editor.commit()") < apply.indexOf("publishNativeLight(safe)"))
+        assertTrue(apply.contains("restorePreferenceSnapshots(prior)"))
+        assertFalse(apply.contains("FloatArray(9)"))
+        val empty = LightSettings.read(emptyMap<String, Any>())
+        assertTrue(empty.slots.isEmpty())
+        assertEquals(0, empty.selectedMask)
+        assertEquals(7, empty.preset)
+        val old = LightSettings.read(mapOf("custom_count" to 0, "custom_rgb" to "0,1,0,1,0,1,0,0,0"))
+        assertEquals(3, old.slots.size)
+        assertEquals(0, old.selectedMask)
+        // Source wiring only. Native policy tests separately exercise the real resolver.
         val native = repoFile("rust/src/jni_glue.rs").readText()
-        assertTrue(native.contains("Java_dev_phosphor_mobil3_PhosphorNative_setCustomBeam"))
-        assertTrue(native.contains("count: count.clamp(0, 3) as u8"))
+        assertTrue(native.contains("Java_dev_phosphor_mobil3_PhosphorNative_setLight"))
+        assertTrue(native.contains("if !settings.valid() { return 0; }"))
+        assertTrue(native.contains("len % 3 != 0"))
         val render = repoFile("rust/src/render.rs").readText()
-        val reset = section(render, "Cmd::SetCustomBeam {", "Cmd::SetBeamCycle")
-        assertTrue(reset.contains("custom_count = count.min(3)"))
-        assertTrue(reset.contains("if custom_count == 0"))
-        assertTrue(reset.contains("r.theme = phosphor_beam::THEME_PRESETS[beam_color].1"))
+        assertTrue(render.contains("Cmd::SetLight(settings)"))
+        assertTrue(render.contains("light.observe(light_clock.elapsed().as_secs_f64())"))
+        assertTrue(render.contains("r.theme = phosphor_beam::THEME_PRESETS[beam_color].1"))
+
     }
 
     @Test fun sourceOnlyFiveKeyMatrixRetainsOneStateRestoreActionArchiveAndFullUiOwner() {
         val activity = source("MainActivity.kt")
-        val restore = section(activity, "private fun restoreTuning()", "override fun captureConsentNeeded()")
+        val restore = section(activity, "private fun restoreTuning(", "override fun captureConsentNeeded()")
         val state = source("ui/ScopeUiState.kt")
         val archive = source("settings/SettingsArchive.kt")
         val sheets = source("ui/Sheets.kt")
@@ -252,17 +259,21 @@ class KnownDefaultsTest {
 
     @Test fun sourceOnlyLightLegRangeAndPhotosensitivityConfirmationRemainOwnedByLightSheet() {
         val light = source("ui/LightSheet.kt")
-        assertTrue(light.contains("\"LEG\", state.cycleSeconds, 0.1f, 60f"))
-        assertTrue(light.contains("!perTrack && seconds < 1f && !acknowledged"))
-        assertTrue(light.contains("state, seconds, perTrack, epilepsyAcknowledged(), onCycleChange"))
-        assertTrue(light.contains("requestCycle(v, state.cyclePerTrack)"))
-        assertTrue(light.contains("requestCycle(state.cycleSeconds, false)"))
-        assertTrue(light.contains("requestCycle(state.cycleSeconds, true)"))
-        assertTrue(light.contains("pendingSeconds = pending"))
-        assertTrue(light.contains("guardCard = true"))
+        assertTrue(light.contains("\"LEG seconds\", light.seconds, 0.1f, 60f"))
+        assertTrue(light.contains("\"Minimum seconds\", light.intervalMin, 0.1f, 60f"))
+        assertTrue(light.contains("\"Maximum seconds\", light.intervalMax, 0.1f, 60f"))
+        assertTrue(light.contains("onLightChange(light.copy(perTrack = false))"))
+        assertTrue(light.contains("onLightChange(light.copy(perTrack = true))"))
+        assertTrue(light.contains("val pending = state.lightPending"))
         assertTrue(light.contains("ackEpilepsy()"))
-        assertTrue(light.contains("onCycleChange(pendingSeconds, state.cyclePerTrack)"))
-        assertTrue(light.contains("onCycleChange(1.0f, state.cyclePerTrack)"))
+        assertTrue(light.contains("if (epilepsyAcknowledged()) onLightChange(pending)"))
+        assertTrue(light.contains("LightKey(\"KEEP SAFE\", p) { state.lightPending = null }"))
+        assertTrue(light.contains("heightIn(min = 48.dp)"))
+        assertTrue(light.contains("setProgress { change(it.coerceIn(min, max)); true }"))
+        val policy = source("ui/LightSettings.kt")
+        assertTrue(policy.contains("if (requested.randomInterval) requested.intervalMin else requested.seconds"))
+        assertTrue(policy.contains("acknowledged || requested.perTrack || minimum >= 1f"))
+        assertTrue(policy.contains("intervalMax = requested.intervalMax.coerceAtLeast(1f)"))
         val activity = source("MainActivity.kt")
         assertTrue(activity.contains("override fun epilepsyAcknowledged(): Boolean = runtimePrefs().getBoolean(\"epilepsy_ack\", false)"))
         assertTrue(activity.contains("override fun ackEpilepsy() { runtimePrefs().edit { putBoolean(\"epilepsy_ack\", true) } }"))
@@ -281,7 +292,7 @@ class KnownDefaultsTest {
         assertTrue(migration.contains(write))
         assertTrue(migration.indexOf(resolve) < migration.indexOf(write))
         assertTrue(migration.indexOf(write) < migration.indexOf("val committed = editor.commit()"))
-        val restore = section(source("MainActivity.kt"), "private fun restoreTuning()", "override fun captureConsentNeeded()")
+        val restore = section(source("MainActivity.kt"), "private fun restoreTuning(", "override fun captureConsentNeeded()")
         assertTrue(restore.contains("ui.hudMode = p.getInt(\"hud_mode\", 1).coerceIn(0, 2)"))
         // Real empty-store resolver behavior is exercised in LegacySettingsMigrationTest.
         // This checks the actual Android writer/reader linkage, not Android execution.
@@ -296,7 +307,7 @@ class KnownDefaultsTest {
         assertTrue(poll.contains("if (p.getBoolean(\"auto_gain\", true)) \"auto\""))
         assertTrue(poll.contains("p.getFloat(\"gain\", 1.8332275f)"))
         assertFalse(poll.contains("p.getBoolean(\"auto_gain\", false)"))
-        val save = section(activity, "private fun saveTuning()", "private fun restoreTuning()")
+        val save = section(activity, "private fun saveTuning()", "private fun restoreTuning(")
         assertTrue(save.contains("putBoolean(\"auto_gain\", prefs().getBoolean(\"auto_gain\", true))"))
         assertTrue(save.contains("putFloat(\"gain\", gainValue)"))
         assertFalse(save.contains("ui.autoGain"))

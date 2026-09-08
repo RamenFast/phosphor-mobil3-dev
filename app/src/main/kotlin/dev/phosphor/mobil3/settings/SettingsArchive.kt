@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.settings
 
+import dev.phosphor.mobil3.ui.LightSettings
 import org.json.JSONArray
 import org.json.JSONObject
 import java.math.BigDecimal
@@ -13,7 +14,8 @@ import java.time.Instant
  * consent tokens, media paths, purchase data, and authorization material never do.
  */
 object SettingsArchive {
-    const val SCHEMA = "phosphor.settings/1"
+    const val SCHEMA = "phosphor.settings/2"
+    const val LEGACY_SCHEMA = "phosphor.settings/1"
     const val MAX_BYTES = 1024 * 1024
 
     data class ExportResult(
@@ -24,6 +26,7 @@ object SettingsArchive {
     )
 
     data class ImportResult(
+        val sourceSchema: String,
         val sourcePackage: String,
         val sourceVersion: String,
         val sourceDistribution: String,
@@ -108,13 +111,23 @@ object SettingsArchive {
         "ov_radius" to intRange(-1, 64),
         "ov_desig" to intRange(-1, 1),
         "custom_count" to intRange(0, 3),
+        "custom_slot_count" to intRange(0, 6),
+        "custom_selected_mask" to intRange(0, 63),
+        "color_generated_auto" to Spec(Kind.BOOLEAN),
+        "color_shuffle" to Spec(Kind.BOOLEAN),
+        "cycle_random_interval" to Spec(Kind.BOOLEAN),
+        "cycle_interval_min" to floatRange(0.1f, 60f),
+        "cycle_interval_max" to floatRange(0.1f, 60f),
         "custom_rgb" to string(512) { text ->
             val values = text.split(',').map { it.toFloatOrNull() }
-            values.size == 9 && values.all { it != null && it.isFinite() && it in 0f..1f }
+            (text.isEmpty() || values.size in 3..18 && values.size % 3 == 0 && values.all { it != null && it.isFinite() && it in 0f..1f })
         },
         "cycle_seconds" to floatRange(0.1f, 60f),
         "cycle_per_track" to Spec(Kind.BOOLEAN),
     )
+
+    private val v2Only = setOf("custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
+        "cycle_random_interval", "cycle_interval_min", "cycle_interval_max")
 
     private fun rangeString(min: Float, max: Float) = string(80) { text ->
         val values = text.split(',')
@@ -141,9 +154,21 @@ object SettingsArchive {
                 return@forEach
             }
             val value = normalizeKnown(key, raw, spec)
+            if (key == "custom_rgb" && "custom_slot_count" !in allPreferences && (value as String).split(',').size != 9) {
+                throw ArchiveException("invalid_setting_value", "Legacy RGB needs exactly nine components", "Export the complete three-color bank")
+            }
             accepted[key] = value
+
+        }
+        if (accepted.keys.any { it in setOf("custom_count", "custom_rgb", "custom_slot_count", "custom_selected_mask") }) {
+            val migrated = lightOrThrow { LightSettings.read(accepted) }
+            accepted.keys.removeAll(LightSettings.keys)
+            accepted.putAll(migrated.values())
+        } else if (accepted.keys.any(LightSettings.keys::contains)) {
+            lightOrThrow { LightSettings.read(accepted) }
         }
         val canonical = canonicalPayload(
+
             sourcePackage,
             sourceVersion,
             sourceDistribution,
@@ -197,7 +222,7 @@ object SettingsArchive {
             )
         }
         val schema = root.optString("schema")
-        if (schema != SCHEMA) {
+        if (schema != SCHEMA && schema != LEGACY_SCHEMA) {
             throw ArchiveException(
                 "unsupported_schema",
                 "Unsupported settings schema '$schema'",
@@ -234,6 +259,7 @@ object SettingsArchive {
             sourceDistribution,
             exportedAt,
             rawValues,
+            schema,
         )
         val actualDigest = sha256(canonical)
         val expectedDigest = root.optString("content_sha256").lowercase()
@@ -252,14 +278,23 @@ object SettingsArchive {
         val accepted = linkedMapOf<String, Any>()
         val skipped = mutableListOf<String>()
         rawValues.forEach { (key, raw) ->
-            val spec = specs[key]
+            val spec = specs[key].takeUnless { schema == LEGACY_SCHEMA && key in v2Only }
             if (spec == null) {
                 skipped += key
             } else {
-                accepted[key] = normalizeKnown(key, raw, spec)
+                if (schema == SCHEMA && key == "custom_count") {
+                    throw ArchiveException("legacy_key_in_v2", "Schema /2 cannot contain custom_count", "Use custom_slot_count and custom_selected_mask")
+                }
+                val value = normalizeKnown(key, raw, spec)
+                if (schema == LEGACY_SCHEMA && key == "custom_rgb" && (value as String).split(',').size != 9) {
+                    throw ArchiveException("invalid_setting_value", "Legacy RGB needs exactly nine components", "Export the complete three-color bank")
+                }
+                accepted[key] = value
+
             }
         }
         return ImportResult(
+            sourceSchema = schema,
             sourcePackage = sourcePackage,
             sourceVersion = sourceVersion,
             sourceDistribution = sourceDistribution,
@@ -268,6 +303,21 @@ object SettingsArchive {
             skippedKeys = skipped.sorted(),
             contentSha256 = actualDigest,
         )
+    }
+
+    /** Merge before validation. Call before any preference write or native publication. */
+    fun merge(imported: ImportResult, existing: Map<String, *>): Map<String, Any> {
+        if (imported.values.keys.none(LightSettings.keys::contains)) return imported.values
+        val light = lightOrThrow {
+            LightSettings.merge(LightSettings.read(existing), imported.values, imported.sourceSchema == LEGACY_SCHEMA)
+        }
+        return imported.values.filterKeys { it !in LightSettings.keys } + light.values()
+    }
+
+    private fun <T> lightOrThrow(block: () -> T): T = try { block() } catch (error: IllegalArgumentException) {
+        throw ArchiveException("invalid_light_tuple", error.message ?: "Invalid light settings", "Include matching RGB, count and selection, and an ordered interval range")
+    } catch (error: IllegalStateException) {
+        throw ArchiveException("invalid_light_tuple", error.message ?: "Invalid light settings", "Export valid typed light settings again")
     }
 
     private fun normalizeKnown(key: String, raw: Any, spec: Spec): Any {
@@ -333,10 +383,11 @@ object SettingsArchive {
         sourceDistribution: String,
         exportedAt: String,
         values: Map<String, Any>,
+        schema: String = SCHEMA,
     ): String = buildString {
         append('{')
         append("\"exported_at\":").append(JSONObject.quote(exportedAt)).append(',')
-        append("\"schema\":").append(JSONObject.quote(SCHEMA)).append(',')
+        append("\"schema\":").append(JSONObject.quote(schema)).append(',')
         append("\"settings\":").append(canonicalObject(values)).append(',')
         append("\"source_distribution\":").append(JSONObject.quote(sourceDistribution)).append(',')
         append("\"source_package\":").append(JSONObject.quote(sourcePackage)).append(',')

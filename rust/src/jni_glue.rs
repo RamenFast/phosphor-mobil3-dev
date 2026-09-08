@@ -540,41 +540,34 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setFocus(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setCustomBeam(
-    env: JNIEnv,
-    _class: JClass,
-    rgb: jni::objects::JFloatArray, // 9 floats: 3 slots × RGB (linear 0..1)
-    count: jni::sys::jint,
-) {
-    let mut buf = [0f32; 9];
-    if env.get_float_array_region(&rgb, 0, &mut buf).is_err() {
-        return;
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setLight(
+    env: JNIEnv, _class: JClass, rgb: jni::objects::JFloatArray,
+    mask: jni::sys::jint, preset: jni::sys::jint, seconds: jni::sys::jfloat,
+    track: jni::sys::jboolean, generated: jni::sys::jboolean,
+    shuffle: jni::sys::jboolean, random: jni::sys::jboolean,
+    min: jni::sys::jfloat, max: jni::sys::jfloat,
+) -> jni::sys::jboolean {
+    let Ok(len) = env.get_array_length(&rgb) else { return 0; };
+    if !(0..=18).contains(&len) || len % 3 != 0 || !(0..=63).contains(&mask) || !(0..=8).contains(&preset) {
+        return 0;
     }
-    let colors = [
-        [buf[0], buf[1], buf[2]],
-        [buf[3], buf[4], buf[5]],
-        [buf[6], buf[7], buf[8]],
-    ];
-    // Grid follows slot 0 at reduced saturation (the desktop's custom-grid default idea).
-    let grid = [buf[0] * 0.85, buf[1] * 0.85, buf[2] * 0.85];
-    let _ = crate::render::sender().send(crate::render::Cmd::SetCustomBeam {
-        colors,
-        count: count.clamp(0, 3) as u8,
-        grid,
-    });
+    let mut buf = vec![0f32; len as usize];
+    if env.get_float_array_region(&rgb, 0, &mut buf).is_err() { return 0; }
+    let settings = crate::light_cycle::LightSettings {
+        colors: buf.chunks_exact(3).map(|v| [v[0], v[1], v[2]]).collect(),
+        selected_mask: mask as u8, preset: preset as u8, seconds, per_track: track != 0,
+        generated_auto: generated != 0, shuffle: shuffle != 0, random_interval: random != 0,
+        interval_min: min, interval_max: max,
+    };
+    if !settings.valid() { return 0; }
+    crate::render::sender().send(crate::render::Cmd::SetLight(settings)).is_ok() as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setBeamCycle(
-    _env: JNIEnv,
-    _class: JClass,
-    seconds: jni::sys::jfloat,
-    per_track: jni::sys::jboolean,
-) {
-    let _ = crate::render::sender().send(crate::render::Cmd::SetBeamCycle {
-        seconds,
-        per_track: per_track != 0,
-    });
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_rollLight(
+    _env: JNIEnv, _class: JClass,
+) -> jni::sys::jboolean {
+    crate::render::sender().send(crate::render::Cmd::RollLight).is_ok() as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]

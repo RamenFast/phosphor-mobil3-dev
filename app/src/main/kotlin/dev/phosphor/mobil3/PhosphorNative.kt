@@ -63,10 +63,13 @@ object PhosphorNative {
     /** True when an active source has been silent past the sleep window (resting beam up). */
     external fun scopeSilent(): Boolean
 
-    // Custom light + cycle (LIGHT sheet). rgb = 9 floats (3 slots × linear RGB).
-    external fun setCustomBeam(rgb: FloatArray, count: Int)
-    external fun setBeamCycle(seconds: Float, perTrack: Boolean)
+    /** Exact saved RGB triples in their existing numeric convention. One atomic publication. */
+    external fun setLight(rgb: FloatArray, selectedMask: Int, preset: Int, seconds: Float,
+        perTrack: Boolean, generatedAuto: Boolean, shuffle: Boolean, randomInterval: Boolean,
+        intervalMin: Float, intervalMax: Float): Boolean
+    external fun rollLight(): Boolean
     external fun cycleAdvance()
+
     /** Live beam color packed 0xRRGGBB (accent_follows_beam chrome breathing). */
     external fun beamColorNow(): Int
     /** Existing HUD heartbeat also consumes a <=500ms raw L/R grid_data window, or null for no data. */

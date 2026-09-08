@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.settings
 
+import dev.phosphor.mobil3.ui.LightSettings
 import kotlin.test.assertEquals
 import kotlin.test.assertFailsWith
 import kotlin.test.assertFalse
@@ -124,11 +125,11 @@ class SettingsArchiveTest {
             "custom_count" to 3, "custom_rgb" to "0,1,0,1,0,1,0.25,0.5,0.75",
             "cycle_seconds" to 60f, "cycle_per_track" to false,
         )
-        val old = SettingsArchive.export("dev.phosphor.mobil3.debug", "1.0.0", "debug", metadata[3], tuning)
-        val values = SettingsArchive.decode(old.json).values
+        val old = legacyFixture(tuning)
+        val values = SettingsArchive.decode(old).values
         assertEquals(tuning, values)
         val current = SettingsArchive.export(metadata[0], "2.0.0", "release", metadata[3], values)
-        assertEquals(tuning, SettingsArchive.decode(current.json).values)
+        assertEquals(portable(tuning), SettingsArchive.decode(current.json).values)
         assertTrue(fiveKeys.none(values::containsKey))
     }
 
@@ -166,7 +167,8 @@ class SettingsArchiveTest {
         for (rgb in listOf("0,0,0,0,0,0,0,0,0", "1,1,1,1,1,1,1,1,1", "0,1,0.5,1,0,0.25,0.5,0.75,1")) {
             for (count in 0..3) {
                 val values = mapOf("custom_rgb" to rgb, "custom_count" to count)
-                assertEquals(values, SettingsArchive.decode(export(values).json).values)
+                assertEquals(values, SettingsArchive.decode(legacyFixture(values)).values)
+                assertEquals(portable(values), SettingsArchive.decode(export(values).json).values)
             }
         }
         for ((key, ranges) in mapOf(
@@ -175,9 +177,10 @@ class SettingsArchiveTest {
         )) for (range in ranges) {
             assertEquals(mapOf(key to range), SettingsArchive.decode(export(mapOf(key to range)).json).values)
         }
-        val preset = SettingsArchive.decode(export(mapOf("custom_count" to 0)).json).values
+        val preset = SettingsArchive.decode(legacyFixture(mapOf("custom_count" to 0))).values
         assertEquals(mapOf("custom_count" to 0), preset)
         assertFalse("custom_rgb" in preset)
+        assertEquals(portable(preset), SettingsArchive.decode(export(preset).json).values)
     }
 
     @Test fun rgbRejectsDroppedExtraTokensWrongCountsNonfiniteAndOutOfBoundsComponents() {
@@ -218,13 +221,39 @@ class SettingsArchiveTest {
         )
         val exported = export(privateValues + mapOf("gain" to 1.8332275f, "custom_count" to 0))
         assertEquals(privateValues.keys.sorted(), exported.skippedKeys)
-        assertEquals(mapOf("gain" to 1.8332275f, "custom_count" to 0), SettingsArchive.decode(exported.json).values)
+        assertEquals(portable(mapOf("gain" to 1.8332275f, "custom_count" to 0)), SettingsArchive.decode(exported.json).values)
         assertFalse(exported.json.contains("private"))
         for ((key, value) in privateValues) {
             val decoded = SettingsArchive.decode(singleSettingFixture(key, value))
             assertTrue(decoded.values.isEmpty())
             assertEquals(listOf(key), decoded.skippedKeys)
         }
+    }
+
+    private fun portable(values: Map<String, *>): Map<String, Any> =
+        values.filterKeys { it !in LightSettings.keys }.mapValues { requireNotNull(it.value) } + LightSettings.read(values).values()
+
+    // Original /1 wire data stays covered independently of the /2 writer.
+    private fun legacyFixture(values: Map<String, *>): String {
+        val fields = values.toSortedMap().entries.joinToString(",") { (key, value) ->
+            val encoded = when (value) {
+                is String -> JSONObject.quote(value)
+                is Boolean -> value.toString()
+                is Number -> java.math.BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
+                else -> error("unsupported fixture")
+            }
+            JSONObject.quote(key) + ":" + encoded
+        }
+        val canonical = "{" +
+            "\"exported_at\":\"${metadata[3]}\"," +
+            "\"schema\":\"phosphor.settings/1\"," +
+            "\"settings\":{$fields}," +
+            "\"source_distribution\":\"${metadata[2]}\"," +
+            "\"source_package\":\"${metadata[0]}\"," +
+            "\"source_version\":\"${metadata[1]}\"}"
+        val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray())
+            .joinToString("") { "%02x".format(it.toInt() and 0xff) }
+        return JSONObject(canonical).put("content_sha256", digest).toString()
     }
 
     private fun export(values: Map<String, *>) =
@@ -250,7 +279,7 @@ class SettingsArchiveTest {
         }
         val canonical = "{" +
             "\"exported_at\":\"${metadata[3]}\"," +
-            "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+            "\"schema\":\"${SettingsArchive.LEGACY_SCHEMA}\"," +
             "\"settings\":{\"$key\":$encoded}," +
             "\"source_distribution\":\"${metadata[2]}\"," +
             "\"source_package\":\"${metadata[0]}\"," +

@@ -50,9 +50,9 @@ class DoubleTapPolicyTest {
 
     @Test fun saveRestoreAndPresentOnlyImportUseTheDedicatedBoolean() {
         val activity = phase8Source("MainActivity.kt")
-        val save = activity.substringAfter("private fun saveTuning()").substringBefore("private fun restoreTuning()")
+        val save = activity.substringAfter("private fun saveTuning()").substringBefore("private fun restoreTuning(")
         assertTrue("putBoolean(\"double_tap_playback\", ui.doubleTapPlayback)" in save.substringBefore("runtimePrefs()"))
-        val restore = activity.substringAfter("private fun restoreTuning()").substringBefore("override fun")
+        val restore = activity.substringAfter("private fun restoreTuning(lightPublished: Boolean = false)").substringBefore("override fun")
         assertTrue("ui.doubleTapPlayback = p.getBoolean(\"double_tap_playback\", true)" in restore)
         // Import already merges decoded present values and restores the actual UI state.
         assertTrue("imported.values.forEach" in activity || "decoded.values.forEach" in activity)

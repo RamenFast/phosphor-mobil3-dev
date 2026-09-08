@@ -159,6 +159,8 @@ interface ScopeActions {
     fun setFocus(focus: Float)
     fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int)
     fun setBeamCycle(seconds: Float, perTrack: Boolean)
+    fun setLight(settings: LightSettings) {}
+    fun rollLight() {}
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
     fun tapBeamRandom()
@@ -785,8 +787,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.LIGHT -> LightSheetV2(
                     state, p, reduced,
                     onPickPreset = { actions.setBeam(it) },
-                    onCustomChange = { colors, count -> actions.setCustomBeam(colors, count) },
-                    onCycleChange = { secs, perTrack -> actions.setBeamCycle(secs, perTrack) },
+                    onLightChange = { actions.setLight(it) },
+                    onRoll = { actions.rollLight() },
                     epilepsyAcknowledged = { actions.epilepsyAcknowledged() },
                     ackEpilepsy = { actions.ackEpilepsy() },
                 ) { sheet = Sheet.NONE }

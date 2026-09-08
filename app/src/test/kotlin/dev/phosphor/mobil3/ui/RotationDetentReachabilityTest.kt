@@ -144,16 +144,16 @@ class RotationDetentReachabilityTest {
     @Test
     fun sourceOnlyImportRestoresSavedChoicesWithoutReplacingHeldPresentation() {
         val activity = source("MainActivity.kt")
-        val restore = method(activity, "private fun restoreTuning()")
+        val restore = method(activity, "private fun restoreTuning(lightPublished: Boolean = false)")
         assertTrue(restore.contains("scopeRotationLockState = p.getBoolean(\"scope_rotation_locked\", true)"))
         assertTrue(restore.contains("uiPlacementLockState = p.getBoolean(\"ui_placement_locked\", false)"))
         assertTrue(restore.contains("updateOrientationSensor()"))
         assertFalse(restore.contains("rotationPresentation ="))
         assertFalse(restore.contains("systemRotationLocked ="))
-        val imported = activity.substringAfter("}.onSuccess { imported ->")
+        val imported = activity.substringAfter("}.onSuccess { (imported, pendingLight, lightPublished) ->")
             .substringBefore("}.onFailure { error ->")
-        assertTrue(imported.contains("restoreTuning()"))
-        assertTrue(imported.indexOf("restoreTuning()") < imported.indexOf("applyScopeRotationPreference()"))
+        assertTrue(imported.contains("restoreTuning(lightPublished)"))
+        assertTrue(imported.indexOf("restoreTuning(lightPublished)") < imported.indexOf("applyScopeRotationPreference()"))
     }
 
     @Test

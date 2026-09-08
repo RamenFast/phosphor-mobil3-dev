@@ -67,17 +67,9 @@ pub enum Cmd {
     SetGeomAmount(f32),
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
-    /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
-    SetCustomBeam {
-        colors: [[f32; 3]; 3],
-        count: u8,
-        grid: [f32; 3],
-    },
-    /// Cycle timing: seconds per color→color leg; per_track advances only on CycleAdvance.
-    SetBeamCycle {
-        seconds: f32,
-        per_track: bool,
-    },
+    /// One validated portable light snapshot, published atomically.
+    SetLight(crate::light_cycle::LightSettings),
+    RollLight,
     /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
     CycleAdvance,
     /// Remote geometry mode: draw the desktop's decimated beam, bypassing the DSP.
@@ -290,21 +282,17 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut geometry_mode = None;
     let mut geom_frame: Option<GeomFrame> = None;
 
-    // Custom light + cycle: colors lerp slot→slot over `cycle_secs` per leg (timer mode)
-    // or advance one leg per track boundary (per-track mode; exempt from the guard).
-    let mut custom_colors: [[f32; 3]; 3] = [[0.42, 1.0, 0.55]; 3];
-    let mut custom_count: u8 = 0; // 0 = presets active
-    let mut custom_grid: [f32; 3] = [0.35, 1.0, 0.45];
-    let mut cycle_secs: f32 = 3.0;
-    let mut cycle_per_track = false;
-    let mut cycle_t0 = std::time::Instant::now();
-    let mut cycle_leg: usize = 0;
+    let light_clock = std::time::Instant::now();
+    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64).unwrap_or(1);
+    let mut light = crate::light_cycle::LightCycle::new(seed);
 
     loop {
         // Idle (no surface, or paused): block on the channel. Active: drain ALL pending
         // commands then draw — 60 fps geometry frames must never back-queue behind vsync.
         let mut cmds: Vec<Cmd> = Vec::new();
         let display_paused = crate::pause::DISPLAY.lock().unwrap().paused;
+        if active.is_none() || paused || display_paused { light.suspend(); }
         if active.is_none() || paused || (display_paused && !display_dirty) {
             match rx.recv() {
                 Ok(c) => cmds.push(c),
@@ -515,35 +503,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                         log::info!("beam focus: {:.2}", r.beam_focus);
                     }
                 }
-                Cmd::SetCustomBeam {
-                    colors,
-                    count,
-                    grid,
-                } => {
-                    custom_colors = colors;
-                    custom_count = count.min(3);
-                    custom_grid = grid;
-                    cycle_leg = 0;
-                    cycle_t0 = std::time::Instant::now();
-                    if custom_count == 0 {
-                        if let Some(r) = renderer.as_mut() {
-                            r.theme = phosphor_beam::THEME_PRESETS[beam_color].1;
-                        }
-                    }
-                    log::info!("custom beam: {} colors", custom_count);
-                }
-                Cmd::SetBeamCycle { seconds, per_track } => {
-                    cycle_secs = seconds.clamp(0.1, 60.0);
-                    cycle_per_track = per_track;
-                    cycle_t0 = std::time::Instant::now();
-                    log::info!("beam cycle: {cycle_secs}s per_track={cycle_per_track}");
-                }
-                Cmd::CycleAdvance => {
-                    if custom_count >= 2 && cycle_per_track {
-                        cycle_leg = (cycle_leg + 1) % custom_count as usize;
-                        cycle_t0 = std::time::Instant::now();
+                Cmd::SetLight(settings) => {
+                    if light.apply(settings, light_clock.elapsed().as_secs_f64()) {
+                        beam_color = light.settings().preset as usize;
                     }
                 }
+                Cmd::RollLight => light.roll(light_clock.elapsed().as_secs_f64()),
+                Cmd::CycleAdvance => light.track(light_clock.elapsed().as_secs_f64()),
                 Cmd::SetReducedMotion(rm) => {
                     reduced_motion = rm;
                     if rm {
@@ -753,38 +719,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         let transform_active =
             scale_xy < 1.0 || scale_y < 1.0 || (brightness - 1.0).abs() > f32::EPSILON;
 
-        // Custom light: static color, or the cycle lerping slot→slot. Timer mode loops
-        // continuously; per-track mode fades one leg per CycleAdvance then holds.
-        if custom_count >= 1 {
-            let cur =
-                if custom_count == 1 {
-                    custom_colors[0]
-                } else {
-                    let t = (cycle_t0.elapsed().as_secs_f32() / cycle_secs)
-                        .min(if cycle_per_track { 1.0 } else { f32::MAX });
-                    let (leg, frac) = if cycle_per_track {
-                        (cycle_leg, t.min(1.0))
-                    } else {
-                        let total = t + cycle_leg as f32;
-                        let leg = (total as usize) % custom_count as usize;
-                        (leg, total.fract())
-                    };
-                    let a = custom_colors[leg % custom_count as usize];
-                    let b = custom_colors[(leg + 1) % custom_count as usize];
-                    let s = smoothstep(frac);
-                    [
-                        a[0] + (b[0] - a[0]) * s,
-                        a[1] + (b[1] - a[1]) * s,
-                        a[2] + (b[2] - a[2]) * s,
-                    ]
-                };
-            r.theme = phosphor_beam::Theme::custom(cur, custom_grid);
-            BEAM_RGB.store(pack_rgb(cur), Ordering::Relaxed);
+        // This live-only observation never touches the retained HOLD image.
+        if let Some((color, grid)) = light.observe(light_clock.elapsed().as_secs_f64()) {
+            r.theme = phosphor_beam::Theme::custom(color, grid);
+            BEAM_RGB.store(pack_rgb(color), Ordering::Relaxed);
         } else {
-            BEAM_RGB.store(
-                pack_rgb(phosphor_beam::THEME_PRESETS[beam_color].1.beam_color),
-                Ordering::Relaxed,
-            );
+            r.theme = phosphor_beam::THEME_PRESETS[beam_color].1;
+            BEAM_RGB.store(pack_rgb(r.theme.beam_color), Ordering::Relaxed);
         }
 
         // The graticule follows effective gain so a pinch zooms the scene instead of only

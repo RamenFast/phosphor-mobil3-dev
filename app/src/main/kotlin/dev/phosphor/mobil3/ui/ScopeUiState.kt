@@ -109,16 +109,24 @@ var bestiaryFound by mutableStateOf(false)
     var showSourcePicker by mutableStateOf(false)
     var settingsTransferStatus by mutableStateOf("")
 
-    var customColors by mutableStateOf(
-        listOf(
-            androidx.compose.ui.graphics.Color(0xFF6BFF8C),
-            androidx.compose.ui.graphics.Color(0xFF35BFFF),
-            androidx.compose.ui.graphics.Color(0xFFFF4CE1),
-        )
-    )
-    var customCount by mutableIntStateOf(0)
-    var cycleSeconds by mutableFloatStateOf(3.0f)
-    var cyclePerTrack by mutableStateOf(false)
+    var light by mutableStateOf(LightSettings())
+    var lightPending by mutableStateOf<LightSettings?>(null)
+    var lightTemporary by mutableStateOf(false)
+    var lightError by mutableStateOf("")
+    // Compatibility accessors share the typed authority. Active UI publishes whole snapshots.
+    var customColors: List<androidx.compose.ui.graphics.Color>
+        get() = light.slots.map { androidx.compose.ui.graphics.Color(it.red, it.green, it.blue) }
+        set(value) { light = light.copy(slots = value.map { LightRgb(it.red, it.green, it.blue) }) }
+    var customCount: Int
+        get() = light.selected.size
+        set(value) { light = light.copy(selectedMask = (1 shl value) - 1) }
+    var cycleSeconds: Float
+        get() = light.seconds
+        set(value) { light = light.copy(seconds = value) }
+    var cyclePerTrack: Boolean
+        get() = light.perTrack
+        set(value) { light = light.copy(perTrack = value) }
+
 
     private var randomModeRequest: (() -> Unit)? = null
     fun bindRandomModeRequest(request: () -> Unit) { randomModeRequest = request }

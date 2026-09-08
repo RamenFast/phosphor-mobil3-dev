@@ -52,6 +52,10 @@ import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
 import dev.phosphor.mobil3.ui.readReducedMotion
 import dev.phosphor.mobil3.ui.rollModeExcluding
+import dev.phosphor.mobil3.ui.applyPresetLight
+import dev.phosphor.mobil3.ui.LightSettings
+import dev.phosphor.mobil3.ui.LightRgb
+import dev.phosphor.mobil3.ui.LightCycleGuard
 import dev.phosphor.mobil3.settings.SettingsArchive
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -259,7 +263,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         }
                         output.toString(Charsets.UTF_8.name())
                     }
-                    val imported = SettingsArchive.decode(text)
+                    val decoded = SettingsArchive.decode(text)
+                    val merged = SettingsArchive.merge(decoded, prefs().all)
+                    val guard = if (merged.keys.any(LightSettings.keys::contains)) {
+                        LightCycleGuard.evaluate(LightSettings.read(prefs().all + merged), epilepsyAcknowledged())
+                    } else null
+                    val imported = decoded.copy(values = if (guard == null) merged else
+                        merged.filterKeys { it !in LightSettings.keys } + guard.safe.values())
+
                     val priorValues = preferenceValueSnapshots(prefs().all, imported.values.keys)
                     val editor = prefs().edit()
                     imported.values.forEach { (key, value) ->
@@ -281,15 +292,23 @@ class MainActivity : ComponentActivity(), ScopeActions {
                             },
                         )
                     }
-                    imported
-                }.onSuccess { imported ->
+                    if (guard != null && !publishNativeLight(guard.safe)) {
+                        restorePreferenceSnapshots(priorValues)
+                        error("Renderer did not accept imported light settings. Previous preferences restored. Reopen Phosphor and retry")
+                    }
+                    if (guard != null && prefs().contains("custom_count")) prefs().edit().remove("custom_count").commit()
+                    Triple(imported, guard?.pending, guard != null)
+
+                }.onSuccess { (imported, pendingLight, lightPublished) ->
                     runOnUiThread {
                         if (isFinishing || isDestroyed) return@runOnUiThread
-                        restoreTuning()
+                        restoreTuning(lightPublished)
+                        ui.lightPending = pendingLight
                         applyScopeRotationPreference()
                         applyImmersive()
                         updatePictureInPictureParams()
                         ui.settingsTransferStatus = buildString {
+                            if (pendingLight != null) append("Rapid timing kept safe. Open LIGHT to review. ")
                             append("imported ${imported.values.size}")
                             append(" from ")
                             append(imported.sourceVersion)
@@ -1240,7 +1259,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("mode", ui.modeIndex)
             putBoolean("random_mode_armed", ui.randomModeArmed)
             putString("random_ban_modes", ui.randomBanModes.sorted().joinToString(","))
-            putInt("beam", ui.beamIndex)
+            // Light has its own validated, synchronous snapshot save.
             putInt("fps", ui.fpsValue)
             putInt("oversample", ui.oversample)
             // AUTO-GAIN breathes ui.gain; the manual landing remains the saved knob.
@@ -1264,9 +1283,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putBoolean("fullscreen", ui.fullscreen)
             putBoolean("linger_background", ui.lingerBackground)
             putBoolean("view_lock", ui.viewLock)
-            putInt("custom_count", ui.customCount)
-            putFloat("cycle_seconds", ui.cycleSeconds)
-            putBoolean("cycle_per_track", ui.cyclePerTrack)
+            // Do not rewrite light here after a failed restore or pending guard.
             putBoolean("double_tap_playback", ui.doubleTapPlayback)
             putBoolean(dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.KEY, ui.controlsAlwaysVisible)
             putBoolean(PictureInPicturePolicy.KEY, ui.pipAutoEnter)
@@ -1298,7 +1315,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    private fun restoreTuning() {
+    private fun restoreTuning(lightPublished: Boolean = false) {
         val p = prefs()
         PhosphorNative.setPauseBlack(dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(p.all))
         refreshDisplayPause()
@@ -1317,7 +1334,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .split(",").mapNotNull { it.toIntOrNull() }
             .filter { it in dev.phosphor.mobil3.ui.ModeLabels.indices }.toSet()
             .let { if (dev.phosphor.mobil3.ui.ModeLabels.size - it.size < 2) emptySet() else it }
-        ui.beamIndex = p.getInt("beam", 7).also { PhosphorNative.setBeamColor(it) }
+        ui.beamIndex = p.getInt("beam", 7)
         ui.fpsValue = p.getInt("fps", 0).also { PhosphorNative.setTargetFps(it) }
         ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
         gainValue = p.getFloat("gain", 1.8332275f)
@@ -1390,25 +1407,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
         )
         dev.phosphor.mobil3.ui.paletteById(p.getString("room", "amoled") ?: "amoled")
             .let { baseRoom = it; ui.room = it }
-        // Restore the custom beam only after validating all nine RGB components.
-        val customCount = p.getInt("custom_count", 0).takeIf { it in 1..3 } ?: 0
-        val customRgb = p.getString("custom_rgb", null)
-            ?.split(",")?.map { it.toFloatOrNull() }
-            ?.takeIf { values -> values.size == 9 && values.all { it != null && it.isFinite() && it in 0f..1f } }
-            ?.map { requireNotNull(it) }
-        ui.cycleSeconds = p.getFloat("cycle_seconds", 3.0f)
-        ui.cyclePerTrack = p.getBoolean("cycle_per_track", false)
-        if (customRgb != null) {
-            ui.customColors = (0..2).map {
-                androidx.compose.ui.graphics.Color(
-                    customRgb[it * 3], customRgb[it * 3 + 1], customRgb[it * 3 + 2],
-                )
-            }
+        runCatching { LightSettings.read(p.all) }.onSuccess {
+            if (lightPublished) {
+                ui.light = it
+                ui.beamIndex = it.preset
+                ui.lightTemporary = false
+                ui.lightError = ""
+            } else setLight(it)
+        }.onFailure {
+
+            ui.lightError = "Light settings kept unchanged. ${it.message}. Restore a valid LIGHT archive."
         }
-        ui.customCount = if (customRgb != null) customCount else 0
-        // SetBeamColor alone does not retire native custom mode. Zero count selects the preset.
-        PhosphorNative.setCustomBeam(customRgb?.toFloatArray() ?: FloatArray(9), ui.customCount)
-        PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)
+
     }
     override fun captureConsentNeeded(): Boolean = !RootCaptureSettings.enabled(this) && !runtimePrefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() {
@@ -1503,13 +1513,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.randomModeArmed = false
         applyMode(index)
     }
-    override fun setBeam(index: Int) {
-        PhosphorNative.setBeamColor(index); ui.beamIndex = index
-        // LIGHT presets are the desktop's theme names, verbatim (theme = beam).
+    override fun setBeam(index: Int) = applyPresetLight(ui.light, index, ::applyLight) {
         if (ui.remote && ui.remoteGeometry) {
             PhosphorNative.remoteScopeCtl("theme", dev.phosphor.mobil3.ui.BeamColors[index].label)
         }
     }
+
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
@@ -1879,29 +1888,61 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
     override fun dollyBy(delta: Float) = PhosphorNative.dollyBy(delta)
 
-    override fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int) {
-        val rgb = FloatArray(9)
-        colors.take(3).forEachIndexed { i, c ->
-            rgb[i * 3] = c.red; rgb[i * 3 + 1] = c.green; rgb[i * 3 + 2] = c.blue
-        }
-        PhosphorNative.setCustomBeam(rgb, count)
-        ui.customCount = count
-        // Persist the custom beam immediately because it is edited outside the general save cycle.
-        prefs().edit {
-            putString("custom_rgb", rgb.joinToString(","))
-            putInt("custom_count", count)
+    private fun android.content.SharedPreferences.Editor.putLight(light: LightSettings) {
+        light.values().forEach { (key, value) ->
+            when (value) {
+                is Boolean -> putBoolean(key, value)
+                is Int -> putInt(key, value)
+                is Float -> putFloat(key, value)
+                is String -> putString(key, value)
+            }
         }
     }
 
-    override fun setBeamCycle(seconds: Float, perTrack: Boolean) {
-        PhosphorNative.setBeamCycle(seconds, perTrack)
-        ui.cycleSeconds = seconds
-        ui.cyclePerTrack = perTrack
-        prefs().edit {
-            putFloat("cycle_seconds", seconds)
-            putBoolean("cycle_per_track", perTrack)
+    private fun publishNativeLight(safe: LightSettings): Boolean =
+        PhosphorNative.setLight(safe.slots.flatMap { it.components() }.toFloatArray(),
+            safe.selectedMask, safe.preset, safe.seconds, safe.perTrack, safe.generatedAuto,
+            safe.shuffle, safe.randomInterval, safe.intervalMin, safe.intervalMax)
+
+    override fun setLight(settings: LightSettings) { applyLight(settings) }
+
+    private fun applyLight(settings: LightSettings): Boolean {
+        val guarded = LightCycleGuard.evaluate(settings, epilepsyAcknowledged())
+        val safe = guarded.safe
+        val prior = preferenceValueSnapshots(prefs().all, safe.values().keys)
+        val editor = prefs().edit()
+        editor.putLight(safe)
+        if (!editor.commit()) {
+            restorePreferenceSnapshots(prior)
+            ui.lightError = "Light settings could not be saved. Try the edit again."
+            return false
         }
+        val accepted = publishNativeLight(safe)
+        if (!accepted) {
+            restorePreferenceSnapshots(prior)
+            ui.lightError = "Renderer did not accept light settings. Reopen Phosphor and try again."
+            return false
+        }
+        // Copy-before-remove. A failed cleanup leaves a harmless rollback-readable key.
+        if (prefs().contains("custom_count")) prefs().edit().remove("custom_count").commit()
+        ui.light = safe
+        ui.beamIndex = safe.preset
+        ui.lightPending = guarded.pending
+        ui.lightTemporary = false
+        ui.lightError = ""
+        return true
     }
+
+    override fun rollLight() {
+        if (PhosphorNative.rollLight()) ui.lightTemporary = !ui.light.generatedAuto
+        else ui.lightError = "Renderer could not roll a color. Reopen Phosphor and try again."
+    }
+
+    override fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int) =
+        setLight(ui.light.copy(slots = colors.map { LightRgb(it.red, it.green, it.blue) }, selectedMask = (1 shl count) - 1))
+
+    override fun setBeamCycle(seconds: Float, perTrack: Boolean) =
+        setLight(ui.light.copy(seconds = seconds, perTrack = perTrack))
 
     // Photosensitivity acceptance persists forever, as on desktop.
     override fun epilepsyAcknowledged(): Boolean = runtimePrefs().getBoolean("epilepsy_ack", false)
