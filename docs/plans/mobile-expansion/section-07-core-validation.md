@@ -57,3 +57,15 @@ These are frozen working-source artifacts based on mobile `c75f510c2772c325b34c9
 5. Exercise Android callbacks, source changes, HOLD, cancellation, persistence faults and accessibility on an identified authorized phone.
 
 The S25 remained undisturbed. The ASUS was not enumerated at the last host-only check. Root stereo, SoundCloud, buffered source age and whole expansion acceptance remain open.
+
+## Retained report outputs
+
+Before a later build could replace Gradle's report directory, the coordinator retained the exact successful JVM result directory and lint XML. These supplement the already retained task logs and dual APKs under the same evidence prefix.
+
+| Retained output | SHA256 |
+| --- | --- |
+| JVM results archive, `-jvm-results.tar.gz` | `5f17f23b6da57ad40a9dc4d3e98c8246c371f62aceead952e050cd5ff5133785` |
+| Lint XML, `-lint-results.xml` | `caad108db1cff2195d47c9555af19c4ae386a8993ef1ebfa518d2eab79cb21ad` |
+| Gradle log | `45448e61e12815511bdda5ce44073a1745dc53598e92e9138c6e2d7037b5c71b` |
+| Native log | `8ab51115fbc8bea1bd81ac6d59139294088f3d536ac79acc8a06fcf97365e1cb` |
+| GPU log | `0248b1c128ec65675399e21272e75bfcfe3dccd71d0fbf8c41dae70a38794fa2` |
