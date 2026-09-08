@@ -263,8 +263,13 @@ fn runtime_environment() -> Result<Vec<CString>, String> {
             }
             let m = std::fs::metadata(&real)
                 .map_err(|e| format!("platform_classpath_jar_stat: {e}"))?;
-            if !m.is_file() || m.uid() != 0 || m.mode() & 0o022 != 0 {
-                return Err("platform_classpath_jar_owner_type_mode".into());
+            if !classpath::trusted_jar(m.is_file(), m.uid(), m.gid(), m.mode()) {
+                return Err(format!(
+                    "platform_classpath_jar_owner_type_mode: uid={} gid={} mode={:o}",
+                    m.uid(),
+                    m.gid(),
+                    m.mode()
+                ));
             }
         }
     }

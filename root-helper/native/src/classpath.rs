@@ -7,6 +7,10 @@ const KEYS: [&str; 4] = [
     "STANDALONE_SYSTEMSERVER_JARS",
 ];
 
+pub fn trusted_jar(regular: bool, uid: u32, gid: u32, mode: u32) -> bool {
+    regular && matches!(uid, 0 | 1000) && matches!(gid, 0 | 1000) && mode & 0o022 == 0
+}
+
 fn name(s: &str) -> bool {
     !s.is_empty()
         && s != "."
@@ -76,6 +80,21 @@ pub fn parse(text: &str) -> Result<Vec<String>, &'static str> {
 mod tests {
     use super::*;
     const BOOT: &str = "/apex/com.android.art/javalib/core-oj.jar:/system/framework/framework.jar";
+    #[test]
+    fn measured_platform_owners_without_app_or_writable_code() {
+        assert!(trusted_jar(true, 0, 0, 0o100644));
+        assert!(trusted_jar(true, 1000, 1000, 0o100644));
+        for (regular, uid, gid, mode) in [
+            (false, 0, 0, 0o100644),
+            (true, 10401, 10401, 0o100400),
+            (true, 2000, 2000, 0o100644),
+            (true, 0, 10401, 0o100644),
+            (true, 1000, 1000, 0o100664),
+            (true, 0, 0, 0o100646),
+        ] {
+            assert!(!trusted_jar(regular, uid, gid, mode));
+        }
+    }
     fn valid() -> String {
         format!("export BOOTCLASSPATH {BOOT}\nexport DEX2OATBOOTCLASSPATH {BOOT}\nexport SYSTEMSERVERCLASSPATH /system/framework/services.jar\nexport STANDALONE_SYSTEMSERVER_JARS \n")
     }

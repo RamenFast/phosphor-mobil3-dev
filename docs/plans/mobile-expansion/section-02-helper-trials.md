@@ -34,6 +34,12 @@ Sixteen locked native tests now pass, including five new parser/path groups. The
 
 ## Evidence location and retry gate
 
+### Trial2,03:08 UTC
+
+Clean source `fed17e6fb4c220ac2d81f3e48e9edc7740205ba9`, archive hash `254171fc0da0b53bea33aca090b65aeb632c50f6bc0daa430e59ce1fb5bc4fc0`, passed both APK builds and unit/lint/checkEngine in52.7seconds. Installed/readback app hash is `b5ebc8509009a04badd3bd2f0eae85be4326b3393d34f7cdc98f564fcb48f6a7`. Companion test APK hash is `8c643d5fc3bb80be985f1d1b666b7dc0b83a09c90f95991c888375ef18c6c0d4`. Signer and preferences stayed unchanged.
+
+The24ms trial read and parsed the protected platform export file, then refused before fork at `platform_classpath_jar_owner_type_mode`. Read-only shell metadata established the cause: the existing APEX JARs are system:system0644, not root-owned. Framework JARs are root:root0644. The ART APEX mount reports read-only. No file permission was changed. The corrected source accepts only root/system UID and GID with regular type and no group/world-write. A focused ownership test retains rejection of app/shell ownership, unsafe groups, nonregular files and writable modes. No helper, policy or fixture remained after trial2.
+
 Ignored private recovery contains `root-audio-exact-build.log`, `root-audio-4f8e5ec-install.json`, retained app/test APKs, `root-audio-trial1.json`, before/after audio/policy/process dumps and preference archives. `root-audio-trial1-logd.txt` contains private system logs and must not be published.
 
 Before retry, preserve the failed receipt, confirm no helper or policy remains, and build/install the exact corrected commit. The same-package install retires the old app process and its cleanup latch. Do not clear data, reset a grant, change the Default profile or retry an unexplained failure.
