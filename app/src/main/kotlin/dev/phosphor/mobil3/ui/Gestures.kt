@@ -271,6 +271,8 @@ class RibbonState {
 }
 
 interface StageGestureHost {
+    fun inspecting(): Boolean = false
+    fun inspect(dx: Float, dy: Float, scale: Float) {}
     fun physicalPosition(local: Offset): Offset?
     fun physicalBounds(): Rect?
     fun chromeBlocks(points: List<Offset>, now: Long): Boolean
@@ -418,6 +420,20 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     if (pressed.size >= 2 || (pressed[0].position - first.position).getDistance() > slop) {
                         pressed.forEach { it.consume() }
                     }
+                    continue
+                }
+                // The existing bottom settings door and chrome rejection have already won.
+                // Inspection owns all remaining scope travel, never the live tuning verbs.
+                if (host.inspecting()) {
+                    val delta = pressed.map { it.position - it.previousPosition }
+                        .fold(Offset.Zero) { sum, d -> sum + d } / pressed.size.toFloat()
+                    val zoom = if (pressed.size >= 2) {
+                        val now = (pressed[0].position - pressed[1].position).getDistance()
+                        val before = (pressed[0].previousPosition - pressed[1].previousPosition).getDistance()
+                        if (before > 1f) now / before else 1f
+                    } else 1f
+                    host.inspect(delta.x / size.width.coerceAtLeast(1), delta.y / size.height.coerceAtLeast(1), zoom)
+                    pressed.filter { it.positionChanged() }.forEach { it.consume() }
                     continue
                 }
                 if (pressed.size >= 2) {

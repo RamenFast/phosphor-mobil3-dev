@@ -1156,6 +1156,17 @@ fun SettingsSheet(
         }
         val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
+            ChipCell("PAUSE DISPLAY · " + if (state.pauseBlack) "BLACK" else "HOLD FRAME",
+                active = !state.pauseBlack, p = p, small = true,
+            ) { actions.setPauseBlack(!state.pauseBlack) }
+            FlatKey(if (state.displayPaused) "RETURN DISPLAY TO LIVE" else "PAUSE DISPLAY ONLY", p) {
+                actions.toggleDisplayPause()
+            }
+            if (state.displayPaused) {
+                Prose(state.pauseLabel + ". Pan or pinch the image. Live tuning applies on resume.", p.muted)
+                FlatKey("RESET INSPECTION", p) { actions.resetInspection() }
+            }
+
             ChipCell(
                 "CONTROLS ALWAYS VISIBLE · " + if (state.controlsAlwaysVisible) "on" else "off",
                 active = state.controlsAlwaysVisible, p = p, small = true,
@@ -1435,6 +1446,9 @@ fun SettingsSheet(
 
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
+    fun toggleDisplayPause() {}
+    fun resetInspection() {}
+    fun setPauseBlack(black: Boolean) {}
     fun showFloatingHud() {}
     fun hideFloatingHud() {}
     fun setFloatingHudEnabled(on: Boolean) {}

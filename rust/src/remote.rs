@@ -201,10 +201,10 @@ impl SessionShared {
             && !l.quit.load(Ordering::Relaxed)
             && l.generation.load(Ordering::SeqCst) == self.session_gen
     }
-    fn push_scope(&self, samples: &[f32]) {
+    fn push_scope(&self, samples: &[f32], epoch: u64) {
         self.scope
             .ingest(scope_ring(), &crate::render::RAW_STEREO, samples, || {
-                self.scope_live()
+                self.scope_live() && epoch == crate::pause::visual_epoch()
             });
     }
     fn trip(&self) {
@@ -220,6 +220,13 @@ impl SessionShared {
 }
 
 /// Mode authority is the existing K scope payload, scoped to its exact native session.
+pub struct GeometryOwner(std::sync::Weak<SessionShared>);
+impl GeometryOwner {
+    pub fn live(&self) -> bool {
+        self.0.upgrade().is_some_and(|s| s.scope_live())
+    }
+}
+
 pub struct GeometryMode {
     session: std::sync::Weak<SessionShared>,
     mode: Option<phosphor_dsp::Mode>,
@@ -382,15 +389,15 @@ impl AudioTap {
 struct ScopeSink(ScopeChunkSink);
 impl ScopeSink {
     /// RT-safe lossy publish of the samples finalized for this callback.
-    fn push(&mut self, samples: &[f32]) {
-        self.0.push(samples);
+    fn push(&mut self, samples: &[f32], epoch: u64) {
+        self.0.push_epoch(samples, epoch);
     }
 }
 
 struct ScopeTap(ScopeChunkTap);
 impl ScopeTap {
-    fn pop_into(&mut self, out: &mut [f32]) -> usize {
-        self.0.pop_into(out)
+    fn pop_into(&mut self, out: &mut [f32]) -> (usize, u64) {
+        self.0.pop_epoch(out)
     }
 }
 
@@ -422,6 +429,7 @@ impl AudioOutputCallback for RemoteOutput {
     ) -> DataCallbackResult {
         // Real-time callback: no allocation, lock, syscall, or logging. Scratch is
         // preallocated at open; an oversized burst plays silence for its tail.
+        let visual_epoch = crate::pause::visual_epoch();
         let need = (frames.len() * 2).min(self.scratch.len());
         self.jitter
             .set_mode(self.latency_mode.load(Ordering::Relaxed));
@@ -467,7 +475,7 @@ impl AudioOutputCallback for RemoteOutput {
         }
         if audio_enabled && self.playback_started && !self.geometry_enabled.load(Ordering::Relaxed)
         {
-            self.scope.push(&self.scratch[..need]);
+            self.scope.push(&self.scratch[..need], visual_epoch);
         }
         DataCallbackResult::Continue
     }
@@ -581,6 +589,7 @@ fn ensure_ctrl() -> Option<std::sync::mpsc::Sender<LinkCmd>> {
 /// does the rest. Observe via status_json(). Single intent bump — the audit-1
 /// double-bump gap is gone.
 pub fn connect(host: &str, port: u16, audio: bool, geometry: bool) -> bool {
+    crate::pause::invalidate();
     let l = link();
     *plock(&l.host) = host.to_string();
     l.port.store(port as u32, Ordering::Relaxed);
@@ -605,6 +614,7 @@ pub fn connect(host: &str, port: u16, audio: bool, geometry: bool) -> bool {
 }
 
 pub fn disconnect() {
+    crate::pause::invalidate();
     let l = link();
     l.quit.store(true, Ordering::Relaxed);
     l.generation.fetch_add(1, Ordering::SeqCst); // ONE bump per intent
@@ -1163,7 +1173,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
             .name("phosphor-remote-scope".into())
             .spawn(move || {
                 while !shared_v.cancelled() {
-                    let got = tap.pop_into(&mut buf);
+                    let (got, epoch) = tap.pop_into(&mut buf);
                     if got == 0 {
                         std::thread::sleep(Duration::from_millis(1));
                         continue;
@@ -1172,7 +1182,7 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                     if l.cfg_audio.load(Ordering::Relaxed)
                         && !l.cfg_geometry.load(Ordering::Relaxed)
                     {
-                        shared_v.push_scope(&buf[..got]);
+                        shared_v.push_scope(&buf[..got], epoch);
                     }
                 }
             })
@@ -1401,6 +1411,7 @@ fn reader(
         l.rx_bytes.fetch_add((5 + len) as u64, Ordering::Relaxed);
         let now = monotonic_ms();
         l.last_rx_ms.store(now, Ordering::Relaxed);
+        let visual_epoch = crate::pause::visual_epoch();
         let media = shared.media.accept(tag, &payload, now);
         match tag {
             b'W' => {
@@ -1418,7 +1429,7 @@ fn reader(
                 // receive-side scope feed is the explicit fallback. With audio
                 // enabled the callback owns scope truth after jitter/zero-fill.
                 if !l.cfg_audio.load(Ordering::Relaxed) && !l.cfg_geometry.load(Ordering::Relaxed) {
-                    shared.push_scope(&f32buf);
+                    shared.push_scope(&f32buf, visual_epoch);
                 }
                 if audio_tx.try_send(f32buf).is_err() {
                     l.a_drops.fetch_add(1, Ordering::Relaxed);
@@ -1432,17 +1443,25 @@ fn reader(
                     intensity,
                 }) = media
                 {
-                    let _ = crate::render::sender().send(crate::render::Cmd::GeometryFrame(
-                        crate::render::GeomFrame {
-                            points,
-                            aspect,
-                            intensity,
-                        },
-                    ));
+                    crate::render::geometry_frame(crate::render::GeomFrame {
+                        epoch: visual_epoch,
+                        owner: GeometryOwner(Arc::downgrade(&shared)),
+                        points,
+                        aspect,
+                        intensity,
+                    });
                 }
             }
             b'M' => {
                 if let Ok(txt) = String::from_utf8(payload) {
+                    if shared.scope_live() {
+                        if let Some(playing) = serde_json::from_str::<serde_json::Value>(&txt)
+                            .ok()
+                            .and_then(|v| v.get("playing").and_then(|v| v.as_bool()))
+                        {
+                            crate::pause::observe_transport(!playing);
+                        }
+                    }
                     *l.slots.meta.lock().unwrap() = txt;
                     l.meta_gen.fetch_add(1, Ordering::Relaxed);
                 }

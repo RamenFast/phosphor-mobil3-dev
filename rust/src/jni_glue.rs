@@ -820,3 +820,75 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_scopeStats(
         Err(_) => std::ptr::null_mut(),
     }
 }
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setDisplayPaused(
+    _env: JNIEnv,
+    _class: JClass,
+    paused: jni::sys::jboolean,
+) {
+    crate::pause::set_paused(paused != 0);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_invalidateHeldFrame(
+    _env: JNIEnv,
+    _class: JClass,
+) {
+    crate::pause::invalidate();
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_displayPauseState(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jint {
+    let s = crate::pause::DISPLAY.lock().unwrap();
+    i32::from(s.paused) | (i32::from(s.black) << 1) | (i32::from(s.pinned.is_some()) << 2)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setPauseBlack(
+    _env: JNIEnv,
+    _class: JClass,
+    black: jni::sys::jboolean,
+) {
+    crate::pause::DISPLAY.lock().unwrap().black = black != 0;
+    let _ = crate::render::sender().send(crate::render::Cmd::DisplayDirty);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_inspectHeld(
+    _env: JNIEnv,
+    _class: JClass,
+    dx: f32,
+    dy: f32,
+    scale: f32,
+    reset: jni::sys::jboolean,
+) {
+    {
+        let mut s = crate::pause::DISPLAY.lock().unwrap();
+        if !s.paused {
+            return;
+        }
+        s.inspection = if reset != 0 {
+            Default::default()
+        } else {
+            phosphor_render_gpu::Inspection {
+                zoom: s.inspection.zoom * scale,
+                pan: [s.inspection.pan[0] + dx, s.inspection.pan[1] + dy],
+            }
+            .bounded()
+        };
+    }
+    let _ = crate::render::sender().send(crate::render::Cmd::DisplayDirty);
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_observeTransportPaused(
+    _env: JNIEnv,
+    _class: JClass,
+    paused: jni::sys::jboolean,
+) {
+    crate::pause::observe_transport(paused != 0);
+}

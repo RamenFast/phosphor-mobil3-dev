@@ -200,7 +200,9 @@ class CaptureMirrorPolicyTest {
             assertTrue(uiState.contains("var $capability by mutableStateOf(false)"))
         }
         val console = File(base, "ui/Console.kt").readText()
-        assertTrue(console.contains("if (!capture || state.captureCanPlay)"))
+        assertTrue(console.contains("if (!capture || state.captureCanPlay || state.live)"))
+        assertTrue(console.contains("PauseDisplayPolicy.displayOnly(state.live, state.captureCanPlay)"))
+        assertTrue(activity.contains("PauseDisplayPolicy.displayOnly(ui.live, ui.captureCanPlay)"))
         assertTrue(console.contains("if (hasTransport && (!capture || state.captureCanNext))"))
         assertTrue(console.contains("if (hasTransport && (!capture || state.captureCanPrevious))"))
         assertTrue(console.contains("FlatKey(\"SRC\", p, designator = \"J1\", onClick = onSrc)"))

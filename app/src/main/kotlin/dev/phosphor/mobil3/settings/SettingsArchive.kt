@@ -58,6 +58,7 @@ object SettingsArchive {
         }
 
     private val specs: Map<String, Spec> = mapOf(
+        "pause_display" to string(5) { it in setOf("HOLD", "BLACK") },
         "mode" to intRange(0, 10),
         "random_mode_armed" to Spec(Kind.BOOLEAN),
         "random_ban_modes" to string(128) { text ->

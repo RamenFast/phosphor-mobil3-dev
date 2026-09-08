@@ -10,6 +10,7 @@ mod deck_close;
 #[cfg(any(target_os = "android", test))]
 mod deck_events;
 pub mod engine;
+pub mod pause;
 pub mod selftest;
 pub mod spsc;
 pub mod surface_lifecycle;

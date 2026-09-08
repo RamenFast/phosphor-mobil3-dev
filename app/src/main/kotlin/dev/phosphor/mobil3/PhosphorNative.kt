@@ -20,6 +20,15 @@ object PhosphorNative {
     external fun surfaceDestroyed(): Boolean
 
     external fun setRenderPaused(paused: Boolean)
+    /** Pins CPU ownership before transport. Never waits for GPU work. */
+    external fun setDisplayPaused(paused: Boolean)
+    external fun observeTransportPaused(paused: Boolean)
+    external fun invalidateHeldFrame()
+    /** Bits: paused=1, BLACK=2, available pinned image=4. */
+    external fun displayPauseState(): Int
+    external fun setPauseBlack(black: Boolean)
+    external fun inspectHeld(dx: Float, dy: Float, scale: Float, reset: Boolean)
+
 
     // Scope controls (M5).
     external fun setMode(index: Int)

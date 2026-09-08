@@ -23,8 +23,12 @@ class AcceptanceTraceTest {
     @Test fun glyphObservationUsesTheSameSnapshotAsTheDrawnLabel() {
         val console = File("src/main/kotlin/dev/phosphor/mobil3/ui/Console.kt").readText()
         val key = console.substringAfter("val drawnPlaying = state.playing").substringBefore("if (hasTransport && (!capture || state.captureCanNext))")
-        assertTrue(key.contains("StoneKey(if (drawnPlaying)"))
+        assertTrue(key.contains("PauseDisplayPolicy.controlLabel(displayOnly, drawnPlaying, drawnPaused)"))
+        assertTrue(key.contains("StoneKey(drawnLabel"))
+        assertTrue(key.contains("if (capture && !displayOnly) AcceptanceTrace.record(\"capture_glyph_draw\")"))
+        assertTrue(key.contains("if (displayOnly) AcceptanceTrace.record(\"display_pause_draw\")"))
         assertTrue(key.contains("playing=\$drawnPlaying"))
+        assertTrue(key.contains("paused=\$drawnPaused label=\$drawnLabel"))
         assertTrue(key.indexOf("drawContent()") < key.indexOf("capture_glyph_draw"))
     }
 }

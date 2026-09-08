@@ -68,6 +68,11 @@ impl StereoWindow {
         }
     }
 
+    pub(crate) fn clear_visual_measurement(&mut self) {
+        self.peak = None;
+        self.started_ms = 0;
+    }
+
     pub(crate) fn observe(&mut self, peak: Option<StereoPeak>, now_ms: u64) {
         let Some(peak) = peak else {
             return;
@@ -822,7 +827,7 @@ mod tests {
             deck.split("pub fn close()")
                 .nth(1)
                 .unwrap()
-                .contains("set_ring_active(false)")
+                .contains("set_ring_state(false)")
         );
         assert!(include_str!("remote.rs").contains("self.scope.retire("));
     }
@@ -889,12 +894,12 @@ mod tests {
 
     #[test]
     fn stereo_peak_remote_scope_worker_rejects_delayed_old_batch() {
-        delayed_remote_scope_ingest("shared_v.push_scope(&buf[..got])");
+        delayed_remote_scope_ingest("shared_v.push_scope(&buf[..got], epoch)");
     }
 
     #[test]
     fn stereo_peak_remote_reader_fallback_rejects_delayed_old_batch() {
-        delayed_remote_scope_ingest("shared.push_scope(&f32buf)");
+        delayed_remote_scope_ingest("shared.push_scope(&f32buf, visual_epoch)");
     }
 
     #[test]
@@ -1090,8 +1095,8 @@ mod tests {
             .filter(|ch| !ch.is_whitespace())
             .collect();
         assert!(remote.contains("self.scope.ingest("));
-        assert!(remote.contains("shared_v.push_scope(&buf[..got])"));
-        assert!(remote.contains("shared.push_scope(&f32buf)"));
+        assert!(remote.contains("shared_v.push_scope(&buf[..got],epoch)"));
+        assert!(remote.contains("shared.push_scope(&f32buf,visual_epoch)"));
         assert!(remote.contains("shared.scope.activate("));
         assert!(remote.contains("self.scope.retire("));
         assert!(!remote.contains("push_interleaved("));
@@ -1289,5 +1294,31 @@ mod tests {
         let out = super::apply_geom_fx(&segs, W, H, 4, a, 0.0, e);
         let z = 1.0 + 0.6 * a * e;
         assert!((radius(out[0][0], out[0][1]) - 0.4 * z).abs() < 1e-4);
+    }
+}
+
+#[cfg(test)]
+mod pause_resume_tests {
+    #[test]
+    fn visual_flush_preserves_remote_owner_and_rejects_old_epoch() {
+        use super::*;
+        let ring = Mutex::new(phosphor_audio::SampleRing::new(48000));
+        let meter = Mutex::new(StereoWindow::new());
+        let active = AtomicBool::new(false);
+        let lease = RemoteScopeLease::prepare(&ring, &meter);
+        assert!(lease.activate(&ring, &meter, &active, || true));
+        let epoch = std::sync::atomic::AtomicU64::new(3);
+        let old = epoch.load(Ordering::Acquire);
+        with_stereo_window(&ring, &meter, |ring, meter| {
+            epoch.fetch_add(1, Ordering::AcqRel);
+            ring.clear_pending();
+            meter.clear_visual_measurement();
+        });
+        assert!(!lease.ingest(&ring, &meter, &[9.0, 9.0], || old
+            == epoch.load(Ordering::Acquire)));
+        assert!(lease.ingest(&ring, &meter, &[0.25, 0.5], || 4
+            == epoch.load(Ordering::Acquire)));
+        assert!(active.load(Ordering::Relaxed));
+        assert_eq!(ring.lock().unwrap().take_stereo_samples(), [0.25, 0.5]);
     }
 }

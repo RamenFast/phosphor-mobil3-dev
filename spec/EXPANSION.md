@@ -111,11 +111,19 @@ TRANSPARENT requires translucent SurfaceView pixels, a supported Vulkan PreMulti
 
 HUD uses the existing MediaSession and acknowledged source capabilities for transport. Source selection and new permission-bound input starts return to the visible app. It creates no audio reader. Until R09 supplies a microphone service owner, an active activity-owned microphone prevents HUD transfer without stopping or seizing that reader. Close leaves existing service sources intact. Task removal obeys existing source/linger policy. Keep outside touches usable and respect protected-screen restrictions. Detailed order and checks live in `docs/plans/mobile-expansion/section-04-hud-contract.md`.
 
-### Pause, HDR, and brightness
+### Pause [R13]
 
-HOLD retains the last fully presented beam frame before transport retirement can empty it. Its decay, deposited samples, displayed cycle, and geometry stop changing. Pan/zoom/reset affect only inspection. Live uncontrollable inputs show `display held · source live`. Local pause still pauses audio, and remote/capture commands still require real capability/acknowledgement.
+HOLD is the portable `pause_display` default. BLACK is the alternative. Lifecycle suspension, intentional display pause, and observed transport remain separate authorities. HOLD pins the last completed application present submission before controllable transport retirement. Physical panel scanout is not observable through this API.
 
-BLACK clears the scope once, including a black scope region on a transparent HUD. Controls remain available. Switching HOLD/BLACK retains the same in-memory pause image and does not change transport. Rotation and app/PiP/HUD transfers preserve the image with bounded resources. Process death or absent history shows black and `no held frame`. Source stop/replacement invalidates the image. Resume joins the current timeline without draining a saved capture backlog into the display.
+The public shared `RetainedFrame` path stores the exact GPU energy and frozen composite uniforms used for that submission. It does not reconstruct beams from samples or read pixels to the CPU. Acquisition or allocation failure preserves committed history. Pinned textures remain immutable and live outside surface ownership and destructive resize. Checked dimensions and bytes bound a committed/candidate/pinned set. The detailed mechanism and checks live in `docs/plans/mobile-expansion/section-05-hold-contract.md`.
+
+Freeze deposited energy, decay, displayed cycle, geometry and appearance. Destination-owned scope_alpha recomposes frozen beam/grid/theme with true premultiplied transparency on supported HUD surfaces. It never fades an opaque retained rectangle. Original extent, format and SDR transfer provenance remain attached to the frame. Future HDR conversion belongs to R05.
+
+Pan/zoom/reset affect transient inspection only, with aspect-preserving fit and bounded image addressing. Preserve settings-opening gestures. Live uncontrollable inputs show `display held · source live`. Local pause still pauses audio. Common transport owners pin with a short CPU ownership operation before app, notification or earbud pause. No driver wait delays urgent audible pause. External commands still require real capability and acknowledgement. Unsolicited external PAUSED pins at the earliest authoritative observation, which cannot prove a frame before an unseen external stop. Silence, buffering and errors do not create intentional pause.
+
+BLACK clears the scope once per dirty presentation, including opaque black on transparent HUD. Controls remain available. Switching HOLD/BLACK retains image and inspection without changing transport. Rotation and app/PiP/HUD transfers preserve bounded history. Process death or absent history shows black and `no held frame`. Source stop/replacement invalidates history. Resume clears only stale visual ingress and rebases display timing, never seeking or flushing audible local playback. Unchanged HOLD/BLACK waits for actual dirty events, not geometry packets. Hidden surfaces do no GPU work.
+
+### HDR and brightness
 
 HDR requires real FP16 linear-scRGB presentation and compositor evidence. Linear output bypasses manual SDR gamma encoding. Keep black, controlled emission, readable SDR chrome, and the unchanged SDR path. Reconfigure safely across owner/display changes and HDR/SDR held-image transfers. Report requested versus active HDR and a concrete fallback reason. Advertised capabilities and screenshots alone do not prove panel luminance or transparent-HDR support.
 

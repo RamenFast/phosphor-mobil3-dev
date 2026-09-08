@@ -30,6 +30,14 @@ class ScopeUiState {
     var captureCanNext by mutableStateOf(false)
     var captureCanPrevious by mutableStateOf(false)
     var playing by mutableStateOf(false)
+    var displayPaused by mutableStateOf(false)
+    var pauseBlack by mutableStateOf(false)
+    var heldFrameAvailable by mutableStateOf(false)
+    var pauseSourceLive by mutableStateOf(false)
+    val pauseLabel: String get() = PauseDisplayPolicy.status(
+        displayPaused, pauseBlack, heldFrameAvailable, pauseSourceLive,
+    )
+
     var trackTitle by mutableStateOf<String?>(null)
     var trackArtist by mutableStateOf<String?>(null)
     var artwork by mutableStateOf<ByteArray?>(null)

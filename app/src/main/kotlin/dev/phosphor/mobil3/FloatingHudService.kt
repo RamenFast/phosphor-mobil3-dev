@@ -146,14 +146,35 @@ class FloatingHudService : Service() {
                     if (!surfaceReady && !retired) { surfaceReady = true; publish(status) }
                     if (!retired) controller?.let { host?.metadataChanged(it) }
                 })
+            var heldX = 0f
+            var heldY = 0f
+            var heldSpan = 0f
+            scope.view.setOnTouchListener { view, event ->
+                if (PhosphorNative.displayPauseState() and 1 == 0) return@setOnTouchListener false
+                val x = (0 until event.pointerCount).map { event.getX(it) }.average().toFloat()
+                val y = (0 until event.pointerCount).map { event.getY(it) }.average().toFloat()
+                val span = if (event.pointerCount >= 2) kotlin.math.hypot(
+                    event.getX(0) - event.getX(1), event.getY(0) - event.getY(1)) else 0f
+                if (event.actionMasked == android.view.MotionEvent.ACTION_MOVE) {
+                    PhosphorNative.inspectHeld((x - heldX) / view.width.coerceAtLeast(1),
+                        (y - heldY) / view.height.coerceAtLeast(1),
+                        if (span > 1f && heldSpan > 1f) span / heldSpan else 1f, false)
+                }
+                heldX = x; heldY = y; heldSpan = span
+                true
+            }
             host = scope
             panel.addView(scope.view, LinearLayout.LayoutParams(-1, 0, 1f))
             val transport = row()
+            transport.addView(button("FIT", "Reset held image inspection") { PhosphorNative.inspectHeld(0f, 0f, 1f, true) }, LinearLayout.LayoutParams(0, dp(48), 1f))
             transport.addView(button("SRC", "Choose source in app") { returnToApp(source = true) }, LinearLayout.LayoutParams(0, dp(48), 1f))
             previous = button("‹", "Previous track") { controller?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS) }?.seekToPrevious() }
             play = button("…", "Source transport unavailable") {
                 controller?.takeIf { it.isCommandAvailable(Player.COMMAND_PLAY_PAUSE) }?.let { c ->
                     if (playing(c)) c.pause() else c.play()
+                } ?: run {
+                    PhosphorNative.setDisplayPaused(PhosphorNative.displayPauseState() and 1 == 0)
+                    syncTransport()
                 }
             }
             next = button("›", "Next track") { controller?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT) }?.seekToNext() }
@@ -248,12 +269,18 @@ class FloatingHudService : Service() {
         val c = controller
         val source = c?.mediaMetadata?.title?.toString()?.takeIf { it.isNotBlank() }
             ?: c?.mediaMetadata?.extras?.getString("source") ?: "Choose source in app"
-        info?.text = "$presentationStatus\n$source"
-        play?.isEnabled = c?.isCommandAvailable(Player.COMMAND_PLAY_PAUSE) == true
+        val held = PhosphorNative.displayPauseState()
+        val display = dev.phosphor.mobil3.ui.PauseDisplayPolicy.status(
+            held and 1 != 0, held and 2 != 0, held and 4 != 0,
+            (c != null && playing(c)) || (CaptureService.ownsCapture() && CaptureService.currentStatus().live),
+        )
+        info?.text = "$presentationStatus\n$source · $display"
+        val controllable = c?.isCommandAvailable(Player.COMMAND_PLAY_PAUSE) == true
+        play?.isEnabled = true
         previous?.isEnabled = c?.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS) == true
         next?.isEnabled = c?.isCommandAvailable(Player.COMMAND_SEEK_TO_NEXT) == true
-        play?.text = if (play?.isEnabled != true) "—" else if (c != null && playing(c)) "Ⅱ" else "▷"
-        play?.contentDescription = if (play?.isEnabled != true) "Source transport unavailable. Choose source in app" else if (c != null && playing(c)) "Pause source" else "Play source"
+        play?.text = if (!controllable) { if (held and 1 != 0) "LIVE" else "HOLD" } else if (c != null && playing(c)) "Ⅱ" else "▷"
+        play?.contentDescription = if (!controllable) "Pause or resume display only. Audio transport is unchanged" else if (c != null && playing(c)) "Pause source" else "Play source"
     }
     private fun connectController() {
         val generation = ++controllerGeneration

@@ -351,6 +351,7 @@ pub struct ScopeChunkRing {
 }
 
 struct ScopeChunkSlot {
+    epoch: AtomicU64,
     samples: Box<[UnsafeCell<f32>]>,
     len: AtomicUsize,
     seq: AtomicU64,
@@ -371,6 +372,7 @@ impl ScopeChunkRing {
         let chunk_samples = (chunk_samples.max(FRAME) / FRAME) * FRAME;
         let slots = (0..chunk_count)
             .map(|_| ScopeChunkSlot {
+                epoch: AtomicU64::new(0),
                 samples: (0..chunk_samples).map(|_| UnsafeCell::new(0.0)).collect(),
                 len: AtomicUsize::new(0),
                 seq: AtomicU64::new(0),
@@ -415,6 +417,10 @@ impl ScopeChunkSink {
     /// RT-safe, non-blocking publish. Inputs beyond the preallocated chunk size
     /// are truncated at whole-stereo-frame granularity.
     pub fn push(&mut self, samples: &[f32]) {
+        self.push_epoch(samples, 0);
+    }
+
+    pub fn push_epoch(&mut self, samples: &[f32], epoch: u64) {
         let want = samples.len().min(self.ring.chunk_samples);
         let want = want - (want % FRAME);
         if want == 0 {
@@ -486,6 +492,7 @@ impl ScopeChunkSink {
             let dst = slot.samples.as_ptr() as *mut f32;
             std::ptr::copy_nonoverlapping(samples.as_ptr(), dst, want);
         }
+        slot.epoch.store(epoch, Ordering::Relaxed);
         slot.len.store(want, Ordering::Relaxed);
         // Sequence belongs to the ring, not one callback instance: an oboe
         // route reopen mints a new sink after the old stream closes, and its
@@ -512,6 +519,10 @@ impl ScopeChunkTap {
     /// too-small output deliberately discards the remainder of that visual
     /// chunk rather than retaining partial history.
     pub fn pop_into(&mut self, out: &mut [f32]) -> usize {
+        self.pop_epoch(out).0
+    }
+
+    pub fn pop_epoch(&mut self, out: &mut [f32]) -> (usize, u64) {
         for _ in 0..self.ring.slots.len() {
             let oldest = self
                 .ring
@@ -521,7 +532,7 @@ impl ScopeChunkTap {
                 .filter(|(_, slot)| slot.state.load(Ordering::Acquire) == CHUNK_READY)
                 .min_by_key(|(_, slot)| slot.seq.load(Ordering::Relaxed))
                 .map(|(i, _)| i);
-            let Some(i) = oldest else { return 0 };
+            let Some(i) = oldest else { return (0, 0) };
             let slot = &self.ring.slots[i];
             if slot
                 .state
@@ -542,10 +553,11 @@ impl ScopeChunkTap {
                 let src = slot.samples.as_ptr() as *const f32;
                 std::ptr::copy_nonoverlapping(src, out.as_mut_ptr(), n);
             }
+            let epoch = slot.epoch.load(Ordering::Relaxed);
             slot.state.store(CHUNK_FREE, Ordering::Release);
-            return n;
+            return (n, epoch);
         }
-        0
+        (0, 0)
     }
 }
 
@@ -823,5 +835,22 @@ mod tests {
             tight.target_frames() > tight_start,
             "tight must widen after an underrun to protect the audio",
         );
+    }
+}
+
+#[cfg(test)]
+mod pause_epoch_tests {
+    #[test]
+    fn visual_chunk_keeps_producer_epoch_across_late_publication() {
+        let ring = super::ScopeChunkRing::new(2, 8);
+        let mut sink = ring.sink();
+        let mut tap = ring.tap();
+        let mut out = [0.0; 8];
+        sink.push_epoch(&[1.0, 2.0], 10);
+        sink.push_epoch(&[3.0, 4.0], 11);
+        assert_eq!(tap.pop_epoch(&mut out), (2, 10));
+        assert_eq!(&out[..2], &[1.0, 2.0]);
+        assert_eq!(tap.pop_epoch(&mut out), (2, 11));
+        assert_eq!(&out[..2], &[3.0, 4.0]);
     }
 }

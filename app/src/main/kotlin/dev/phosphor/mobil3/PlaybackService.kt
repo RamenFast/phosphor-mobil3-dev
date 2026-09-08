@@ -483,6 +483,8 @@ class PlaybackService : MediaSessionService() {
                             "owner=${System.identityHashCode(chosen)} current=${captureActive && isCurrent()} state=${state?.state}"
                         }
                         if (captureActive && isCurrent()) {
+                            if (state?.state == PlatformPlaybackState.STATE_PAUSED) PhosphorNative.observeTransportPaused(true)
+                            else if (state?.state == PlatformPlaybackState.STATE_PLAYING) PhosphorNative.observeTransportPaused(false)
                             publishCaptureMetadata(chosen.metadata)
                             publishCapturePlayback(state)
                         }
@@ -590,6 +592,8 @@ class PlaybackService : MediaSessionService() {
         AcceptanceTrace.record("capture_publish") {
             "owner=${System.identityHashCode(externalCaptureController)} state=${state?.state} actions=${state?.actions}"
         }
+        if (state?.state == PlatformPlaybackState.STATE_PAUSED) PhosphorNative.observeTransportPaused(true)
+        else if (state?.state == PlatformPlaybackState.STATE_PLAYING) PhosphorNative.observeTransportPaused(false)
         if (state == null || !CaptureMirrorPolicy.available(state.state)) publishCaptureMetadata(null)
         capturePlayer.updatePlayback(
             state = state?.state ?: PlatformPlaybackState.STATE_NONE,
@@ -674,6 +678,9 @@ class PlaybackService : MediaSessionService() {
         if (play == CaptureMirrorPolicy.playing(state.state)) return
         val actions = state.actions
         val directAction = if (play) PlatformPlaybackState.ACTION_PLAY else PlatformPlaybackState.ACTION_PAUSE
+        if (actions and (directAction or PlatformPlaybackState.ACTION_PLAY_PAUSE) != 0L) {
+            PhosphorNative.setDisplayPaused(!play)
+        }
         if (actions and directAction != 0L) {
             if (play) controller.transportControls.play() else controller.transportControls.pause()
         } else if (actions and PlatformPlaybackState.ACTION_PLAY_PAUSE != 0L) {

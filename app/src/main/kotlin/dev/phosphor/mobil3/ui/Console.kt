@@ -253,12 +253,16 @@ fun Console(
                     FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
                     Spacer(Modifier.width(Dim.gap))
                 }
-                if (!capture || state.captureCanPlay) {
+                if (!capture || state.captureCanPlay || state.live) {
+                    val displayOnly = PauseDisplayPolicy.displayOnly(state.live, state.captureCanPlay)
                     val drawnPlaying = state.playing
-                    StoneKey(if (drawnPlaying) "❚❚" else "▶", p, reduced = reduced, designator = "S1",
+                    val drawnPaused = state.displayPaused
+                    val drawnLabel = PauseDisplayPolicy.controlLabel(displayOnly, drawnPlaying, drawnPaused)
+                    StoneKey(drawnLabel, p, reduced = reduced, designator = "S1",
                         modifier = Modifier.drawWithContent {
                             drawContent()
-                            if (capture) AcceptanceTrace.record("capture_glyph_draw") { "playing=$drawnPlaying" }
+                            if (capture && !displayOnly) AcceptanceTrace.record("capture_glyph_draw") { "playing=$drawnPlaying" }
+                            if (displayOnly) AcceptanceTrace.record("display_pause_draw") { "paused=$drawnPaused label=$drawnLabel" }
                         },
                     ) {
                         Haptics.light(view); onPlay()

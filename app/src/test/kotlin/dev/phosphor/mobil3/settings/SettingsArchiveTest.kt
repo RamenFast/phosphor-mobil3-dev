@@ -9,6 +9,26 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test fun pauseModeRoundTripsWithoutImagesOrInspectionState() {
+        for (mode in listOf("HOLD", "BLACK")) {
+            val values = mapOf("pause_display" to mode, "gain" to 1.25f)
+            val decoded = SettingsArchive.decode(export(values).json).values
+            assertEquals(mode, decoded["pause_display"])
+            assertEquals(mode == "BLACK", dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(decoded))
+        }
+        val old = SettingsArchive.decode(export(mapOf("mode" to 4)).json).values
+        assertFalse("pause_display" in old)
+        assertFalse(dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(old))
+        for (key in listOf("held_frame", "held_source", "inspection_zoom", "inspection_pan")) {
+            assertFalse(key in SettingsArchive.decode(singleSettingFixture(key, 1)).values)
+        }
+    }
+
+    @Test fun pauseModeArchiveRejectsInvalidTypesAndValues() {
+        rejectsBoth("pause_display", true, "invalid_setting_type")
+        rejectsBoth("pause_display", "FROZEN", "invalid_setting_value")
+    }
+
     @Test fun floatingHudTypedPreferencesRoundTripWithoutRuntimeStateOrLegacyChanges() {
         for (enabled in listOf(false, true)) for (background in listOf("SOLID", "TRANSPARENT")) {
             val values = mapOf("floating_hud_enabled" to enabled, "floating_hud_background" to background,

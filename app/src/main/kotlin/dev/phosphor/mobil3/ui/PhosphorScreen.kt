@@ -133,6 +133,9 @@ internal fun Modifier.stageChromeBounds(
 
 // What the chrome can ask the host to do. Keeps Compose free of Android service plumbing.
 interface ScopeActions {
+    fun toggleDisplayPause() {}
+    fun resetInspection() {}
+    fun setPauseBlack(black: Boolean) {}
     fun togglePlay()
     fun openFile()
     fun exportSettings()
@@ -365,6 +368,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun enterPictureInPicture() = actions.enterPictureInPicture()
             override fun showFloatingHud() = actions.showFloatingHud()
             override fun hideFloatingHud() = actions.hideFloatingHud()
+            override fun toggleDisplayPause() = actions.toggleDisplayPause()
+            override fun resetInspection() = actions.resetInspection()
+            override fun setPauseBlack(black: Boolean) = actions.setPauseBlack(black)
             override fun setFloatingHudEnabled(on: Boolean) = actions.setFloatingHudEnabled(on)
             override fun setFloatingHudTransparent(on: Boolean) = actions.setFloatingHudTransparent(on)
             override fun setDoubleTapPlayback(on: Boolean) = actions.setDoubleTapPlayback(on)
@@ -534,7 +540,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                         .fillMaxSize()
                         .onGloballyPositioned { stageGeometry.stage = it }
                         .stageGestures(
-                            remember(actions, state, style.motion, reduced) {
+                            remember(actions, state, style.motion, reduced, state.displayPaused, state.pauseBlack) {
                                 object : StageGestureHost {
                                     private var edgeTravelPx = 0f
                                     private var settingsHandedOff = false
@@ -553,6 +559,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                         }
                                     }
 
+                                    override fun inspecting() = state.displayPaused
+                                    override fun inspect(dx: Float, dy: Float, scale: Float) =
+                                        PhosphorNative.inspectHeld(dx, dy, scale, false)
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
                                     // Only the explicit VIEW LOCK refuses gestures. A pinch
@@ -638,6 +647,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // The gesture readout ribbon rides above the stage.
             GestureRibbon(ribbon, p)
+            if (state.displayPaused) Prose(state.pauseLabel, p.muted,
+                modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp))
 
             // Layer 1a: read-only status band.
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.

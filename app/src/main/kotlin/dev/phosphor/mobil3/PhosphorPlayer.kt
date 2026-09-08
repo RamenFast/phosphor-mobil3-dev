@@ -189,6 +189,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        PhosphorNative.setDisplayPaused(!playWhenReady)
         recordTransportIntent(playWhenReady)
         playing = playWhenReady
         if (playWhenReady && !output.ready) onSeek?.invoke(index, 0L)
@@ -214,6 +215,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        PhosphorNative.invalidateHeldFrame()
         nativeSeekPosition = null
         playing = false
         queue = emptyList()

@@ -649,6 +649,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     }
                 }
             } else null
+            refreshDisplayPause()
             val stats = if (dev.phosphor.mobil3.ui.GridData.needsStats(ui.hudMode, ui.gridData)) {
                 runCatching {
                     org.json.JSONObject(PhosphorNative.scopeStats())
@@ -913,7 +914,29 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // The transport law, unified: ALL transport goes through the one MediaController —
     // the session's player routes to the local deck or the bridge. Notification, lock
     // screen, earbuds and the console are therefore the same code path.
+    private fun refreshDisplayPause() {
+        val state = PhosphorNative.displayPauseState()
+        ui.displayPaused = state and 1 != 0
+        ui.pauseBlack = state and 2 != 0
+        ui.heldFrameAvailable = state and 4 != 0
+        ui.pauseSourceLive = ui.playing || mic.isRecording() ||
+            (CaptureService.ownsCapture() && CaptureService.currentStatus().live)
+    }
+    override fun toggleDisplayPause() {
+        PhosphorNative.setDisplayPaused(PhosphorNative.displayPauseState() and 1 == 0)
+        refreshDisplayPause()
+    }
+    override fun resetInspection() { PhosphorNative.inspectHeld(0f, 0f, 1f, true) }
+    override fun setPauseBlack(black: Boolean) {
+        prefs().edit { putString("pause_display", if (black) "BLACK" else "HOLD") }
+        PhosphorNative.setPauseBlack(black)
+        refreshDisplayPause()
+    }
     override fun togglePlay() {
+        if (dev.phosphor.mobil3.ui.PauseDisplayPolicy.displayOnly(ui.live, ui.captureCanPlay)) {
+            toggleDisplayPause(); return
+        }
+
         val c = controller
         if (c != null) {
             val playing = if (c.mediaMetadata.extras?.getString("source") == "capture") sessionPlaying(c) else c.playWhenReady
@@ -1277,6 +1300,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun restoreTuning() {
         val p = prefs()
+        PhosphorNative.setPauseBlack(dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(p.all))
+        refreshDisplayPause()
         val hud = HudPolicy.read(p.all)
         ui.floatingHudEnabled = hud.enabled
         ui.floatingHudTransparent = hud.background == HudPolicy.Background.TRANSPARENT

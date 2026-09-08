@@ -40,6 +40,11 @@ pub fn push_capture(samples: &[f32]) {
 }
 
 pub fn set_ring_active(active: bool) {
+    crate::pause::invalidate();
+    set_ring_state(active);
+}
+
+fn set_ring_state(active: bool) {
     crate::render::with_stereo_window(|ring, meter| {
         if active {
             ring.clear_pending();
@@ -148,11 +153,11 @@ pub fn validate(path: &str) -> Result<(), String> {
 }
 
 pub fn open_at(path: &str, seek_seconds: f64) -> Result<(), String> {
-    open_at_state(path, seek_seconds, false, false)
+    open_at_state(path, seek_seconds, false, false, false)
 }
 
 pub fn prepare(path: &str) -> Result<(), String> {
-    open_at_state(path, 0.0, true, true)
+    open_at_state(path, 0.0, true, true, false)
 }
 
 fn open_at_state(
@@ -160,9 +165,10 @@ fn open_at_state(
     seek_seconds: f64,
     initially_paused: bool,
     prepared: bool,
+    same_item: bool,
 ) -> Result<(), String> {
     validate(path)?;
-    close();
+    close_inner(!same_item);
 
     let audible = AudibleRing::new(RATE);
     let activation = Arc::new(DeckActivation::new(!prepared, initially_paused));
@@ -262,7 +268,13 @@ fn seek_at_state(ms: u64, prepare: bool) -> Result<(), String> {
         (deck.path.clone(), !deck.activation.playing())
     };
     // The desktop seeks by restarting decode at the offset; same here.
-    open_at_state(&path, ms as f64 / 1000.0, prepare || was_paused, prepare)?;
+    open_at_state(
+        &path,
+        ms as f64 / 1000.0,
+        prepare || was_paused,
+        prepare,
+        true,
+    )?;
     set_paused(prepare || was_paused);
     Ok(())
 }
@@ -296,6 +308,7 @@ pub fn toggle() -> bool {
     let Some(deck) = guard.as_ref() else {
         return false;
     };
+    crate::pause::set_paused(deck.activation.playing());
     let playing = deck.activation.toggle();
     log::info!("deck playing: {playing}");
     playing
@@ -310,11 +323,19 @@ pub fn position_micros() -> u64 {
 }
 
 pub fn close() {
+    crate::pause::invalidate();
+    close_inner(false);
+}
+
+fn close_inner(invalidate: bool) {
+    if invalidate {
+        crate::pause::invalidate();
+    }
     let deck = { DECK.lock().unwrap().take() };
     if let Some(mut deck) = deck {
         close_session(&mut deck.session, || {
             let _ = deck.stream.stop();
         });
     }
-    set_ring_active(false);
+    set_ring_state(false);
 }

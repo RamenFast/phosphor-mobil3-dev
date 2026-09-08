@@ -28,6 +28,7 @@ pub enum Cmd {
         ack: mpsc::SyncSender<()>,
     },
     Paused(bool),
+    DisplayDirty,
     SetMode(u8),
     SetBeamColor(u8),
     /// -1 = unlimited (Immediate present, may exceed the panel), 0 = panel vsync (Fifo),
@@ -82,11 +83,11 @@ pub enum Cmd {
     /// Remote geometry mode: draw the desktop's decimated beam, bypassing the DSP.
     GeometryActive(bool),
     GeometryMode(crate::remote::GeometryMode),
-    /// One desktop tap frame (normalized 0..1 points in trace space).
-    GeometryFrame(GeomFrame),
 }
 
 pub struct GeomFrame {
+    pub epoch: u64,
+    pub owner: crate::remote::GeometryOwner,
     pub points: Vec<[f32; 2]>,
     pub aspect: f32,
     pub intensity: f32,
@@ -160,6 +161,24 @@ fn pack_rgb(c: [f32; 3]) -> u32 {
 pub struct SendWindow(pub NativeWindow);
 unsafe impl Send for SendWindow {}
 
+static GEOMETRY_LATEST: std::sync::Mutex<Option<GeomFrame>> = std::sync::Mutex::new(None);
+static VISUAL_FRESH: AtomicBool = AtomicBool::new(false);
+pub fn geometry_frame(frame: GeomFrame) {
+    let mut latest = GEOMETRY_LATEST.lock().unwrap();
+    if frame.epoch == crate::pause::visual_epoch() && frame.owner.live() {
+        *latest = Some(frame);
+    }
+}
+pub fn fresh_visual_ingress() {
+    with_stereo_window(|ring, meter| {
+        crate::pause::VISUAL_EPOCH.fetch_add(1, Ordering::AcqRel);
+        ring.clear_pending();
+        meter.clear_visual_measurement();
+    });
+    *GEOMETRY_LATEST.lock().unwrap() = None;
+    VISUAL_FRESH.store(true, Ordering::Release);
+}
+
 static SENDER: OnceLock<mpsc::Sender<Cmd>> = OnceLock::new();
 
 pub fn sender() -> &'static mpsc::Sender<Cmd> {
@@ -231,6 +250,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut renderer: Option<phosphor_render_gpu::GpuRenderer> = None;
     let mut active: Option<Active> = None;
     let mut paused = false;
+    let mut display_dirty = true;
+    let mut spare_frame = None;
+    let mut retained_presenter = None;
+    let mut held_retries = 0u8;
+    let mut retained_generation = 0;
 
     let defaults = Settings::default();
     let mut computer = Computer::new();
@@ -289,7 +313,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // Idle (no surface, or paused): block on the channel. Active: drain ALL pending
         // commands then draw — 60 fps geometry frames must never back-queue behind vsync.
         let mut cmds: Vec<Cmd> = Vec::new();
-        if active.is_none() || paused {
+        let display_paused = crate::pause::DISPLAY.lock().unwrap().paused;
+        if active.is_none() || paused || (display_paused && !display_dirty) {
             match rx.recv() {
                 Ok(c) => cmds.push(c),
                 Err(_) => return,
@@ -315,6 +340,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     transparent,
                     ack,
                 } => {
+                    display_dirty = true;
+                    held_retries = 0;
                     if window.retirement.cancelled() {
                         continue;
                     }
@@ -390,7 +417,18 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     let _ = ack.send(());
                     log::info!("surface torn down");
                 }
+                Cmd::DisplayDirty => {
+                    let generation = crate::pause::DISPLAY.lock().unwrap().generation;
+                    if generation != retained_generation {
+                        spare_frame = None;
+                        geom_frame = None;
+                        retained_generation = generation;
+                    }
+                    display_dirty = true;
+                    held_retries = 0;
+                }
                 Cmd::Paused(p) => {
+                    display_dirty = true;
                     paused = p;
                     log::info!("render paused: {p}");
                 }
@@ -536,9 +574,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     log::info!("geometry mode: {on}");
                 }
                 Cmd::GeometryMode(mode) => geometry_mode = Some(mode),
-                Cmd::GeometryFrame(f) => {
-                    geom_frame = Some(f); // latest wins
-                }
             }
         }
         if had_cmds && (active.is_none() || paused) {
@@ -550,6 +585,97 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             continue;
         };
 
+        let (display_paused, black, inspection, pinned, source_generation) = {
+            let s = crate::pause::DISPLAY.lock().unwrap();
+            (
+                s.paused,
+                s.black,
+                s.inspection,
+                s.pinned.clone(),
+                s.generation,
+            )
+        };
+        if retained_generation != source_generation {
+            spare_frame = None;
+            geom_frame = None;
+            retained_generation = source_generation;
+        }
+        if display_paused {
+            if !display_dirty {
+                continue;
+            }
+            display_dirty = false;
+            let frame = match a.surface.get_current_texture() {
+                Ok(f) => {
+                    held_retries = 0;
+                    f
+                }
+                Err(wgpu::SurfaceError::Lost | wgpu::SurfaceError::Outdated)
+                    if held_retries < 1 =>
+                {
+                    held_retries += 1;
+                    a.surface.configure(&g.device, &a.config);
+                    display_dirty = true;
+                    continue;
+                }
+                Err(e) => {
+                    log::error!("held surface: {e}");
+                    continue;
+                }
+            };
+            let view = frame.texture.create_view(&Default::default());
+            let mut encoder = g.device.create_command_encoder(&Default::default());
+            if let Some(image) = pinned.as_ref().filter(|_| !black) {
+                let presenter =
+                    retained_presenter.get_or_insert_with(|| r.retained_presenter(a.config.format));
+                r.present_retained(
+                    presenter,
+                    image,
+                    &mut encoder,
+                    &view,
+                    [a.config.width, a.config.height],
+                    r.scope_alpha,
+                    inspection,
+                );
+            } else {
+                let _pass = encoder.begin_render_pass(&wgpu::RenderPassDescriptor {
+                    label: Some("BLACK or no held frame"),
+                    color_attachments: &[Some(wgpu::RenderPassColorAttachment {
+                        view: &view,
+                        depth_slice: None,
+                        resolve_target: None,
+                        ops: wgpu::Operations {
+                            load: wgpu::LoadOp::Clear(wgpu::Color::BLACK),
+                            store: wgpu::StoreOp::Store,
+                        },
+                    })],
+                    ..Default::default()
+                });
+            }
+            g.queue.submit([encoder.finish()]);
+            frame.present();
+            FPS_X10.store(0, Ordering::Relaxed);
+            SEGS_LAST.store(0, Ordering::Relaxed);
+            continue;
+        }
+        if VISUAL_FRESH.swap(false, Ordering::AcqRel) {
+            geom_frame = None;
+            computer.reset();
+            geom_last = std::time::Instant::now();
+            last_present = geom_last;
+            silent_since = None;
+        }
+        if let Some(f) = GEOMETRY_LATEST.lock().unwrap().take() {
+            if f.epoch == crate::pause::visual_epoch() && f.owner.live() {
+                geom_frame = Some(f);
+            }
+        }
+        if geom_frame
+            .as_ref()
+            .is_some_and(|f| f.epoch != crate::pause::visual_epoch() || !f.owner.live())
+        {
+            geom_frame = None;
+        }
         let (source_active, samples, raw_peak) = with_stereo_window(|ring, meter| {
             let source_active = crate::deck::DECK_ACTIVE.load(Ordering::Relaxed);
             let mut samples = if source_active {
@@ -805,6 +931,14 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             .create_command_encoder(&wgpu::CommandEncoderDescriptor {
                 label: Some("phosphor-frame"),
             });
+        let retained = match r.retain_frame(&mut encoder, spare_frame.take()) {
+            Ok(image) => Some(std::sync::Arc::new(image)),
+            Err(e) => {
+                log::error!("retain present: {e}");
+                std::thread::sleep(std::time::Duration::from_millis(100));
+                continue;
+            }
+        };
         r.composite_into(
             &mut encoder,
             &view,
@@ -813,6 +947,13 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         );
         g.queue.submit([encoder.finish()]);
         frame.present();
+        if let Some(image) = retained {
+            let old = crate::pause::DISPLAY
+                .lock()
+                .unwrap()
+                .commit(source_generation, image);
+            spare_frame = old.and_then(|image| std::sync::Arc::try_unwrap(image).ok());
+        }
 
         // Software frame limiter for capped targets (target > 0). Fifo self-paces at 0;
         // unlimited (-1) never sleeps.

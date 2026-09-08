@@ -236,7 +236,11 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         album = nextAlbum
         artId = nextArtId
         trackKey = nextTrackKey
-        if (m.has("playing")) playing = m.optBoolean("playing")
+        if (m.has("playing")) {
+            val observed = m.optBoolean("playing")
+            PhosphorNative.observeTransportPaused(!observed)
+            playing = observed
+        }
         if (m.has("position_ms")) {
             positionMs = m.optLong("position_ms")
             positionAtMs = SystemClock.elapsedRealtime()
@@ -267,6 +271,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
 
     // ── Transport → the bridge ──
     override fun handleSetPlayWhenReady(playWhenReady: Boolean): ListenableFuture<*> {
+        PhosphorNative.setDisplayPaused(!playWhenReady)
         onTransportIntent?.invoke(playWhenReady)
         // playpause is a TOGGLE on the wire: only send when intent differs from the last
         // known source-machine state, then trust the next M frame to reconcile.
@@ -301,6 +306,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
     }
 
     override fun handleStop(): ListenableFuture<*> {
+        PhosphorNative.invalidateHeldFrame()
         onStopRequested?.invoke() ?: run {
             PhosphorNative.remoteDisconnect()
             reset()
