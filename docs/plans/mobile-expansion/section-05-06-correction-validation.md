@@ -40,3 +40,11 @@ The immutable color round-2 report remains 7/10 for its original checkpoint. The
 Application-present acknowledgement is not physical scanout or a source-age measurement. Buffered AudioRecord data can still predate a producing-read epoch. The controlled source-time experiment, actual Android/HUD behavior, SoundCloud stereo, audibility and latency remain unproven.
 
 Ben's S25 remains undisturbed while he sleeps. The offered ASUS has not yet been identified through ADB. No device command or device mutation occurred in this gate.
+
+## Independent follow-up, 2026-09-08 10:03 UTC
+
+The separate color correction assessment accepts section 6 at **8/10 for exact `73e13eaf6a65df94557f8eb8107e5a44252a13bd`**, after 16 production native tests and three additional finite continuation cases. The original 7/10 reports remain unchanged. Retained addendum: `critiques/section-06-round-02-addendum.md`, SHA-256 `d43fd4995085090284b4cdec84a36667fd117cc28b42d9d3c58ebff9f048b49b`. Android acceptance remains open.
+
+The separate present-completion audit supports the narrow application-present boundary with an important qualification: bit8 means **LIVE requested and not yet acknowledged**. HOLD suppresses that bit without acknowledging the interrupted LIVE request. Only a current-token commit acknowledges LIVE, but HOLD can also make the exported pending predicate false. SurfaceHost's `presented` callback means attach readiness, not a frame acknowledgement. Native History supplies the frame acknowledgement, sampled by the visible adapters.
+
+That source-only addendum is `critiques/section-05-correction-04-addendum.md`, SHA-256 `8d4b874ad037bd684194a4c3a38e19e06bdcead47342970e1830c3e42fb0656f`. It ran no tests or device commands. It preserves R13's 6/7/7 scores and does not consume the reserved fourth full review. Old first submissions after the CPU request remain possible while LIVE is pending. Source age and physical scanout remain unproven.
