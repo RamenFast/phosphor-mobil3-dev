@@ -357,13 +357,42 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_pushCaptureSample
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_captureReadEpoch(
+    _env: JNIEnv,
+    _class: JClass,
+) -> jni::sys::jlong {
+    crate::pause::visual_epoch() as jni::sys::jlong
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_pushCaptureRead(
+    env: JNIEnv,
+    _class: JClass,
+    samples: jni::objects::JFloatArray,
+    count: jni::sys::jint,
+    owner: jni::sys::jlong,
+    read_epoch: jni::sys::jlong,
+) {
+    let Ok(length) = env.get_array_length(&samples) else { return; };
+    if count <= 0 || count > length { return; }
+    let mut buf = vec![0f32; count as usize];
+    if env.get_float_array_region(&samples, 0, &mut buf).is_ok() {
+        crate::engine::publish_capture_read(
+            crate::deck::scope_ring(), &crate::render::RAW_STEREO,
+            &crate::deck::DECK_ACTIVE, &crate::pause::VISUAL_EPOCH,
+            owner as u64, read_epoch as u64, &buf,
+        );
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setRingActive(
     _env: JNIEnv,
     _class: JClass,
     active: jni::sys::jboolean,
-) {
+) -> jni::sys::jlong {
     ensure_init();
-    crate::deck::set_ring_active(active != 0);
+    crate::deck::set_ring_active(active != 0) as jni::sys::jlong
 }
 
 #[cfg(debug_assertions)]

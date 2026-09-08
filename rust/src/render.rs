@@ -175,6 +175,9 @@ pub fn fresh_visual_ingress() {
         ring.clear_pending();
         meter.clear_visual_measurement();
     });
+    finish_visual_reset();
+}
+pub fn finish_visual_reset() {
     *GEOMETRY_LATEST.lock().unwrap() = None;
     VISUAL_FRESH.store(true, Ordering::Release);
 }
@@ -659,6 +662,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             continue;
         }
         if VISUAL_FRESH.swap(false, Ordering::AcqRel) {
+            r.clear_energy();
             geom_frame = None;
             computer.reset();
             geom_last = std::time::Instant::now();

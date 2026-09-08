@@ -63,6 +63,7 @@ class FloatingHudService : Service() {
     private var play: Button? = null
     private var previous: Button? = null
     private var next: Button? = null
+    private var displayLive: Button? = null
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_SCREEN_OFF || locked()) finishHud("HUD closed on display lock")
@@ -165,8 +166,12 @@ class FloatingHudService : Service() {
             }
             host = scope
             panel.addView(scope.view, LinearLayout.LayoutParams(-1, 0, 1f))
+            val inspection = row()
+            inspection.addView(button("FIT", "Reset held image inspection") { PhosphorNative.inspectHeld(0f, 0f, 1f, true) }, LinearLayout.LayoutParams(0, dp(48), 1f))
+            displayLive = button("LIVE", "Return display to live. Audio transport is unchanged") { returnDisplayToLive() }
+            inspection.addView(displayLive, LinearLayout.LayoutParams(0, dp(48), 1f))
+            panel.addView(inspection)
             val transport = row()
-            transport.addView(button("FIT", "Reset held image inspection") { PhosphorNative.inspectHeld(0f, 0f, 1f, true) }, LinearLayout.LayoutParams(0, dp(48), 1f))
             transport.addView(button("SRC", "Choose source in app") { returnToApp(source = true) }, LinearLayout.LayoutParams(0, dp(48), 1f))
             previous = button("‹", "Previous track") { controller?.takeIf { it.isCommandAvailable(Player.COMMAND_SEEK_TO_PREVIOUS) }?.seekToPrevious() }
             play = button("…", "Source transport unavailable") {
@@ -265,11 +270,16 @@ class FloatingHudService : Service() {
     private fun playing(c: MediaController) = CaptureMirrorPolicy.displayedPlaying(
         c.mediaMetadata.extras?.getString("source") == "capture", c.isPlaying,
         c.sessionExtras.getInt(CaptureMirrorPolicy.OBSERVED_STATE))
+    private fun returnDisplayToLive() {
+        PhosphorNative.setDisplayPaused(false)
+        syncTransport()
+    }
     private fun syncTransport() {
         val c = controller
         val source = c?.mediaMetadata?.title?.toString()?.takeIf { it.isNotBlank() }
             ?: c?.mediaMetadata?.extras?.getString("source") ?: "Choose source in app"
         val held = PhosphorNative.displayPauseState()
+        displayLive?.isEnabled = held and 1 != 0
         val display = dev.phosphor.mobil3.ui.PauseDisplayPolicy.status(
             held and 1 != 0, held and 2 != 0, held and 4 != 0,
             (c != null && playing(c)) || (CaptureService.ownsCapture() && CaptureService.currentStatus().live),

@@ -589,7 +589,6 @@ fn ensure_ctrl() -> Option<std::sync::mpsc::Sender<LinkCmd>> {
 /// does the rest. Observe via status_json(). Single intent bump — the audit-1
 /// double-bump gap is gone.
 pub fn connect(host: &str, port: u16, audio: bool, geometry: bool) -> bool {
-    crate::pause::invalidate();
     let l = link();
     *plock(&l.host) = host.to_string();
     l.port.store(port as u32, Ordering::Relaxed);
@@ -607,6 +606,7 @@ pub fn connect(host: &str, port: u16, audio: bool, geometry: bool) -> bool {
     if let Some(s) = cur {
         s.trip(); // retarget: retire the live session, never overlap it
     }
+    crate::pause::invalidate();
     match ensure_ctrl() {
         Some(tx) => tx.send(LinkCmd::Connect).is_ok(),
         None => false,
@@ -614,7 +614,6 @@ pub fn connect(host: &str, port: u16, audio: bool, geometry: bool) -> bool {
 }
 
 pub fn disconnect() {
-    crate::pause::invalidate();
     let l = link();
     l.quit.store(true, Ordering::Relaxed);
     l.generation.fetch_add(1, Ordering::SeqCst); // ONE bump per intent
@@ -624,6 +623,7 @@ pub fn disconnect() {
     if let Some(s) = cur {
         s.trip();
     }
+    crate::pause::invalidate();
     if let Some(tx) = plock(&l.ctrl).clone() {
         let _ = tx.send(LinkCmd::Disconnect); // wake the control thread
     }
@@ -1412,6 +1412,7 @@ fn reader(
         let now = monotonic_ms();
         l.last_rx_ms.store(now, Ordering::Relaxed);
         let visual_epoch = crate::pause::visual_epoch();
+        let display_generation = crate::pause::source_generation();
         let media = shared.media.accept(tag, &payload, now);
         match tag {
             b'W' => {
@@ -1459,7 +1460,11 @@ fn reader(
                             .ok()
                             .and_then(|v| v.get("playing").and_then(|v| v.as_bool()))
                         {
-                            crate::pause::observe_transport(!playing);
+                            crate::pause::observe_transport_from(
+                                display_generation,
+                                !playing,
+                                || shared.scope_live(),
+                            );
                         }
                     }
                     *l.slots.meta.lock().unwrap() = txt;

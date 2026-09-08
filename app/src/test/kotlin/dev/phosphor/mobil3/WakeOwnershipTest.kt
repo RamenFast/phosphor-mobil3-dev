@@ -207,8 +207,9 @@ class WakeOwnershipTest {
         }
         fun failRead(throws: Boolean) {
             readSourceSamples(
+                readEpoch = { 0L },
                 running = { running }, read = { if (throws) throw SecurityException("revoked") else -6 },
-                push = { fail("failed read pushed samples") },
+                push = { _, _ -> fail("failed read pushed samples") },
                 failed = { main.add {
                     retireSourceReaderFailure(
                         isCurrent = { currentRecorder === recorder && running },
@@ -542,9 +543,10 @@ class WakeOwnershipTest {
         val reads = ArrayDeque(listOf(0, 8, 16))
         val pushed = mutableListOf<Int>()
         readSourceSamples(
+            readEpoch = { 0L },
             running = { running },
             read = { reads.removeFirst() },
-            push = { pushed.add(it); if (it == 16) running = false },
+            push = { count, _ -> pushed.add(count); if (count == 16) running = false },
             failed = { fail("unexpected failure", it) },
         )
         assertEquals(listOf(8, 16), pushed)
@@ -556,9 +558,10 @@ class WakeOwnershipTest {
         var running = true
         owner.wake.microphoneChanged(true, false)
         readSourceSamples(
+            readEpoch = { 0L },
             running = { running },
             read = { running = false; owner.wake.microphoneChanged(false, false); 8 },
-            push = { fail("stopped reader pushed samples") },
+            push = { _, _ -> fail("stopped reader pushed samples") },
             failed = { fail("explicit stop is not a reader failure", it) },
         )
         assertFalse(owner.lock.isHeld)
@@ -574,9 +577,10 @@ class WakeOwnershipTest {
                 var stops = 0
                 if (mic) owner.wake.microphoneChanged(true, false) else owner.wake.captureChanged(true, true)
                 readSourceSamples(
+                    readEpoch = { 0L },
                     running = { running },
                     read = { reads++; if (throws) throw SecurityException("revoked") else -6 },
-                    push = { fail("error read pushed samples") },
+                    push = { _, _ -> fail("error read pushed samples") },
                     failed = { retireSourceReaderFailure(
                         isCurrent = { running },
                         stop = { stops++; running = false; owner.wake.stop() },
@@ -599,9 +603,10 @@ class WakeOwnershipTest {
             var stops = 0
             if (mic) owner.wake.microphoneChanged(true, false) else owner.wake.captureChanged(true, true)
             readSourceSamples(
+                readEpoch = { 0L },
                 running = { true },
                 read = { -6 },
-                push = { fail("error read pushed samples") },
+                push = { _, _ -> fail("error read pushed samples") },
                 failed = { failureOnMain = { retireSourceReaderFailure(
                     isCurrent = { currentRecord === oldRecord },
                     stop = { stops++; owner.wake.stop() },

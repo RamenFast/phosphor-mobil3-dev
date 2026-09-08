@@ -45,6 +45,34 @@ impl<T> History<T> {
         self.serial = self.serial.wrapping_add(1);
         self.committed.replace(image)
     }
+    pub fn transition(
+        &mut self,
+        generation: Option<u64>,
+        paused: bool,
+        observation: bool,
+        live: bool,
+    ) -> (bool, Option<Arc<T>>) {
+        if !live || generation.is_some_and(|g| g != self.generation) {
+            return (false, None);
+        }
+        if observation {
+            let previous = self.transport_paused.replace(paused);
+            if previous.is_none() || previous == Some(paused) {
+                return (false, None);
+            }
+        }
+        if self.paused == paused {
+            return (false, None);
+        }
+        if paused {
+            self.pin();
+            (true, None)
+        } else {
+            self.paused = false;
+            self.inspection = Inspection::default();
+            (true, self.pinned.take())
+        }
+    }
 }
 pub static DISPLAY: LazyLock<Mutex<History<RetainedFrame>>> =
     LazyLock::new(|| Mutex::new(History::default()));
@@ -55,28 +83,33 @@ fn wake() {
 }
 #[cfg(target_os = "android")]
 pub fn set_paused(paused: bool) {
-    if DISPLAY.lock().unwrap().paused == paused {
-        return;
-    }
-    if !paused {
-        crate::render::fresh_visual_ingress();
-    }
-    let dropped = {
+    apply_transition(None, paused, false, || true);
+}
+
+#[cfg(target_os = "android")]
+fn apply_transition(
+    generation: Option<u64>,
+    paused: bool,
+    observation: bool,
+    live: impl FnOnce() -> bool,
+) {
+    let (changed, dropped) = crate::render::with_stereo_window(|ring, meter| {
         let mut s = DISPLAY.lock().unwrap();
-        if s.paused == paused {
-            return;
+        let result = s.transition(generation, paused, observation, live());
+        if result.0 && !paused {
+            VISUAL_EPOCH.fetch_add(1, std::sync::atomic::Ordering::AcqRel);
+            ring.clear_pending();
+            meter.clear_visual_measurement();
         }
-        if paused {
-            s.pin();
-            None
-        } else {
-            s.paused = false;
-            s.inspection = Inspection::default();
-            s.pinned.take()
-        }
-    };
+        result
+    });
     drop(dropped);
-    wake();
+    if changed {
+        if !paused {
+            crate::render::finish_visual_reset();
+        }
+        wake();
+    }
 }
 #[cfg(target_os = "android")]
 pub fn invalidate() {
@@ -115,16 +148,67 @@ mod tests {
         h.pin();
         assert!(h.pinned.is_none());
     }
+    #[test]
+    fn initial_transport_observation_is_not_intentional_pause() {
+        for initial in [true, false] {
+            let mut h = History::default();
+            h.commit(0, Arc::new("A"));
+            assert!(!h.transition(Some(0), initial, true, true).0);
+            assert!(!h.paused);
+            assert!(h.pinned.is_none());
+            assert_eq!(h.transport_paused, Some(initial));
+        }
+    }
+    #[test]
+    fn only_observed_edges_change_display_pause() {
+        let mut h = History::default();
+        h.commit(0, Arc::new("A"));
+        h.transition(Some(0), false, true, true);
+        assert!(h.transition(Some(0), true, true, true).0);
+        assert_eq!(h.pinned.as_deref(), Some(&"A"));
+        assert!(!h.transition(Some(0), true, true, true).0);
+        let (changed, dropped) = h.transition(Some(0), false, true, true);
+        assert!(changed);
+        assert_eq!(dropped.as_deref(), Some(&"A"));
+        assert!(!h.paused);
+        assert!(h.pinned.is_none());
+    }
+    #[test]
+    fn old_generation_and_retired_session_cannot_change_new_history() {
+        let mut h = History::default();
+        h.generation = 5;
+        h.commit(5, Arc::new("new"));
+        h.transition(Some(5), false, true, true);
+        assert!(!h.transition(Some(4), true, true, true).0);
+        assert!(!h.transition(Some(5), true, true, false).0);
+        assert_eq!(h.transport_paused, Some(false));
+        assert!(!h.paused);
+        assert!(h.pinned.is_none());
+        assert!(h.transition(Some(5), true, true, true).0);
+        assert_eq!(h.pinned.as_deref(), Some(&"new"));
+    }
+    #[test]
+    fn initial_observation_preserves_an_explicit_display_pause() {
+        let mut h = History::default();
+        h.commit(0, Arc::new("A"));
+        assert!(h.transition(None, true, false, true).0);
+        assert!(!h.transition(Some(0), false, true, true).0);
+        assert!(h.paused);
+        assert_eq!(h.pinned.as_deref(), Some(&"A"));
+    }
 }
 
 #[cfg(target_os = "android")]
 pub fn observe_transport(paused: bool) {
-    let change = {
-        let mut s = DISPLAY.lock().unwrap();
-        let old = s.transport_paused.replace(paused);
-        old != Some(paused) && (paused || old == Some(true))
-    };
-    if change {
-        set_paused(paused);
-    }
+    apply_transition(None, paused, true, || true);
+}
+
+#[cfg(target_os = "android")]
+pub fn source_generation() -> u64 {
+    DISPLAY.lock().unwrap().generation
+}
+
+#[cfg(target_os = "android")]
+pub fn observe_transport_from(generation: u64, paused: bool, live: impl FnOnce() -> bool) {
+    apply_transition(Some(generation), paused, true, live);
 }

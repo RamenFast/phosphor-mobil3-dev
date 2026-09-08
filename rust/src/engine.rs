@@ -56,6 +56,7 @@ pub(crate) struct StereoWindow {
     peak: Option<StereoPeak>,
     started_ms: u64,
     remote_boundary: Option<Arc<()>>,
+    capture_owner: u64,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -65,7 +66,16 @@ impl StereoWindow {
             peak: None,
             started_ms: 0,
             remote_boundary: None,
+            capture_owner: 0,
         }
+    }
+
+    pub(crate) fn activate_capture(&mut self) -> u64 {
+        static NEXT: std::sync::atomic::AtomicU64 = std::sync::atomic::AtomicU64::new(1);
+        self.capture_owner = NEXT
+            .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |id| id.checked_add(1))
+            .unwrap_or(0);
+        self.capture_owner
     }
 
     pub(crate) fn clear_visual_measurement(&mut self) {
@@ -110,6 +120,123 @@ pub(crate) fn with_stereo_window<T>(
     let mut ring = ring.lock().unwrap();
     let mut meter = meter.lock().unwrap();
     work(&mut ring, &mut meter)
+}
+
+/// Read ordering only. The epoch belongs to the producer before its blocking read.
+#[cfg_attr(not(target_os = "android"), allow(dead_code))]
+pub(crate) fn publish_capture_read(
+    ring: &Mutex<phosphor_audio::SampleRing>,
+    meter: &Mutex<StereoWindow>,
+    active: &AtomicBool,
+    epoch: &std::sync::atomic::AtomicU64,
+    owner: u64,
+    read_epoch: u64,
+    samples: &[f32],
+) -> bool {
+    with_stereo_window(ring, meter, |ring, meter| {
+        if owner == 0 || meter.capture_owner != owner || !active.load(Ordering::Relaxed)
+            || epoch.load(Ordering::Acquire) != read_epoch
+        {
+            return false;
+        }
+        ring.push_interleaved(samples);
+        true
+    })
+}
+
+#[cfg(test)]
+mod capture_fence_tests {
+    use super::*;
+    use std::sync::{atomic::AtomicU64, mpsc};
+    use std::time::Duration;
+
+    fn held_read(replace_owner: bool) {
+        let ring = Arc::new(Mutex::new(phosphor_audio::SampleRing::new(48_000)));
+        let meter = Arc::new(Mutex::new(StereoWindow::new()));
+        let active = Arc::new(AtomicBool::new(true));
+        let epoch = Arc::new(AtomicU64::new(4));
+        let owner = with_stereo_window(&ring, &meter, |_, meter| meter.activate_capture());
+        let (began_tx, began_rx) = mpsc::sync_channel(1);
+        let (finish_tx, finish_rx) = mpsc::sync_channel(1);
+        let wait = Duration::from_secs(2);
+        let producer = {
+            let (ring, meter, active, epoch) = (ring.clone(), meter.clone(), active.clone(), epoch.clone());
+            std::thread::spawn(move || {
+                let read_epoch = epoch.load(Ordering::Acquire);
+                began_tx.send(read_epoch).unwrap();
+                finish_rx.recv_timeout(wait).unwrap();
+                publish_capture_read(&ring, &meter, &active, &epoch, owner, read_epoch, &[0.9, -0.9])
+            })
+        };
+        assert_eq!(began_rx.recv_timeout(wait).unwrap(), 4);
+        let current_owner = with_stereo_window(&ring, &meter, |ring, meter| {
+            ring.clear_pending();
+            if replace_owner {
+                // Deliberately leave the epoch unchanged to prove independent ownership.
+                *meter = StereoWindow::new();
+                meter.activate_capture()
+            } else {
+                epoch.fetch_add(1, Ordering::AcqRel);
+                meter.clear_visual_measurement();
+                owner
+            }
+        });
+        finish_tx.send(()).unwrap();
+        assert!(!producer.join().unwrap());
+        assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
+        assert!(publish_capture_read(&ring, &meter, &active, &epoch, current_owner,
+            epoch.load(Ordering::Acquire), &[0.25, -0.5]));
+        assert_eq!(ring.lock().unwrap().take_stereo_samples(), vec![0.25, -0.5]);
+    }
+
+    #[test]
+    fn held_epoch4_read_cannot_publish_after_resume_epoch5() { held_read(false); }
+
+    #[test]
+    fn held_read_cannot_publish_to_replacement_even_at_same_epoch() { held_read(true); }
+
+    #[test]
+    fn current_epoch_cannot_resurrect_inactive_or_non_capture_source() {
+        let ring = Mutex::new(phosphor_audio::SampleRing::new(48_000));
+        let meter = Mutex::new(StereoWindow::new());
+        let active = AtomicBool::new(false);
+        let epoch = AtomicU64::new(5);
+        let owner = with_stereo_window(&ring, &meter, |_, meter| meter.activate_capture());
+        assert!(!publish_capture_read(&ring, &meter, &active, &epoch, owner, 5, &[1.0, 1.0]));
+        assert!(!active.load(Ordering::Relaxed));
+        with_stereo_window(&ring, &meter, |_, meter| {
+            *meter = StereoWindow::new();
+            active.store(true, Ordering::Relaxed);
+        });
+        for candidate in [0, owner] {
+            assert!(!publish_capture_read(&ring, &meter, &active, &epoch, candidate, 5, &[1.0, 1.0]));
+        }
+        assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
+    }
+
+    #[test]
+    fn publication_waits_for_ring_lock_then_rechecks_epoch() {
+        let ring = Arc::new(Mutex::new(phosphor_audio::SampleRing::new(48_000)));
+        let meter = Arc::new(Mutex::new(StereoWindow::new()));
+        let active = Arc::new(AtomicBool::new(true));
+        let epoch = Arc::new(AtomicU64::new(4));
+        let owner = with_stereo_window(&ring, &meter, |_, meter| meter.activate_capture());
+        let mut guard = ring.lock().unwrap();
+        let (started_tx, started_rx) = mpsc::sync_channel(1);
+        let producer = {
+            let (ring, meter, active, epoch) = (ring.clone(), meter.clone(), active.clone(), epoch.clone());
+            std::thread::spawn(move || {
+                started_tx.send(()).unwrap();
+                publish_capture_read(&ring, &meter, &active, &epoch, owner, 4, &[1.0, 1.0])
+            })
+        };
+        started_rx.recv_timeout(Duration::from_secs(2)).unwrap();
+        epoch.fetch_add(1, Ordering::AcqRel);
+        guard.clear_pending();
+        drop(guard);
+        assert!(!producer.join().unwrap());
+        assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
+    }
 }
 
 /// One remote attempt, distinct even when reconnect reuses the Link generation.

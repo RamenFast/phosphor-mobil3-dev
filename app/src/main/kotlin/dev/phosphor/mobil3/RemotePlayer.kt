@@ -238,7 +238,7 @@ class RemotePlayer(looper: Looper) : SimpleBasePlayer(looper) {
         trackKey = nextTrackKey
         if (m.has("playing")) {
             val observed = m.optBoolean("playing")
-            PhosphorNative.observeTransportPaused(!observed)
+            // Native M ingestion owns the session-fenced display observation.
             playing = observed
         }
         if (m.has("position_ms")) {

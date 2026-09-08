@@ -39,20 +39,22 @@ pub fn push_capture(samples: &[f32]) {
     scope_ring().lock().unwrap().push_interleaved(samples);
 }
 
-pub fn set_ring_active(active: bool) {
+pub fn set_ring_active(active: bool) -> u64 {
     crate::pause::invalidate();
-    set_ring_state(active);
+    set_ring_state(active)
 }
 
-fn set_ring_state(active: bool) {
-    crate::render::with_stereo_window(|ring, meter| {
+fn set_ring_state(active: bool) -> u64 {
+    let owner = crate::render::with_stereo_window(|ring, meter| {
         if active {
             ring.clear_pending();
         }
         *meter = crate::engine::StereoWindow::new();
         DECK_ACTIVE.store(active, Ordering::Relaxed);
+        if active { meter.activate_capture() } else { 0 }
     });
     log::info!("scope ring active: {active}");
+    owner
 }
 
 static DECK: Mutex<Option<Deck>> = Mutex::new(None);

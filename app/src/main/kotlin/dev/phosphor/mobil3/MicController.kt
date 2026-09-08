@@ -72,6 +72,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
             return
         }
         record = rec
+        var readOwner = 0L
         val error = startMicRecording(
             initialized = { rec.state == AudioRecord.STATE_INITIALIZED },
             startRecording = { rec.startRecording() },
@@ -79,7 +80,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
             armScope = {
                 PhosphorNative.deckSetPaused(true)
                 ownsRing = true
-                PhosphorNative.setRingActive(true)
+                readOwner = PhosphorNative.setRingActive(true)
             },
         )
         if (error != null) {
@@ -93,8 +94,9 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
                 val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
                 readSourceSamples(
                     running = { running },
+                    readEpoch = { PhosphorNative.captureReadEpoch() },
                     read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
-                    push = { n -> PhosphorNative.pushCaptureSamples(chunk, n) },
+                    push = { n, epoch -> PhosphorNative.pushCaptureRead(chunk, n, readOwner, epoch) },
                     failed = { error -> main.post {
                         retireSourceReaderFailure(
                             // Recorder identity fences replacement. cancelStart may advance the
@@ -174,24 +176,6 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
             }
             if (Looper.myLooper() == main.looper) stop() else main.post { stop() }
         }
-    }
-}
-
-/** The real capture readers share this loop. A terminal read dispatches once, then exits. */
-internal fun readSourceSamples(
-    running: () -> Boolean,
-    read: () -> Int,
-    push: (Int) -> Unit,
-    failed: (RuntimeException) -> Unit,
-) {
-    try {
-        while (running()) {
-            val count = read()
-            if (count < 0) throw IllegalStateException("AudioRecord read failed: $count")
-            if (running() && count > 0) push(count)
-        }
-    } catch (error: RuntimeException) {
-        failed(error)
     }
 }
 

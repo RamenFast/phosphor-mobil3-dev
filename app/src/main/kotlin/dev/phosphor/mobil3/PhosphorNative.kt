@@ -100,9 +100,11 @@ object PhosphorNative {
     external fun remoteSourcesGeneration(): Int
     external fun remoteListingGeneration(): Int
 
-    // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
+    // Root PCM remains samples-only until the helper supplies a producer fence.
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
-    external fun setRingActive(active: Boolean)
+    external fun captureReadEpoch(): Long
+    external fun pushCaptureRead(samples: FloatArray, count: Int, owner: Long, readEpoch: Long)
+    external fun setRingActive(active: Boolean): Long
 
     /** Deterministic offscreen render used by the debug self-test. */
     external fun selfTest(filesDir: String): String

@@ -123,6 +123,8 @@ Pan/zoom/reset affect transient inspection only, with aspect-preserving fit and 
 
 BLACK clears the scope once per dirty presentation, including opaque black on transparent HUD. Controls remain available. Switching HOLD/BLACK retains image and inspection without changing transport. Rotation and app/PiP/HUD transfers preserve bounded history. Process death or absent history shows black and `no held frame`. Source stop/replacement invalidates history. Resume clears only stale visual ingress and rebases display timing, never seeking or flushing audible local playback. Unchanged HOLD/BLACK waits for actual dirty events, not geometry packets. Hidden surfaces do no GPU work.
 
+App AudioRecord capture and mic retain a runtime visual epoch sampled before each read with the whole returned batch. Native publication validates that epoch, active state and the original producer token under the visual ring lock. Source replacement invalidates the token independently of resume. This proves app read ordering, not AudioFlinger sample time. Root PCM requires producer-coordinated epoch metadata and acknowledgement, not an app receipt timestamp. The bounded capture-fence contract records this still-open root requirement without narrowing canonical R13 acceptance.
+
 ### HDR and brightness
 
 HDR requires real FP16 linear-scRGB presentation and compositor evidence. Linear output bypasses manual SDR gamma encoding. Keep black, controlled emission, readable SDR chrome, and the unchanged SDR path. Reconfigure safely across owner/display changes and HDR/SDR held-image transfers. Report requested versus active HDR and a concrete fallback reason. Advertised capabilities and screenshots alone do not prove panel luminance or transparent-HDR support.

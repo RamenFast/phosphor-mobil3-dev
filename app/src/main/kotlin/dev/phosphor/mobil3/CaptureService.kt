@@ -252,7 +252,7 @@ open class CaptureService : Service() {
             return START_NOT_STICKY
         }
         PhosphorNative.deckSetPaused(true) // capture takes the beam; deck resumes on stop
-        PhosphorNative.setRingActive(true)
+        val readOwner = PhosphorNative.setRingActive(true)
         running = true
         metadataBridgeActive = true
         startService(
@@ -266,8 +266,9 @@ open class CaptureService : Service() {
                 val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
                 readSourceSamples(
                     running = { running },
+                    readEpoch = { PhosphorNative.captureReadEpoch() },
                     read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
-                    push = { n -> PhosphorNative.pushCaptureSamples(chunk, n) },
+                    push = { n, epoch -> PhosphorNative.pushCaptureRead(chunk, n, readOwner, epoch) },
                     failed = { error -> main.post {
                         retireSourceReaderFailure(
                             isCurrent = { owner === this && !cleanedUp && record === rec && running },
