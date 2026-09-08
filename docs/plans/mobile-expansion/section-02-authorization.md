@@ -58,7 +58,25 @@ The matching upstream sources establish the intended interface:
 - [3.2.5 grant_root shell](https://github.com/tiann/KernelSU/blob/v3.2.5/userspace/ksud/src/su.rs)
 - [3.2.5 driver grant request](https://github.com/tiann/KernelSU/blob/v3.2.5/userspace/ksud/src/ksucalls.rs)
 
-The separately invoked `KSU_AUTH_PROBE` action first checks exact provider version under the app UID, then supplies the same fixed identity command to `debug su` through private stdin. It never uses `--global-mnt`, changes the grant/profile, modifies the executable, or creates a product dependency on this device-specific path. This is not automatic fallback from standard su. Its build and actual result are pending.
+The separately invoked `KSU_AUTH_PROBE` action first checks exact provider version under the app UID, then supplies the same fixed identity command to `debug su` through private stdin. It never uses `--global-mnt`, changes the grant/profile, modifies the executable, or creates a product dependency on this device-specific path. This is not automatic fallback from standard su.
+
+### Compatibility probe passed on the exact installed artifact
+
+At 01:32:35 UTC, source `ff7067e019cb` returned `root_granted`, exit 0 and stdout `0` through the fixed KernelSU provider command. The parent was normal app UID 10401, PID 22323, `untrusted_app` context. The provider attempt completed in 210 ms with confirmed process and output-reader termination. No Android projection request, recording, grant/profile change, system write or settings mutation occurred.
+
+The Gradle wrapper passed all 17 probe tests, existing Android tests, lint, assembleDebug and checkEngine at that exact source. `dev/pm3` installed and read back APK SHA-256 `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`. Signer SHA-256 remains `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d`. All pre/post preference archives still match the original `1f3fcf264ead0a0b3823a2c31f8c512842c9e25501c082ce659ed2b2fa3d1a72` hash.
+
+Post-probe process inspection found no remaining child of Phosphor. The root `logcat sulogd` PID 10693 was already 15 days old, not created by this probe, and was left untouched. Projection remained null. Global auto-brightness, timeout and screensaver settings were unchanged. The user had switched to Telegram, so the coordinator did not force a launcher/UI restoration.
+
+Private evidence: `ksu-auth-ff7067e-install.json`, `ksu-auth-ff7067e-result.json`, `ksu-auth-build.log`, `ksu-auth-postinstall-preferences.tar` and `ksu-auth-postprobe-preferences.tar` in the preserved recovery directory. This is app-origin authorization evidence, not audio acceptance or a shipping dependency on the overridden executable.
+
+### Namespace prerequisite and fresh native regression
+
+The 01:10 read-only Phosphor profile evidence shows Default, not a custom root profile. The coordinator inspected KernelSU commit `b0bc817b4e966aa6aa830834eaf6ef765d821d40`: `kernel/policy/allowlist.c` initializes the default root profile with `KSU_NS_INHERITED`, and `kernel/infra/su_mount_ns.c` performs no namespace operation for that value. Grant itself invokes this profile-dependent function. Therefore the initial trial relies on the existing Default profile evidence, not merely the absence of mount calls in Phosphor. No profile change is authorized. Record before/after namespace identity during the packaged-helper trial and stop on a mismatch.
+
+At 01:54:36 UTC the existing DUMP-protected native self-test completed freshly on `ff7067e`. Both output mtimes changed from `1785912063` to `1788832476`. The result reported 3,999 segments, 45,853 lit pixels and pixel FNV-1a `4cd2eb49f325d649`, with `ok=true`. An unknown broadcast action left the root-authorization receipt byte-identical. At 02:04 UTC the post-smoke preference archive still matched the baseline SHA-256, and projection was null. This is actual native offscreen regression evidence, not root PCM or HDR evidence.
+
+Private receipts include `native-smoke-ff7067e.json`, `selftest-20260907-185437.png`, and `native-smoke-post-preferences.tar`. Research handoffs cover the fixed two-process supervisor and exact AudioPolicy sequence. The initial capture rule must include the original Phosphor app UID and controlled media/game fixtures only. Do not capture other apps, calls or private messages during this feasibility test.
 
 ## Recovery and remaining work
 

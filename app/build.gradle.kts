@@ -281,6 +281,20 @@ val verifyReleaseProvenance = tasks.register<Exec>("verifyReleaseProvenance") {
 
 val bundletool by configurations.creating
 
+tasks.register("writeBoundaryBundletoolClasspath") {
+    group = "verification"
+    description = "Resolve the existing pinned bundletool for private manifest decoding and isolated fixtures. No app build."
+    doLast {
+        val output = providers.gradleProperty("boundaryClasspathOutput").orNull
+            ?: error("boundaryClasspathOutput missing; fix: pass an absolute private scratch output path")
+        val target = file(output)
+        check(target.isAbsolute && target.parentFile.isDirectory) {
+            "classpath output parent unavailable; fix: create a private scratch directory"
+        }
+        target.writeText(bundletool.asPath)
+    }
+}
+
 val releaseRuntimeDependencyReport =
     layout.buildDirectory.file("reports/play-boundary/releaseRuntimeClasspath.txt")
 val writeReleaseRuntimeDependencyReport = tasks.register("writeReleaseRuntimeDependencyReport") {
@@ -306,6 +320,9 @@ tasks.register<Exec>("checkPlayBoundary") {
     group = "verification"
     description = "Build and check the approved production boundary, without asserting store approval."
     dependsOn("bundleRelease", writeReleaseRuntimeDependencyReport)
+    doFirst {
+        environment("PHOSPHOR_BOUNDARY_BUNDLETOOL_CLASSPATH", bundletool.asPath)
+    }
     workingDir = rootProject.projectDir
     commandLine(
         rootProject.file("scripts/check-play-boundary.sh").absolutePath,

@@ -111,6 +111,16 @@ class ManifestBoundaryTest {
         String dynamic = "<permission a:name='" + APP + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION' a:protectionLevel='signature'/>"
             + "<uses-permission a:name='" + APP + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/>";
         test("AndroidX signature pair", manifest(dynamic, "", ""), null);
+        for (String number : new String[] { "2", "0x2", "0x00000002" })
+            test("compiled signature " + number, manifest(dynamic.replace("'signature'", "'" + number + "'"), "", ""), null);
+        test("compiled signature flags broadened", manifest(dynamic.replace("'signature'", "'0x12'"), "", ""), "permission declaration");
+        for (String number : new String[] { "1073741824", "0x40000000" })
+            test("compiled specialUse " + number, manifest(special, "", root.replace("'specialUse'", "'" + number + "'")), null);
+        test("compiled specialUse combined flags", manifest(special, "", root.replace("'specialUse'", "'0x40000020'")), "foreground role");
+        for (String number : new String[] { "128", "0x80", "0x00000080" })
+            test("compiled microphone " + number, manifest(micPermissions, "", mic.replace("'microphone'", "'" + number + "'")), null);
+        if (ManifestBoundary.exactEnum("0x80", "microphone", false)) throw new AssertionError("Source accepted numeric enum");
+        checks++;
         test("AndroidX permission downgrade", manifest(dynamic.replace("protectionLevel='signature'", "protectionLevel='normal'"), "", ""), "permission declaration");
         test("missing dynamic declaration", manifest("<uses-permission a:name='" + APP + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION'/>", "", ""), "declared and used together");
         String provider = "<provider a:name='androidx.startup.InitializationProvider' a:exported='false' a:authorities='" + APP

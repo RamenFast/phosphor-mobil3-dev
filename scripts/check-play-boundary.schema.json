@@ -21,7 +21,7 @@
             "artifact_checks": {"type": "integer", "minimum": 0},
             "trusted_runtime_exemptions": {"type": "integer", "minimum": 0},
             "artifact": {"type": "string"},
-            "manifest": {"type": "string"}
+            "manifest": {"type": "string", "description": "Optional supplementary XML path when supplied, otherwise ARTIFACT!/packaged/member. Artifact mode always decodes and validates the archive manifest."}
           }
         }
       }

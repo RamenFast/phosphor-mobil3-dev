@@ -19,6 +19,8 @@ mkdir -p "$WORK/classes"
 "$JDK/bin/javac" --release 17 -Xlint:all -Werror -d "$WORK/classes" \
   "$REPO/scripts/lib/ManifestBoundary.java" "$REPO/scripts/tests/ManifestBoundaryTest.java"
 "$JDK/bin/java" -cp "$WORK/classes" ManifestBoundaryTest "$WORK/policy.xml" "$REPO/app/src/main/AndroidManifest.xml"
+source "$REPO/scripts/tests/packaged-manifest-fixtures.sh"
+prepare_packaged_fixtures
 
 printf '<manifest package="dev.phosphor.mobil3"><application/></manifest>\n' > "$WORK/AndroidManifest.xml"
 printf 'releaseRuntimeClasspath\n+--- androidx.core:core-ktx\n' > "$WORK/dependencies.txt"
@@ -33,6 +35,9 @@ printf 'dev.phosphor.mobil3.fortress Shizuku /data/local/tmp\n' > "$WORK/bad/cla
 printf 'dev.phosphor.mobil3.fortress Shizuku /data/local/tmp\n' > "$WORK/symlink/forbidden-target"
 ln -s forbidden-target "$WORK/symlink/classes.dex"
 printf 'not a zip archive\n' > "$WORK/corrupt.aab"
+cp "$WORK/production.aab" "$WORK/clean.aab"
+cp "$WORK/production.aab" "$WORK/split.aab"
+cp "$WORK/production.aab" "$WORK/bad.aab"
 (cd "$WORK/clean" && zip -q "$WORK/clean.aab" classes.dex)
 (cd "$WORK/split" && zip -q "$WORK/split.aab" first.bin second.bin)
 (cd "$WORK/bad" && zip -q "$WORK/bad.aab" classes.dex)
@@ -133,4 +138,5 @@ set -e
 [ "$BAD_INPUT_EXIT" -eq 3 ]
 printf '%s\n' "$BAD_INPUT_JSON" | jq -e '.status == "error" and .error == "bad_input" and (.fix | length > 0)' >/dev/null
 
+check_packaged_fixtures
 printf 'Production boundary fixtures passed\n'

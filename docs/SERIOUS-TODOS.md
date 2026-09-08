@@ -2,9 +2,9 @@
 
 ## Active mobile expansion, 2026-09-08
 
-- [x] Implement section 1's exact permitted permission/component scanner and fixtures. The [boundary receipt](plans/mobile-expansion/section-01-boundary.md) records 91 parser checks and public CLI/retained release tests. Independent critique remains open below.
+- [ ] Finish section 1's exact artifact boundary after [independent round 1, 7/10](plans/mobile-expansion/critiques/section-01-round-01.md). The original 91 parser checks passed, but real debug APK plus unrelated production XML escaped the archive gate. Correct actual packaged-manifest binding and two error contracts, then independently review round 2.
 - [x] Obtain the required once-per-session Astra/high routing confirmation before workers. Ben confirmed continuation at 01:11:40 UTC after the single beacon. Section 1 independent round 1 is running, with no score assigned yet.
-- [ ] Verify authorization under the actual app/helper identity and prove non-diverting capture. KernelSU's working-driver screen is not a PCM receipt. Preserve the observed manager/driver mismatch without automatic kernel/system repair.
+- [ ] Prove the fixed packaged helper and non-diverting PCM. App-origin KernelSU UID 0 is verified on exact ff7067e with unchanged settings. The existing provider's successful identity command is not a PCM receipt or a portable shipping backend. Preserve the observed manager/driver mismatch without automatic kernel/system repair.
 - [ ] Complete all R01–R17 feature and integration evidence in [the expansion execution ledger](plans/mobile-expansion/EXECUTION.md). No new feature is delivered by the initial baseline/contracts checkpoint.
 
 Ben's 2026-09-08 approval permits reversible S25 expansion work and supersedes older S25 exclusions below for that task. Historical B-card evidence and unrelated release/irreversible-action boundaries remain intact.

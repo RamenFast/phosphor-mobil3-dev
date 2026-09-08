@@ -3,7 +3,7 @@
 set -euo pipefail
 
 TOOL="check-play-boundary"
-VERSION="3.2.0"
+VERSION="3.2.1"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="all"
 ARTIFACT="$REPO/app/build/outputs/bundle/release/app-release.aab"
@@ -18,6 +18,12 @@ escape() {
   value="${value//$'\n'/\\n}"
   value="${value//$'\r'/\\r}"
   value="${value//$'\t'/\\t}"
+  local i char escaped
+  for ((i=1; i<32; i++)); do
+    printf -v char '%b' "\\$(printf '%03o' "$i")"
+    printf -v escaped '\\u%04x' "$i"
+    value="${value//"$char"/$escaped}"
+  done
   printf '%s' "$value"
 }
 want_json() { [ "$JSON_FORCE" -eq 1 ] || [ ! -t 1 ]; }
@@ -59,7 +65,7 @@ done
 if [ "$MODE" = schema ]; then
   [ -f "$REPO/scripts/check-play-boundary.schema.json" ] || fail 2 schema_unavailable "The result schema is missing" "restore scripts/check-play-boundary.schema.json from the same source revision"
   RESULT_SCHEMA=$(cat "$REPO/scripts/check-play-boundary.schema.json") || fail 4 schema_read_failed "The result schema could not be read" "check the schema file permissions"
-  ok "{\"usage\":\"check-play-boundary.sh [schema|source|artifact|all] [--artifact PATH] [--manifest PATH] [--dependencies PATH] [--json]\",\"modes\":{\"source\":\"checks the single-product source, build graph and exact source manifest\",\"artifact\":\"checks the compiled archive, exact merged manifest and runtime classpath\",\"all\":\"runs source and artifact checks\"},\"exits\":{\"0\":\"success\",\"2\":\"required evidence unavailable\",\"3\":\"bad input\",\"4\":\"boundary violation or runtime failure\"},\"result_schema\":$RESULT_SCHEMA,\"fix\":\"build bundleRelease with approved source/signing evidence, then run all. A clean boundary does not assert store approval\"}" \
+  ok "{\"usage\":\"check-play-boundary.sh [schema|source|artifact|all] [--artifact PATH] [--manifest PATH] [--dependencies PATH] [--json]\",\"modes\":{\"source\":\"checks the single-product source, build graph and exact source manifest\",\"artifact\":\"decodes the named APK/AAB manifest with the SDK or pinned bundletool, checks archive and runtime classpath; --manifest is supplementary only\",\"all\":\"runs source and artifact checks\"},\"exits\":{\"0\":\"success\",\"2\":\"required evidence unavailable\",\"3\":\"bad input\",\"4\":\"boundary violation or runtime failure\"},\"result_schema\":$RESULT_SCHEMA,\"fix\":\"build bundleRelease with approved source/signing evidence, then run all. A clean boundary does not assert store approval\"}" \
     'check-play-boundary: schema printed'
   exit 0
 fi
@@ -90,15 +96,24 @@ record_hits() {
   fail 4 scanner_command_failed "Boundary check '$label' could not run: $output" "repair the named evidence path or scanner dependency"
 }
 
+require_manifest_java() {
+  JAVA="$REPO/.toolchain/jdk-21/bin/java"
+  if [ ! -x "$JAVA" ]; then JAVA="${JAVA_HOME:-}/bin/java"; fi
+  [ -x "$JAVA" ] || fail 2 manifest_parser_unavailable "The manifest parser needs the build JDK" "run scripts/bootstrap-android.sh or set JAVA_HOME to a JDK 17 or newer"
+  local modules
+  modules=$("$JAVA" --list-modules 2>&1) || fail 2 manifest_parser_unavailable "Cannot inspect build JDK modules: $modules" "use a full JDK 17 or newer with jdk.compiler and java.xml"
+  if ! grep -q '^jdk.compiler@' <<<"$modules" || ! grep -q '^java.xml@' <<<"$modules"; then
+    fail 2 manifest_parser_unavailable "The build Java runtime lacks jdk.compiler or java.xml" "use a full JDK 17 or newer, without module-limiting launcher options"
+  fi
+}
+
 check_manifest() {
-  local kind="$1" file="$2" java output status
+  local kind="$1" file="$2" output status
   [ -f "$file" ] || fail 2 manifest_unavailable "Manifest evidence is unavailable" "provide the source or merged production AndroidManifest.xml"
-  java="$REPO/.toolchain/jdk-21/bin/java"
-  if [ ! -x "$java" ]; then java="${JAVA_HOME:-}/bin/java"; fi
-  [ -x "$java" ] || fail 2 manifest_parser_unavailable "The manifest parser needs the build JDK" "run scripts/bootstrap-android.sh or set JAVA_HOME to a JDK 17 or newer"
+  require_manifest_java
   [ -f "$REPO/scripts/lib/ManifestBoundary.java" ] || fail 2 manifest_parser_unavailable "The private manifest parser source is missing" "restore scripts/lib/ManifestBoundary.java from the same source revision"
   set +e
-  output=$("$java" --source 17 "$REPO/scripts/lib/ManifestBoundary.java" "$kind" "$file" 2>&1)
+  output=$("$JAVA" --source 17 "$REPO/scripts/lib/ManifestBoundary.java" "$kind" "$file" 2>&1)
   status=$?
   set -e
   if [ "$status" -eq 4 ]; then
@@ -144,11 +159,8 @@ resolve_artifact_evidence() {
   command -v zipinfo >/dev/null || fail 2 dependency_unavailable "zipinfo is unavailable" "install zipinfo"
   command -v strings >/dev/null || fail 2 dependency_unavailable "strings is unavailable" "install binutils"
 
-  if [ -z "$MANIFEST" ]; then
-    MANIFEST=$(find "$REPO/app/build/intermediates" -path '*release*' -name AndroidManifest.xml -type f 2>/dev/null | sort | tail -n1 || true)
-  fi
-  if [ -z "$MANIFEST" ] || [ ! -f "$MANIFEST" ]; then
-    fail 2 manifest_unavailable "Merged release manifest is unavailable" "run :app:processReleaseMainManifest or pass --manifest"
+  if [ -n "$MANIFEST" ] && [ ! -f "$MANIFEST" ]; then
+    fail 2 manifest_unavailable "Supplementary manifest is unavailable" "provide an existing --manifest XML file or omit this optional check"
   fi
 
   if [ -z "$DEPENDENCIES" ]; then
@@ -160,6 +172,49 @@ resolve_artifact_evidence() {
   [ -f "$DEPENDENCIES" ] || fail 2 dependencies_unavailable "Release dependency report is unavailable" "pass --dependencies or allow the scanner to run Gradle"
 }
 
+decode_packaged_manifest() {
+  local member decoder sdk classpath version pinned
+  case "$ARTIFACT" in
+    *.apk) member=AndroidManifest.xml ;;
+    *.aab) member=base/manifest/AndroidManifest.xml ;;
+    *) fail 3 bad_input "Artifact must have an .apk or .aab suffix" "pass the named APK or AAB with its original suffix" ;;
+  esac
+  local manifests
+  manifests=$(grep -E '(^|/)AndroidManifest[.]xml/?$' "$WORK/archive-list.txt" || true)
+  [ "$manifests" = "$member" ] || fail 4 packaged_manifest_layout "Missing, mixed, or additional packaged manifest evidence: $manifests" "package exactly one $member for this single-module product"
+  require_manifest_java
+  PACKAGED_MANIFEST="$WORK/packaged-AndroidManifest.xml"
+  if [[ "$ARTIFACT" = *.apk ]]; then
+    sdk="${ANDROID_HOME:-${ANDROID_SDK_ROOT:-$REPO/.toolchain/Sdk}}"
+    if [ ! -d "$sdk" ] && [ -f "$REPO/local.properties" ]; then sdk=$(sed -n 's/^sdk\.dir=//p' "$REPO/local.properties" | tail -n1); fi
+    decoder="$sdk/cmdline-tools/latest/bin/apkanalyzer"
+    [ -x "$decoder" ] || fail 2 manifest_decoder_unavailable "Android SDK apkanalyzer is unavailable at $decoder" "install Android SDK command-line tools or set ANDROID_HOME"
+    if ! JAVA_HOME="$(dirname "$(dirname "$JAVA")")" "$decoder" manifest print "$ARTIFACT" >"$PACKAGED_MANIFEST" 2>"$WORK/decoder-error.txt"; then
+      fail 4 packaged_manifest_decode_failed "APK manifest decoding failed: $(cat "$WORK/decoder-error.txt")" "provide an APK with a valid compiled binary AndroidManifest.xml"
+    fi
+  else
+    classpath="${PHOSPHOR_BOUNDARY_BUNDLETOOL_CLASSPATH:-}"
+    if [ -z "$classpath" ]; then
+      if ! (cd "$REPO" && JAVA_HOME="$(dirname "$(dirname "$JAVA")")" GRADLE_USER_HOME="${GRADLE_USER_HOME:-$REPO/.toolchain/gradle-user-home}" ./gradlew --offline --console=plain :app:writeBoundaryBundletoolClasspath "-PboundaryClasspathOutput=$WORK/bundletool-classpath.txt") >"$WORK/bundletool-resolution.txt" 2>&1; then
+        fail 2 manifest_decoder_unavailable "Pinned bundletool runtime could not resolve: $(tail -n 15 "$WORK/bundletool-resolution.txt")" "resolve the existing bundletool configuration with the Gradle wrapper, then retry"
+      fi
+      [ -s "$WORK/bundletool-classpath.txt" ] || fail 2 manifest_decoder_unavailable "Gradle did not provide the pinned bundletool classpath" "restore the focused writeBoundaryBundletoolClasspath task"
+      classpath=$(cat "$WORK/bundletool-classpath.txt")
+    fi
+    [ -f "$REPO/gradle/libs.versions.toml" ] || fail 2 manifest_decoder_unavailable "Bundletool version declaration is missing" "restore gradle/libs.versions.toml from the same source revision"
+    pinned=$(sed -n 's/^bundletool = "\([^"]*\)"/\1/p' "$REPO/gradle/libs.versions.toml")
+    version=$("$JAVA" -cp "$classpath" com.android.tools.build.bundletool.BundleToolMain version 2>&1) || fail 2 manifest_decoder_unavailable "Pinned bundletool cannot start: $version" "resolve the existing bundletool configuration using a full build JDK"
+    if [ -z "$pinned" ] || [ "$version" != "$pinned" ]; then
+      fail 2 manifest_decoder_unavailable "Bundletool version differs from the declared pin: $version" "resolve the bundletool version declared in gradle/libs.versions.toml"
+    fi
+    if ! "$JAVA" -cp "$classpath" com.android.tools.build.bundletool.BundleToolMain dump manifest "--bundle=$ARTIFACT" --module=base >"$PACKAGED_MANIFEST" 2>"$WORK/decoder-error.txt"; then
+      fail 4 packaged_manifest_decode_failed "AAB manifest decoding failed: $(cat "$WORK/decoder-error.txt")" "provide an AAB with a valid protobuf base manifest"
+    fi
+  fi
+  check_manifest merged "$PACKAGED_MANIFEST"
+  if [ -n "$MANIFEST" ]; then check_manifest merged "$MANIFEST"; else MANIFEST="$ARTIFACT!/$member"; fi
+}
+
 check_artifact() {
   resolve_artifact_evidence
   if ! unzip -Z1 "$ARTIFACT" >"$WORK/archive-list.txt" 2>"$WORK/archive-list-error.txt"; then
@@ -167,6 +222,9 @@ check_artifact() {
   fi
   if grep -Eq '(^/|(^|/)\.\.(/|$))' "$WORK/archive-list.txt"; then
     fail 4 archive_path_escape "Archive contains an absolute or parent-traversing entry" "repair packaging inputs before publication"
+  fi
+  if [ -n "$(sort "$WORK/archive-list.txt" | uniq -d)" ]; then
+    fail 4 archive_duplicate_entry "Archive contains duplicate member names" "rebuild the archive without duplicate entries"
   fi
   if ! zipinfo -l "$ARTIFACT" >"$WORK/archive-details.txt" 2>"$WORK/archive-details-error.txt"; then
     fail 4 archive_inspection_failed "Archive mode inspection failed: $(cat "$WORK/archive-details-error.txt")" "provide a valid APK or AAB"
@@ -181,6 +239,7 @@ check_artifact() {
   if find "$WORK/archive" -type l -print -quit | grep -q .; then
     fail 4 archive_symlink "Archive extracted a symbolic link" "remove archive symlinks"
   fi
+  decode_packaged_manifest
 
   : >"$WORK/trusted-runtime-paths.txt"
   local runtime_candidates=(
@@ -236,12 +295,12 @@ check_artifact() {
   local seeded_endpoint_regex='100[.](66|102|114)[.]|thinkcenter|interserve|2bmillerb'
 
   record_hits archive_forbidden_marker grep -InEi "$archive_regex" "$WORK/archive-list.txt" "$WORK/archive-strings.txt"
-  record_hits merged_manifest_forbidden_marker grep -InEi "$manifest_regex" "$MANIFEST"
+  record_hits merged_manifest_forbidden_marker grep -InEi "$manifest_regex" "$PACKAGED_MANIFEST"
+  if [ -f "$MANIFEST" ]; then record_hits supplementary_manifest_forbidden_marker grep -InEi "$manifest_regex" "$MANIFEST"; fi
   record_hits runtime_dependency_forbidden_marker grep -InEi "$dependency_regex" "$DEPENDENCIES"
   record_hits reporting_endpoint grep -InEi "$reporting_regex" "$WORK/archive-strings.txt"
   record_hits seeded_private_endpoint grep -InEi "$seeded_endpoint_regex" "$WORK/archive-strings.txt"
   ARTIFACT_CHECKS=$((ARTIFACT_CHECKS + 5))
-  check_manifest merged "$MANIFEST"
   ARTIFACT_CHECKS=$((ARTIFACT_CHECKS + 1))
 }
 

@@ -11,8 +11,8 @@ Authority: [2026-09-08 execution decision](../../../decisions/2026-09-08-mobile-
 - One beacon at 00:19:40 UTC reported `visible:true` and expired. No repeat beacon was used. The later human confirmation, not expiry or automatic notifications, opened worker routing.
 - Confirmed mapping: `openai-oauth:gpt-6-astra`, explicit `high`, for audio, presentation, experience, and independent critique. The route and enforced model pin were rechecked before spawning.
 - At most two live workers, one implementation writer. Coordinator owns shared files, real device actions, verification, commits, and cleanup.
-- Section 1 contracts and exact permission-scanner implementation are checked at `283a017`. [Boundary receipt](section-01-boundary.md) records 91 parser cases and the public CLI/retained release gates. Its independent round 1 is running. No expanded app feature is accepted yet.
-- Active workers: `session_hippo_1788829951212_0461d6f207979b37` independently reviews section 1 read-only. `session_boar_1788829972623_3fa712a5f95b2672` researches exact non-diverting AudioPolicy APIs read-only. Neither owns edits or device actions. The coordinator owns the section 2 authorization probe.
+- Section 1 independent [round 1 scored 7/10](critiques/section-01-round-01.md). It reproduced a detached-manifest artifact escape and two error-contract defects. Corrections and independent round 2 are required. No expanded app feature is accepted yet.
+- The round 1 critic, two root researchers, and section 1 correction worker are stopped after retained handoffs. The correction worker completed its eight-file patch and released ownership at 01:50 UTC. Coordinator verification precedes the correction commit and independent round 2. Next implementation scope is the fixed packaged root-audio feasibility helper, not product acceptance.
 
 ## Baseline and recovery
 
@@ -39,9 +39,11 @@ At 01:10 UTC the Superuser list and Phosphor profile show an existing enabled RO
 
 At 01:21:45 UTC the exact `bf9b8f2` debug probe ran in the normal `untrusted_app` process, UID 10401. Every fixed standard su location returned ENOENT. Cleanup was confirmed after ten milliseconds. Installed/readback SHA-256 is `1ae6992d0f80667676c2d54715c047a2fb049a6adcb00552c56bb5d90653a520`, signer unchanged. Preferences remain byte-identical through install and probe. [Authorization receipt](section-02-authorization.md) records the failure and the independently inspected, separately invoked KernelSU 3.2.5 compatibility test. No PCM is claimed.
 
+At 01:32:35 UTC the exact `ff7067e` compatibility probe returned UID 0, exit 0, through the existing KernelSU 3.2.5 provider, initiated by normal app PID 22323/UID 10401. It completed in 210 ms with confirmed pipe/child cleanup, no recording or projection, and unchanged preferences. Installed/readback SHA-256 is `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`, signer unchanged. All 17 probe tests and full Android gates passed. Existing `logcat sulogd` PID 10693 is 15 days old and was not touched. Root command authorization is now proven, but the packaged production helper and PCM are not.
+
 Display metadata advertises HDR10, HLG, and HDR10+. Actual FP16/scRGB application presentation, transparent HDR, and panel luminance remain unproven. Ordinary operation with root disabled on this modified device is not an unmodified non-root OS receipt.
 
-The current logcat executable has the previously documented override. Reuse the noninvasive ignored logd diagnostic if needed. Do not replace or reinterpret the system executable as an authorized root entry point.
+The current logcat executable has the previously documented override. Its separately verified compatibility identity probe establishes authorization only. Reuse the noninvasive ignored logd diagnostic for logs. Do not replace the executable or depend on its override in the product.
 
 ## Section and requirement matrix
 
@@ -49,8 +51,8 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 
 | Section | Requirement | Planned owner | Status | Required evidence | Critique |
 |---|---|---|---|---|---|
-| 1 | Baseline/contracts | Coordinator | implemented | Verified backups, active specs, 91 manifest cases, public CLI and retained gate checks in section-01-boundary.md | Round 1 running |
-| 2 | R01 root | Coordinator + audio research | in progress | Existing manager grant observed. Normal-app authorization and non-diverting PCM still unproven | Not started |
+| 1 | Baseline/contracts | Coordinator + boundary corrections | in progress | Round 1 found actual packaged-manifest binding and error-contract gaps. Corrections active | Round 1: 7/10, round 2 pending |
+| 2 | R01 root | Coordinator | in progress | App-origin UID 0 proven on exact ff7067e, unchanged settings. Fixed helper and non-diverting PCM still unproven | Not started |
 | 3 | R09 mic/mix | Audio | pending | Actual accessory route, two signals, rate/drift/buffer/clipping and partial-loss checks | Not started |
 | 4 | R02 HUD | Presentation | pending | Real transparency, touch isolation, owner transfer, teardown and no duplicate source | Not started |
 | 5 | R13 pause | Presentation | pending | Last-frame hold, BLACK, inspect/reset, no transport lie/backlog, recreation | Not started |
@@ -66,7 +68,7 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 | 12 | R05 HDR | Presentation | pending | Real FP16/compositor/panel evidence, SDR and transparency/hold regression | Not started |
 | 13 | R06 brightness | Presentation | pending | Full-app-only window override, pause/no-source, restoration, global settings unchanged | Not started |
 | 14 | R14 startup | Audio + coordinator | pending | Launch decision table, consent sequence, stale callbacks, root direct start, inert imports | Not started |
-| All | R15 critique | Independent critic | in progress | Astra route/effort, pinned section, score/round/evidence, four-round cap | Section 1 round 1 running |
+| All | R15 critique | Independent critic | in progress | Astra route/effort, pinned section, score/round/evidence, four-round cap | Section 1 round 1: 7/10 |
 | 15 | Integration/install | Coordinator | pending | Full gates, five-cycle owners, 30-minute soak, exact installed bytes/settings, cleanup | Not started |
 
 ## Verified baseline checks
@@ -91,11 +93,16 @@ These checks do not accept any expansion feature or production release. New arti
 
 ## Next actions
 
-1. Continue section 2 with actual app/helper authorization proof, then bounded non-diverting AudioPolicy capture feasibility.
+### Section 1 correction verification, 02:05 UTC
+
+The coordinator inspected the eight-file correction and independently ran `scripts/test-play-boundary.sh`, shellcheck, Bash syntax checks, the source gate, `git diff --check`, exact generated-APK hashes, and protected-file hashes. Task `055179nzvw` exited 0 in 77.48 seconds. The suite passed 102 parser cases and 67 packaged/public CLI cases, including actual debug APK rejection with unrelated production XML, real AAPT2 APK and bundletool AAB positives, all C0 bytes, and compilerless Java exit 2. Generated APK SHA-256 remained `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`. No app build, signing, install or device action occurred in this gate. Raw output is `section1-corrections-coordinator.log` in the private recovery directory. Independent round 2 remains required.
+
+1. Finish and independently review section 1 corrections. Preserve the real debug-APK/mismatched-XML regression.
 2. Keep normal root-off startup inert and avoid system/kernel/security changes.
 3. Exact section 1 Android unit/lint/build/checkEngine passed at `283a017`, task `509140jwt7`, 55 tasks, exit 0. Retained log and built APK hash are in the private recovery directory.
-4. Collect independent section 1 round 1 and audio API research. Keep one implementation writer and at most two live workers.
-5. Fold actual backend/service findings into the active spec before integrating them.
+4. After source ownership returns, implement the fixed packaged AudioPolicy feasibility helper. Keep one implementation writer and at most two live workers.
+5. Verify PCM against controlled Phosphor-UID fixtures only. Never capture actual calls or private messages during testing. The phone was in user-selected Telegram at 01:34 UTC, so do not restore the launcher over the user's active UI.
+6. Retain the source-backed AOSP finding: privileged loopback-with-render is limited to 16 kHz mono PCM16 and bypasses projection opt-out, not NO_SYSTEM_CAPTURE. Normalized stereo does not create stereo input. Capture quality and exclusions must be truthful.
 
 ## Blocked outcome and release boundary
 

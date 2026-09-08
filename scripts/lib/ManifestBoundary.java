@@ -78,6 +78,21 @@ class ManifestBoundary {
             "Forbidden or unresolved android:" + name);
     }
 
+    static boolean exactEnum(String actual, String expected, boolean merged) {
+        if (actual.equals(expected)) return true;
+        if (!merged) return false;
+        int value = switch (expected) {
+            case "signature", "mediaPlayback" -> 2;
+            case "mediaProjection" -> 32;
+            case "microphone" -> 128;
+            case "specialUse" -> 1073741824;
+            default -> -1;
+        };
+        return value >= 0 && (actual.equals(Integer.toString(value))
+            || actual.equals("0x" + Integer.toHexString(value))
+            || actual.equals(String.format(java.util.Locale.ROOT, "0x%08x", value)));
+    }
+
     static void check(Path path, boolean merged) throws Exception {
         require(Files.size(path) <= 2 * 1024 * 1024, "Manifest exceeds the two-MiB parser limit");
         var factory = DocumentBuilderFactory.newInstance();
@@ -116,7 +131,7 @@ class ManifestBoundary {
                 }
                 case "permission" -> {
                     require(merged && name.equals(DYNAMIC) && !dynamicDeclared
-                        && attr(node, "protectionLevel").equals("signature"), "Unapproved permission declaration: " + name);
+                        && exactEnum(attr(node, "protectionLevel"), "signature", merged), "Unapproved permission declaration: " + name);
                     dynamicDeclared = true;
                 }
                 case "uses-sdk" -> require(attr(node, "minSdkVersion").equals("29")
@@ -146,7 +161,7 @@ class ManifestBoundary {
                         require(policy != null && policy.tag.equals(child.getTagName()), "Unapproved component: " + childName);
                         require(merged || childName.startsWith(APP + "."), "Dependency component belongs in merged output only");
                         require(components.putIfAbsent(childName, child) == null, "Duplicate component: " + childName);
-                        checkComponent(child, childName, policy);
+                        checkComponent(child, childName, policy, merged);
                     }
                 }
                 default -> throw new IllegalArgumentException("Unapproved manifest element: " + node.getTagName());
@@ -181,10 +196,10 @@ class ManifestBoundary {
                 "specialUse permission has no approved owner");
     }
 
-    static void checkComponent(Element node, String name, Component policy) {
+    static void checkComponent(Element node, String name, Component policy, boolean merged) {
         require(attr(node, "exported").equals(Boolean.toString(policy.exported)), "Wrong explicit export state: " + name);
         require(attr(node, "permission").equals(policy.permission), "Wrong IPC permission: " + name);
-        require(attr(node, "foregroundServiceType").equals(policy.fgs), "Wrong foreground role: " + name);
+        require(exactEnum(attr(node, "foregroundServiceType"), policy.fgs, merged), "Wrong foreground role: " + name);
         var actions = new HashSet<String>();
         var categories = new HashSet<String>();
         int subtypes = 0;
