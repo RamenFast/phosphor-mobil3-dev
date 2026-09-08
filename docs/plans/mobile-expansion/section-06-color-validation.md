@@ -38,3 +38,15 @@ Evidence directory: `dev/scratch/mobile-expansion-20260908T001819Z/`. Prefix: `c
 | Public production boundary | Source gate passed, source files unchanged during full gate | Final exact release-artifact and signing gates |
 
 Independent Astra section6 round1 follows the committed checkpoint. Preserve this integration receipt and the failed gate. Later findings and corrections receive separate records. The app still runs installed stereo06f, with no new source or audio action on the phone.
+
+## Clean source freeze,08:46 UTC
+
+Gate113021dsr0 repeated the full gate on clean mobile7ac1e5546a58711a68c4b09bb8f18fe9f057df43/shared0ffd658d7f19e68180c2720e0500b23644619e90. Both app and androidTest APKs were built together. The worktree stayed clean and both full source manifests matched. Native104/GPU3/unit/lint/engine/release-helper/source gates passed. The exact source is under independent section6 review, not yet accepted by that review.
+
+- Mobile archive: `72bb4928412f0b3b5c056277ad12c4808c3cf02a23aeae571c1374b00963fda6`.
+- Shared archive: `c8a35001b41537def1b7d3777045ebe197526c73e423c1897d54c2ed9724915f`.
+- App: `cb08c744d06f99fcc7d8d9ce0e74a95d45966549a14894ba7e00be5163e15ca5`.
+- androidTest: `bead1ca1e2d3d943825a9ce36fcfe3dd99cadad880b6e761fe22023a6ba0226d`.
+- Evidence prefix: `dev/scratch/mobile-expansion-20260908T001819Z/color-freeze-7ac1`.
+
+Both APKs are retained and uninstalled. The08:46 bounded read-only phone preflight still found unrelated MEDIA playback, no AudioPolicy mix and baseline preference SHA256 `1f3fcf264ead0a0b3823a2c31f8c512842c9e25501c082ce659ed2b2fa3d1a72`. No install, playback, route or volume action followed.

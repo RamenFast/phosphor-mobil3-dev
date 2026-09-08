@@ -91,6 +91,7 @@ val rootAudioInputs = files(
     rootProject.file("docs/plans/mobile-expansion/section-02-helper-contract.md"),
     rootProject.file("docs/plans/mobile-expansion/section-02-root-product.md"),
     rootProject.file("docs/plans/mobile-expansion/section-02-stereo-probe.md"),
+    rootProject.file("docs/plans/mobile-expansion/section-05-correction-03.md"),
     file("build.gradle.kts"),
     fileTree("src/main") { include("**/Root*.kt", "**/Root*.java", "**/CaptureService.kt", "AndroidManifest.xml") },
     fileTree("src/debug") { include("**/Root*.kt", "**/SelfTestReceiver.kt", "AndroidManifest.xml") },
