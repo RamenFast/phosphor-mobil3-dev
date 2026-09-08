@@ -152,7 +152,7 @@ Provide create/save/update/duplicate/rename/delete and explicit apply. Editing c
 
 ## Signal check [R17]
 
-Opening signal check observes existing owners without starting readers, requesting permissions, changing source, or dialing a relay. Show selected/actual source/backend, requested/routed mic, negotiated rate/channels/format, per-input contribution, measured level/peak/clipping, sample freshness, and reader/link state.
+Opening signal check observes existing owners without starting readers, requesting permissions, changing source, or dialing a relay. Show selected/actual source/backend, requested/routed mic, negotiated rate/channels/format, per-input contribution, measured level/peak/clipping, sample freshness, and reader/link state. The pre-implementation [observation contract](../docs/plans/mobile-expansion/section-08-signal-check-contract.md) defines provenance, status precedence, non-destructive measurement and visible-only refresh. Owner adapter fields remain evidence-dependent.
 
 Distinguish missing measurement from measured zero, consent/startup from flow, silence from stall, and intentional display pause from transport pause. Never infer DRM or opt-out from silence alone. Existing retry/grant/route/source actions provide recovery. Refresh at a bounded visible-only UI rate, with no audio/behavior history.
 
