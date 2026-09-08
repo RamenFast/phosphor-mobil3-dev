@@ -64,6 +64,14 @@ Prefer AudioPolicy loopback-with-render. If REMOTE_SUBMIX is needed, prove local
 
 Model denial, revocation, helper death, unsupported routing, cancellation, and bounded shutdown. A root session declares its actual foreground-service role rather than claiming projection consent. A healthy already-authorized root playback-only start needs no projection or redundant app recording dialog. Failure offers retry or an explicit standard-capture choice, never silent fallback.
 
+### Authorization feasibility seam
+
+The existing debug-only self-test receiver accepts the explicit `dev.phosphor.mobil3.ROOT_AUTH_PROBE` action. Restrict the receiver to callers holding Android `DUMP`. Unknown actions do nothing. Production declares neither the receiver nor this action. Ordinary activity startup never calls the probe.
+
+The probe runs in the normal package process, not `run-as`. It tries only fixed standard `su` locations with the fixed command `/system/bin/id -u`. There is no command/path extra, shell console, audio capture, permission mutation, or settings write. Stop after the first successfully launched candidate, even if authorization fails. Missing executable candidates may advance to the next fixed location. A root claim requires exit zero, complete bounded output equal to `0`, and confirmed child/reader termination. A timeout, oversized output, malformed identity, or incomplete cleanup is an explicit failure, never authorization evidence.
+
+Write one atomic private `root-authorization.json` receipt with the developer envelope `{status,tool,version,ts}`, package/build/app UID, attempted fixed locations, elapsed time, and observed outcome. Errors carry a concrete `fix`. Allow one probe at a time. Bound the launched command to three seconds, each output to four KiB, and teardown to one second. This feasibility receipt proves only command authorization. AudioPolicy registration, PCM, audible output, opt-out capture, service ownership, and user opt-in remain separate acceptance gates.
+
 ## Microphone and mixing [R09]
 
 Enumerate available built-in, wired, USB, SCO, and BLE inputs. Negotiate supported formats and convert mono/rates to the native stereo contract. Verify the actual routed device after start. Contextual Bluetooth permissions and communication routing cannot become unconditional startup actions.

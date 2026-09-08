@@ -7,11 +7,12 @@ Authority: [2026-09-08 execution decision](../../../decisions/2026-09-08-mobile-
 ## Current checkpoint
 
 - Execution approved 2026-09-08 at 00:18:19 UTC.
-- Coordinator: current Jcode root session. No workers have started.
-- Required worker routing confirmation remains pending. One beacon at 00:19:40 UTC reported `visible:true` and expired. Expiry is not approval. Do not repeat it.
-- Proposed mapping: `openai-oauth:gpt-6-astra`, explicit `high`, for audio, presentation, experience, and independent critique.
+- Coordinator: current Jcode root session. Ben's human continuation at 01:11:40 UTC confirms the proposed routing after the required ritual.
+- One beacon at 00:19:40 UTC reported `visible:true` and expired. No repeat beacon was used. The later human confirmation, not expiry or automatic notifications, opened worker routing.
+- Confirmed mapping: `openai-oauth:gpt-6-astra`, explicit `high`, for audio, presentation, experience, and independent critique. The route and enforced model pin were rechecked before spawning.
 - At most two live workers, one implementation writer. Coordinator owns shared files, real device actions, verification, commits, and cleanup.
-- Section 1 contracts and exact permission-scanner implementation are checked. [Boundary receipt](section-01-boundary.md) records 91 parser cases and the public CLI/retained release gates. [Independent critique](critiques/section-01-route-blocker.md) is still blocked, with no score or round used. No expanded app feature is accepted yet.
+- Section 1 contracts and exact permission-scanner implementation are checked at `283a017`. [Boundary receipt](section-01-boundary.md) records 91 parser cases and the public CLI/retained release gates. Its independent round 1 is running. No expanded app feature is accepted yet.
+- Active workers: `session_hippo_1788829951212_0461d6f207979b37` independently reviews section 1 read-only. `session_boar_1788829972623_3fa712a5f95b2672` researches exact non-diverting AudioPolicy APIs read-only. Neither owns edits or device actions. The coordinator owns the section 2 authorization probe.
 
 ## Baseline and recovery
 
@@ -34,6 +35,8 @@ Before rollback, recheck package/signer and compare the exact backup hashes. A s
 
 The KernelSU home screen reports `Working [Jailbreak mode]`, `LKM`, driver `32525-2`. Manager `v3.3.0 (32601-2)` reports a version mismatch. The screen also reports Permissive SELinux and disabled seccomp. No security setting was changed. The shell lacks visible su and cannot inspect /data/adb. These facts establish a running reported driver, not app/helper authorization or usable capture.
 
+At 01:10 UTC the Superuser list and Phosphor profile show an existing enabled ROOT grant, Default profile, UID 10401, package `dev.phosphor.mobil3.debug`. No grant changed. `run-as` still lacks visible su, but its `runas_app` context is not the normal app process. A fixed debug-only normal-process authorization probe is the next discriminating check.
+
 Display metadata advertises HDR10, HLG, and HDR10+. Actual FP16/scRGB application presentation, transparent HDR, and panel luminance remain unproven. Ordinary operation with root disabled on this modified device is not an unmodified non-root OS receipt.
 
 The current logcat executable has the previously documented override. Reuse the noninvasive ignored logd diagnostic if needed. Do not replace or reinterpret the system executable as an authorized root entry point.
@@ -44,8 +47,8 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 
 | Section | Requirement | Planned owner | Status | Required evidence | Critique |
 |---|---|---|---|---|---|
-| 1 | Baseline/contracts | Coordinator | implemented | Verified backups, active specs, 91 manifest cases, public CLI and retained gate checks in section-01-boundary.md | Blocked on routing, 0 rounds |
-| 2 | R01 root | Audio | pending | App-authorized PCM, audible output, opt-out test, helper/route recovery, no system writes | Not started |
+| 1 | Baseline/contracts | Coordinator | implemented | Verified backups, active specs, 91 manifest cases, public CLI and retained gate checks in section-01-boundary.md | Round 1 running |
+| 2 | R01 root | Coordinator + audio research | in progress | Existing manager grant observed. Normal-app authorization and non-diverting PCM still unproven | Not started |
 | 3 | R09 mic/mix | Audio | pending | Actual accessory route, two signals, rate/drift/buffer/clipping and partial-loss checks | Not started |
 | 4 | R02 HUD | Presentation | pending | Real transparency, touch isolation, owner transfer, teardown and no duplicate source | Not started |
 | 5 | R13 pause | Presentation | pending | Last-frame hold, BLACK, inspect/reset, no transport lie/backlog, recreation | Not started |
@@ -61,7 +64,7 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 | 12 | R05 HDR | Presentation | pending | Real FP16/compositor/panel evidence, SDR and transparency/hold regression | Not started |
 | 13 | R06 brightness | Presentation | pending | Full-app-only window override, pause/no-source, restoration, global settings unchanged | Not started |
 | 14 | R14 startup | Audio + coordinator | pending | Launch decision table, consent sequence, stale callbacks, root direct start, inert imports | Not started |
-| All | R15 critique | Independent critic | blocked | Astra route/effort, pinned section, score/round/evidence, four-round cap | Routing confirmation pending |
+| All | R15 critique | Independent critic | in progress | Astra route/effort, pinned section, score/round/evidence, four-round cap | Section 1 round 1 running |
 | 15 | Integration/install | Coordinator | pending | Full gates, five-cycle owners, 30-minute soak, exact installed bytes/settings, cleanup | Not started |
 
 ## Verified baseline checks
@@ -88,8 +91,8 @@ These checks do not accept any expansion feature or production release. New arti
 
 1. Continue section 2 with actual app/helper authorization proof, then bounded non-diverting AudioPolicy capture feasibility.
 2. Keep normal root-off startup inert and avoid system/kernel/security changes.
-3. Re-run the Android build/gates after the section 1 checkpoint and retain exact source/artifact identity.
-4. After routing confirmation, independently critique section 1 and assign bounded root/audio work. No confirmation means no worker spawn, not a blanket stop on coordinator implementation.
+3. Exact section 1 Android unit/lint/build/checkEngine passed at `283a017`, task `509140jwt7`, 55 tasks, exit 0. Retained log and built APK hash are in the private recovery directory.
+4. Collect independent section 1 round 1 and audio API research. Keep one implementation writer and at most two live workers.
 5. Fold actual backend/service findings into the active spec before integrating them.
 
 ## Blocked outcome and release boundary

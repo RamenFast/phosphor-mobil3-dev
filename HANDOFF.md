@@ -1,6 +1,6 @@
 # Handoff: mobile expansion execution
 
-**Updated:** 2026-09-08. **Status:** approved expansion started at baseline/contracts. No expansion feature is accepted and no release is claimed.
+**Updated:** 2026-09-08. **Status:** section 1 boundary implemented, section 2 normal-app authorization feasibility in progress. No expansion feature is accepted and no release is claimed.
 
 ## Read first
 
@@ -8,7 +8,8 @@
 - Ben approved implementation and reversible S25 work at 00:18:19 UTC. This supersedes the prior S25 exclusion for this task. Preserve unrelated ASUS volume, PC-audio, signing, publication, and irreversible-action boundaries.
 - Baseline APK/settings are preserved and verified. Existing Android unit/lint/build/engine checks passed, plus 73 native and 43 relay tests. No replacement APK was installed.
 - KernelSU reports a working jailbreak-mode driver with a manager/driver mismatch. App/helper root authorization and real capture remain unproven. Do not modify kernel/system state or the logcat override.
-- Worker routing confirmation remains pending after one visible beacon. No worker has started. Proposed mapping is Astra/high for every workstream, two live workers maximum, one implementation writer. Do not repeat the unanswered beacon.
+- Ben confirmed continuation after the routing ritual at 01:11:40 UTC. Astra/high workers independently review section 1 and research AudioPolicy APIs. Two live workers maximum, one implementation writer. The coordinator alone owns edits and device actions now. Do not repeat the beacon.
+- The [fixed debug authorization probe](docs/plans/mobile-expansion/section-02-authorization.md) distinguishes normal-app root execution from the observed manager grant and failed `run-as` lookup. It cannot execute caller commands or capture audio.
 
 ## Previous repair receipts
 

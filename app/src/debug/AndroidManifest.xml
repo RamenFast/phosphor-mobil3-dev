@@ -7,9 +7,11 @@
         <receiver
             android:name=".SelfTestReceiver"
             android:exported="true"
+            android:permission="android.permission.DUMP"
             tools:ignore="ExportedReceiver">
             <intent-filter>
                 <action android:name="dev.phosphor.mobil3.SELFTEST" />
+                <action android:name="dev.phosphor.mobil3.ROOT_AUTH_PROBE" />
             </intent-filter>
         </receiver>
     </application>
