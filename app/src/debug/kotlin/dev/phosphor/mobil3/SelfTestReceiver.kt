@@ -13,7 +13,10 @@ class SelfTestReceiver : BroadcastReceiver() {
         private val active = AtomicBoolean(false)
         internal fun accepts(action: String?) = action == "dev.phosphor.mobil3.SELFTEST" ||
             action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || action == "dev.phosphor.mobil3.KSU_AUTH_PROBE" ||
-            action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE"
+            action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE" ||
+            action == "dev.phosphor.mobil3.ROOT_CAPTURE_SYSTEM_TEST" ||
+            action == "dev.phosphor.mobil3.ROOT_CAPTURE_NONE_TEST" ||
+            action == "dev.phosphor.mobil3.ROOT_CAPTURE_TONE"
     }
 
     override fun onReceive(context: Context, intent: Intent) {
@@ -21,7 +24,14 @@ class SelfTestReceiver : BroadcastReceiver() {
         val pending = goAsync()
         Thread {
             try {
-                if (intent.action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE") {
+                if (intent.action == "dev.phosphor.mobil3.ROOT_CAPTURE_SYSTEM_TEST") {
+                    RootCaptureChecks.run(context, allowSystem = true)
+                } else if (intent.action == "dev.phosphor.mobil3.ROOT_CAPTURE_NONE_TEST") {
+                    RootCaptureChecks.run(context, allowSystem = false)
+                } else if (intent.action == "dev.phosphor.mobil3.ROOT_CAPTURE_TONE") {
+                    RootCaptureChecks.tone(context)
+                } else if (intent.action == "dev.phosphor.mobil3.ROOT_AUDIO_PROBE") {
+
                     RootAudioProbe.run(context)
                     Log.i("phosphor-mobil3", "ROOT_AUDIO_PROBE receipt written")
                 } else if (intent.action == "dev.phosphor.mobil3.ROOT_AUTH_PROBE" || intent.action == "dev.phosphor.mobil3.KSU_AUTH_PROBE") {

@@ -87,7 +87,11 @@ class ScopeUiState {
     var remoteScopeLine by mutableStateOf<String?>(null)
     var styleOverride by mutableStateOf(StyleOverride())
     var amoledCaptionSeen by mutableStateOf(false)
-    var bestiaryFound by mutableStateOf(false)
+var bestiaryFound by mutableStateOf(false)
+    var rootCaptureEnabled by mutableStateOf(false)
+    var rootCaptureBusy by mutableStateOf(false)
+    var rootCaptureStatus by mutableStateOf("")
+    var captureRoot by mutableStateOf(false)
     var pip by mutableStateOf(false)
     var settingsTransferStatus by mutableStateOf("")
 

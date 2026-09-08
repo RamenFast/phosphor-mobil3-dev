@@ -56,7 +56,15 @@ Before implementing each schema owner, record its exact field names, legal range
 
 ## Root playback capture [R01]
 
-The hidden bestiary reveals the root switch. Ordinary startup with root off neither probes nor requests root. Initial enablement explains and requests real root-manager authorization.
+Ben's04:17:59 UTC clarification keeps true any-app audio, specifically SoundCloud, as the acceptance target. The current16kHz mono path is a measured implementation limit, not a reduced product goal or proof that another app is unsupported. Test actual app behavior and investigate fuller-fidelity alternatives without system/vendor/boot/vbmeta writes. Preserve actual channel and format truth. Do not accept duplicated mono as original stereo or infer universal capture from root credentials.
+
+At04:21:19 Ben explicitly required real stereo and meaningful sample-rate fidelity. SoundCloud, reported silent with standard capture, is the root smoke test. Existing48/96/192kHz settings are beam reconstruction factors over48kHz input. Preserve their operation, distinguish requested and actual capture rates, and negotiate higher input fidelity where supported rather than relabeling upsampled16kHz mono as success. Verify independent left/right content and audible output through the real app path.
+
+The hidden bestiary reveals the root switch. Ordinary startup with root off neither probes nor requests root. Initial enablement explains existing root-manager authorization, then verifies the actual supported grant without fabricating a manager prompt.
+
+The exact R01 product contract is [section-02-root-product.md](../docs/plans/mobile-expansion/section-02-root-product.md). Local runtime keys `root_capture_enabled` and `root_capture_profile_ack` are Boolean false by default and excluded from archives and backup. Authorization and availability remain transient. Everything playing selects enabled root directly without RECORD_AUDIO or MediaProjection. Standard capture is an explicit alternative. Failures never silently fall back.
+
+Protocol2 fixes modes, build/package identity, positive generations, PCM16 blocks, sequence and format validation, renewable lease/watchdog deadlines, and confirmed retirement before replacement. The real nonexported RootCaptureService uses specialUse on API34+, sharing CaptureService retirement and metadata ownership without claiming projection ownership. Actual input remains16kHz mono, normalized to48kHz duplicated-mono float. No stereo recovery is claimed.
 
 Package and version one fixed-purpose audio helper. Its framework DEX lives sealed and read-only in private app data. Its native bootstrap executes from the installed, app-nonwritable native-library directory, not writable app home. Android's API 29 execution restriction makes this distinction necessary. Use private PCM/status IPC. Do not expose arbitrary shell execution, control endpoints, unsolicited networking, or audio recordings. Treat `/system`, including `/system/bin`, `/vendor`, and every boot/vbmeta partition as read-only. This includes raw block devices, aliases and both slots. Reads are allowed. Do not patch boot, flash, remount, disable SELinux, install a persistent root service, or use LSPosed. Keep task writes in installed app code, private app data and explicitly owned test artifacts.
 
@@ -118,7 +126,7 @@ Opening signal check observes existing owners without starting readers, requesti
 
 Distinguish missing measurement from measured zero, consent/startup from flow, silence from stall, and intentional display pause from transport pause. Never infer DRM or opt-out from silence alone. Existing retry/grant/route/source actions provide recovery. Refresh at a bounded visible-only UI rate, with no audio/behavior history.
 
-Worked example: `Everything playing › root · 48 kHz stereo · samples arriving · display held`. Every numerical label must come from actual negotiation or measurement.
+Worked example: `Everything playing › root · 16 kHz mono input · 48 kHz duplicated-mono transport · samples arriving · display held`. Every numerical label must come from actual negotiation or measurement.
 
 ## Settings, themes, motion, and manual [R03, R04, R10, R11, R12]
 

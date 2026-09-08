@@ -9,6 +9,14 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test fun rootLocalFlagsStayInertEvenWithAValidImportedChecksum() {
+        for (key in listOf("root_capture_enabled", "root_capture_profile_ack")) {
+            val decoded = SettingsArchive.decode(singleSettingFixture(key, true))
+            assertFalse(key in decoded.values)
+            assertEquals(listOf(key), decoded.skippedKeys)
+        }
+    }
+
     private val fiveKeys = listOf(
         "pip_auto_enter", "controls_always_visible", "grid_data", "double_tap_playback", "linger_background",
     )

@@ -279,7 +279,7 @@ fn runtime_environment() -> Result<Vec<CString>, String> {
         .map(|s| CString::new(s).map_err(|_| "platform_environment_nul".to_owned()))
         .collect()
 }
-fn setup() -> Result<(File, File, u32, String), String> {
+fn setup() -> Result<(File, File, u32, String, Selection), String> {
     // sigset_t storage is oversized and aligned for bionic LP64.
     let mut set = [0u64; 16];
     unsafe {
@@ -305,7 +305,36 @@ fn setup() -> Result<(File, File, u32, String), String> {
     nonblock(0)?;
     nonblock(1)?;
     nonblock(2)?;
+    let mut selection_decoder = Decoder::default();
+    let selection = loop {
+        // Stop reading at the first complete frame. Later controls remain in the pipe.
+        let mut byte = 0u8;
+        let n = unsafe { read(0, (&mut byte as *mut u8).cast(), 1) };
+        if n == 0 {
+            return Err("selection_eof".into());
+        }
+        if n < 0 {
+            match std::io::Error::last_os_error().raw_os_error() {
+                Some(4) => continue,
+                Some(11) => {
+                    std::thread::sleep(std::time::Duration::from_millis(5));
+                    continue;
+                }
+                _ => return Err(os("selection_read")),
+            }
+        }
+        if let Some(selection) = selection_byte(
+            &mut selection_decoder,
+            byte,
+            option_env!("ROOT_HELPER_DEBUG") == Some("true"),
+        )
+        .map_err(str::to_owned)?
+        {
+            break selection;
+        }
+    };
     let u = uids()?;
+
     if !app_uid(u) {
         return Err("original_app_uid_invalid".into());
     }
@@ -347,25 +376,35 @@ fn setup() -> Result<(File, File, u32, String), String> {
         let _ = send(
             1,
             13,
-            format!("{{\"before\":{before},\"after\":{after}}}").as_bytes(),
+            format!(
+                "{{\"generation\":{},\"before\":{before},\"after\":{after}}}",
+                selection.generation
+            )
+            .as_bytes(),
         );
         return Err("mount_namespace_changed_refusing_capture".into());
     }
     unsafe {
-        alarm(20);
+        alarm(5);
     }
     let detail=format!("{{\"before\":{before},\"after\":{after},\"original_uid\":{},\"pid\":{},\"driver_version\":{},\"flags\":{},\"features\":{},\"uapi\":{}}}",u[0],unsafe{getpid()},info.version,info.flags,info.features,info.uapi_version);
-    Ok((dex, driver, u[0], detail))
+    let detail = format!("{{\"generation\":{},{}", selection.generation, &detail[1..]);
+    Ok((dex, driver, u[0], detail, selection))
 }
 pub fn run() -> i32 {
-    let (dex, driver, uid, detail) = match setup() {
+    let (dex, driver, uid, detail, selection) = match setup() {
         Ok(v) => v,
         Err(e) => {
-            let _=send(1,14,format!("{{\"status\":\"error\",\"error\":{},\"fix\":\"Inspect this fixed-launch stage and existing provider authorization. Do not change system policy.\",\"cleanup_confirmed\":true,\"killed\":false}}",quote(&e)).as_bytes());
+            let _=send(1,14,format!("{{\"status\":\"error\",\"error\":{},\"fix\":\"Inspect this fixed-launch stage and existing provider authorization. Do not change system policy.\",\"cleanup_confirmed\":true,\"child_started\":false,\"killed\":false}}",quote(&e)).as_bytes());
             return 4;
         }
     };
-    match supervise(dex, driver, uid, &detail) {
+    if selection.mode == 1 {
+        let _ = send(1, 13, detail.as_bytes());
+        let ok = send(1, 14, format!("{{\"generation\":{},\"status\":\"ok\",\"authorized\":true,\"cleanup_confirmed\":true,\"child_started\":false,\"killed\":false}}", selection.generation).as_bytes()).is_ok();
+        return if ok { 0 } else { 4 };
+    }
+    match supervise(dex, driver, uid, &detail, selection) {
         Ok(ok) => {
             if ok {
                 0
@@ -374,12 +413,18 @@ pub fn run() -> i32 {
             }
         }
         Err(e) => {
-            let _=send(1,14,format!("{{\"status\":\"error\",\"error\":{},\"fix\":\"Inspect packaged helper and private pipe setup.\",\"cleanup_confirmed\":true,\"killed\":false}}",quote(&e)).as_bytes());
+            let _=send(1,14,format!("{{\"generation\":{},\"status\":\"error\",\"error\":{},\"fix\":\"Inspect packaged helper and private pipe setup.\",\"cleanup_confirmed\":true,\"child_started\":false,\"killed\":false}}",selection.generation,quote(&e)).as_bytes());
             4
         }
     }
 }
-fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, String> {
+fn supervise(
+    dex: File,
+    driver: File,
+    uid: u32,
+    detail: &str,
+    selection: Selection,
+) -> Result<bool, String> {
     // All fallible setup is before fork. Afterwards every exit uses the one wait owner.
     send(1, 13, detail.as_bytes())?;
     let env = runtime_environment()?;
@@ -432,8 +477,11 @@ fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, St
     drop(pinned);
     drop(dex);
     let start = Instant::now();
-    let mut s = Session::default();
-    let id = identity(uid, BUILD);
+    let mut s = Session {
+        selection,
+        ..Session::default()
+    };
+    let id = selection.tag(uid, BUILD);
     let mut app = Decoder::default();
     let mut helper = Decoder::default();
     let mut next_grant = 0;
@@ -445,6 +493,9 @@ fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, St
         s.stop(0, Some("helper_init_write"));
     }
     loop {
+        unsafe {
+            alarm(5);
+        }
         let now = start.elapsed().as_millis() as u64;
         match receive(0, &mut app) {
             Ok((frames, eof)) => {
@@ -512,7 +563,7 @@ fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, St
         }
         s.tick(now);
         if matches!(s.phase, Phase::Stopping(_)) && !stop_sent {
-            let _ = send(input[1], 3, &[]);
+            let _ = send(input[1], 3, &selection.generation.to_le_bytes());
             stop_sent = true;
         }
         let mut status = 0;
@@ -563,7 +614,7 @@ fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, St
             }
             s.killed = true;
         }
-        if now >= 18000 {
+        if matches!(s.phase, Phase::Stopping(at) if now.saturating_sub(at) >= 3000) {
             s.stop(now, Some("reap_deadline"));
             break;
         }
@@ -578,7 +629,12 @@ fn supervise(dex: File, driver: File, uid: u32, detail: &str) -> Result<bool, St
     let cause = s
         .failure
         .unwrap_or(if ok { "" } else { "helper_exit_or_cleanup" });
-    let final_json=format!("{{\"status\":{},\"error\":{},\"detail\":{},\"fix\":\"Inspect helper stage, existing authorization and cleanup receipt before another trial.\",\"cleanup_confirmed\":{cleanup},\"killed\":{},\"child_wait_status\":{}}}",quote(if ok{"ok"}else{"error"}),quote(cause),quote(&detail_error),s.killed,s.exit.map(|e|e.to_string()).unwrap_or("null".into()));
+    let final_json=format!("{{\"status\":{},\"error\":{},\"detail\":{},\"fix\":\"Inspect helper stage, existing authorization and cleanup receipt before another trial.\",\"cleanup_confirmed\":{cleanup},\"child_started\":true,\"killed\":{},\"child_wait_status\":{}}}",quote(if ok{"ok"}else{"error"}),quote(cause),quote(&detail_error),s.killed,s.exit.map(|e|e.to_string()).unwrap_or("null".into()));
+    let final_json = format!(
+        "{{\"generation\":{},{}",
+        selection.generation,
+        &final_json[1..]
+    );
     let _ = send(1, 14, final_json.as_bytes());
     // Process exit triggers PDEATHSIG on any unreaped helper. That is not cleanup proof.
     Ok(ok)

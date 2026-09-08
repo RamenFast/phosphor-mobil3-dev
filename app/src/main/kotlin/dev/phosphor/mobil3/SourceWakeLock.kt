@@ -29,6 +29,8 @@ internal class SourceWakeLock(
     fun captureChanged(recording: Boolean, projection: Boolean) =
         update(SourceWakePolicy.capture(recording, projection))
 
+    fun rootChanged(recording: Boolean, helper: Boolean) = update(SourceWakePolicy.root(recording, helper))
+
     fun microphoneChanged(recording: Boolean, activityDestroyed: Boolean) =
         update(SourceWakePolicy.microphone(recording, activityDestroyed))
 

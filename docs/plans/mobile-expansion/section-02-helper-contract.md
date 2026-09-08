@@ -4,6 +4,10 @@ spec-version: root-audio-feasibility-2
 compile-count: 1
 drift: 1
 
+## Protocol lineage
+
+The body below records protocol1 feasibility on a93db645. Its historical receipts remain unchanged. [The R01 product contract](section-02-root-product.md) now defines protocol2 packaging, fixed modes, generation-tagged PCM/progress, and service ownership. Protocol2 retains finite own-UID feasibility as debug mode0. Both variants package the helper, but release rejects debug modes. Continuous mode2 uses a renewable watchdog, not the old absolute20-second alarm. Old aggregate PCM receipts do not establish product streaming acceptance.
+
 ## Context and vision
 
 This debug-only checkpoint tests whether one authorized native child can capture Phosphor's own controlled tone through Android AudioPolicy. Ben receives truthful aggregate evidence and bounded cleanup. It does not enable a product root switch or establish R01 acceptance.

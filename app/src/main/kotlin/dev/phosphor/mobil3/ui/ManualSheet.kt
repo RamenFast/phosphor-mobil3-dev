@@ -13,6 +13,7 @@ import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.getValue
+import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
@@ -115,11 +116,17 @@ fun ManualSheet(
     reduced: Boolean,
     bestiaryFound: Boolean = false,
     onBestiaryFound: () -> Unit = {},
+    rootEnabled: Boolean = false,
+    rootBusy: Boolean = false,
+    rootStatus: String = "",
+    onRootCapture: (Boolean) -> Unit = {},
+    onRootManager: () -> Unit = {},
     onOpenLink: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val scroll = rememberScrollState()
     var tubeTaps by remember { mutableIntStateOf(0) }
+    var rootDisclosure by remember { mutableStateOf(false) }
     SheetHost(p, "MANUAL", reduced, onDismiss, glyph = SettingsGlyph.About) {
         Column(
             Modifier
@@ -136,7 +143,24 @@ fun ManualSheet(
                 maxLines = Int.MAX_VALUE,
             )
             if (bestiaryFound) {
-                SectionHeading("THE BESTIARY", p, Modifier.padding(top = 0.dp))
+                SectionHeading("ROOT CAPTURE", p, Modifier.padding(top = 0.dp))
+                SheetRow("ROOT CAPTURE", p, checked = rootEnabled) {
+                    if (rootEnabled || rootBusy) onRootCapture(false) else rootDisclosure = true
+                }
+                Prose(rootStatus, p.muted)
+                if (rootDisclosure) {
+                    Prose("This uses your existing KernelSU authorization, not an Android recording prompt. The app stays unprivileged. Only KernelSU 32525 / UAPI 2 / flags 5 with an already verified Default/inherited profile is supported. Grant applies that profile. Phosphor does not change it.", p.ink)
+                    Prose("Confirm that existing profile before checking authorization. Capture stays private at 16 kHz mono, duplicated into the scope channels. This does not recover stereo or bypass NO_SYSTEM_CAPTURE. Denial requires an existing manager grant, then an explicit retry.", p.muted)
+                    FlatKey("PROFILE CONFIRMED · CHECK AUTHORIZATION", p, active = true) {
+                        rootDisclosure = false
+                        onRootCapture(true)
+                    }
+                    FlatKey("NOT NOW", p) { rootDisclosure = false }
+                }
+                FlatKey("OPEN ROOT MANAGER", p) { onRootManager() }
+                if (rootBusy) FlatKey("CANCEL CHECK", p) { onRootCapture(false) }
+                SectionHeading("THE BESTIARY", p)
+
                 Prose(
                     "four load-bearing beasts from a dead OS. little characters, big " +
                         "implications — each one is a checksum you can re-derive from " +

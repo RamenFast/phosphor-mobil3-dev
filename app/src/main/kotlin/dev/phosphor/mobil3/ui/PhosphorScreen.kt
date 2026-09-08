@@ -139,6 +139,9 @@ interface ScopeActions {
     fun importSettings()
     fun startMic()
     fun startCapture()
+    fun startStandardCapture() {}
+    fun setRootCapture(enabled: Boolean) {}
+    fun openRootManager() {}
     fun stopLive()
     fun captureConsentNeeded(): Boolean
     fun next()
@@ -321,6 +324,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun importSettings() = actions.importSettings()
             override fun startMic() = actions.startMic()
             override fun startCapture() = actions.startCapture()
+            override fun startStandardCapture() = actions.startStandardCapture()
+            override fun setRootCapture(enabled: Boolean) = actions.setRootCapture(enabled)
+            override fun openRootManager() = actions.openRootManager()
             override fun startRemote() = actions.startRemote()
             override fun stopLive() = actions.stopLive()
             override fun captureConsentNeeded() = actions.captureConsentNeeded()
@@ -777,6 +783,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.MANUAL -> ManualSheet(
                     p, reduced,
                     bestiaryFound = state.bestiaryFound,
+                    rootEnabled = state.rootCaptureEnabled,
+                    rootBusy = state.rootCaptureBusy,
+                    rootStatus = state.rootCaptureStatus,
+                    onRootCapture = actions::setRootCapture,
+                    onRootManager = actions::openRootManager,
                     onBestiaryFound = { actions.markBestiaryFound() },
                     onOpenLink = { actions.openLink(it) },
                 ) { sheet = manualFrom }

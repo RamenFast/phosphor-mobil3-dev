@@ -594,6 +594,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         override fun run() {
             refreshRotationAuthority()
             reassertSourceWake()
+            refreshRootState()
             controller?.let { c ->
                 val dur = c.duration
                 ui.seekable = !ui.remote && dur > 0 &&
@@ -965,15 +966,28 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    override fun startCapture() {
+    override fun startCapture() = startCaptureBackend(explicitStandard = false)
+
+    override fun startStandardCapture() = startCaptureBackend(explicitStandard = true)
+
+    private fun startCaptureBackend(explicitStandard: Boolean) {
         if (!taskIsCurrent()) return
-        // Already capturing: do NOT ask again. Android issues a single-use projection
-        // token, so a redundant prompt would tear down a working session to rebuild an
-        // identical one, and the user would blame us for the extra dialog. `live` plus a
-        // capture source is the honest signal that a projection is currently held.
-        val alreadyCapturing = ui.live && ui.sourceLabel.startsWith("capture") && !micHandoff.isPending
-        selectSource()
+        val backend = if (!explicitStandard && RootCaptureSettings.enabled(this)) CaptureBackend.ROOT else CaptureBackend.STANDARD
+        val alreadyCapturing = CaptureService.ownsCapture() && CaptureService.currentStatus().backend == backend && !micHandoff.isPending
+        val selection = selectSource()
         if (alreadyCapturing) return
+        if (backend == CaptureBackend.ROOT) {
+            withSourcesReleased(selection = selection) {
+                if (!RootCaptureSettings.enabled(this)) return@withSourcesReleased
+                applyLocalGainPolicy()
+                applyCaptureStatus(CaptureService.CaptureStatus(CaptureService.STATE_STARTING,
+                    "root capture starting", RootCapturePolicy.CAPABILITY, false, backend = CaptureBackend.ROOT))
+                runCatching { startCaptureService(Intent(this, RootCaptureService::class.java)) }.onFailure {
+                    applyCaptureStatus(CaptureService.CaptureStatus.error("root capture could not start", RootCaptureSettings.fix(it.message)).copy(backend = CaptureBackend.ROOT))
+                }
+            }
+            return
+        }
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             != PackageManager.PERMISSION_GRANTED
         ) {
@@ -1007,6 +1021,32 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun fullDisplayCaptureIntent(manager: MediaProjectionManager): Intent =
         manager.createScreenCaptureIntent(MediaProjectionConfig.createConfigForDefaultDisplay())
 
+    override fun setRootCapture(enabled: Boolean) {
+        if (!taskIsCurrent()) return
+        selectSource()
+        if (enabled) RootCaptureSettings.enable(this) else RootCaptureSettings.disable(this)
+        refreshRootState()
+    }
+
+    override fun openRootManager() {
+        runCatching {
+            startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage("me.weishu.kernelsu"))
+        }.onFailure {
+            Toast.makeText(this, "Open your installed KernelSU manager and verify Phosphor's existing grant and Default/inherited profile", Toast.LENGTH_LONG).show()
+        }
+    }
+
+    private fun refreshRootState() {
+        ui.rootCaptureEnabled = RootCaptureSettings.enabled(this)
+        ui.rootCaptureBusy = RootCaptureSettings.busy
+        val status = CaptureService.currentStatus()
+        ui.rootCaptureStatus = if (status.backend == CaptureBackend.ROOT && status.message.isNotBlank()) {
+            "${status.message} · ${status.fix}"
+        } else if (ui.rootCaptureEnabled && RootCaptureSettings.message.startsWith("Off")) {
+            "Enabled · ${RootCapturePolicy.CAPABILITY} · authorization checked at capture start"
+        } else RootCaptureSettings.message
+    }
+
     override fun stopLive() {
         withSourcesReleased {
             PhosphorNative.setRingActive(false)
@@ -1033,6 +1073,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             return
         }
         val wasCapture = ui.sourceLabel.startsWith("capture")
+        ui.captureRoot = status.backend == CaptureBackend.ROOT
         ui.captureStatus = status.message
         ui.captureFix = status.fix
         when (status.state) {
@@ -1204,6 +1245,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.beamRandomArmed = p.getBoolean("beam_random_armed", false)
         ui.glowRandomArmed = p.getBoolean("glow_random_armed", false)
         ui.bestiaryFound = p.getBoolean("bestiary_found", false)
+        refreshRootState()
         ui.geomFx = p.getInt("geom_fx", 0).coerceIn(0, 4).also { PhosphorNative.setGeomFx(it) }
         ui.geomAmount = p.getFloat("geom_amount", 0.6f).coerceIn(0f, 1f)
             .also { PhosphorNative.setGeomAmount(it) }
@@ -1265,7 +1307,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         PhosphorNative.setCustomBeam(customRgb?.toFloatArray() ?: FloatArray(9), ui.customCount)
         PhosphorNative.setBeamCycle(ui.cycleSeconds, ui.cyclePerTrack)
     }
-    override fun captureConsentNeeded(): Boolean = !runtimePrefs().getBoolean("consent_seen", false)
+    override fun captureConsentNeeded(): Boolean = !RootCaptureSettings.enabled(this) && !runtimePrefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() {
         if (taskIsCurrent()) runtimePrefs().edit { putBoolean("consent_seen", true) }
     }

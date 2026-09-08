@@ -1,12 +1,49 @@
 pub mod classpath;
 pub mod sha256;
+pub mod signal;
 pub const MAGIC: u32 = 0x31524150;
 pub const MAX_PAYLOAD: usize = 4096;
 pub const GET_INFO: u64 = 0x80104b02;
 pub const GRANT_ROOT: u64 = 0x4b01;
 pub const UID_GRANTED_ROOT: u64 = 0xc0004b08;
 pub const ARM64_SYS_REBOOT: i64 = 142;
-pub const PACKAGE: &str = "dev.phosphor.mobil3.debug";
+pub const PACKAGE: &str = match option_env!("ROOT_HELPER_PACKAGE") {
+    Some(v) => v,
+    None => "dev.phosphor.mobil3.debug",
+};
+#[derive(Clone, Copy, Debug, PartialEq, Eq)]
+pub struct Selection {
+    pub generation: u64,
+    pub mode: u32,
+}
+impl Selection {
+    pub fn parse(kind: u32, p: &[u8], debug: bool) -> Result<Self, &'static str> {
+        if kind != 20 || p.len() != 12 {
+            return Err("selection_contract");
+        }
+        let generation = u64::from_le_bytes(p[..8].try_into().unwrap());
+        let mode = u32::from_le_bytes(p[8..].try_into().unwrap());
+        if generation == 0
+            || generation > i64::MAX as u64
+            || mode > 3
+            || (!debug && (mode == 0 || mode == 3))
+        {
+            return Err("selection_mode_or_generation");
+        }
+        Ok(Self { generation, mode })
+    }
+    pub fn tag(self, uid: u32, build: &str) -> Vec<u8> {
+        [
+            identity(uid, build),
+            self.generation.to_le_bytes().to_vec(),
+            self.mode.to_le_bytes().to_vec(),
+        ]
+        .concat()
+    }
+    pub fn stream(self) -> bool {
+        self.mode == 2 || self.mode == 3
+    }
+}
 pub const EXECUTABLE: &str = "/system/bin/app_process";
 pub const CLASS: &str = "dev.phosphor.mobil3.root.AudioPolicyMain";
 pub const ENV: &[&str] = &[
@@ -102,6 +139,17 @@ impl Decoder {
         }
     }
 }
+pub fn selection_byte(
+    decoder: &mut Decoder,
+    byte: u8,
+    debug: bool,
+) -> Result<Option<Selection>, &'static str> {
+    decoder.push(&[byte])?;
+    decoder
+        .next_frame()?
+        .map(|(k, p)| Selection::parse(k, &p, debug))
+        .transpose()
+}
 #[derive(Debug, PartialEq, Eq)]
 pub enum Phase {
     Waiting,
@@ -117,6 +165,10 @@ pub struct Session {
     pub killed: bool,
     pub failure: Option<&'static str>,
     pub exit: Option<i32>,
+    pub selection: Selection,
+    pub sequence: u64,
+    pub pcm_at: u64,
+    pub progress_sequence: u64,
 }
 impl Default for Session {
     fn default() -> Self {
@@ -127,6 +179,13 @@ impl Default for Session {
             killed: false,
             failure: None,
             exit: None,
+            selection: Selection {
+                generation: 1,
+                mode: 0,
+            },
+            sequence: 0,
+            pcm_at: 0,
+            progress_sequence: 0,
         }
     }
 }
@@ -140,7 +199,7 @@ impl Session {
         }
     }
     pub fn app(&mut self, kind: u32, payload: &[u8], now: u64) -> Result<bool, &'static str> {
-        if !payload.is_empty() {
+        if payload != self.selection.generation.to_le_bytes() {
             return Err("control_payload");
         }
         match kind {
@@ -150,11 +209,12 @@ impl Session {
             }
             2 if self.phase == Phase::Ready => {
                 self.phase = Phase::Capture(now);
+                self.pcm_at = now;
                 Ok(true)
             }
             3 => {
-                self.stop(now, Some("app_stop"));
-                Ok(true)
+                self.stop(now, None);
+                Ok(false)
             }
             _ => Err("control_state"),
         }
@@ -171,6 +231,48 @@ impl Session {
         }
         match kind {
             11 if self.phase == Phase::Waiting => self.phase = Phase::Ready,
+            15 if self.selection.stream()
+                && matches!(self.phase, Phase::Capture(_) | Phase::Stopping(_))
+                && !self.result =>
+            {
+                let pcm = &payload[id.len()..];
+                if pcm.len() < 24 {
+                    return Err("pcm_header");
+                }
+                let seq = u64::from_le_bytes(pcm[..8].try_into().unwrap());
+                let word = |i| u32::from_le_bytes(pcm[i..i + 4].try_into().unwrap());
+                let count = word(20) as usize;
+                if seq != self.sequence
+                    || word(8) != 16000
+                    || word(12) != 1
+                    || word(16) != 2
+                    || !(1..=160).contains(&count)
+                    || pcm.len() != 24 + count * 2
+                {
+                    return Err("pcm_sequence_format_count");
+                }
+                self.sequence = self
+                    .sequence
+                    .checked_add(1)
+                    .ok_or("pcm_sequence_overflow")?;
+                self.pcm_at = now;
+            }
+            16 if self.selection.stream()
+                && matches!(self.phase, Phase::Capture(_) | Phase::Stopping(_))
+                && !self.result =>
+            {
+                let progress = &payload[id.len()..];
+                if progress.len() != 8
+                    || u64::from_le_bytes(progress.try_into().unwrap()) != self.progress_sequence
+                {
+                    return Err("progress_sequence");
+                }
+                self.progress_sequence = self
+                    .progress_sequence
+                    .checked_add(1)
+                    .ok_or("progress_overflow")?;
+                self.pcm_at = now;
+            }
             12 if !self.result && !matches!(self.phase, Phase::Reaped) => {
                 self.result = true;
                 self.stop(now, None);
@@ -187,9 +289,15 @@ impl Session {
             self.stop(now, Some("ready_timeout"));
         }
         if let Phase::Capture(start) = self.phase {
-            if now.saturating_sub(start) >= 6000 {
+            if self.selection.mode != 2 && now.saturating_sub(start) >= 6000 {
                 self.stop(now, Some("capture_timeout"));
             }
+        }
+        if self.selection.stream()
+            && matches!(self.phase, Phase::Capture(_))
+            && now.saturating_sub(self.pcm_at) > 3000
+        {
+            self.stop(now, Some("helper_progress_timeout"));
         }
     }
     pub fn should_kill(&self, now: u64) -> bool {
@@ -280,12 +388,12 @@ mod tests {
         let mut s = Session::default();
         let id = identity(10401, &"a".repeat(64));
         let p = [id.clone(), b"{}".to_vec()].concat();
-        assert!(s.app(2, &[], 1).is_err());
+        assert!(s.app(2, &1u64.to_le_bytes(), 1).is_err());
         s.helper(11, &p, &id, 1).unwrap();
         assert!(s.helper(11, &p, &id, 2).is_err());
         assert!(s.app(2, b"x", 2).is_err());
-        assert!(s.app(2, &[], 2).unwrap());
-        assert!(s.app(2, &[], 3).is_err());
+        assert!(s.app(2, &1u64.to_le_bytes(), 2).unwrap());
+        assert!(s.app(2, &1u64.to_le_bytes(), 3).is_err());
     }
     #[test]
     fn stop_eof_revocation_backpressure_kill_reap() {
@@ -348,7 +456,7 @@ mod terminal_tests {
         let payload = [id.clone(), b"{}".to_vec()].concat();
         let mut s = Session::default();
         s.helper(11, &payload, &id, 0).unwrap();
-        s.app(2, &[], 1).unwrap();
+        s.app(2, &1u64.to_le_bytes(), 1).unwrap();
         let mut d = Decoder::default();
         assert!(d.next_frame().unwrap().is_none());
         // EAGAIN occurred, then RESULT was queued immediately before child exit.
@@ -362,5 +470,173 @@ mod terminal_tests {
         assert!(s.success());
         assert!(!s.should_kill(9000));
         assert!(s.helper(12, &payload, &id, 5002).is_err());
+    }
+}
+
+#[cfg(test)]
+mod product_tests {
+    use super::*;
+    const BUILD: &str = "aaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa";
+    fn select(mode: u32) -> Selection {
+        Selection {
+            generation: 42,
+            mode,
+        }
+    }
+    fn session(mode: u32) -> (Session, Vec<u8>) {
+        let selection = select(mode);
+        let id = selection.tag(10401, BUILD);
+        let mut s = Session {
+            selection,
+            ..Session::default()
+        };
+        s.helper(11, &[id.clone(), b"{}".to_vec()].concat(), &id, 0)
+            .unwrap();
+        s.app(2, &42u64.to_le_bytes(), 1).unwrap();
+        (s, id)
+    }
+    fn pcm(id: &[u8], seq: u64, count: u32) -> Vec<u8> {
+        [
+            id.to_vec(),
+            seq.to_le_bytes().to_vec(),
+            16000u32.to_le_bytes().to_vec(),
+            1u32.to_le_bytes().to_vec(),
+            2u32.to_le_bytes().to_vec(),
+            count.to_le_bytes().to_vec(),
+            vec![0; count as usize * 2],
+        ]
+        .concat()
+    }
+    #[test]
+    fn release_rejects_fixed_debug_modes_before_grant() {
+        for mode in 0u32..5 {
+            let p = [
+                42u64.to_le_bytes().as_slice(),
+                mode.to_le_bytes().as_slice(),
+            ]
+            .concat();
+            assert_eq!(
+                Selection::parse(20, &p, false).is_ok(),
+                mode == 1 || mode == 2
+            );
+            assert_eq!(Selection::parse(20, &p, true).is_ok(), mode <= 3);
+        }
+        assert!(Selection::parse(20, &[0; 12], true).is_err());
+        assert!(Selection::parse(1, &[0; 12], true).is_err());
+        assert!(Selection::parse(20, &[0; 13], true).is_err());
+    }
+    #[test]
+    fn coalesced_select_leaves_complete_or_partial_control_in_pipe() {
+        let selection = frame(
+            20,
+            &[
+                42u64.to_le_bytes().as_slice(),
+                2u32.to_le_bytes().as_slice(),
+            ]
+            .concat(),
+        )
+        .unwrap();
+        let control = frame(1, &42u64.to_le_bytes()).unwrap();
+        for next in [1, 5, control.len()] {
+            let bytes = [selection.clone(), control[..next].to_vec()].concat();
+            let mut decoder = Decoder::default();
+            let mut used = 0;
+            for b in &bytes {
+                used += 1;
+                if selection_byte(&mut decoder, *b, false).unwrap().is_some() {
+                    break;
+                }
+            }
+            assert_eq!(used, selection.len());
+            assert_eq!(&bytes[used..], &control[..next]);
+            assert!(decoder.eof().is_ok());
+            let mut following = Decoder::default();
+            following.push(&bytes[used..]).unwrap();
+            following.push(&control[next..]).unwrap();
+            assert_eq!(
+                following.next_frame().unwrap(),
+                Some((1, 42u64.to_le_bytes().to_vec()))
+            );
+        }
+    }
+    #[test]
+    fn typed_pcm_rejects_stale_partial_oversize_format_and_sequence() {
+        let (mut s, id) = session(2);
+        let good = pcm(&id, 0, 160);
+        s.helper(15, &good, &id, 10).unwrap();
+        assert_eq!(s.sequence, 1);
+        assert!(s.helper(15, &good, &id, 11).is_err());
+        for at in [0, 68, 76, 88, 92, 96, 100] {
+            let (mut t, tag) = session(2);
+            let mut bad = pcm(&tag, 0, 160);
+            bad[at] ^= 1;
+            assert!(t.helper(15, &bad, &tag, 12).is_err(), "offset {at}");
+        }
+        let (mut t, tag) = session(2);
+        let p = pcm(&tag, 0, 160);
+        assert!(t.helper(15, &p[..p.len() - 1], &tag, 1).is_err());
+        assert!(t.helper(15, &pcm(&tag, 0, 161), &tag, 1).is_err());
+        assert!(t.helper(15, &pcm(&tag, 0, 0), &tag, 1).is_err());
+        assert!(t.app(1, &41u64.to_le_bytes(), 2).is_err());
+    }
+    #[test]
+    fn continuous_lease_outlives_old_absolute_deadline() {
+        let (mut s, id) = session(2);
+        for i in 0..1000u64 {
+            let now = i * 250;
+            s.app(1, &42u64.to_le_bytes(), now).unwrap();
+            s.helper(
+                16,
+                &[id.clone(), i.to_le_bytes().to_vec()].concat(),
+                &id,
+                now,
+            )
+            .unwrap();
+            s.tick(now);
+            assert!(matches!(s.phase, Phase::Capture(_)));
+        }
+        assert_eq!(s.sequence, 0); // Idle is not invented PCM.
+        assert_eq!(s.progress_sequence, 1000);
+    }
+    #[test]
+    fn app_heartbeat_does_not_hide_blocked_helper() {
+        let (mut s, _) = session(2);
+        for now in (250..=3250).step_by(250) {
+            s.app(1, &42u64.to_le_bytes(), now).unwrap();
+            s.tick(now);
+        }
+        assert_eq!(s.failure, Some("helper_progress_timeout"));
+        assert!(s.should_kill(4250));
+        s.reaped(9);
+        assert!(!s.should_kill(10000));
+    }
+    #[test]
+    fn finite_feasibility_and_controlled_stream_stay_finite() {
+        for mode in [0, 3] {
+            let (mut s, id) = session(mode);
+            s.app(1, &42u64.to_le_bytes(), 5999).unwrap();
+            if mode == 3 {
+                s.helper(
+                    16,
+                    &[id, 0u64.to_le_bytes().to_vec()].concat(),
+                    &select(mode).tag(10401, BUILD),
+                    5999,
+                )
+                .unwrap();
+            }
+            s.tick(6001);
+            assert_eq!(s.failure, Some("capture_timeout"));
+        }
+    }
+    #[test]
+    fn idle_progress_sequence_cannot_replay_and_stop_does_not_restart() {
+        let (mut s, id) = session(2);
+        let progress = [id.clone(), 0u64.to_le_bytes().to_vec()].concat();
+        s.helper(16, &progress, &id, 200).unwrap();
+        assert!(s.helper(16, &progress, &id, 300).is_err());
+        assert!(!s.app(3, &42u64.to_le_bytes(), 400).unwrap());
+        assert!(!s.app(3, &42u64.to_le_bytes(), 500).unwrap());
+        assert!(s.app(2, &42u64.to_le_bytes(), 501).is_err());
+        assert_eq!(s.phase, Phase::Stopping(400));
     }
 }

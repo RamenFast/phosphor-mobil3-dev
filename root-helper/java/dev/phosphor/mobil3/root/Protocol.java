@@ -38,24 +38,41 @@ public final class Protocol {
         }
         return b;
     }
-    public static byte[] identity(int uid, String build) throws IOException {
-        if (uid % 100000 < 10000 || uid % 100000 > 19999 || !build.matches("[a-f0-9]{64}"))
+    public static byte[] identity(int uid, String build, long generation, int mode) throws IOException {
+        if (generation <= 0 || mode < 0 || mode > 3 || uid % 100000 < 10000 || uid % 100000 > 19999 || !build.matches("[a-f0-9]{64}"))
             throw new IOException("identity_invalid");
-        return ByteBuffer.allocate(68).order(ByteOrder.LITTLE_ENDIAN).putInt(uid)
-            .put(build.getBytes(StandardCharsets.US_ASCII)).array();
+        return ByteBuffer.allocate(80).order(ByteOrder.LITTLE_ENDIAN).putInt(uid)
+            .put(build.getBytes(StandardCharsets.US_ASCII)).putLong(generation).putInt(mode).array();
     }
     public static int validateInit(Frame frame, String build) throws IOException {
-        if (frame.kind != 10 || frame.payload.length != 68) throw new IOException("init_contract");
+        if (frame.kind != 10 || frame.payload.length != 80) throw new IOException("init_contract");
         int uid = ByteBuffer.wrap(frame.payload).order(ByteOrder.LITTLE_ENDIAN).getInt();
-        if (!Arrays.equals(frame.payload, identity(uid, build))) throw new IOException("init_build_mismatch");
+        if (!Arrays.equals(frame.payload, identity(uid, build, generation(frame.payload), mode(frame.payload)))) throw new IOException("init_build_mismatch");
         return uid;
     }
     public static byte[] tagged(byte[] id, String json) throws IOException {
         byte[] text = json.getBytes(StandardCharsets.UTF_8);
-        if (id.length != 68 || text.length + id.length > MAX) throw new IOException("tagged_frame_limit");
+        if (id.length != 80 || text.length + id.length > MAX) throw new IOException("tagged_frame_limit");
         byte[] result = Arrays.copyOf(id, id.length + text.length);
         System.arraycopy(text, 0, result, id.length, text.length);
         return result;
     }
+    public static long generation(byte[] id) { return ByteBuffer.wrap(id).order(ByteOrder.LITTLE_ENDIAN).getLong(68); }
+    public static int mode(byte[] id) { return ByteBuffer.wrap(id).order(ByteOrder.LITTLE_ENDIAN).getInt(76); }
+    public static void control(Frame f, long generation) throws IOException {
+        if (f.payload.length != 8 || ByteBuffer.wrap(f.payload).order(ByteOrder.LITTLE_ENDIAN).getLong() != generation)
+            throw new IOException("control_generation");
+    }
+    public static byte[] progress(byte[] id, long sequence) {
+        return ByteBuffer.allocate(88).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence).array();
+    }
+    public static byte[] pcm(byte[] id, long sequence, short[] block, int count) throws IOException {
+        if (id.length != 80 || sequence < 0 || count < 1 || count > 160 || count > block.length) throw new IOException("pcm_contract");
+        ByteBuffer b = ByteBuffer.allocate(104 + count*2).order(ByteOrder.LITTLE_ENDIAN).put(id).putLong(sequence)
+            .putInt(16000).putInt(1).putInt(2).putInt(count);
+        for (int i=0;i<count;i++) b.putShort(block[i]);
+        return b.array();
+    }
     private Protocol() {}
+
 }

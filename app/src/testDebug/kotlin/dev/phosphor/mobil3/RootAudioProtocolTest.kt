@@ -9,8 +9,8 @@ import org.junit.Test
 class RootAudioProtocolTest {
     private val build = "a".repeat(64)
     private fun tagged(uid: Int = 10401, actual: Int = 0): ByteArray {
-        val json = JSONObject().put("protocol", 1).put("build", build).put("uid", actual).put("original_uid", uid).toString().toByteArray()
-        return ByteBuffer.allocate(68 + json.size).order(ByteOrder.LITTLE_ENDIAN).putInt(uid).put(build.toByteArray()).put(json).array()
+        val json = JSONObject().put("protocol", 2).put("generation", 1).put("mode", 0).put("build", build).put("uid", actual).put("original_uid", uid).toString().toByteArray()
+        return ByteBuffer.allocate(80 + json.size).order(ByteOrder.LITTLE_ENDIAN).putInt(uid).put(build.toByteArray()).putLong(1).putInt(0).put(json).array()
     }
     private fun result() = JSONObject().put("status", "ok").put("cleanup_confirmed", true)
         .put("frames", 80000).put("nonzero", 70000).put("frequency_hz", 997.0).put("tone_ratio", 0.9)

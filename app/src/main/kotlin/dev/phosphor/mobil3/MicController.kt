@@ -157,6 +157,7 @@ class MicController(private val onRecordingChanged: (Boolean) -> Unit = {}) {
         private val main = Handler(Looper.getMainLooper())
         // Only a stop rendezvous. The activity's controller still owns AudioRecord and start.
         private var owner: MicController? = null
+        internal fun quiescent() = owner == null
 
         fun stopForLocal(requestId: Long, reply: (Long, String?, Boolean) -> Unit) {
             val stop = {

@@ -277,7 +277,7 @@ class PlaybackService : MediaSessionService() {
         if (target !== capturePlayer && captureActive) {
             leaveCaptureMirror()
             startService(
-                Intent(this, CaptureService::class.java).setAction(CaptureService.ACTION_STOP)
+                CaptureService.stopIntent(this)
             )
         }
         if (target === remotePlayer) {
@@ -305,10 +305,7 @@ class PlaybackService : MediaSessionService() {
                 beginCaptureMirror()
                 return START_NOT_STICKY
             }
-            ACTION_CAPTURE_STOPPED -> {
-                endCaptureMirror()
-                return START_NOT_STICKY
-            }
+            ACTION_CAPTURE_STOPPED -> Unit // Retired untagged action cannot clear a current owner.
             ACTION_CAPTURE_ACCESS_CHANGED -> {
                 if (captureActive) {
                     if (intent.getBooleanExtra(EXTRA_CAPTURE_ACCESS_GRANTED, false)) {
@@ -972,14 +969,13 @@ class PlaybackService : MediaSessionService() {
             MicController.stopForLocal(id) { requestId, error, owned ->
                 if (micStop.complete(requestId, error, owned)) recordRelease(micStop, LocalSourcePublication.Reader.MIC)
             }
-            startService(Intent(this, CaptureService::class.java)
-                .setAction(CaptureService.ACTION_STOP)
+            startService(CaptureService.stopIntent(this)
                 .putExtra(CaptureService.EXTRA_STOP_REQUEST, id)
                 .putExtra(CaptureService.EXTRA_MIC_REQUEST, micRequest)
                 .putExtra(CaptureService.EXTRA_STOP_REPLY, reply))
         }
         val micError = micStop.await(4_000, current)
-        val captureError = captureStop.await(4_000, current)
+        val captureError = captureStop.await(12_000, current)
         val error = micError ?: captureError
         if (error != null) {
             reportLocal(error, isLatest)

@@ -25,7 +25,10 @@ import java.util.concurrent.CompletableFuture
 
 // The projection foreground service must start before MediaProjection is obtained.
 // Apps that disallow playback capture yield silence.
-class CaptureService : Service() {
+open class CaptureService : Service() {
+    internal open val backend = CaptureBackend.STANDARD
+    @Volatile private var rootSession: RootCaptureSession? = null
+    private var rootCheck: RootCaptureCheck? = null
 
     private var projection: MediaProjection? = null
     private var record: AudioRecord? = null
@@ -44,16 +47,22 @@ class CaptureService : Service() {
 
     override fun onCreate() {
         super.onCreate()
-        owner = this
+        if (owner == null) owner = this
     }
 
     override fun onBind(intent: Intent?): IBinder? = null
 
     @Synchronized
     override fun onStartCommand(intent: Intent?, flags: Int, startId: Int): Int {
+        if (owner !== this) {
+            if (intent?.action == ACTION_STOP) owner?.onStartCommand(intent, flags, startId)
+            stopSelf()
+            return START_NOT_STICKY
+        }
         if (intent?.action == ACTION_STOP) {
+
             retryRetiredStops()
-            val owned = record != null || reader != null || running || !retirement.pending.isDone
+            val owned = record != null || rootSession != null || reader != null || running || !retirement.pending.isDone
             val micRequest = intent.getStringExtra(EXTRA_MIC_REQUEST)
             micStopStatus.select(micRequest)
             finishCapture("stopped by user", CaptureStatus.idle(), retry = true)
@@ -91,6 +100,7 @@ class CaptureService : Service() {
             publishStatus(lastStatus)
             return START_NOT_STICKY
         }
+        if (backend == CaptureBackend.ROOT) return startRoot()
         val resultData = intent?.let {
             IntentCompat.getParcelableExtra(it, EXTRA_RESULT, Intent::class.java)
         }
@@ -284,6 +294,84 @@ class CaptureService : Service() {
         return START_NOT_STICKY
     }
 
+    private fun startRoot(): Int {
+        val check = if (BuildConfig.DEBUG) RootCaptureService.takeCheck() else null
+        rootCheck = check
+        val sourceRevision = PlaybackService.localSourcePublication.current.revision
+        if (check != null && !check.accepts()) {
+            finishCapture("controlled request cancelled", CaptureStatus.idle())
+            return START_NOT_STICKY
+        }
+        if (check == null && !RootCaptureSettings.enabled(this)) {
+            finishCapture("root opt-in missing", CaptureStatus.error("root capture is off", "Enable ROOT CAPTURE in the hidden bestiary first"))
+            return START_NOT_STICKY
+        }
+        publishStatus(CaptureStatus(STATE_STARTING, "root capture starting", RootCapturePolicy.CAPABILITY, false))
+        try {
+            if (android.os.Build.VERSION.SDK_INT >= 34) {
+                startForeground(NOTIF_ID, buildNotification(), ServiceInfo.FOREGROUND_SERVICE_TYPE_SPECIAL_USE)
+            } else startForeground(NOTIF_ID, buildNotification())
+            val session = RootCaptureSession(applicationContext, if (check == null) 2 else 3)
+            rootSession = session
+            reader = Thread({
+                var inputShown = false
+                session.run(
+                    ready = {
+                        val accepted = CompletableFuture<Boolean>()
+                        main.post {
+                            try {
+                                if (owner === this && !cleanedUp && rootSession === session && session.live &&
+                                    PlaybackService.localSourcePublication.accepts(sourceRevision) &&
+                                    (check == null || (check.accepts() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay()))) {
+                                    PhosphorNative.deckSetPaused(true)
+                                    PhosphorNative.setRingActive(true)
+                                    running = true
+                                    metadataBridgeActive = true
+                                    startService(BackgroundLifecycle.stamp(Intent(this, PlaybackService::class.java)
+                                        .setAction(PlaybackService.ACTION_CAPTURE_STARTED)
+                                        .putExtra(EXTRA_CAPTURE_OWNER, captureOwnerId), taskRevision))
+                                    sourceWake.rootChanged(recording = true, helper = session.live)
+                                    publishStatus(CaptureStatus(STATE_FLOWING, "root connected · waiting for input", RootCapturePolicy.CAPABILITY, true))
+                                    accepted.complete(true)
+                                } else accepted.complete(false)
+                            } catch (error: Exception) { accepted.completeExceptionally(error) }
+                        }
+                        check(accepted.get(2, java.util.concurrent.TimeUnit.SECONDS)) { "Root READY owner was retired" }
+                        check?.ready(session.generation)
+                    },
+                    samples = { pcm, normalized ->
+                        if (running && rootSession === session && owner === this) {
+                            PhosphorNative.pushCaptureSamples(normalized, normalized.size)
+                            check?.samples(session.generation, pcm, normalized.size / 2)
+                            if (!inputShown) {
+                                inputShown = true
+                                main.post {
+                                    if (owner === this && !cleanedUp && rootSession === session && running)
+                                        publishStatus(CaptureStatus(STATE_FLOWING, "root connected · samples arriving", RootCapturePolicy.CAPABILITY, true))
+                                }
+                            }
+                        }
+                    },
+                    idle = { inputShown = false; main.post {
+                        if (owner === this && !cleanedUp && rootSession === session && running) {
+                            publishStatus(CaptureStatus(STATE_FLOWING, "root connected · no input", RootCapturePolicy.CAPABILITY, true))
+                        }
+                    } },
+                )
+                main.post {
+                    if (owner === this && !cleanedUp && rootSession === session) {
+                        val result = session.completion.getNow(null)
+                        finishCapture("root session ended", if (check != null && result?.error == null) CaptureStatus.idle() else
+                            CaptureStatus.error("root capture ended", RootCaptureSettings.fix(result?.error)))
+                    }
+                }
+            }, "root-capture-${session.generation}").also { it.start() }
+        } catch (error: Exception) {
+            finishCapture("root startup failed", CaptureStatus.error("root capture could not start", RootCaptureSettings.fix(error.message)))
+        }
+        return START_NOT_STICKY
+    }
+
     @Synchronized
     private fun finishCapture(reason: String, status: CaptureStatus, retry: Boolean = false) {
         sourceWake.stop()
@@ -310,13 +398,16 @@ class CaptureService : Service() {
         running = false
         val oldRecord = record
         val oldReader = reader
+        val oldRoot = rootSession
+        oldRoot?.requestStop()
         record = null
         // Null first: MediaProjection.stop() synchronously calls our callback on some
         // builds, and a second stop must be a harmless no-op rather than recursion.
         val oldProjection = projection
         projection = null
         Thread({
-            val error = ReaderStop.finish(
+            val rootError = oldRoot?.awaitStop()
+            val readerError = ReaderStop.finish(
                 reader = oldReader,
                 stop = { if (oldReader != null) oldRecord?.stop() },
                 release = { oldRecord?.release() },
@@ -328,7 +419,11 @@ class CaptureService : Service() {
                     }
                 },
             )
+            val error = rootError ?: readerError
             main.post {
+                rootCheck?.finished(oldRoot?.generation, oldRoot?.completion?.getNow(null), error)
+                rootCheck = null
+                if (error == null) rootSession = null
                 if (metadataBridgeActive) {
                     metadataBridgeActive = false
                     PlaybackService.captureStopped(captureOwnerId)
@@ -359,7 +454,7 @@ class CaptureService : Service() {
 
     private fun publishStatus(status: CaptureStatus) {
         if (owner != null && owner !== this) return
-        val observed = status.copy(sequence = statusSequence.incrementAndGet())
+        val observed = status.copy(sequence = statusSequence.incrementAndGet(), backend = backend)
         lifecycleState = observed.state
         lastStatus = observed
         sendBroadcast(
@@ -371,6 +466,7 @@ class CaptureService : Service() {
                 .putExtra(EXTRA_LIVE, status.live)
                 .putExtra(EXTRA_SEQUENCE, observed.sequence)
                 .putExtra(EXTRA_MIC_REQUEST, observed.micRequest)
+                .putExtra(EXTRA_BACKEND, backend.name)
         )
     }
 
@@ -387,7 +483,13 @@ class CaptureService : Service() {
     }
 
     companion object {
-        private var owner: CaptureService? = null
+        @Volatile private var owner: CaptureService? = null
+        internal fun stopIntent(context: android.content.Context) = Intent(context, owner?.javaClass ?: CaptureService::class.java).setAction(ACTION_STOP)
+        internal fun rootOwned() = owner?.backend == CaptureBackend.ROOT
+        internal fun rootObservation(): Pair<Long, Long>? = owner?.rootSession?.takeIf { it.live }?.let { it.generation to it.frames }
+        internal fun stopCheck(check: RootCaptureCheck): CompletableFuture<String?> =
+            if (owner?.rootCheck === check) stopExisting() else CompletableFuture.completedFuture(null)
+        internal fun quiescent() = owner == null && retirement.pending.isDone && retirement.pending.getNow(null) == null
         internal fun hasLiveWakeSource(): Boolean = owner?.sourceWake?.live == true
         private val captureOwners = AtomicLong()
         private val retirement = SourceRetirement()
@@ -397,7 +499,7 @@ class CaptureService : Service() {
         } == true
 
         internal fun ownsCapture(): Boolean = owner?.let {
-            !it.cleanedUp && it.running && it.record != null && it.projection != null
+            !it.cleanedUp && RootCapturePolicy.owns(it.backend, it.running, it.projection != null, it.record != null, it.rootSession?.live == true)
         } == true
 
         internal fun currentOwnerId(): Long? = owner?.captureOwnerId?.takeIf { ownsCapture() }
@@ -437,6 +539,7 @@ class CaptureService : Service() {
         const val EXTRA_STOP_OWNED = "stop_owned"
         const val EXTRA_MIC_REQUEST = "mic_request"
         const val ACTION_STATUS = "dev.phosphor.mobil3.CAPTURE_STATUS"
+        const val EXTRA_BACKEND = "capture_backend"
         const val EXTRA_STATE = "capture_state"
         const val EXTRA_MESSAGE = "capture_message"
         const val EXTRA_FIX = "capture_fix"
@@ -464,6 +567,7 @@ class CaptureService : Service() {
             live = intent.getBooleanExtra(EXTRA_LIVE, false),
             sequence = intent.getLongExtra(EXTRA_SEQUENCE, 0),
             micRequest = intent.getStringExtra(EXTRA_MIC_REQUEST),
+            backend = if (intent.getStringExtra(EXTRA_BACKEND) == CaptureBackend.ROOT.name) CaptureBackend.ROOT else CaptureBackend.STANDARD,
         )
     }
 
@@ -474,6 +578,7 @@ class CaptureService : Service() {
         val live: Boolean,
         val sequence: Long = 0,
         val micRequest: String? = null,
+        internal val backend: CaptureBackend = CaptureBackend.STANDARD,
     ) {
         companion object {
             fun idle() = CaptureStatus(STATE_IDLE, "", "", false)

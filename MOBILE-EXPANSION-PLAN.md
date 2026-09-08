@@ -98,6 +98,8 @@ Execute sections in order. Investigate hardware-dependent feasibility early, the
 
 ### 2. Prove and integrate root capture (R01)
 
+Ben's04:17:59 UTC clarification preserves true any-app audio, specifically SoundCloud, as the target. Initial16kHz mono feasibility is not full acceptance. Verify app behavior rather than inferring it from generic policy flags, and investigate fuller-fidelity paths within the existing no-write rules.
+
 - Inspect the target Android build, root manager, SELinux context, audio policy, routes, and existing authorization. Do not infer backend support merely from `su` succeeding.
 - Prototype a packaged fixed-purpose app_process helper with an authorized session supervisor. Store sealed DEX in private app data, but execute the native bootstrap from installed app-nonwritable code under the API 29 execution rule. Require no LSPosed, system/boot writes, remount, boot patch, reboot persistence, or global SELinux disable.
 - Test privileged AudioPolicy loopback-with-render first, keeping audio audible on the phone. Investigate actual policy options against ordinary and opted-out applications and the OEM implementation.

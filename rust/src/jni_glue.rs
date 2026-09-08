@@ -353,6 +353,26 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setRingActive(
     crate::deck::set_ring_active(active != 0);
 }
 
+#[cfg(debug_assertions)]
+#[path = "../../root-helper/native/src/signal.rs"]
+mod root_signal;
+
+/// Debug-only, read-only fixed 0.5s aggregate. Caller proves fresh generation and ingress first.
+#[cfg(debug_assertions)]
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_RootCaptureChecks_nativeSnapshot(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    let ring = crate::deck::scope_ring().lock().unwrap();
+    let rate = ring.sample_rate();
+    let history = ring.copy_history(0.5);
+    let summary = root_signal::summarize(&history);
+    let json = serde_json::json!({"sample_rate":rate, "frames":summary.frames, "rms":summary.rms,
+        "frequency_hz":summary.frequency, "duplicated_mono":summary.duplicated});
+    env.new_string(json.to_string()).map(|s|s.into_raw()).unwrap_or(std::ptr::null_mut())
+}
+
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_selfTest(
     mut env: JNIEnv,

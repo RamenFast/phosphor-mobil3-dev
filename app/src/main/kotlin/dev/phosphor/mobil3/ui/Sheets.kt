@@ -659,7 +659,20 @@ fun SourceSheet(
             if (actions.captureConsentNeeded()) consentCard = true
             else { actions.startCapture(); onDismiss() }
         }
+        if (state.rootCaptureEnabled || state.captureRoot) {
+            Prose("Root input: 16 kHz mono · duplicated mono. Protected or NO_SYSTEM_CAPTURE sources remain excluded.", p.muted)
+            SheetRow("use standard capture · Android consent", p, checked = state.live && state.sourceLabel == "capture" && !state.captureRoot) {
+                actions.startStandardCapture(); onDismiss()
+            }
+            if (!state.live) {
+                Row(horizontalArrangement = Arrangement.spacedBy(Dim.gap)) {
+                    if (state.rootCaptureEnabled) FlatKey("RETRY ROOT", p) { actions.startCapture() }
+                    FlatKey("ROOT MANAGER", p) { actions.openRootManager() }
+                }
+            }
+        }
         if (state.captureStatus.isNotBlank()) {
+
             Prose(
                 buildString {
                     append(state.captureStatus)
@@ -675,8 +688,8 @@ fun SourceSheet(
             verticalAlignment = Alignment.CenterVertically,
         ) {
             Prose(
-                "Android calls this “share your screen” — it means sharing AUDIO with " +
-                    "this app. Nothing recorded, nothing leaves the phone.",
+                "Standard capture uses Android's “share your screen” consent for audio. " +
+                    "Enabled, authorized root capture uses its private helper instead. Nothing is recorded or sent away.",
                 p.muted,
                 modifier = Modifier.weight(1f),
             )
@@ -707,10 +720,9 @@ fun SourceSheet(
         SectionHeading("REMOTE", p)
         RemoteFlow(state, p, actions, onDismiss)
         Prose(
-            "Remote scopes another machine's audio over Tailscale — it plays here and " +
-                "the transport drives that machine. Local capture hears whatever apps " +
-                "allow it (Spotify currently does; SoundCloud and some DRM apps opt out " +
-                "and arrive as silence — nothing this app can change).",
+            "Remote scopes another machine's audio over Tailscale. It plays here and " +
+                "the transport drives that machine. Standard capture respects app playback-capture opt-outs. " +
+                "Root capture can include BY_SYSTEM audio, but NO_SYSTEM_CAPTURE and protected sources remain excluded.",
             p.muted, modifier = Modifier.padding(top = Dim.gap, bottom = Dim.gapLg),
         )
         StoneToggle(
@@ -1430,6 +1442,9 @@ interface SheetActions {
     fun importSettings()
     fun startMic()
     fun startCapture()
+    fun startStandardCapture() {}
+    fun setRootCapture(enabled: Boolean) {}
+    fun openRootManager() {}
     fun startRemote()
     fun stopLive()
     fun captureConsentNeeded(): Boolean
