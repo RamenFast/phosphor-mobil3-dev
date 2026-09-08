@@ -138,11 +138,13 @@ class RoomStyleOverrideTest {
 
     @Test fun productionProviderAndSingleSampleReadEffectiveStyleAndCurrentState() {
         val screen = phase9Source("ui/PhosphorScreen.kt")
-        assertTrue(".style.overridden(state.styleOverride)" in screen)
+        assertTrue("val style = state.appearanceStyle" in screen)
+        assertFalse(".style.overridden(state.styleOverride)" in screen)
         assertTrue("LocalRoomStyle provides style" in screen)
         val sheets = phase9Source("ui/Sheets.kt")
         for (next in listOf("nextCharacter", "nextMotion", "nextCorners", "nextLabels")) {
-            assertTrue("state.styleOverride = state.styleOverride.$next()" in sheets)
+            assertTrue("onStyle(state.styleOverride.$next())" in sheets)
+            assertFalse("state.styleOverride = state.styleOverride.$next()" in sheets)
         }
         assertEquals(1, Regex("LiveStyleSample\\(p, reduced, state.styleOverride\\)").findAll(sheets).count())
         val sample = phase9Source("ui/Controls.kt").substringAfter("internal fun LiveStyleSample(").substringBefore("internal fun Modifier.sliderTrack")

@@ -132,7 +132,7 @@ internal fun Modifier.stageChromeBounds(
 }
 
 // What the chrome can ask the host to do. Keeps Compose free of Android service plumbing.
-interface ScopeActions : InstrumentPresetActions {
+interface ScopeActions : InstrumentPresetActions, AppearanceActions {
     fun toggleDisplayPause() {}
     fun resetInspection() {}
     fun setPauseBlack(black: Boolean) {}
@@ -157,6 +157,7 @@ interface ScopeActions : InstrumentPresetActions {
     fun setFps(value: Int)
     fun setOversample(n: Int)
     fun setRoom(room: Palette)
+    fun setRoomStyle(overrides: StyleOverride) {}
     fun setFocus(focus: Float)
     fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int)
     fun setBeamCycle(seconds: Float, perTrack: Boolean)
@@ -230,26 +231,31 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
         return
     }
-    // Room changes crossfade palette slots; beam-color updates within one room stay immediate.
+    // Only authored revisions start a finite transition. The measured beam tick stays immediate.
     val target = state.room
     var fromRoom by remember { mutableStateOf(target) }
     var lastShown by remember { mutableStateOf(target) }
     val fade = remember { Animatable(1f) }
-    LaunchedEffect(target.id) {
-        if (lastShown.id != target.id) {
+    var lastRevision by remember { mutableStateOf(state.appearanceRevision) }
+    LaunchedEffect(state.appearanceRevision, reduced) {
+        if (lastRevision != state.appearanceRevision) {
             fromRoom = lastShown
-            if (reduced) {
+            if (reduced || state.appearanceStyle.motion == MotionFeel.Cut) {
                 fade.snapTo(1f)
+                lastRevision = state.appearanceRevision
             } else {
                 fade.snapTo(0f)
-                fade.animateTo(1f, tween(Motion.room, easing = LinearEasing))
+                lastRevision = state.appearanceRevision
+                fade.animateTo(1f, tween((Motion.room * state.appearanceStyle.durationScale).toInt().coerceIn(80, 200), easing = LinearEasing))
             }
-        }
+        } else if (reduced) fade.snapTo(1f)
     }
     val t = fade.value
-    val p = if (t >= 1f) target else fromRoom.lerpTo(target, smoothstep(t))
+    // Until the effect owns this revision, do not let SideEffect record the new target as already shown.
+    val p = if (lastRevision != state.appearanceRevision) lastShown
+        else if (t >= 1f) target else fromRoom.lerpTo(target, smoothstep(t))
     SideEffect { lastShown = p }
-    val style = (if (t >= 0.5f) target else fromRoom).style.overridden(state.styleOverride)
+    val style = state.appearanceStyle
     val view = LocalView.current
     val density = LocalDensity.current
     val actualLandscape =
@@ -341,6 +347,16 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
     val sheetActions = remember(actions) {
         object : SheetActions {
+            override fun previewAppearance(value: dev.phosphor.mobil3.settings.appearance.AppearanceValue) = actions.previewAppearance(value)
+            override fun applyAppearance(value: dev.phosphor.mobil3.settings.appearance.AppearanceValue, id: String) = actions.applyAppearance(value, id)
+            override fun selectAppearance(id: String) = actions.selectAppearance(id)
+            override fun cancelAppearancePreview() = actions.cancelAppearancePreview()
+            override fun saveAppearance(name: String, value: dev.phosphor.mobil3.settings.appearance.AppearanceValue, id: String?) = actions.saveAppearance(name, value, id)
+            override fun renameAppearance(id: String, name: String) = actions.renameAppearance(id, name)
+            override fun deleteAppearance(id: String) = actions.deleteAppearance(id)
+            override fun resetAppearance() = actions.resetAppearance()
+            override fun repairAppearance() = actions.repairAppearance()
+            override fun recoverAppearance() = actions.recoverAppearance()
             override fun openFile() = actions.openFile()
             override fun exportSettings() = actions.exportSettings()
             override fun importSettings() = actions.importSettings()
@@ -670,6 +686,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     state, p, reduced,
                     hudVisible = state.hudMode == 0 ||
                         (state.hudMode == 1 && consoleShown),
+                    chromeVisible = sheet == Sheet.NONE && !overflowComposed,
                 )
             }
 
@@ -714,6 +731,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     overflowPullHost = overflowPullHost,
                     onHeightChanged = { consoleHeightPx = it },
                     chromeMoving = transition.isRunning,
+                    chromeVisible = consoleShown && (sheet == Sheet.NONE || settingsPullActive),
                 )
             }
 
@@ -808,7 +826,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 ) { sheet = Sheet.NONE }
                 Sheet.INSTRUMENT -> InstrumentPresetSheet(state, p, reduced, actions) { sheet = Sheet.NONE }
                 Sheet.SIGNAL_CHECK -> SignalCheckSheet(state, p, reduced) { sheet = Sheet.NONE }
-                Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) }) {
+                Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) },
+                    onStyle = actions::setRoomStyle) {
                     sheet = Sheet.NONE
                 }
                 Sheet.SETTINGS -> SettingsSheet(

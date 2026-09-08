@@ -57,6 +57,11 @@ import dev.phosphor.mobil3.ui.LightSettings
 import dev.phosphor.mobil3.ui.LightRgb
 import dev.phosphor.mobil3.ui.LightCycleGuard
 import dev.phosphor.mobil3.settings.SettingsArchive
+import dev.phosphor.mobil3.settings.appearance.*
+import dev.phosphor.mobil3.ui.AppearanceMigration
+import dev.phosphor.mobil3.ui.AppearancePalette
+import dev.phosphor.mobil3.ui.style
+import dev.phosphor.mobil3.ui.overridden
 import dev.phosphor.mobil3.settings.instrument.*
 import java.io.ByteArrayOutputStream
 import java.io.File
@@ -245,6 +250,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
 
     private val settingsWriteOwner = dev.phosphor.mobil3.settings.SettingsWriteOwner()
+    private var appearanceWorkflow: AppearanceWorkflow? = null
+    private var pendingAppearanceImport: AppearanceWorkflow.Ticket? = null
     private var instrumentWorkflow: InstrumentWorkflow? = null
     private var pendingSettingsImport: InstrumentWorkflow.SettingsImport? = null
     private lateinit var instrumentStore: InstrumentPresetStore
@@ -292,7 +299,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.lightError = ""
     }
 
-    private fun persistInstrument(setup: InstrumentSetup): InstrumentWorkflow.PersistenceFailure? = settingsWriteOwner.write {
+    private fun persistInstrument(setup: InstrumentSetup): InstrumentWorkflow.PersistenceFailure? {
+        if (appearanceWorkflow?.uncertain == true) return InstrumentWorkflow.PersistenceFailure(
+            "Appearance recovery must finish first. Open APPEARANCE and repair or retry the saved appearance.", false)
+        return settingsWriteOwner.write {
         val values = setup.preferenceValues()
         val prior = preferenceValueSnapshots(prefs().all, values.keys)
         val editor = prefs().edit()
@@ -305,8 +315,57 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
         }
         settingsWriteOwner.commit({ editor.commit() }, { true }, { restorePreferenceSnapshots(prior) })?.let {
+            appearanceWorkflow?.persistenceFailed(it)
             InstrumentWorkflow.PersistenceFailure(it.message(), it.restored)
         }
+        }
+    }
+
+    private fun initializeAppearance() {
+        appearanceWorkflow = AppearanceWorkflow(
+            AppearancePreferences(settingsWriteOwner, { prefs().all },
+                { encoded -> prefs().edit().putString(AppearanceMigration.KEY, encoded).commit() },
+                { before -> restorePreferenceSnapshots(preferenceValueSnapshots(before, setOf(AppearanceMigration.KEY))) }),
+            AppearanceMigration::initial,
+            failed = { failure -> reportTuningWriteFailure(failure) },
+            changed = ::refreshAppearance,
+            sharedBlocked = { instrumentWorkflow?.storageUncertain == true },
+        )
+        appearanceWorkflow?.load()
+    }
+
+    private fun refreshAppearance() {
+        val owner = appearanceWorkflow ?: return
+        ui.appearanceDocument = owner.committed
+        ui.appearanceValue = owner.effective
+        ui.appearanceRevision = owner.revision
+        ui.appearanceSummary = owner.summary
+        ui.appearanceStatus = owner.status
+        ui.appearancePreview = owner.preview != null
+        ui.appearanceBlocked = owner.blocked
+        ui.appearanceRepairRequired = owner.unavailable
+        ui.appearanceRecoveryRequired = owner.uncertain
+        owner.effective?.let { value ->
+            val document = owner.committed
+            val id = document?.activeId?.ifBlank { "appearance:custom" } ?: "appearance:custom"
+            val palette = AppearancePalette.palette(value, id, owner.summary)
+            baseRoom = palette
+            ui.room = palette
+            ui.appearanceStyle = AppearancePalette.style(value)
+        }
+    }
+
+    override fun previewAppearance(value: AppearanceValue) { appearanceWorkflow?.preview(value) }
+    override fun applyAppearance(value: AppearanceValue, id: String) { appearanceWorkflow?.apply(value, id) }
+    override fun selectAppearance(id: String) { appearanceWorkflow?.select(id) }
+    override fun cancelAppearancePreview() { appearanceWorkflow?.cancel() }
+    override fun saveAppearance(name: String, value: AppearanceValue, id: String?) { appearanceWorkflow?.save(name, value, id) }
+    override fun renameAppearance(id: String, name: String) { appearanceWorkflow?.rename(id, name) }
+    override fun deleteAppearance(id: String) { appearanceWorkflow?.delete(id) }
+    override fun resetAppearance() { appearanceWorkflow?.reset() }
+    override fun repairAppearance() { appearanceWorkflow?.replace(AppearanceDocument.of()) }
+    override fun recoverAppearance() {
+        if (appearanceWorkflow?.recover() == true) instrumentWorkflow?.retryPersistence()
     }
 
     private fun initializeInstruments() {
@@ -345,6 +404,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun refreshInstrumentState() {
         val owner = instrumentWorkflow ?: return
+        refreshAppearance()
         ui.instrumentPending = owner.pending
         ui.instrumentUndo = owner.undoSetup != null
         ui.instrumentRapid = owner.rapidReview != null
@@ -426,7 +486,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun deleteInstrument(id: String) = changeInstruments("Deleted record. Tuning unchanged.") { it.delete(id) }
     override fun undoInstrument() { instrumentWorkflow?.undo() }
     override fun cancelInstrumentApply() { instrumentWorkflow?.settle() }
-    override fun retryInstrumentSave() { instrumentWorkflow?.retryPersistence() }
+    override fun retryInstrumentSave() {
+        if (appearanceWorkflow?.recover() != false) instrumentWorkflow?.retryPersistence()
+    }
     override fun keepInstrumentSafe() { instrumentWorkflow?.keepSafe() }
     override fun allowInstrumentRapid() {
         ackEpilepsy()
@@ -582,6 +644,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun reportTuningWriteFailure(failure: dev.phosphor.mobil3.settings.SettingsWriteOwner.Failure): String {
         if (!failure.restored) tick.removeCallbacks(persistGain)
+        appearanceWorkflow?.persistenceFailed(failure)
         val message = if (failure.restored) failure.message() else
             "${failure.stage} failed and rollback could not be confirmed. Open INSTRUMENT PRESETS and use RETRY SAVE CURRENT."
         instrumentWorkflow?.persistenceFailed(InstrumentWorkflow.PersistenceFailure(message, failure.restored))
@@ -602,7 +665,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         instrumentWorkflow?.keepSafe()
         runCatching {
             settingsWriteOwner.write {
-                val merged = SettingsArchive.merge(decoded, prefs().all)
+                val merged = AppearanceMigration.merge(SettingsArchive.merge(decoded, prefs().all), prefs().all)
                 val guard = if (merged.keys.any(LightSettings.keys::contains)) {
                     LightCycleGuard.evaluate(LightSettings.read(prefs().all + merged), epilepsyAcknowledged())
                 } else null
@@ -629,6 +692,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
         }.onSuccess { (imported, pendingLight, lightPublished) ->
             // Same main-thread callback, before another event can publish a later revision.
+            if (AppearanceMigration.KEY in imported.values) {
+                appearanceWorkflow?.imported(checkNotNull(AppearanceMigration.stored(imported.values)))
+            }
             restoreTuning(lightPublished)
             instrumentWorkflow?.externalRestoreSaved()
             refreshInstrumentState()
@@ -649,14 +715,18 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private val openSettingsArchive =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             val ticket = pendingSettingsImport ?: return@registerForActivityResult
+            val appearanceTicket = pendingAppearanceImport
             pendingSettingsImport = null
+            pendingAppearanceImport = null
             val owner = instrumentWorkflow ?: return@registerForActivityResult
             if (uri == null) {
                 owner.cancelSettingsImport(ticket)
                 ui.settingsTransferStatus = "Import cancelled. Settings unchanged."
                 return@registerForActivityResult
             }
-            if (!owner.settingsImportPicked(ticket)) {
+            if (appearanceTicket == null || appearanceWorkflow?.accepts(appearanceTicket) != true ||
+                !owner.settingsImportPicked(ticket)) {
+                owner.cancelSettingsImport(ticket)
                 staleSettingsImport()
                 return@registerForActivityResult
             }
@@ -692,7 +762,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
                             return@runOnUiThread
                         }
                         runCatching {
-                            owner.finishSettingsImport(ticket) { acceptSettingsArchive(decoded) }
+                            if (appearanceWorkflow?.accepts(appearanceTicket) != true) {
+                                owner.cancelSettingsImport(ticket)
+                                false
+                            } else owner.finishSettingsImport(ticket) { acceptSettingsArchive(decoded) }
                         }.onSuccess { accepted -> if (!accepted) staleSettingsImport() }
                             .onFailure(::reportImportFailure)
                     }
@@ -784,6 +857,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.bindRandomModeRequest(::armAndRollRandomMode)
         initializeInstruments()
         restoreTuning()
+        initializeAppearance()
         refreshCaptureMetadataAccess()
         applyScopeRotationPreference()
         // The scope starts immersive; an edge swipe can reveal system bars temporarily.
@@ -813,6 +887,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onPause() {
+        appearanceWorkflow?.cancel()
         signalResumed = false
         super.onPause()
     }
@@ -823,6 +898,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         ui.pip = isInPictureInPictureMode
+        if (ui.pip) appearanceWorkflow?.cancel()
         tick.removeCallbacks(uiTick)
         if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)
         updateOrientationSensor()
@@ -964,6 +1040,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onStop() {
+        appearanceWorkflow?.cancel()
         instrumentWorkflow?.settle("Activity stopped. Pending apply cancelled.")
         activityStarted = false
         ui.presentationVisible = false
@@ -989,6 +1066,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
 
     override fun onDestroy() {
+        appearanceWorkflow?.close()
         instrumentWorkflow?.close()
         instrumentDocuments.close()
         tick.removeCallbacks(persistGain)
@@ -1523,10 +1601,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
             return
         }
         pendingSettingsImport = ticket
+        pendingAppearanceImport = appearanceWorkflow?.ticket()
         runCatching {
             openSettingsArchive.launch(arrayOf("application/json", "application/octet-stream", "text/plain"))
         }.onFailure {
             pendingSettingsImport = null
+            pendingAppearanceImport = null
             owner.cancelSettingsImport(ticket)
             reportImportFailure(it)
         }
@@ -1760,7 +1840,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putBoolean("grid", ui.grid)
             putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)
             putFloat("focus", ui.focus)
-            putString("room", ui.room.id)
             // Relay auto-gain is display truth, not authority for an absent local preference.
             putBoolean("auto_gain", prefs().getBoolean("auto_gain", true))
             putInt("hud_mode", ui.hudMode)
@@ -1778,12 +1857,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putBoolean("ui_locked_landscape", lockedUiLandscape)
             putInt("remote_latency_mode", ui.latencyMode)
             putBoolean("amoled_seen", ui.amoledCaptionSeen)
-            putInt("ov_char", ui.styleOverride.character?.ordinal ?: -1)
-            putInt("ov_motion", ui.styleOverride.motion?.ordinal ?: -1)
-            putInt("ov_radius", ui.styleOverride.radiusDp ?: -1)
-            putInt("ov_desig", when (ui.styleOverride.designators) {
-                null -> -1; true -> 1; false -> 0
-            })
             restoreSnapshots(preserved)
         }
         runtimePrefs().edit {
@@ -1881,18 +1954,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .also { PhosphorNative.remoteSetLatencyMode(it) }
         ui.calDate = runtimePrefs().getString("cal_date", "") ?: ""
         ui.amoledCaptionSeen = p.getBoolean("amoled_seen", false)
+        if (appearanceWorkflow?.committed == null) {
+        val legacy = p.all
         ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride(
-            character = p.getInt("ov_char", -1).takeIf { it >= 0 }
+            character = (legacy["ov_char"] as? Int)?.takeIf { it >= 0 }
                 ?.let { dev.phosphor.mobil3.ui.ChromeCharacter.entries.getOrNull(it) },
-            motion = p.getInt("ov_motion", -1).takeIf { it >= 0 }
+            motion = (legacy["ov_motion"] as? Int)?.takeIf { it >= 0 }
                 ?.let { dev.phosphor.mobil3.ui.MotionFeel.entries.getOrNull(it) },
-            radiusDp = p.getInt("ov_radius", -1).takeIf { it >= 0 },
-            designators = when (p.getInt("ov_desig", -1)) {
+            radiusDp = (legacy["ov_radius"] as? Int)?.takeIf { it >= 0 },
+            designators = when (legacy["ov_desig"] as? Int) {
                 1 -> true; 0 -> false; else -> null
             },
         )
-        dev.phosphor.mobil3.ui.paletteById(p.getString("room", "amoled") ?: "amoled")
+        dev.phosphor.mobil3.ui.paletteById(legacy["room"] as? String ?: "amoled")
             .let { baseRoom = it; ui.room = it }
+        ui.appearanceStyle = ui.room.style.overridden(ui.styleOverride)
+        } else refreshAppearance()
         runCatching { LightSettings.read(p.all) }.onSuccess {
             if (lightPublished) {
                 ui.light = it
@@ -2021,7 +2098,28 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) = instrumentEdit { PhosphorNative.setOversample(n); ui.oversample = n }
-    override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
+    override fun setRoom(room: Palette) {
+        val owner = appearanceWorkflow ?: return
+        if (owner.blocked) return
+        val ov = ui.styleOverride
+        val value = AppearancePalette.legacy(dev.phosphor.mobil3.ui.LegacyAppearanceInput(
+            room.id, ov.character?.ordinal, ov.motion?.ordinal, ov.radiusDp,
+            ov.designators?.let { if (it) 1 else 0 },
+        )).value
+        val id = "legacy:${room.id}".takeIf { key -> owner.committed?.legacy?.any { it.id == key } == true } ?: ""
+        owner.apply(value, id)
+    }
+
+    override fun setRoomStyle(overrides: dev.phosphor.mobil3.ui.StyleOverride) {
+        val owner = appearanceWorkflow ?: return
+        if (owner.blocked) return
+        val current = owner.committed ?: return
+        val base = (AppearanceDocument.CURATED + current.users + current.legacy)
+            .find { it.id == current.activeId }?.value ?: current.active
+        val value = AppearancePalette.restyled(current.active, AppearancePalette.style(base).overridden(overrides))
+        owner.apply(value, current.activeId)
+        if (owner.committed?.active == value) ui.styleOverride = overrides
+    }
     override fun setFocus(focus: Float) = instrumentEdit { ui.focus = focus; PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) = instrumentEdit {

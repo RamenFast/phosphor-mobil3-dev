@@ -88,4 +88,12 @@ internal object AppearancePalette {
         cornerRadius = value.radiusDp.dp, monoProse = value.monoProse,
         designators = value.designators, panelAlphaScale = value.panelAlphaScale,
     )
+
+    fun restyled(value: AppearanceValue, style: RoomStyle): AppearanceValue = value.copy(
+        character = AppearanceCharacter.entries[style.character.ordinal],
+        motion = AppearanceMotion.entries[style.motion.ordinal],
+        durationScale = style.durationScale, densityScale = style.densityScale,
+        radiusDp = style.cornerRadius.value.toInt(), monoProse = style.monoProse,
+        designators = style.designators, panelAlphaScale = style.panelAlphaScale,
+    )
 }

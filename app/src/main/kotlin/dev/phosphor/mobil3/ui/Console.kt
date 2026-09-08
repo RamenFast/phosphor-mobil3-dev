@@ -59,8 +59,8 @@ import kotlin.math.roundToInt
 
 // ── Burn-in walk: persistent chrome drifts ±1 px on a slow orbit (60 s period) ──
 @Composable
-fun Modifier.burnInWalk(reduced: Boolean): Modifier {
-    if (reduced) return this
+fun Modifier.burnInWalk(reduced: Boolean, visible: Boolean = true): Modifier {
+    if (reduced || !visible) return this
     val t = rememberInfiniteTransition(label = "burnin")
     val phase by t.animateFloat(
         0f, 1f,
@@ -78,14 +78,14 @@ fun Modifier.burnInWalk(reduced: Boolean): Modifier {
 
 // ── Status band — read-only, mono, flanking the punch-hole. Never a tap target. ──
 @Composable
-fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean) {
+fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean, chromeVisible: Boolean = true) {
     val landscape = LocalChromeLandscape.current
     Box(
         Modifier
             .fillMaxWidth()
             .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
             .padding(horizontal = 16.dp, vertical = 6.dp)
-            .burnInWalk(reduced),
+            .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip),
     ) {
         Row(
             Modifier
@@ -94,7 +94,8 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                     if (landscape) Modifier.widthIn(max = Dim.landscapeBandMaxWidth)
                         .fillMaxWidth()
                     else Modifier.fillMaxWidth()
-                ),
+                )
+                .then(if (LocalRoomStyle.current.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             val left = buildString {
@@ -190,6 +191,7 @@ fun Console(
     overflowPullHost: PullGestureHost,
     onHeightChanged: (Int) -> Unit,
     chromeMoving: Boolean = false,
+    chromeVisible: Boolean = true,
 ) {
     val view = LocalView.current
     val hasTransport = state.trackTitle != null || state.remote
@@ -206,7 +208,7 @@ fun Console(
                 chromeSafeDrawingInsets(Dim.cardMarginH, Dim.cardMarginBottom)
             )
             .padding(start = Dim.cardMarginH, end = Dim.cardMarginH, bottom = Dim.cardMarginBottom)
-            .burnInWalk(reduced),
+            .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip),
         contentAlignment = Alignment.BottomCenter,
     ) {
         Column(
@@ -223,6 +225,7 @@ fun Console(
                 )
                 .border(Dim.hairline, p.line, cardShape)
                 .padding(horizontal = Dim.consolePadH, vertical = Dim.consolePadV)
+                .then(if (style.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier)
                 // The play bar owns this deliberate upward reveal. Stage drags remain
                 // gain/orbit gestures, and horizontal seek scrubs keep their lane.
                 .playBarSwipeUp(onSettingsSwipe, settingsPullHost),
@@ -236,11 +239,11 @@ fun Console(
                         }
                     },
                     p.ink, Type.dataLg,
-                    Modifier.basicMarquee(
+                    if (!reduced && chromeVisible && state.presentationVisible && !state.pip) Modifier.basicMarquee(
                         iterations = Int.MAX_VALUE,
                         initialDelayMillis = 2200,
                         velocity = 24.dp,
-                    ),
+                    ) else Modifier,
                 )
                 Spacer(Modifier.height(Dim.gap))
             }

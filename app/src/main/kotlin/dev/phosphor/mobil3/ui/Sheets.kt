@@ -5,11 +5,7 @@ import androidx.activity.compose.BackHandler
 import androidx.compose.animation.AnimatedVisibility
 import androidx.compose.animation.core.MutableTransitionState
 import androidx.compose.animation.core.Animatable
-import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.VisibilityThreshold
-import androidx.compose.animation.core.animateFloat
-import androidx.compose.animation.core.infiniteRepeatable
-import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
 import androidx.compose.animation.fadeIn
@@ -264,6 +260,7 @@ fun SheetHost(
     settingsScroll: ScrollState? = null,
     settingsSourceKey: Any? = null,
     onSettingsInput: () -> Unit = {},
+    onClosing: () -> Unit = {},
     body: @Composable () -> Unit,
 ) {
     val style = LocalRoomStyle.current
@@ -297,6 +294,7 @@ fun SheetHost(
     val dismissal = remember { SheetDismissState(scope) }
     val settingsDismiss = if (settingsScroll != null) remember { SettingsSheetDismiss(scope) } else null
     val currentSettingsInput by rememberUpdatedState(onSettingsInput)
+    val currentClosing by rememberUpdatedState(onClosing)
     DisposableEffect(settingsDismiss) {
         onDispose { settingsDismiss?.retire() }
     }
@@ -304,6 +302,7 @@ fun SheetHost(
         if (openState.targetState && (if (settingsDismiss == null) dismissal.commit(currentEntry, fromDrag)
             else dismissal.commit(currentEntry, fromDrag, settingsDismiss.offsetPx))) {
             settingsDismiss?.retire()
+            currentClosing()
             if (settingsDismiss != null) currentSettingsInput()
             openState.targetState = false
         }
@@ -474,6 +473,7 @@ fun SheetHost(
                         .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
                         .border(Dim.hairline, p.lineStrong, sheetShape)
                         .padding(Dim.sheetPad)
+                        .then(if (style.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier)
                         // Swallow taps so only the surrounding scrim dismisses.
                         .pointerInput(Unit) { detectTapGestures(onTap = {}) },
                 ) {
@@ -511,11 +511,18 @@ fun SheetHost(
                             (if (settingsDismiss != null) Modifier.size(48.dp)
                                 .semantics { contentDescription = "Close settings" }
                                 .clickable(onClick = dismiss)
-                            else Modifier.clickable(onClick = dismiss)).padding(horizontal = 6.dp),
+                            else Modifier.size(48.dp).semantics { contentDescription = "Close $title" }
+                                .clickable(onClick = dismiss)).padding(horizontal = 6.dp),
                         )
                     }
                     Spacer(Modifier.height(Dim.gapLg))
-                    body()
+                    if (style.character == ChromeCharacter.Glass) {
+                        Prose("Glass text uses an opaque readability surface. The outer material stays translucent.", p.ink)
+                    }
+                    if (settingsDismiss?.interrupted == true) {
+                        Prose("Drag paused after delayed input. Use Close or Back, then reopen Settings to retry.", p.ink)
+                    }
+                    CompositionLocalProvider(LocalSettingsGestureOwner provides settingsDismiss) { body() }
                 }
             }
         }
@@ -951,17 +958,11 @@ fun RoomSheet(
     p: Palette,
     reduced: Boolean,
     onPick: (Palette) -> Unit,
+    onStyle: (StyleOverride) -> Unit,
     onDismiss: () -> Unit,
 ) {
     SheetHost(p, "ROOM", reduced, onDismiss, glyph = SettingsGlyph.Room) {
-        // Breathing pulse for follows-beam tiles (one clock for all).
-        val breath by rememberInfiniteTransition(label = "breath").animateFloat(
-            initialValue = 0.35f, targetValue = 1f,
-            animationSpec = infiniteRepeatable(
-                tween(1400, easing = Motion.standard), RepeatMode.Reverse
-            ),
-            label = "breathA",
-        )
+        CompositionLocalProvider(LocalSettingsControlAccess provides true) {
         val gridState = rememberLazyGridState()
         LazyVerticalGrid(
             columns = GridCells.Fixed(2),
@@ -971,11 +972,14 @@ fun RoomSheet(
             overscrollEffect = null,
         ) {
             itemsIndexed(Rooms) { _, room ->
-                val active = room.id == state.room.id
+                val active = "legacy:${room.id}" == state.appearanceDocument?.activeId || room.id == state.room.id
                 val rs = room.style
                 Column(
                     Modifier
                         .padding(4.dp)
+                        .heightIn(min = 48.dp)
+                        .settingsFocusBorder(p)
+                        .semantics { contentDescription = "Apply legacy room ${room.label}" }
                         .background(room.plane)
                         .border(Dim.hairline, if (active) p.accent else room.lineStrong)
                         .clickable {
@@ -987,7 +991,7 @@ fun RoomSheet(
                     Box(
                         Modifier
                             .fillMaxWidth()
-                            .height(34.dp)
+                            .heightIn(min = 34.dp)
                             .clip(RoundedCornerShape(rs.cornerRadius))
                             .background(
                                 if (rs.character == ChromeCharacter.Glass)
@@ -1019,7 +1023,7 @@ fun RoomSheet(
                             Spacer(Modifier.width(6.dp))
                             Box(
                                 Modifier.size(6.dp)
-                                    .background(room.accent.copy(alpha = breath))
+                                    .background(room.accent)
                             )
                         }
                     }
@@ -1041,7 +1045,7 @@ fun RoomSheet(
                                 "FEEL · " + (ov.character?.name?.lowercase() ?: "match"),
                                 active = ov.character != null, p = p, small = true,
                             ) {
-                                state.styleOverride = state.styleOverride.nextCharacter()
+                                onStyle(state.styleOverride.nextCharacter())
                             }
                         }
                         Box(Modifier.weight(1f)) {
@@ -1049,7 +1053,7 @@ fun RoomSheet(
                                 "MOTION · " + (ov.motion?.name?.lowercase() ?: "match"),
                                 active = ov.motion != null, p = p, small = true,
                             ) {
-                                state.styleOverride = state.styleOverride.nextMotion()
+                                onStyle(state.styleOverride.nextMotion())
                             }
                         }
                     }
@@ -1060,7 +1064,7 @@ fun RoomSheet(
                                 "CORNERS · " + (ov.radiusDp?.let { "${it}dp" } ?: "match"),
                                 active = ov.radiusDp != null, p = p, small = true,
                             ) {
-                                state.styleOverride = state.styleOverride.nextCorners()
+                                onStyle(state.styleOverride.nextCorners())
                             }
                         }
                         Box(Modifier.weight(1f)) {
@@ -1068,7 +1072,7 @@ fun RoomSheet(
                                 "LABELS · " + (ov.designators?.let { if (it) "part-nos" else "plain" } ?: "match"),
                                 active = ov.designators != null, p = p, small = true,
                             ) {
-                                state.styleOverride = state.styleOverride.nextLabels()
+                                onStyle(state.styleOverride.nextLabels())
                             }
                         }
                     }
@@ -1079,6 +1083,7 @@ fun RoomSheet(
                     )
                 }
             }
+        }
         }
     }
 }
@@ -1171,6 +1176,7 @@ internal fun SettingsSheet(
         settingsScroll = scroll,
         settingsSourceKey = listOf(state.sourceLabel, state.live, state.remote, state.captureRoot),
         onSettingsInput = presentation::cancelAnchor,
+        onClosing = actions::cancelAppearancePreview,
     ) {
         val signal: @Composable () -> Unit = {
             SettingsGlyphRow("source · ${state.sourceLabel}", SettingsGlyph.Signal, p) {
@@ -1406,6 +1412,7 @@ internal fun SettingsSheet(
             )
         }
         val appearance: @Composable () -> Unit = {
+            AppearanceEditor(state, actions)
             SettingsGlyphRow("room · ${state.room.label}", SettingsGlyph.Room, p) {
                 actions.openRoom()
             }
@@ -1507,7 +1514,7 @@ internal fun SettingsSheet(
                 performance()
             }
             SettingsExpandableSection(SettingsSectionId.APPEARANCE, "APPEARANCE",
-                "Room · ${state.room.label}", SettingsGlyph.Room, p, presentation) {
+                state.appearanceSummary, SettingsGlyph.Room, p, presentation) {
                 appearance()
             }
             SettingsExpandableSection(SettingsSectionId.ABOUT, "ABOUT & MANUAL",
@@ -1523,7 +1530,7 @@ internal fun SettingsSheet(
 }
 
 // What the sheets may ask of the host (grows per act).
-interface SheetActions {
+interface SheetActions : AppearanceActions {
     fun toggleDisplayPause() {}
     fun resetInspection() {}
     fun setPauseBlack(black: Boolean) {}

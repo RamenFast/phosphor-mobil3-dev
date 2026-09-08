@@ -122,7 +122,9 @@ class KnownDefaultsTest {
             "ui.geomAmount = p.getFloat(\"geom_amount\", 0.6f)",
             "range(\"beam_random_range\", 1f, 30f, 6f, 20f)",
             "LightSettings.read(p.all)",
-            "paletteById(p.getString(\"room\", \"amoled\") ?: \"amoled\")",
+            "paletteById(legacy[\"room\"] as? String ?: \"amoled\")",
+            "if (appearanceWorkflow?.committed == null)",
+            "val legacy = p.all",
         )) assertTrue(restore.contains(read), read)
         assertTrue(activity.contains("private var gainValue = 1.8332275f"))
         assertTrue(File("src/main/kotlin/dev/phosphor/mobil3/ui/ScopeUiState.kt").readText().contains("var focus by mutableFloatStateOf(0.3f)"))

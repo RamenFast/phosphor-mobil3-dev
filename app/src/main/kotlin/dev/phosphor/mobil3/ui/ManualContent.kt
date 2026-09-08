@@ -49,7 +49,7 @@ internal object ManualContent {
             "Gain scales the visual signal. Auto-gain is a live owner, not a saved measurement. Instrument presets save authored local gain and the auto-gain setting, never a sampled peer value. VIEW LOCK and current source ownership can block gestures. Check those owners before increasing gain to compensate for missing input.",
             "Turning zero up to eleven still makes zero. The umbrella knows math."),
         ManualChapter("beam", "FOCUS, BEAM and GLOW", "Available",
-            "Focus changes the beam's shape. Beam energy changes emission, while glow controls persistence. Their randomized ranges are authored settings, not audio amplitude or window brightness. A held image keeps its captured appearance. Changing a control while holding must not pretend the frozen pixels were newly rendered from live input.",
+            "Focus changes the beam's shape. Beam energy changes emission, while glow controls persistence. Their randomized ranges are authored settings, not signal level or window brightness. A held image keeps its captured appearance. Changing a control while holding must not pretend the frozen pixels were newly rendered from live input.",
             "More glow is a preference, not a packet-loss repair strategy."),
         ManualChapter("light", "LIGHT · six saved colors", "Available",
             "Keep up to six RGB slots. Select the slots that participate in cycling. Editing an unselected slot should not step a selected TRACK cycle. Delete changes membership without silently changing another saved color. Empty selection uses the documented fallback. A single selected color stays that color. Appearance colors are separate from these beam colors.",

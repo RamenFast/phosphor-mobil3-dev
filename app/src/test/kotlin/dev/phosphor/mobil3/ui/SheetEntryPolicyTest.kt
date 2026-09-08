@@ -156,7 +156,10 @@ class SheetEntryPolicyTest {
         for (wiring in listOf(
             "BackHandler { dismiss() }",
             "detectTapGestures(onTap = { dismiss() })",
-            "Modifier.clickable(onClick = dismiss)",
+            ".clickable(onClick = dismiss)",
+            "contentDescription = \"Close settings\"",
+            "contentDescription = \"Close \$title\"",
+            "else Modifier.size(48.dp).semantics",
             "onDragEnd = { settleDismiss(0f) }",
             "settleDismiss(available.y.coerceAtLeast(0f))",
             "if (!openState.targetState && openState.isIdle) onDismiss()",

@@ -117,7 +117,11 @@ class SettingsControlAccessTest {
         val sheets = source("Sheets")
         val settings = sheets.substringAfter("internal fun SettingsSheet(").substringBefore("interface SheetActions")
         val provider = "CompositionLocalProvider(LocalSettingsControlAccess provides true)"
-        assertEquals(1, sheets.split(provider).size - 1)
+        val room = sheets.substringAfter("fun RoomSheet(").substringBefore("private fun StyleSampleChip(")
+        assertEquals(2, sheets.split(provider).size - 1)
+        assertEquals(1, settings.split(provider).size - 1)
+        assertEquals(1, room.split(provider).size - 1)
+        assertTrue(settings.indexOf(provider) >= 0)
         assertTrue(settings.indexOf(provider) < settings.indexOf("SheetHost(p, \"SETTINGS\""))
         assertTrue(source("SettingsControlAccess").contains("staticCompositionLocalOf { false }"))
         assertTrue(source("Type").contains("if (LocalSettingsControlAccess.current) Int.MAX_VALUE else 1"))
