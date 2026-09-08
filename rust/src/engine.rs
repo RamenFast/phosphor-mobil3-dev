@@ -379,6 +379,14 @@ pub(crate) struct SignalAggregate {
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 impl SignalAggregate {
     pub(crate) fn observe(&mut self, samples: &[f32], now: u64) {
+        self.observe_with_rail(samples, now, 1.0);
+    }
+
+    pub(crate) fn observe_wire_pcm16(&mut self, samples: &[f32], now: u64) {
+        self.observe_with_rail(samples, now, 32767.0 / 32768.0);
+    }
+
+    fn observe_with_rail(&mut self, samples: &[f32], now: u64, positive_rail: f64) {
         if self.start.is_none_or(|start| now < start || now - start >= 500) {
             self.start = Some(now);
             self.measured = None;
@@ -402,7 +410,7 @@ impl SignalAggregate {
                 let value = f64::from(*value);
                 self.squares[channel] += value * value;
                 self.peaks[channel] = self.peaks[channel].max(value.abs());
-                if value.abs() >= 1.0 { self.rails[channel] = self.rails[channel].saturating_add(1); }
+                if value >= positive_rail || value <= -1.0 { self.rails[channel] = self.rails[channel].saturating_add(1); }
             }
         }
     }
@@ -431,6 +439,26 @@ pub(crate) struct SignalOutput {
 mod signal_tests {
     use super::*;
     use std::sync::atomic::AtomicU64;
+
+    #[test]
+    fn wire_pcm16_decoder_and_meter_preserve_both_rails_without_counting_neighbors() {
+        let media = crate::bridge_core::SessionMedia::default();
+        let samples = [i16::MAX, i16::MIN, i16::MAX - 1, i16::MIN + 1, 0, 0];
+        let payload: Vec<u8> = samples.into_iter().flat_map(i16::to_le_bytes).collect();
+        let crate::bridge_core::RemoteMedia::Audio(decoded) = media.accept(b'A', &payload, 100).unwrap() else {
+            panic!("Valid stereo PCM16 must decode as audio");
+        };
+        assert!(decoded[0] < 1.0);
+        assert_eq!(decoded[1], -1.0);
+        let mut meter = SignalAggregate::default();
+        meter.observe_wire_pcm16(&decoded, 100);
+        let value = meter.json(100);
+        assert_eq!(value["valid_frames"], 3);
+        assert_eq!(value["channels"][0]["full_scale"], 1);
+        assert_eq!(value["channels"][1]["full_scale"], 1);
+        assert_eq!(value["channels"][0]["peak"], f64::from(i16::MAX) / 32768.0);
+        assert_eq!(value["channels"][1]["peak"], 1.0);
+    }
 
     #[test]
     fn signal_window_silence_invalid_and_full_scale_are_distinct() {

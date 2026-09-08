@@ -1479,7 +1479,7 @@ fn reader(
                 let Some(bridge_core::RemoteMedia::Audio(f32buf)) = media else {
                     continue;
                 };
-                shared.observe_signal(|signal| signal.input.observe(&f32buf, now));
+                shared.observe_signal(|signal| signal.input.observe_wire_pcm16(&f32buf, now));
                 // No audible consumer exists in music-off/visualizer flows, so
                 // receive-side scope feed is the explicit fallback. With audio
                 // enabled the callback owns scope truth after jitter/zero-fill.

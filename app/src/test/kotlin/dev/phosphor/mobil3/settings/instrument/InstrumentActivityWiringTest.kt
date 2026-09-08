@@ -107,4 +107,15 @@ class InstrumentActivityWiringTest {
             .contains("error(reportTuningWriteFailure(it))"))
         assertTrue(section("private fun applyLight", "override fun rollLight").contains("reportTuningWriteFailure(failure)"))
     }
+
+    @Test fun startupCreatesRecoveryOwnerBeforeAnyRestoreTimeLightWrite() {
+        val create = section("override fun onCreate(", "override fun onResume()")
+        val initialize = create.indexOf("initializeInstruments()")
+        val restore = create.indexOf("restoreTuning()")
+        assertTrue(initialize >= 0)
+        assertTrue(restore > initialize)
+        assertEquals(1, Regex("initializeInstruments\\(\\)").findAll(create).count())
+        val restoreBody = section("private fun restoreTuning", "override fun captureConsentNeeded")
+        assertTrue(restoreBody.contains("else setLight(it)"))
+    }
 }

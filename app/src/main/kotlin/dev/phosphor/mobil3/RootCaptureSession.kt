@@ -25,6 +25,7 @@ internal class RootCaptureSession(private val context: Context, val mode: Int = 
         private set
     private val signalMeter = SignalAggregate(generation, 1)
     @Volatile private var signal = SignalInput(SignalKind.ROOT, generation,
+        readUnit = "received PCM/progress observations (not AudioRecord read calls)",
         normalized = "48,000 Hz · stereo float transport · duplicated mono, not original stereo")
     internal fun signalObservation(): SignalInput = signal
     data class Result(val error: String?, val cleanup: Boolean, val authorized: Boolean = false, val progress: Long = 0)

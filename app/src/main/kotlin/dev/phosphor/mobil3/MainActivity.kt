@@ -205,7 +205,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             uri ?: return@registerForActivityResult
             runCatching {
                 contentResolver.takePersistableUriPermission(uri, Intent.FLAG_GRANT_READ_URI_PERMISSION)
-                selectSource()
+                selectSource(SignalKind.LOCAL)
                 applyLocalGainPolicy()
                 startSourceService(Intent(this, PlaybackService::class.java)
                     .setAction(PlaybackService.ACTION_OPEN_TREE)
@@ -780,8 +780,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
         ui.bindRandomModeRequest(::armAndRollRandomMode)
-        restoreTuning()
         initializeInstruments()
+        restoreTuning()
         refreshCaptureMetadataAccess()
         applyScopeRotationPreference()
         // The scope starts immersive; an edge swipe can reveal system bars temporarily.
@@ -1275,9 +1275,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val current = selection == sourceSelection && PlaybackService.localSourcePublication.accepts(publication) && ownerCurrent
         val detail = signalNative.details(native, input, playback, now).toMutableList()
         detail += "Selection revision" to "$selection · service source revision $publication"
-        detail += "Scope tap peak" to if (ui.displayPaused) "Unavailable · display consumption is paused, not proof of input silence"
-            else ui.gridReading?.let { "L ${it.left} · R ${it.right} · render-consumed normalized tap from the existing single UI read" }
-                ?: "Unavailable · no current measurement in the existing single UI stats read"
+        detail += "Scope tap peak" to "Unavailable · the existing display tap has no owner and measurement-age receipt. No second tap is consumed."
         ui.signalCheck = SignalPresentation.present(selected, input, now,
             SignalDisplay(ui.displayPaused, ui.pauseBlack, ui.heldFrameAvailable, ui.displayPresentPending),
             current, pendingCaptureConsent == selection || pendingAudioPermission != AudioPermissionPurpose.NONE, detail)
@@ -1505,7 +1503,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun openFile() {
-        selectSource(SignalKind.LOCAL)
+        selectSource(signalSelected)
         openFileLauncher.launch(arrayOf("audio/*"))
     }
 
@@ -2493,7 +2491,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // ── Deck sheet verbs ──
     override fun openFolder() {
-        selectSource(SignalKind.LOCAL)
+        selectSource(signalSelected)
         openFolderLauncher.launch(null)
     }
     override fun jumpToQueue(index: Int) { controller?.seekTo(index, 0) }

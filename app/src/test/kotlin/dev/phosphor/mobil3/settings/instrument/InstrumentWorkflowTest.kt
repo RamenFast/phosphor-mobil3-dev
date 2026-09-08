@@ -90,6 +90,27 @@ class InstrumentWorkflowTest {
         assertFalse(r.owner.pending)
     }
 
+    @Test fun freshOwnerRetainsRestoreTimeRollbackFailureBeforeAnyPresetRequest() {
+        val r = Rig(original)
+        val failure = r.settings.write {
+            r.settings.commit(commit = { false }, publish = { error("No publication after failed commit") }, rollback = { false })
+        }!!
+        r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure(failure.message(), failure.restored))
+        assertTrue(r.owner.storageUncertain)
+        assertTrue(r.owner.editsBlocked)
+        assertFalse(r.owner.automaticPersistenceAllowed)
+        r.owner.apply(ambient)
+        r.owner.undo()
+        assertNull(r.owner.beginSettingsImport())
+        assertThrows(IllegalStateException::class.java) { r.manualFocus(1.7f) }
+        assertEquals(0L, r.sequence)
+        assertEquals(original, r.current)
+        r.owner.retryPersistence()
+        assertFalse(r.owner.editsBlocked)
+        assertTrue(r.owner.automaticPersistenceAllowed)
+        assertEquals(0L, r.sequence)
+    }
+
     @Test fun committedCancelReconcilesBeforeManualBAndLateReplyCannotOverwriteB() {
         val r = Rig(original)
         r.owner.apply(ambient, InstrumentWorkflow.Association("curated:Ambient", "Ambient", ambient))

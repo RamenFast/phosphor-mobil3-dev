@@ -183,7 +183,7 @@ class SignalObservationTest {
         val join = SignalNativeObservation()
         fun native(id: Long, frames: Long) = JSONObject("""{"local":{"open_id":$id,"output":{"popped_stereo_frames":$frames}}}""")
         assertNull(join.local(native(1, 100), playback(SignalKind.LOCAL), 100)?.receiptAt)
-        assertEquals(600L, join.local(native(1, 200), playback(SignalKind.LOCAL), 600)?.receiptAt)
+        assertEquals(100L, join.local(native(1, 200), playback(SignalKind.LOCAL), 600)?.receiptAt)
         assertNull(join.local(native(2, 400), playback(SignalKind.LOCAL).copy(localOpen = 2), 1100)?.receiptAt)
         assertNull(join.local(native(2, 2), playback(SignalKind.LOCAL).copy(localOpen = 2), 1600)?.receiptAt)
         val failed = join.local(native(2, 20), playback(SignalKind.LOCAL, SignalLife.ENDED).copy(localOpen = 2), 2100)!!
@@ -204,6 +204,80 @@ class SignalObservationTest {
         assertTrue(join.details(native, current, reading, 1000).toMap()["Relay-reported RMS"]!!.contains("Unavailable"))
         assertFalse(join.relay(native, reading.copy(relaySession = 4), 1000)!!.contributing)
         assertEquals(SignalLife.FAILED, join.relay(native, reading.copy(life = SignalLife.FAILED), 1000)!!.life)
+    }
+
+    @Test fun hiddenLocalIncrementDoesNotBecomeFreshWhenTheViewReturns() {
+        val join = SignalNativeObservation()
+        fun native(frames: Int) = JSONObject("""{"local":{"open_id":1,"output":{"popped_stereo_frames":$frames}}}""")
+        val reading = playback(SignalKind.LOCAL)
+        join.local(native(100), reading, 100)
+        val resumed = join.local(native(200), reading.copy(intent = false), 60000)!!
+        assertNull(resumed.receiptAt)
+        assertFalse(SignalPresentation.primary(SignalKind.LOCAL, resumed, 60000).contains("arriving"))
+        assertNull(join.local(native(200), reading, 60500)?.receiptAt)
+        val positive = join.local(native(201), reading, 61000)!!
+        assertEquals(60500L, positive.receiptAt)
+        val view = SignalPresentation.present(SignalKind.LOCAL, positive, 61000, SignalDisplay(false, false, false, false))
+        assertTrue(view.rows.toMap().containsKey("Positive receipt age upper bound"))
+        assertFalse(view.rows.toMap().containsKey("Last positive receipt"))
+        assertTrue(view.status.contains("arriving"))
+    }
+
+    @Test fun failedLocalSnapshotsAndBackwardsClocksInvalidateProgressComparison() {
+        val join = SignalNativeObservation()
+        fun native(frames: Int) = JSONObject("""{"local":{"open_id":1,"output":{"popped_stereo_frames":$frames}}}""")
+        val reading = playback(SignalKind.LOCAL)
+        join.local(native(100), reading, 100)
+        assertEquals(100L, join.local(native(200), reading, 600)?.receiptAt)
+        assertNull(join.local(null, reading, 700)?.receiptAt)
+        assertNull(join.local(native(300), reading, 800)?.receiptAt)
+        assertNull(join.local(native(301), reading, 799)?.receiptAt)
+        assertNull(join.local(native(302), reading, 799)?.receiptAt)
+    }
+
+    @Test fun rootPcmAndProgressCountAreReceivedObservationsNotCompletedReads() {
+        val meter = SignalAggregate(9, 1)
+        meter.pcm16(shortArrayOf(100), 100)
+        meter.progress(100)
+        val root = SignalInput(SignalKind.ROOT, 9, life = SignalLife.RUNNING, window = meter.latest,
+            readUnit = "received PCM/progress observations (not AudioRecord read calls)")
+        val rows = SignalPresentation.present(SignalKind.ROOT, root, 100, SignalDisplay(false, false, false, false)).rows.toMap()
+        assertTrue(rows["Input receipt"]!!.contains("2 received PCM/progress observations"))
+        assertFalse(rows["Input receipt"]!!.contains("completed reads"))
+        assertTrue(rows.containsKey("Last received PCM / progress observation"))
+    }
+
+    @Test fun pickerAndTapAdaptersPreserveSourceTruthWithoutAnotherRead() {
+        fun source(path: String) = listOf(java.io.File(path), java.io.File("../$path")).first { it.isFile }.readText()
+        val activity = source("app/src/main/kotlin/dev/phosphor/mobil3/MainActivity.kt")
+        for ((start, end) in listOf("override fun openFile()" to "override fun exportSettings", "override fun openFolder()" to "override fun jumpToQueue")) {
+            val body = activity.substringAfter(start).substringBefore(end)
+            assertTrue(body.contains("selectSource(signalSelected)"))
+            assertFalse(body.contains("selectSource(SignalKind.LOCAL)"))
+        }
+        val folder = activity.substringAfter("private val openFolderLauncher").substringBefore("private val createSettingsArchive")
+        assertTrue(folder.indexOf("uri ?: return") < folder.indexOf("selectSource(SignalKind.LOCAL)"))
+        val file = activity.substringAfter("private fun loadUri(").substringBefore("private fun")
+        assertTrue(file.contains("selectSource(SignalKind.LOCAL)"))
+        val join = activity.substringAfter("private fun refreshSignalCheck()").substringBefore("private fun selectSource")
+        assertFalse(join.contains("ui.gridReading"))
+        assertTrue(join.contains("no owner and measurement-age receipt"))
+        val root = source("app/src/main/kotlin/dev/phosphor/mobil3/RootCaptureSession.kt")
+        assertTrue(root.contains("readUnit = \"received PCM/progress observations"))
+        assertEquals(1, Regex("PhosphorNative\\.scopeStats\\(").findAll(activity).count())
+    }
+
+    @Test fun unmatchedInputCannotInheritOldTransportOrPeakExtras() {
+        val pending = SignalPresentation.present(SignalKind.LOCAL, null, 100, SignalDisplay(false, false, false, false),
+            extra = listOf("Old capture peak" to "1.0", "Old transport" to "paused"))
+        assertFalse(pending.rows.any { it.first.startsWith("Old") })
+        val oldCapture = playback(SignalKind.CAPTURE).copy(transport = false, transportAt = 100)
+        val join = SignalNativeObservation()
+        val rows = join.details(JSONObject("{}"), input(), oldCapture, 100).toMap()
+        assertEquals("Unavailable", rows["Transport intent"])
+        assertTrue(rows["Observed external transport"]!!.startsWith("Unavailable"))
+        val local = SignalInput(SignalKind.LOCAL, 2)
+        assertEquals("Unavailable", join.details(JSONObject("{}"), local, playback(SignalKind.LOCAL), 100).toMap()["Transport intent"])
     }
 
     @Test fun observerRunsAfterRetirementFenceAndZeroReadsAreObservedOnce() {

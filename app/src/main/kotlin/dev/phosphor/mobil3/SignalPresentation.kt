@@ -64,9 +64,10 @@ internal object SignalPresentation {
             rows += "Route observation age" to age(now, descriptor?.observedAt)
         }
         rows += "Input receipt" to (source?.receiptCount?.let { "$it ${source.receiptUnit}" }
-            ?: w?.let { "${it.ingressFrames} input frames · ${it.reads} completed reads" } ?: "Unavailable · no owner input counter")
-        rows += "Last completed read / progress" to age(now, source?.progressAt ?: w?.lastReadAt)
-        rows += "Last positive receipt" to age(now, source?.receiptAt ?: w?.lastPositiveAt)
+            ?: w?.let { "${it.ingressFrames} input frames · ${it.reads} ${source.readUnit}" } ?: "Unavailable · no owner input counter")
+        rows += (if (source?.kind == SignalKind.ROOT) "Last received PCM / progress observation" else "Last completed read / progress") to age(now, source?.progressAt ?: w?.lastReadAt)
+        rows += (if (source?.receiptAgeIsUpperBound == true) "Positive receipt age upper bound" else "Last positive receipt") to
+            age(now, source?.receiptAt ?: w?.lastPositiveAt)
         rows += "Input window" to (w?.let { "At most 500 ms · ${it.validFrames} valid frames · ${it.invalidSamples} invalid samples" } ?: "Unavailable")
         rows += "Raw input level" to if (fresh && !w!!.channels.isEmpty()) w.channels.mapIndexed { i, c ->
             val db = if (c.peak == 0.0) "−∞ (digital silence)" else String.format(Locale.ROOT, "%.1f", 20 * kotlin.math.log10(c.peak))
@@ -77,7 +78,7 @@ internal object SignalPresentation {
             else "No full-scale samples in this measured window"
         } else "Unavailable · no clean/clipping claim without measured samples"
         rows += "Display" to display(d)
-        if (accepted) rows += extra
+        if (accepted && source != null) rows += extra
         rows += "Recovery" to "Open SOURCES to use the existing source, grant, retry or route controls. Reading this view changes no source."
         return SignalCheckView(primary(selected, input, now, current, consent), rows)
     }

@@ -51,6 +51,8 @@ internal data class SignalInput(
     val receiptAt: Long? = null,
     val receiptCount: Long? = null,
     val receiptUnit: String = "input frames",
+    val receiptAgeIsUpperBound: Boolean = false,
+    val readUnit: String = "completed reads",
 )
 
 internal data class SignalPlayback(

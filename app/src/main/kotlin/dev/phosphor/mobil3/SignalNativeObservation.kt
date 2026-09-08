@@ -7,20 +7,29 @@ internal class SignalNativeObservation {
     private var localOwner: Long? = null
     private var localFrames: Long? = null
     private var localProgress: Long? = null
+    private var localObservedAt: Long? = null
 
     fun local(native: JSONObject?, playback: SignalPlayback?, now: Long): SignalInput? {
-        if (playback?.kind != SignalKind.LOCAL) return null
+        if (playback?.kind != SignalKind.LOCAL) {
+            localObservedAt = null
+            localProgress = null
+            return null
+        }
         val data = native?.optJSONObject("local")?.takeIf { it.long("open_id") == playback.localOpen }
         val owner = data?.long("open_id")?.takeIf { it > 0 }
         val count = data?.optJSONObject("output")?.long("popped_stereo_frames")
-        if (owner != localOwner || count == null || localFrames?.let { count < it } == true) localProgress = null
-        else if (localFrames?.let { count > it } == true) localProgress = now
+        val previousAt = localObservedAt
+        val comparable = signalAge(now, previousAt)?.let { it in 1..SignalPresentation.FRESH_MS } == true
+        if (owner == null || owner != localOwner || count == null || !comparable || localFrames?.let { count < it } == true) localProgress = null
+        else if (localFrames?.let { count > it } == true) localProgress = previousAt
         localOwner = owner
         localFrames = count
+        localObservedAt = now.takeIf { it >= 0 && owner != null && count != null }
         return SignalInput(SignalKind.LOCAL, owner ?: 0, life = playback.life, reason = playback.reason,
             descriptor = SignalDescriptor(unavailable = "Unavailable · local decoder exposes no original format getter"),
             contributing = owner != null && playback.life == SignalLife.RUNNING,
-            receiptAt = localProgress, receiptCount = count, receiptUnit = "popped normalized output stereo frames (not recorder ingress)")
+            receiptAt = localProgress, receiptCount = count, receiptAgeIsUpperBound = true,
+            receiptUnit = "popped normalized output stereo frames (not recorder ingress)")
     }
 
     fun relay(native: JSONObject?, playback: SignalPlayback?, now: Long): SignalInput? {
@@ -69,9 +78,16 @@ internal class SignalNativeObservation {
 
     fun details(native: JSONObject?, input: SignalInput?, playback: SignalPlayback?, now: Long): List<Pair<String, String>> {
         val rows = mutableListOf<Pair<String, String>>()
-        rows += "Transport intent" to playback?.intent.text("requested playing", "requested paused")
-        rows += "Observed external transport" to if (playback?.kind in setOf(SignalKind.CAPTURE, SignalKind.ROOT)) {
-            "${playback?.transport.text("playing", "paused")} · ${signalAge(now, playback?.transportAt)?.let { "$it ms old" } ?: "age unavailable"} · chosen external controller only"
+        val matchedPlayback = playback?.takeIf {
+            input != null && input.owner > 0 && it.kind == input.kind && when (input.kind) {
+                SignalKind.LOCAL -> it.localOpen == input.owner
+                SignalKind.RELAY -> it.relaySession == input.session
+                else -> true
+            }
+        }
+        rows += "Transport intent" to matchedPlayback?.intent.text("requested playing", "requested paused")
+        rows += "Observed external transport" to if (matchedPlayback?.kind in setOf(SignalKind.CAPTURE, SignalKind.ROOT)) {
+            "${matchedPlayback?.transport.text("playing", "paused")} · ${signalAge(now, matchedPlayback?.transportAt)?.let { "$it ms old" } ?: "age unavailable"} · chosen external controller only"
         } else "Unavailable · not inferred from the Play/Pause button"
         if (native == null) { rows += "Native path" to "Unavailable · snapshot read failed"; return rows }
         val scope = native.optJSONObject("scope")
@@ -90,8 +106,8 @@ internal class SignalNativeObservation {
         }
         if (input?.kind == SignalKind.RELAY) {
             val relay = native.optJSONObject("relay")?.takeIf { it.long("session") == input.session }
-            rows += "Relay PCM observation" to "Received valid media before phone mute / zero-fill. Geometry has no PCM level."
-            rows += "Link classification age" to (signalAge(now, playback?.linkAt)?.let { "$it ms old · existing service classifier" } ?: "Unavailable")
+            rows += "Relay PCM observation" to "s16le stereo wire media normalized by 32768 before phone mute / zero-fill. Both PCM16 rails count as full scale. Original recorder format is unavailable. Geometry has no PCM level."
+            rows += "Link classification age" to (signalAge(now, matchedPlayback?.linkAt)?.let { "$it ms old · existing service classifier" } ?: "Unavailable")
             rows += "Relay observation coverage" to count(relay, "diagnostic_blocks_skipped", "diagnostic blocks skipped without delaying the receiver. Receipt counters count observed blocks only.")
             rows += "Relay-reported RMS" to reported(relay?.optJSONObject("relay_rms"))
             rows += "Relay-reported RMS peak" to "${reported(relay?.optJSONObject("relay_rms_peak"))} · not sample peak / clipping"
