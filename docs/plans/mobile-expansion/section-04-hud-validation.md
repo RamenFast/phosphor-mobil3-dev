@@ -61,3 +61,22 @@ Use the [contract verification map](section-04-hud-contract.md) and round-one fi
 8. No native frames or hidden chrome/sensor heartbeat without a visible presentation owner.
 
 The native resource barrier can wait indefinitely for a stalled GPU driver. Source inspection and host tests establish ownership order, not bounded GPU completion or phone responsiveness under a driver stall. HOLD retention, HDR output, and background microphone ownership remain separate expansion sections.
+
+## Clean committed dual-artifact freeze, 07:01 UTC
+
+Task `810364pegz` built both APKs together from clean mobile commit `a3223b87c8d15fc0da691cfcfe0963ba464d1e92` and clean engine `7729990bb29f0167ef906d0fbdb44e1e91206955`. Both source manifests matched after the full gate. The same505 Android tests passed with no failures or errors. Both decoded BuildConfig classes report `a3223b87c8d1`, without a dirty suffix. The packaged HUD service is nonexported with specialUse and its declared subtype.
+
+| Frozen item | SHA256 |
+|---|---|
+| Mobile source archive | `c320f5bd74421afd8147b0255e19d10b63a5f40c103245a6480ceafc9122ada2` |
+| Mobile source manifest | `842bfad2483cd86ed73ce4ba6e05eb5bc1bb90fe8b39fc2cbdead005e02486dd` |
+| Engine source manifest | `8e7a32ac43b2fa668f2d53f6fe0642650c5b334dd53997366d97006a13b81ffe` |
+| App APK | `265509b1e28eb30e8f4d2e32f86649215d053bddedb0dce9df3b5aabf7fc7cf3` |
+| Android-test APK | `04b94fb3e2447acb18b8d490bac5d53744816d7360164e9edafabb8b52ff2a85` |
+| Debug signer | `f8dfcf73312022dfe8096c8e4c28b1d81199e0c6ce9c73c4394789fe9614632d` |
+| Actual decoded packaged manifest | `be023f7771c1e31363e3a61d7c04d7934b73a45f523325b664c901bb75bb6c8e` |
+| Packaged helper DEX jar | `ba6cdea7e73e412c702d37652d1bb766fee2fef86fa411fc0fba26e7cf7ffc2a` |
+| Clean build log | `1b5d7e18020a8d7e462ffb4e388bfcdec51bf5ee14c696ddbe4838f271905059` |
+| Freeze JSON | `c51fe41d1250fb6affd3c7754c145e29274a2dc163a6410387dbdd177bf3af24` |
+
+The app's helper content identity is `db99e0398505d83ecd024c80ced96bf2a3c378e592b52bdd2e2382f090003be4`. The packaged digest matches the actual jar. The retained prefix is `dev/scratch/mobile-expansion-20260908T001819Z/hud-a3223b8`, with `.apk`, `-androidTest.apk`, and `-freeze.json` files. Offline guards verified the source archive and both artifact hashes. Neither APK is installed. The installed06f root checkpoint remains unchanged. R13 source work started only after retention and source/build release, so it is outside this freeze.
