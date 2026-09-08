@@ -307,3 +307,24 @@ Rose and Maple released all holds and stopped. Seedling reviews full R17 round3 
 - Seedling completed full R17 round3 at pinned a0d3c128fe65bceb3302f70e50a6d7fcaecf59ca/shared0ffd658. Score8/10, no new material source defect. Original7/7 reports remain unchanged. Retained report SHA25696f51d29b6c0c0aa3068d48a33fa9800a8463eec9f06f9a8c70af725742f1c2f is byte-identical in critiques/section-08-round-03.md, committed10f10a5. All55 snapshot hashes and42 reviewed production/test comparisons against the inherited716 gate passed. No behavioral tests or device actions ran in the review. Worker stopped after custody. Stop corrective full review rounds at this threshold.
 - The same commit records section-10-document-contract.md before pure codec implementation. Palmtree session session_palmtree_1788876103807_22fb83cfa33456e3 uses confirmed Astra/high and owns only new AppearanceDocument/Codec/Collection, their new tests and a separate handoff. Explicit release deadline14:31UTC. No Gradle/device/Git/Python/shared actions permitted. Root retains all runtime integration and full-gate ownership.
 - Evergreen remains the other worker, read-only full settings round2 at a38f39e through14:12. No active build. Full live-tree gates wait for appearance source release. Latest full gate remains736 JVM/126 native/three offscreen GPU, not installed. Fifteen outcome milestones remain incomplete. Latest host inventory13:51 showed no ASUS. S25 stays undisturbed.
+
+### Authoritative continuation checkpoint,15:04UTC
+
+This append supersedes the early section matrix and historical writer/build statements above. It does not rewrite their evidence.
+
+| Section | Current evidence and remaining outcome |
+| --- | --- |
+| 1 | Accepted9/10, original boundary history preserved. |
+| 2–3 | Original root stereo, SoundCloud, acoustic latency and mixer remain unaccepted. Historical16kmono feasibility remains a limited real result. S25 undisturbed. |
+| 4 | HUD source review8 and callback addendum retained. Device transparency/touch/surface continuity remain open. |
+| 5 | HOLD epochs, committed images and application-present acknowledgement gated. Original scores6/7/7 and narrow addenda remain separate. Source age, Android callbacks and scanout remain open. |
+| 6 | Six colors/randomization implemented and gated, original7/7 plus narrow correction8. Real persistence/UI/track handoff remain open. |
+| 7 | Instrument source review7/7/7/8, stop full corrective reviews. Recovery changes gated. Real SAF/storage/JNI/UI acceptance open. |
+| 8 | Signal source reviews7/7/8. Real D1–D10 Android observations remain open. Unavailable measurements remain labeled. |
+| 9 | Settings original7/7.803JVM gate covers focus/core changes. Exact Compose queue audit retained5d4d19d. Child exclusion d8760e5 passes54 pure checks, not Android input. Two bounded addenda are not extra full rounds. |
+| 10 | Core/migration7fdab21 passed803JVM/126native/3offscreenGPU/lint/dualAPK/engine/boundary and unchanged source inventories. Ant reports116 pure runtime/editor tests and syntax checks, still awaiting explicit source release before Android integration. |
+| 11 | cca1e8d implements26 indexed chapters/responses, bounded search/history and revised turtle with preserved discovery/root/link callbacks.12 actual pure/source-linked checks passed. Android/pixels/navigation and independent review open. |
+| 12–14 | HDR, window brightness and launch coordinator remain pending. Manual labels them planned. |
+| 15 | No new install. Five-cycle, soak, exact reviewed dualAPK freeze, restoration and hardware acceptance remain open. |
+
+Latest full gate5457814owf is working-source integration evidence, not final clean reviewed acceptance. Its exact APK pair was copied before another build and SHA-256 reverified at15:02UTC: app27fedae3277a1370df3fde0fdd3dbbafa51c677ad3d1e1dab8e088696cc48f6c, androidTest82c7b7eac2d06772002ba72dcb161c56a960e1c8597ef6b49306dba2456bf466. Private prefix `appearance-core-migration-r01` retains the pair, runner, inventories, logs and JVM archive. No device action occurred. Last14:13 host inventory had no ASUS. Ant is the only live writer, deadline15:10UTC. No Gradle starts before explicit release.
