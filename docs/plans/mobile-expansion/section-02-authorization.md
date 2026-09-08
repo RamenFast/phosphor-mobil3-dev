@@ -43,8 +43,22 @@ The one-shot uses `status`, `tool=pm3-root-authorization`, `version=1.0.0`, and 
 ## Checks
 
 - Initial implementation: 11 debug probe tests plus existing Android tests, lint, assembleDebug and checkEngine passed.
-- Follow-up adds explicit I/O-denial classification and unfinished-reader rejection. Exact committed build and device results remain pending.
+- Exact `bf9b8f2` build passed all 13 probe tests, existing Android tests, lint, assembleDebug and checkEngine. The installed readback SHA-256 is `1ae6992d0f80667676c2d54715c047a2fb049a6adcb00552c56bb5d90653a520`. Its signer matches the baseline.
 - Tests use the actual command observer with host child processes for success and timeout, plus injected process fixtures for malformed/denied/overflow/read-failure states. None is a root or Android audio acceptance claim.
+
+## Actual S25 result and next discriminating test
+
+At 01:21:45 UTC the exact installed probe ran in PID 17076, UID 10401, SELinux `untrusted_app` context. All five fixed standard su entries returned ENOENT. The receipt reports `su_unavailable`, ten milliseconds, confirmed cleanup and `capture_tested=false`. This is real normal-app evidence, not a shell/run-as root attempt. Preferences before install, after install and after the probe all match the original archive byte-for-byte. Projection remained null and no su/id child remained. Raw receipts stay in the private recovery directory.
+
+Read-only provider inspection then established that the preexisting logcat override identifies itself as `ksud 3.2.5`. Its own `debug info` reports driver 32525, UAPI 2, LKM and late-load flags. Its `debug su --help` exposes the provider's root-shell entrypoint. Reading the executable for a SHA-256 was denied, so no binary/source identity match is claimed.
+
+The matching upstream sources establish the intended interface:
+
+- [3.2.5 command dispatch](https://github.com/tiann/KernelSU/blob/v3.2.5/userspace/ksud/src/cli.rs)
+- [3.2.5 grant_root shell](https://github.com/tiann/KernelSU/blob/v3.2.5/userspace/ksud/src/su.rs)
+- [3.2.5 driver grant request](https://github.com/tiann/KernelSU/blob/v3.2.5/userspace/ksud/src/ksucalls.rs)
+
+The separately invoked `KSU_AUTH_PROBE` action first checks exact provider version under the app UID, then supplies the same fixed identity command to `debug su` through private stdin. It never uses `--global-mnt`, changes the grant/profile, modifies the executable, or creates a product dependency on this device-specific path. This is not automatic fallback from standard su. Its build and actual result are pending.
 
 ## Recovery and remaining work
 

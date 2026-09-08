@@ -120,6 +120,7 @@ class RootAuthorizationCommandTest {
     @Test fun receiverRejectsMissingOrUnknownActions() {
         assertTrue(SelfTestReceiver.accepts("dev.phosphor.mobil3.SELFTEST"))
         assertTrue(SelfTestReceiver.accepts("dev.phosphor.mobil3.ROOT_AUTH_PROBE"))
+        assertTrue(SelfTestReceiver.accepts("dev.phosphor.mobil3.KSU_AUTH_PROBE"))
         assertFalse(SelfTestReceiver.accepts(null))
         assertFalse(SelfTestReceiver.accepts("su"))
     }
@@ -143,5 +144,49 @@ class RootAuthorizationCommandTest {
             unblock.countDown()
             assertTrue(readerDone.await(1, TimeUnit.SECONDS))
         }
+    }
+
+    @Test fun kernelSuProbeRequiresTheMeasuredProviderVersionFirst() {
+        for (version in listOf("", "logcat help", "ksud 3.3.0", "0", "ksud 3.2.5\nextra")) {
+            var calls = 0
+            val result = RootAuthorizationCommand.runKernelSu { calls++; FinishedProcess(stdout = version) }
+            assertEquals(1, calls)
+            assertEquals("provider_mismatch", result.outcome)
+            assertFalse(result.granted)
+        }
+    }
+
+    @Test fun kernelSuProbeSendsOnlyFixedIdentityAndNeverChangesMountNamespace() {
+        val calls = mutableListOf<List<String>>()
+        val input = ByteArrayOutputStream()
+        val result = RootAuthorizationCommand.runKernelSu { command ->
+            calls += command
+            if (calls.size == 1) FinishedProcess(stdout = "ksud 3.2.5\n") else object : FinishedProcess() {
+                override fun getOutputStream() = input
+            }
+        }
+        assertEquals(listOf(listOf("/system/bin/logcat", "--version"), listOf("/system/bin/logcat", "debug", "su")), calls)
+        assertEquals("exec /system/bin/id -u\n", input.toString())
+        assertTrue(result.granted)
+    }
+
+    @Test fun kernelSuVersionOverflowOrFailedExitCannotLaunchRoot() {
+        for (version in listOf(FinishedProcess(stdout = "ksud 3.2.5", code = 1), FinishedProcess(stdout = "ksud 3.2.5" + " ".repeat(8_192)))) {
+            var calls = 0
+            val result = RootAuthorizationCommand.runKernelSu { calls++; version }
+            assertEquals(1, calls)
+            assertFalse(result.granted)
+        }
+    }
+
+    @Test fun kernelSuDenialStopsAfterTheOneFixedIdentityAttempt() {
+        var calls = 0
+        val result = RootAuthorizationCommand.runKernelSu {
+            calls++
+            if (calls == 1) FinishedProcess(stdout = "ksud 3.2.5\n") else FinishedProcess(stderr = "not allowed", code = 1)
+        }
+        assertEquals(2, calls)
+        assertEquals("authorization_failed", result.outcome)
+        assertFalse(result.granted)
     }
 }

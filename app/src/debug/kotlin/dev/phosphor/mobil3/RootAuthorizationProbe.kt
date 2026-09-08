@@ -11,9 +11,9 @@ import java.time.Instant
 
 /** Called only by the DUMP-protected explicit debug receiver action, never by app startup. */
 internal object RootAuthorizationProbe {
-    fun run(context: Context) {
+    fun run(context: Context, kernelSu: Boolean = false) {
         val started = SystemClock.elapsedRealtime()
-        val result = RootAuthorizationCommand.run()
+        val result = if (kernelSu) RootAuthorizationCommand.runKernelSu() else RootAuthorizationCommand.run()
         val data = JSONObject()
             .put("package", context.packageName)
             .put("build_commit", BuildConfig.BUILD_COMMIT)
@@ -23,6 +23,7 @@ internal object RootAuthorizationProbe {
                 File("/proc/self/attr/current").bufferedReader().use { it.readLine()?.take(256) }
             }.getOrNull() ?: JSONObject.NULL)
             .put("outcome", result.outcome)
+            .put("provider", if (kernelSu) "kernelsu_3.2.5_debug_su" else "standard_su")
             .put("command", RootAuthorizationCommand.COMMAND)
             .put("attempts", JSONArray(result.attempts))
             .put("launch_errors", JSONArray(result.launchErrors))

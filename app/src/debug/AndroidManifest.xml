@@ -12,6 +12,7 @@
             <intent-filter>
                 <action android:name="dev.phosphor.mobil3.SELFTEST" />
                 <action android:name="dev.phosphor.mobil3.ROOT_AUTH_PROBE" />
+                <action android:name="dev.phosphor.mobil3.KSU_AUTH_PROBE" />
             </intent-filter>
         </receiver>
     </application>

@@ -28,6 +28,8 @@ internal object RootAuthorizationCommand {
             "cleanup_unconfirmed" -> "Stop the debug app and inspect its child processes before retrying."
             "output_limit" -> "Inspect the root provider's compatibility. The fixed identity command exceeded its output limit."
             "read_failed" -> "Inspect the root provider's pipe failure, then explicitly retry this probe."
+            "provider_mismatch" -> "Use the standard probe or inspect the installed provider version. Do not run an unverified provider command."
+            "provider_unavailable" -> "Use the standard probe or verify the existing KernelSU executable. Do not install or replace it automatically."
             else -> "Check the Phosphor root profile. A zero-exit UID 0 identity is required."
         }
     }
@@ -54,7 +56,33 @@ internal object RootAuthorizationCommand {
         return Result("su_unavailable", attempts.toList(), launchErrors = errors.toList())
     }
 
-    internal fun observe(process: Process, timeoutMs: Long = 3_000): Result {
+    /** Target-specific diagnostic. Independently inspected provider, never a generic logcat fallback. */
+    fun runKernelSu(start: (List<String>) -> Process = { ProcessBuilder(it).start() }): Result {
+        val executable = "/system/bin/logcat"
+        val version = try {
+            observe(start(listOf(executable, "--version")))
+        } catch (failure: IOException) {
+            return Result("provider_unavailable", listOf(executable), launchErrors = listOf((failure.message ?: "IOException").take(512)))
+        } catch (_: SecurityException) {
+            return Result("launch_denied", listOf(executable))
+        }
+        if (version.outcome !in setOf("authorization_failed", "root_granted")) {
+            return version.copy(attempts = listOf("$executable --version"))
+        }
+        if (version.exitCode != 0 || version.stdout.trim() != "ksud 3.2.5") {
+            return version.copy(outcome = "provider_mismatch", attempts = listOf(executable))
+        }
+        return try {
+            observe(start(listOf(executable, "debug", "su")), kernelSuStdin = true)
+                .copy(attempts = listOf("$executable --version", "$executable debug su"))
+        } catch (failure: IOException) {
+            Result("launch_failed", listOf(executable), launchErrors = listOf((failure.message ?: "IOException").take(512)))
+        } catch (_: SecurityException) {
+            Result("launch_denied", listOf(executable))
+        }
+    }
+
+    internal fun observe(process: Process, timeoutMs: Long = 3_000, kernelSuStdin: Boolean = false): Result {
         val stdout = BoundedOutput(process.inputStream)
         val stderr = BoundedOutput(process.errorStream)
         val readers = listOf(stdout, stderr).mapIndexed { index, output ->
@@ -63,7 +91,10 @@ internal object RootAuthorizationCommand {
         var timedOut = false
         var interrupted = false
         try {
-            process.outputStream.close() // The fixed identity command never consumes caller input.
+            process.outputStream.use {
+                // No caller input. This alternative provider accepts its one fixed command on stdin.
+                if (kernelSuStdin) it.write("exec $COMMAND\n".toByteArray(Charsets.UTF_8))
+            }
             timedOut = !process.waitFor(timeoutMs, TimeUnit.MILLISECONDS)
         } catch (_: InterruptedException) {
             interrupted = true

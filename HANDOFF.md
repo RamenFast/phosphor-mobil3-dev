@@ -6,8 +6,8 @@
 
 - Start with the canonical [MOBILE-EXPANSION-PLAN.md](MOBILE-EXPANSION-PLAN.md), [active expansion contract](spec/EXPANSION.md), and [single execution ledger](docs/plans/mobile-expansion/EXECUTION.md).
 - Ben approved implementation and reversible S25 work at 00:18:19 UTC. This supersedes the prior S25 exclusion for this task. Preserve unrelated ASUS volume, PC-audio, signing, publication, and irreversible-action boundaries.
-- Baseline APK/settings are preserved and verified. Existing Android unit/lint/build/engine checks passed, plus 73 native and 43 relay tests. No replacement APK was installed.
-- KernelSU reports a working jailbreak-mode driver with a manager/driver mismatch. App/helper root authorization and real capture remain unproven. Do not modify kernel/system state or the logcat override.
+- Baseline APK/settings are preserved and verified. Exact debug probe checkpoint `bf9b8f2` is installed, hash/signer readback verified, with unchanged preferences. Its 13 probe tests and full Android gates passed. Baseline native 73 and relay 43 tests remain separate evidence.
+- KernelSU reports a working jailbreak-mode driver with a manager/driver mismatch and an existing Phosphor ROOT grant. The normal-app probe proves all standard su paths absent. A separately invoked provider compatibility test is next. Root command authorization and real capture remain unproven. Do not modify kernel/system state or the logcat override.
 - Ben confirmed continuation after the routing ritual at 01:11:40 UTC. Astra/high workers independently review section 1 and research AudioPolicy APIs. Two live workers maximum, one implementation writer. The coordinator alone owns edits and device actions now. Do not repeat the beacon.
 - The [fixed debug authorization probe](docs/plans/mobile-expansion/section-02-authorization.md) distinguishes normal-app root execution from the observed manager grant and failed `run-as` lookup. It cannot execute caller commands or capture audio.
 
