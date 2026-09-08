@@ -33,6 +33,12 @@ Initial engineering parameters must be named and independently testable. Start e
 
 The pointer adapter must establish direct-gesture provenance without consuming a child slider or changing opening. Its tests must exercise adapter event ordering as well as the pure decision function. A pure predicate alone does not prove Compose nested-scroll provenance.
 
+### Concrete owner seam
+
+`SettingsDismissOwner` accepts an opaque ticket only from a fresh single-pointer down. Coordinates and thresholds use dp, with monotonic event milliseconds. The adapter forwards observed pointer samples without consuming them. Header drag and direct top-edge nested remainder are separate admission methods. Only these methods accumulate raw travel. Nested reversal can consume at most the outstanding raw travel. Pointer release supplies the exact ticket and makes one decision. Cancellation invalidates the ticket and never closes. Geometry change, additional pointers, retirement and a replacement opening cancel it. Non-finite deltas and backward event times cancel rather than inventing motion. A bounded recent sample window measures release velocity after eligible travel begins.
+
+`SettingsPresentationOwner` stores stable expanded IDs independently of any sheet composition. A header toggle may issue one opaque anchor ticket with its old viewport coordinate. A matching post-layout observation computes the bounded scroll correction. Any later gesture, toggle or sheet retirement invalidates that ticket. Returning to settings retains expansion and scroll position, not an old pending anchor operation. The Compose adapter remains responsible for observing actual header layout and keeping one scroll owner outside the settings branch.
+
 ## Expandable settings structure
 
 Use stable section IDs, not labels or list indices. Each header is a full-width row with an existing meaningful glyph, heading, current-value summary and chevron. The header toggles expansion only. Toggles, actions, navigation and sliders retain distinct forms inside the revealed body. Several bodies can remain open.
