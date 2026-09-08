@@ -265,6 +265,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         if (state.controlsAlwaysVisible) consoleVisible = true
     }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
+    val settingsPresentation = rememberSettingsPresentationState()
     LaunchedEffect(state.showSourcePicker) {
         if (state.showSourcePicker) { sheet = Sheet.SOURCE; state.showSourcePicker = false }
     }
@@ -768,7 +769,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             // the WHOLE sheet rotated to the viewer on a swapped-dimension canvas —
             // which is exactly the landscape layout (Ben: "portrait view again instead
             // of the side view"). The upright primitive re-measures with swapped
-            // constraints, so SettingsSheet's two-column profile engages naturally.
+            // constraints. Settings keeps one vertical section order in either profile.
             val sheetQuadrant = if (uiLocked) state.uprightQuadrant else 0
             val sheetLandscape = chromeLandscape != (sheetQuadrant % 2 != 0)
             CompositionLocalProvider(
@@ -820,6 +821,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     ),
                     focusValue = state.focus,
                     onFocus = actions::setFocus,
+                    presentation = settingsPresentation,
                     entryReveal = if (settingsPullActive) settingsReveal else null,
                 ) {
                     settingsPullActive = false

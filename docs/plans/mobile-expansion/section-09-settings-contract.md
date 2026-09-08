@@ -41,6 +41,36 @@ The pointer adapter must establish direct-gesture provenance without consuming a
 
 ## Expandable settings structure
 
+### Runtime adapter decisions, 2026-09-08
+
+The section9 writer inspected mobile `6355074c1d20158c29e749da9fd4c50e0d2bd2a7`.
+`SettingsSheet` selects its policy through an explicit retained `ScrollState` argument
+to `SheetHost`. A null argument retains every legacy nested-scroll and header policy.
+The settings observer sits outside the translated card, so card resistance cannot feed
+back into measured finger velocity. Initial-pass pointer events establish a fresh ticket
+and one event's movement budget. Child controls then receive the event unchanged.
+Only header travel or direct top-edge nested remainder spends that budget. Child-consumed
+travel is removed first. A scrollable may deliver the most recent move after the Final
+pass. Its remaining budget survives until the next pointer event, but never past release.
+Final-pass observation makes the only release decision. The prior physical sample stays
+available until eligible travel begins, so delayed nested delivery does not lose velocity.
+Header detector cancellation cancels, rather than settling. Post-fling never commits.
+Geometry/source changes and disposal cancel the ticket. Explicit close retires it.
+The source key uses the current source label, live state, relay state and root backend.
+
+One screen-owned presentation state contains the pure owner and the actual Compose
+scroll owner. Expansion uses stable enum IDs and a revision-fenced anchor adapter.
+The expanded body changes immediately, without a visibility animation or hidden focus
+nodes. A matching post-layout observation permits one synchronous bounded scroll
+correction. Pointer or nested-scroll input, another toggle, geometry change or disposal cancels pending
+correction. There is no suspended scroll operation that can resume on another opening.
+The flat header is at least48dp and exposes heading, current value and expansion state.
+
+No reduced-motion preference exists in the current settings inventory. This work uses
+the existing `reduced` input and does not invent a new persisted control. R17's inline
+`SignalCheckEntry` remains intact. Source navigation uses the existing
+`state.showSourcePicker` request, not a new source or instrument adapter.
+
 Use stable section IDs, not labels or list indices. Each header is a full-width row with an existing meaningful glyph, heading, current-value summary and chevron. The header toggles expansion only. Toggles, actions, navigation and sliders retain distinct forms inside the revealed body. Several bodies can remain open.
 
 | Section | Controls and supported navigation |

@@ -19,6 +19,7 @@ import androidx.compose.animation.slideInVertically
 import androidx.compose.animation.slideOutHorizontally
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.background
+import androidx.compose.foundation.ScrollState
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.gestures.detectTapGestures
@@ -50,6 +51,9 @@ import androidx.compose.foundation.shape.GenericShape
 import androidx.compose.foundation.shape.RoundedCornerShape
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.layout.onSizeChanged
+import androidx.compose.ui.layout.onGloballyPositioned
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -79,6 +83,7 @@ import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
 import androidx.compose.ui.platform.LocalView
 import androidx.compose.ui.platform.LocalDensity
+import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.dp
@@ -200,11 +205,11 @@ internal class SheetDismissState(private val scope: CoroutineScope) {
         scope.launch { if (committed == null) animation.snapTo(target) }
     }
 
-    fun commit(entry: SheetEntry, fromDrag: Boolean): Boolean {
+    fun commit(entry: SheetEntry, fromDrag: Boolean, offsetPx: Float = animation.value.coerceAtLeast(0f)): Boolean {
         if (committed != null) return false
         committed = Commitment(
             SheetEntryPolicy.exit(entry, fromDrag, null),
-            animation.value.coerceAtLeast(0f),
+            offsetPx,
         )
         scope.launch { animation.stop() }
         return true
@@ -253,6 +258,9 @@ fun SheetHost(
     onDismiss: () -> Unit,
     entryReveal: PullRevealState? = null,
     glyph: SettingsGlyph? = null,
+    settingsScroll: ScrollState? = null,
+    settingsSourceKey: Any? = null,
+    onSettingsInput: () -> Unit = {},
     body: @Composable () -> Unit,
 ) {
     val style = LocalRoomStyle.current
@@ -284,8 +292,16 @@ fun SheetHost(
         MutableTransitionState(entryReveal != null).apply { targetState = true }
     }
     val dismissal = remember { SheetDismissState(scope) }
+    val settingsDismiss = if (settingsScroll != null) remember { SettingsSheetDismiss(scope) } else null
+    val currentSettingsInput by rememberUpdatedState(onSettingsInput)
+    DisposableEffect(settingsDismiss) {
+        onDispose { settingsDismiss?.retire() }
+    }
     val commitDismiss: (Boolean) -> Unit = { fromDrag ->
-        if (openState.targetState && dismissal.commit(currentEntry, fromDrag)) {
+        if (openState.targetState && (if (settingsDismiss == null) dismissal.commit(currentEntry, fromDrag)
+            else dismissal.commit(currentEntry, fromDrag, settingsDismiss.offsetPx))) {
+            settingsDismiss?.retire()
+            if (settingsDismiss != null) currentSettingsInput()
             openState.targetState = false
         }
     }
@@ -336,6 +352,14 @@ fun SheetHost(
             }
         }
     }
+    val settingsNestedScroll = if (settingsDismiss != null && settingsScroll != null) {
+        remember(settingsDismiss, settingsScroll, density.density) {
+            settingsDismiss.nestedScroll(settingsScroll, density.density) { currentSettingsInput() }
+        }
+    } else null
+    val currentSettingsClose by rememberUpdatedState({ commitDismiss(true) })
+    val settingsGeometry = listOf(entry, landscape, uiLocked, density.density, density.fontScale,
+        availableHeightPx, sheetWidthPx, sheetHeightPx, settingsSourceKey)
     LaunchedEffect(openState.targetState, openState.isIdle) {
         if (!openState.targetState && openState.isIdle) onDismiss()
     }
@@ -343,6 +367,10 @@ fun SheetHost(
     Box(
         Modifier
             .fillMaxSize()
+            .then(if (settingsDismiss != null) Modifier.settingsPointerObserver(
+                settingsDismiss, density.density, settingsGeometry, reduced,
+                onInput = { currentSettingsInput() }, onClose = { currentSettingsClose() },
+            ) else Modifier)
             .background(
                 Color.Black.copy(
                     alpha = Dim.scrimAlpha * (entryReveal?.progress ?: 1f)
@@ -391,7 +419,8 @@ fun SheetHost(
                         .offset {
                             IntOffset(
                                 0,
-                                dismissal.offsetPx.roundToInt(),
+                                if (settingsDismiss == null) dismissal.offsetPx.roundToInt()
+                                else (dismissal.committed?.offsetPx ?: settingsDismiss.offsetPx).roundToInt(),
                             )
                         }
                         .then(
@@ -432,12 +461,12 @@ fun SheetHost(
                         }
                         .stageChromeBounds(
                             StageChromeBounds.Card.Sheet,
-                            !openState.isIdle || dismissOffset.isRunning ||
+                            !openState.isIdle || dismissOffset.isRunning || settingsDismiss?.returning == true ||
                                 entryReveal?.animation?.isRunning == true ||
                                 (entryReveal != null && entryReveal.progress < 1f),
                             entryReveal?.progress,
                         )
-                        .nestedScroll(dismissNestedScroll)
+                        .nestedScroll(settingsNestedScroll ?: dismissNestedScroll)
                         .clip(sheetShape)
                         .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
                         .border(Dim.hairline, p.lineStrong, sheetShape)
@@ -448,7 +477,10 @@ fun SheetHost(
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .pointerInput(style.motion, reduced) {
+                            .then(if (settingsDismiss != null) Modifier
+                                .heightIn(min = 48.dp)
+                                .settingsHeaderDrag(settingsDismiss, density.density, reduced)
+                            else Modifier.pointerInput(style.motion, reduced) {
                                 detectVerticalDragGestures(
                                     onDragStart = { beginDismiss() },
                                     onDragEnd = { settleDismiss(0f) },
@@ -459,7 +491,7 @@ fun SheetHost(
                                         dragDismissBy(delta)
                                     }
                                 }
-                            },
+                            }),
                         horizontalArrangement = Arrangement.SpaceBetween,
                     ) {
                         // A sheet is one coherent pinned document: the header stays with
@@ -473,7 +505,10 @@ fun SheetHost(
                         }
                         Mono(
                             "✕", p.ink2, Type.dataXl,
-                            Modifier.clickable(onClick = dismiss).padding(horizontal = 6.dp),
+                            (if (settingsDismiss != null) Modifier.size(48.dp)
+                                .semantics { contentDescription = "Close settings" }
+                                .clickable(onClick = dismiss)
+                            else Modifier.clickable(onClick = dismiss)).padding(horizontal = 6.dp),
                         )
                     }
                     Spacer(Modifier.height(Dim.gapLg))
@@ -1044,25 +1079,6 @@ private fun StyleSampleChip(room: Palette) {
     }
 }
 
-// ── SETTINGS (pass 1 structure; the full desktop port grows into these groups). ──
-@Composable
-private fun SettingsSectionHeading(
-    text: String,
-    glyph: SettingsGlyph,
-    p: Palette,
-    modifier: Modifier = Modifier,
-) {
-    val glyphSize = with(LocalDensity.current) { Type.dataSm.toDp() } + 5.dp
-    Row(
-        modifier.fillMaxWidth(),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        SettingsGlyphIcon(glyph, p, glyphSize)
-        Spacer(Modifier.width(Dim.gap))
-        SectionHeading(text, p, Modifier.weight(1f))
-    }
-}
-
 @Composable
 private fun SettingsGlyphRow(
     label: String,
@@ -1074,6 +1090,7 @@ private fun SettingsGlyphRow(
     Row(
         Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .clickable(onClick = onClick)
             .border(Dim.hairline, p.line)
             .padding(Dim.rowPad),
@@ -1081,33 +1098,45 @@ private fun SettingsGlyphRow(
     ) {
         SettingsGlyphIcon(glyph, p, glyphSize)
         Spacer(Modifier.width(Dim.gap))
-        Mono(label, p.ink, Type.dataLg)
+        Mono(label, p.ink, Type.dataLg, Modifier.weight(1f), maxLines = Int.MAX_VALUE)
     }
     Spacer(Modifier.height(Dim.gap))
 }
 
 @Composable
-fun SettingsSheet(
+internal fun SettingsSheet(
     state: ScopeUiState,
     p: Palette,
     reduced: Boolean,
     actions: SheetActions,
     focusValue: Float,
     onFocus: (Float) -> Unit,
+    presentation: SettingsPresentationState,
     entryReveal: PullRevealState? = null,
     onDismiss: () -> Unit,
 ) {
-    val scroll = rememberScrollState()
-    val landscape = LocalChromeLandscape.current
-    SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob) {
-        // Reuse each settings group in one portrait column or two landscape columns.
-        // One shared scroll preserves top-curl and nested-dismiss behavior.
+    val scroll = presentation.scroll
+    val scope = rememberCoroutineScope()
+    val configuration = LocalConfiguration.current
+    val density = LocalDensity.current
+    val quadrant = LocalSheetEntryQuadrant.current
+    LaunchedEffect(presentation, configuration.screenWidthDp, configuration.screenHeightDp,
+        density.density, density.fontScale, quadrant) {
+        presentation.cancelAnchor()
+    }
+    DisposableEffect(presentation) {
+        onDispose { presentation.retire() }
+    }
+    SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob,
+        settingsScroll = scroll,
+        settingsSourceKey = listOf(state.sourceLabel, state.live, state.remote, state.captureRoot),
+        onSettingsInput = presentation::cancelAnchor,
+    ) {
         val signal: @Composable () -> Unit = {
-            SettingsSectionHeading(
-                "SIGNAL & STARTUP", SettingsGlyph.Signal, p, Modifier.padding(top = 0.dp),
-            )
+            SettingsGlyphRow("source · ${state.sourceLabel}", SettingsGlyph.Signal, p) {
+                state.showSourcePicker = true
+            }
             SignalCheckEntry(state, p)
-            DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
             DragRule(
                 "GAIN", state.gain, 0.1f, 7.0f, p, { "×%.2f".format(it) },
             ) { actions.setGainAbsolute(it) }
@@ -1133,6 +1162,9 @@ fun SettingsSheet(
                     "viewport — gain gestures just say so; this GAIN rule is the manual takeover.",
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
+        }
+        val beam: @Composable () -> Unit = {
+            DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
             DragRule(
                 "BEAM", state.beamEnergy, 1.0f, 30.0f, p, { "×%.0f".format(it) },
             ) { actions.setBeamEnergy(it) }
@@ -1157,7 +1189,6 @@ fun SettingsSheet(
             )
         }
         val display: @Composable () -> Unit = {
-            SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
             ChipCell("PAUSE DISPLAY · " + if (state.pauseBlack) "BLACK" else "HOLD FRAME",
                 active = !state.pauseBlack, p = p, small = true,
             ) { actions.setPauseBlack(!state.pauseBlack) }
@@ -1201,18 +1232,6 @@ fun SettingsSheet(
                     "Microphone stops with its Activity. Off stops sources when the task is removed.",
                 p.muted, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
             )
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.weight(1f)) {
-                    ChipCell("GRID · " + (if (state.grid) "on" else "off"), active = state.grid, p = p, small = true) {
-                        actions.setGrid(!state.grid)
-                    }
-                }
-                Box(Modifier.weight(2f)) {
-                    ChipCell("GRID DATA · " + if (state.gridData) "on" else "off",
-                        active = state.gridData, p = p, small = true,
-                    ) { actions.setGridData(!state.gridData) }
-                }
-            }
             Spacer(Modifier.height(6.dp))
             BoxWithConstraints(Modifier.fillMaxWidth()) {
                 val wideEnoughForOneRow = maxWidth >= 480.dp
@@ -1273,6 +1292,8 @@ fun SettingsSheet(
                 },
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
+        }
+        val performance: @Composable () -> Unit = {
             Spacer(Modifier.height(Dim.gap))
             Mono("FRAME RATE", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
@@ -1296,16 +1317,10 @@ fun SettingsSheet(
                 }
             }
             Prose(BeamRateNote, p.muted, modifier = Modifier.padding(top = 6.dp))
-        }
-        val performance: @Composable (Boolean) -> Unit = { head ->
-            SettingsSectionHeading(
-                "PERFORMANCE", SettingsGlyph.Performance, p,
-                if (head) Modifier.padding(top = 0.dp) else Modifier,
-            )
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell(
-                        "HUD · " + when (state.hudMode) {
+                        "STATS HUD · " + when (state.hudMode) {
                             0 -> "on"; 1 -> "auto"; else -> "off"
                         },
                         active = state.hudMode == 0,
@@ -1329,8 +1344,7 @@ fun SettingsSheet(
             }
         }
         val remote: @Composable () -> Unit = {
-            SettingsSectionHeading("REMOTE", SettingsGlyph.Remote, p)
-            Mono("LATENCY", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
+            Mono("RELAY ONLY · LATENCY", p.muted, Type.dataXs, Modifier.padding(top = Dim.gap, bottom = 4.dp))
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 listOf("tight" to 0, "balanced" to 1, "safe" to 2).forEach { (label, mode) ->
                     Box(Modifier.weight(1f)) {
@@ -1351,10 +1365,23 @@ fun SettingsSheet(
                 p.muted, modifier = Modifier.padding(top = Dim.gapLg),
             )
         }
-        val roomLight: @Composable () -> Unit = {
-            SettingsSectionHeading("ROOM & LIGHT", SettingsGlyph.RoomLight, p)
+        val appearance: @Composable () -> Unit = {
             SettingsGlyphRow("room · ${state.room.label}", SettingsGlyph.Room, p) {
                 actions.openRoom()
+            }
+        }
+        val beamNavigation: @Composable () -> Unit = {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                Box(Modifier.weight(1f)) {
+                    ChipCell("GRID · " + (if (state.grid) "on" else "off"), active = state.grid, p = p, small = true) {
+                        actions.setGrid(!state.grid)
+                    }
+                }
+                Box(Modifier.weight(2f)) {
+                    ChipCell("GRID DATA · " + if (state.gridData) "on" else "off",
+                        active = state.gridData, p = p, small = true,
+                    ) { actions.setGridData(!state.gridData) }
+                }
             }
             SettingsGlyphRow("light · beam color", SettingsGlyph.BeamColor, p) {
                 actions.openLight()
@@ -1364,7 +1391,6 @@ fun SettingsSheet(
             }
         }
         val migration: @Composable () -> Unit = {
-            SettingsSectionHeading("MIGRATION", SettingsGlyph.About, p)
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell("EXPORT SETTINGS", active = false, p = p, small = true) {
@@ -1386,12 +1412,11 @@ fun SettingsSheet(
             if (state.settingsTransferStatus.isNotBlank()) {
                 Mono(
                     state.settingsTransferStatus, p.accent, Type.dataXs,
-                    Modifier.padding(top = 6.dp),
+                    Modifier.padding(top = 6.dp), maxLines = Int.MAX_VALUE,
                 )
             }
         }
         val about: @Composable () -> Unit = {
-            SettingsSectionHeading("ABOUT", SettingsGlyph.About, p)
             Prose(
                 "Phosphor draws sound as light — a CRT oscilloscope in your pocket, " +
                     "sample-locked to what you hear. GPL-3.0. The beam remembers.",
@@ -1411,37 +1436,43 @@ fun SettingsSheet(
                 )
             }
         }
-        // One shared vertical scroll drives the sheet's fill (top-curl) and the
-        // nested-scroll dismiss. Landscape lays the groups into two weighted columns;
-        // portrait stacks them. Left column carries the tall SIGNAL + DISPLAY; the
-        // right carries PERFORMANCE + REMOTE + ROOM & LIGHT + ABOUT (balanced by eye).
+        // One reading order and one screen-owned scroll in either orientation.
+        val anchorRequest = presentation.request
         Column(
-            Modifier
+            Modifier.fillMaxWidth()
+                .onGloballyPositioned { presentation.viewport = it }
                 .verticalScroll(scroll, overscrollEffect = null)
+                .settingsAnchorLayout(presentation, anchorRequest, scope)
         ) {
-            if (landscape) {
-                Row(
-                    Modifier.fillMaxWidth(),
-                    horizontalArrangement = Arrangement.spacedBy(Dim.gapLg),
-                ) {
-                    Column(Modifier.weight(1f)) {
-                        signal()
-                        display()
-                    }
-                    Column(Modifier.weight(1f)) {
-                        performance(true)
-                        remote()
-                        roomLight()
-                        migration()
-                        about()
-                    }
-                }
-            } else {
+            SettingsExpandableSection(SettingsSectionId.SIGNAL, "SIGNAL & STARTUP",
+                "${state.sourceLabel} · gain ×${"%.2f".format(state.gain)} · auto-gain ${if (state.autoGain) "on" else "off"}",
+                SettingsGlyph.Signal, p, presentation) {
                 signal()
-                display()
-                performance(false)
                 remote()
-                roomLight()
+            }
+            SettingsExpandableSection(SettingsSectionId.BEAM, "BEAM & LIGHT",
+                "Focus ${"%.2f".format(focusValue)} px · beam ×${"%.0f".format(state.beamEnergy)} · glow ${"%.0f".format(state.glow * 100)}%",
+                SettingsGlyph.BeamColor, p, presentation) {
+                beam()
+                beamNavigation()
+            }
+            SettingsExpandableSection(SettingsSectionId.DISPLAY, "DISPLAY & HUD",
+                "${if (state.pauseBlack) "Black" else "Hold"} on pause · floating HUD ${if (state.floatingHudActive) "showing" else "hidden"} · fullscreen ${if (state.fullscreen) "on" else "off"}",
+                SettingsGlyph.Display, p, presentation) {
+                display()
+            }
+            SettingsExpandableSection(SettingsSectionId.MOTION, "MOTION & PERFORMANCE",
+                "Frame rate ${FpsOptions.firstOrNull { it.value == state.fpsValue }?.label ?: state.fpsValue} · beam reconstruction ${BeamRates.firstOrNull { it.oversample == state.oversample }?.label ?: state.oversample}",
+                SettingsGlyph.Performance, p, presentation) {
+                performance()
+            }
+            SettingsExpandableSection(SettingsSectionId.APPEARANCE, "APPEARANCE",
+                "Room · ${state.room.label}", SettingsGlyph.Room, p, presentation) {
+                appearance()
+            }
+            SettingsExpandableSection(SettingsSectionId.ABOUT, "ABOUT & MANUAL",
+                state.settingsTransferStatus.ifBlank { "GPL-3.0 · manual · settings import / export" },
+                SettingsGlyph.About, p, presentation) {
                 migration()
                 about()
             }
