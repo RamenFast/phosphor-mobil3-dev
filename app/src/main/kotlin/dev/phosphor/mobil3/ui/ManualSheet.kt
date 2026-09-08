@@ -102,6 +102,13 @@ private val Beasts = listOf(
 private val RhyGreen = Color(0xFF4FB06A) // FOX, not eagle! — and green, always.
 
 @Composable
+private fun ManualHeading(text: String, p: Palette, modifier: Modifier = Modifier) {
+    Mono(text, p.muted, Type.dataSm,
+        modifier.fillMaxWidth().padding(top = 14.dp, bottom = 6.dp),
+        maxLines = Int.MAX_VALUE, letterSpacing = 1.2.sp)
+}
+
+@Composable
 private fun ManualKey(label: String, p: Palette, modifier: Modifier = Modifier, onClick: () -> Unit) {
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -184,7 +191,7 @@ fun ManualSheet(
                 }
             }
             if (bestiaryFound && showBestiary) {
-                SectionHeading("ROOT CAPTURE", p, Modifier.padding(top = 0.dp))
+                ManualHeading("ROOT CAPTURE", p, Modifier.padding(top = 0.dp))
                 SheetRow("ROOT CAPTURE", p, checked = rootEnabled) {
                     if (rootEnabled || rootBusy) onRootCapture(false) else rootDisclosure = true
                 }
@@ -200,7 +207,7 @@ fun ManualSheet(
                 }
                 ManualKey("OPEN ROOT MANAGER", p) { onRootManager() }
                 if (rootBusy) ManualKey("CANCEL CHECK", p) { onRootCapture(false) }
-                SectionHeading("THE BESTIARY", p)
+                ManualHeading("THE BESTIARY", p)
 
                 Prose(
                     "four load-bearing beasts from a dead OS. little characters, big " +
@@ -234,7 +241,7 @@ fun ManualSheet(
                     p.muted, modifier = Modifier.padding(bottom = Dim.gapLg),
                 )
             }
-            SectionHeading("FIELD MANUAL · ${ManualContent.chapters.size} CHAPTERS", p)
+            ManualHeading("FIELD MANUAL · ${ManualContent.chapters.size} CHAPTERS", p)
             Prose("Local help, not a shell. Practical instructions first; pocket creatures at the foot of each chapter.", p.muted)
             Mono("SEARCH CHAPTERS", p.ink, Type.dataXs, Modifier.padding(top = 12.dp), maxLines = Int.MAX_VALUE)
             BasicTextField(
@@ -262,7 +269,7 @@ fun ManualSheet(
                     ManualKey("BACK", p, Modifier.weight(1f)) { navigation = navigation.back() }
                     ManualKey("INDEX", p, Modifier.weight(1f)) { navigation = navigation.index() }
                 }
-                SectionHeading(selected.title, p)
+                ManualHeading(selected.title, p)
                 Mono(selected.availability, p.accent, Type.dataXs, maxLines = Int.MAX_VALUE)
                 Prose(selected.text, p.ink, modifier = Modifier.padding(vertical = 12.dp))
                 Mono("POCKET RESPONSE", p.muted, Type.dataXs)
@@ -272,12 +279,12 @@ fun ManualSheet(
                 if (index < ManualContent.chapters.lastIndex) ManualKey("NEXT CHAPTER", p) { navigation = navigation.open(ManualContent.chapters[index + 1].id) }
             }
 
-            SectionHeading("CARDS", p)
+            ManualHeading("CARDS", p)
             Prose(
                 "These open in your own browser — the app renders no web content.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
-            SectionHeading("PRIVACY", p)
+            ManualHeading("PRIVACY", p)
             Prose(
                 "phosphor has no account, ads, or tracking. Local audio is processed " +
                     "in memory and is not recorded or uploaded. A relay connection opens " +

@@ -112,6 +112,10 @@ class ManualContentTest {
             assertTrue(it, source.contains(it))
         }
         listOf("ProcessBuilder", "Runtime.getRuntime", "WebView", "HttpClient").forEach { assertFalse(source.contains(it)) }
+        assertTrue(source.contains("ManualHeading(selected.title, p)"))
+        assertFalse(source.contains("SectionHeading("))
+        assertTrue(source.substringAfter("private fun ManualHeading(").substringBefore("private fun ManualKey(")
+            .contains("maxLines = Int.MAX_VALUE"))
         assertTrue(source.indexOf("Prose(selected.text") < source.indexOf("Prose(selected.response"))
     }
 
