@@ -87,7 +87,7 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
 
-enum class Sheet { NONE, SOURCE, MODE, LIGHT, SETTINGS, ROOM, MANUAL }
+enum class Sheet { NONE, SOURCE, MODE, LIGHT, INSTRUMENT, SETTINGS, ROOM, MANUAL }
 
 private fun sheetCurlProgress(
     fillFraction: Float,
@@ -748,6 +748,7 @@ fun ModeSheet(
     onPick: (Int) -> Unit,
     onGeomFx: (Int) -> Unit,
     onGeomAmount: (Float) -> Unit,
+    onBanModes: (Set<Int>) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
@@ -798,11 +799,11 @@ fun ModeSheet(
                         rowIdx.forEach { i ->
                             Box(Modifier.weight(1f)) {
                                 ChipCell(ModeTags[i], i in banned, p, small = true) {
-                                    state.randomBanModes = when {
+                                    onBanModes(when {
                                         i in banned -> banned - i
                                         ModeLabels.size - banned.size > 2 -> banned + i
                                         else -> banned
-                                    }
+                                    })
                                 }
                             }
                         }
@@ -1357,6 +1358,9 @@ fun SettingsSheet(
             SettingsGlyphRow("light · beam color", SettingsGlyph.BeamColor, p) {
                 actions.openLight()
             }
+            SettingsGlyphRow("instrument presets · recall / save", SettingsGlyph.Display, p) {
+                actions.openInstrument()
+            }
         }
         val migration: @Composable () -> Unit = {
             SettingsSectionHeading("MIGRATION", SettingsGlyph.About, p)
@@ -1493,6 +1497,7 @@ interface SheetActions {
     fun setRemoteLatencyMode(mode: Int)
     fun openRoom()
     fun openLight()
+    fun openInstrument() {}
     fun openManual()
     fun openLink(url: String)
     fun remoteHosts(): List<Pair<String, Pair<String, Int>>>

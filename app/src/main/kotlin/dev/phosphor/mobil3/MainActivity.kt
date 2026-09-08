@@ -57,6 +57,7 @@ import dev.phosphor.mobil3.ui.LightSettings
 import dev.phosphor.mobil3.ui.LightRgb
 import dev.phosphor.mobil3.ui.LightCycleGuard
 import dev.phosphor.mobil3.settings.SettingsArchive
+import dev.phosphor.mobil3.settings.instrument.*
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
@@ -237,6 +238,330 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
 
     private val settingsWriteOwner = dev.phosphor.mobil3.settings.SettingsWriteOwner()
+    private var instrumentWorkflow: InstrumentWorkflow? = null
+    private lateinit var instrumentStore: InstrumentPresetStore
+    private val instrumentDocuments = InstrumentDocumentOwner()
+    private var instrumentExport: Pair<InstrumentDocumentOwner.Ticket, String>? = null
+    private var instrumentImportRevision: InstrumentDocumentOwner.Ticket? = null
+    private var instrumentSource: String? = null
+
+    private fun captureInstrument() = InstrumentSetup(
+        ui.modeIndex, ui.randomModeArmed, ui.randomBanModes.sorted(), ui.geomFx, ui.geomAmount,
+        gainValue, ui.localAutoGain, ui.focus, ui.beamEnergy, ui.glow,
+        ui.beamRandomArmed, ui.beamRandomLo, ui.beamRandomHi,
+        ui.glowRandomArmed, ui.glowRandomLo, ui.glowRandomHi,
+        ui.grid, ui.gridData, ui.oversample, ui.light,
+    )
+
+    private fun publishInstrument(setup: InstrumentSetup) {
+        tick.removeCallbacks(persistGain)
+        ui.modeIndex = setup.mode
+        ui.randomModeArmed = setup.randomModeArmed
+        ui.randomBanModes = setup.randomBanModes.toSet()
+        ui.geomFx = setup.geomFx
+        ui.geomAmount = setup.geomAmount
+        gainValue = setup.gain
+        ui.gain = setup.gain
+        ui.localAutoGain = setup.autoGain
+        ui.autoGain = setup.autoGain
+        ui.focus = setup.focus
+        ui.beamEnergy = setup.beamEnergy
+        ui.glow = setup.glow
+        ui.beamRandomArmed = setup.beamRandomArmed
+        ui.beamRandomLo = setup.beamRandomMin
+        ui.beamRandomHi = setup.beamRandomMax
+        ui.glowRandomArmed = setup.glowRandomArmed
+        ui.glowRandomLo = setup.glowRandomMin
+        ui.glowRandomHi = setup.glowRandomMax
+        ui.grid = setup.grid
+        ui.gridData = setup.gridData
+        ui.gridReading = null
+        ui.oversample = setup.oversample
+        ui.light = setup.light
+        ui.beamIndex = setup.light.preset
+        ui.lightTemporary = false
+        ui.lightPending = null
+        ui.lightError = ""
+    }
+
+    private fun persistInstrument(setup: InstrumentSetup): InstrumentWorkflow.PersistenceFailure? = settingsWriteOwner.write {
+        val values = setup.preferenceValues()
+        val prior = preferenceValueSnapshots(prefs().all, values.keys)
+        val editor = prefs().edit()
+        values.forEach { (key, value) ->
+            when (value) {
+                is Boolean -> editor.putBoolean(key, value)
+                is Int -> editor.putInt(key, value)
+                is Float -> editor.putFloat(key, value)
+                is String -> editor.putString(key, value)
+            }
+        }
+        settingsWriteOwner.commit({ editor.commit() }, { true }, { restorePreferenceSnapshots(prior) })?.let {
+            InstrumentWorkflow.PersistenceFailure(it.message(), it.restored)
+        }
+    }
+
+    private fun initializeInstruments() {
+        val storage = getSharedPreferences(InstrumentPresetCollection.PREFERENCES_FILE, MODE_PRIVATE)
+        instrumentStore = InstrumentPresetStore(
+            read = { storage.getString(InstrumentPresetCollection.COLLECTION_KEY, null) },
+            write = { value ->
+                val editor = storage.edit()
+                if (value == null) editor.remove(InstrumentPresetCollection.COLLECTION_KEY)
+                else editor.putString(InstrumentPresetCollection.COLLECTION_KEY, value)
+                editor.commit()
+            },
+        )
+        instrumentStore.load()
+        ui.instrumentCollection = instrumentStore.collection
+        ui.instrumentStatus = instrumentStore.error
+        instrumentWorkflow = InstrumentWorkflow(
+            native = object : InstrumentWorkflow.Native {
+                override fun request(setup: InstrumentSetup) = PhosphorNative.requestInstrument(InstrumentPresetCodec.encodeSetup(setup))
+                override fun cancel(id: Long) = PhosphorNative.cancelInstrument(id)
+                override fun release(id: Long) { check(PhosphorNative.releaseInstrument(id)) { "Native receipt release failed" } }
+            },
+            snapshot = ::captureInstrument, publish = ::publishInstrument, persist = ::persistInstrument,
+            canApply = { taskIsCurrent() && !(ui.remote && ui.remoteGeometry) },
+            acknowledged = ::epilepsyAcknowledged,
+            waitOffMain = { id, done ->
+                Thread({
+                    val result = try { PhosphorNative.awaitInstrument(id) }
+                        catch (_: Exception) { runCatching { PhosphorNative.cancelInstrument(id) }.getOrDefault(4) }
+                    tick.post { if (!activityDestroyed) done(result) }
+                }, "instrument-await-$id").start()
+            },
+            changed = ::refreshInstrumentState,
+        )
+    }
+
+    private fun refreshInstrumentState() {
+        val owner = instrumentWorkflow ?: return
+        ui.instrumentPending = owner.pending
+        ui.instrumentUndo = owner.undoSetup != null
+        ui.instrumentRapid = owner.rapidReview != null
+        ui.instrumentUnsaved = owner.unsaved && !owner.uncertain
+        ui.instrumentApplyStatus = owner.status
+        ui.instrumentRecall = owner.association?.let {
+            "${it.name} · ${if (owner.modified) "modified" else "recalled"}"
+        } ?: "Local authored setup"
+    }
+
+    private fun instrumentEdit(block: () -> Unit) = instrumentValueEdit(Unit, block)
+
+    private fun <T> instrumentValueEdit(fallback: T, block: () -> T): T {
+        val owner = instrumentWorkflow
+        if (owner == null) return block()
+        owner.settle("Apply superseded by a later tuning edit.")
+        if (owner.editsBlocked) {
+            refreshInstrumentState()
+            ui.showInstrumentPresets = true
+            return fallback
+        }
+        return owner.edit(block)
+    }
+
+    private fun instrumentFailure(error: Throwable) {
+        ui.instrumentStatus = if (error is InstrumentPresetException) "${error.message}. ${error.fix}."
+            else "Instrument operation failed. ${error.message ?: "Reopen the browser and retry."}"
+    }
+
+    private fun instrumentRecord(key: String): InstrumentWorkflow.Association {
+        CuratedInstrumentPresets.all.find { "curated:${it.name}" == key }?.let {
+            return InstrumentWorkflow.Association(key, it.name, it.setup)
+        }
+        val record = checkNotNull(instrumentStore.collection) { "Saved collection is unavailable" }.record(key)
+        return InstrumentWorkflow.Association(record.id, record.name, record.setup)
+    }
+
+    private fun changeInstruments(success: String, change: (InstrumentPresetCollection) -> InstrumentPresetCollection) {
+        if (!taskIsCurrent()) return
+        instrumentWorkflow?.settle("Saved record changed. Pending apply cancelled.")
+        val saved = settingsWriteOwner.write { instrumentStore.change(change) }
+        ui.instrumentCollection = instrumentStore.collection
+        ui.instrumentStatus = if (saved) success else instrumentStore.error
+        if (saved) instrumentStore.collection?.let { instrumentWorkflow?.refreshAssociation(it) }
+    }
+
+    override fun openInstrumentPresets() {
+        if (!taskIsCurrent()) return
+        instrumentStore.load()
+        ui.instrumentCollection = instrumentStore.collection
+        ui.instrumentStatus = instrumentStore.error
+        ui.showInstrumentPresets = true
+        refreshInstrumentState()
+    }
+
+    override fun applyInstrument(key: String) {
+        runCatching { instrumentRecord(key).let { instrumentWorkflow?.apply(it.setup, it) } }.onFailure(::instrumentFailure)
+    }
+    override fun saveInstrument(name: String) {
+        runCatching { instrumentEdit {
+            val setup = captureInstrument()
+            changeInstruments("Saved local authored setup. Tuning unchanged.") { it.create(name, setup) }
+        } }.onFailure(::instrumentFailure)
+    }
+    override fun updateInstrument(id: String) {
+        runCatching { instrumentEdit {
+            val setup = captureInstrument()
+            changeInstruments("Updated saved setup. Tuning unchanged.") { it.update(id, setup) }
+        } }.onFailure(::instrumentFailure)
+    }
+    override fun renameInstrument(id: String, name: String) = changeInstruments("Renamed preset.") { it.rename(id, name) }
+    override fun duplicateInstrument(key: String, name: String) {
+        runCatching { val setup = instrumentRecord(key).setup
+            changeInstruments("Saved duplicate. Tuning unchanged.") { it.create(name, setup) }
+        }.onFailure(::instrumentFailure)
+    }
+    override fun deleteInstrument(id: String) = changeInstruments("Deleted record. Tuning unchanged.") { it.delete(id) }
+    override fun undoInstrument() { instrumentWorkflow?.undo() }
+    override fun cancelInstrumentApply() { instrumentWorkflow?.settle() }
+    override fun retryInstrumentSave() { instrumentWorkflow?.retryPersistence() }
+    override fun keepInstrumentSafe() { instrumentWorkflow?.keepSafe() }
+    override fun allowInstrumentRapid() {
+        ackEpilepsy()
+        instrumentWorkflow?.allowRapid()
+    }
+    override fun instrumentSourceControls() { ui.showSourcePicker = true }
+
+    private fun instrumentDocumentWork(ticket: InstrumentDocumentOwner.Ticket, name: String, block: () -> Unit) {
+        runCatching { Thread(block, name).start() }.onFailure {
+            instrumentDocuments.finish(ticket)
+            if (!activityDestroyed) {
+                ui.instrumentDocumentBusy = false
+                instrumentFailure(it)
+            }
+        }
+    }
+
+    private val openInstrumentDocument =
+        registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
+            val revision = instrumentImportRevision
+            instrumentImportRevision = null
+            if (revision == null) return@registerForActivityResult
+            if (!taskIsCurrent()) instrumentDocuments.cancel()
+            if (!instrumentDocuments.picked(revision)) {
+                ui.instrumentDocumentBusy = instrumentDocuments.busy
+                return@registerForActivityResult
+            }
+            if (uri == null) {
+                instrumentDocuments.finish(revision)
+                ui.instrumentDocumentBusy = false
+                ui.instrumentStatus = "Import cancelled. Collection unchanged."
+                return@registerForActivityResult
+            }
+            instrumentDocumentWork(revision, "instrument-document-read") {
+                val decoded = runCatching {
+                    val stream = contentResolver.openInputStream(uri) ?: error("Choose a readable instrument document")
+                    stream.use(InstrumentDocuments::read)
+                }
+                tick.post {
+                    val accepted = instrumentDocuments.finish(revision)
+                    if (!activityDestroyed) ui.instrumentDocumentBusy = instrumentDocuments.busy
+                    if (accepted && taskIsCurrent()) {
+                        decoded.onSuccess { incoming ->
+                            val base = instrumentStore.collection
+                            if (base == null) ui.instrumentStatus = "Saved collection unavailable. Recover it before importing."
+                            else {
+                                ui.instrumentPreview = InstrumentImportPreview(base, incoming)
+                                ui.instrumentChoices = emptyMap()
+                                ui.instrumentStatus = "Preview checked. Choose an action for every record. Nothing has been imported or applied."
+                            }
+                        }.onFailure(::instrumentFailure)
+                    }
+                }
+            }
+        }
+
+    private val createInstrumentDocument =
+        registerForActivityResult(ActivityResultContracts.CreateDocument("application/json")) { uri ->
+            val export = instrumentExport
+            instrumentExport = null
+            if (export == null) return@registerForActivityResult
+            if (!taskIsCurrent()) instrumentDocuments.cancel()
+            if (!instrumentDocuments.picked(export.first)) {
+                ui.instrumentDocumentBusy = instrumentDocuments.busy
+                return@registerForActivityResult
+            }
+            if (uri == null) {
+                instrumentDocuments.finish(export.first)
+                ui.instrumentDocumentBusy = false
+                ui.instrumentStatus = "Export cancelled. No document written."
+                return@registerForActivityResult
+            }
+            instrumentDocumentWork(export.first, "instrument-document-write") {
+                val result = runCatching {
+                    val output = contentResolver.openOutputStream(uri, "wt") ?: error("Choose a writable document")
+                    output.use { it.write(export.second.toByteArray(Charsets.UTF_8)) }
+                }
+                tick.post {
+                    val accepted = instrumentDocuments.finish(export.first)
+                    if (!activityDestroyed) ui.instrumentDocumentBusy = instrumentDocuments.busy
+                    if (accepted && taskIsCurrent()) {
+                        ui.instrumentStatus = if (result.isSuccess) "Instrument presets exported. Tuning unchanged."
+                            else "Export failed. The selected document may be incomplete. Choose another document and retry."
+                    }
+                }
+            }
+        }
+
+    override fun importInstrumentPresets() {
+        if (!taskIsCurrent() || ui.instrumentDocumentBusy || instrumentImportRevision != null || instrumentExport != null) return
+        if (instrumentStore.collection == null) return
+        ui.instrumentPreview = null
+        ui.instrumentChoices = emptyMap()
+        instrumentImportRevision = instrumentDocuments.begin() ?: return
+        ui.instrumentDocumentBusy = true
+        ui.instrumentStatus = "Choose an Instrument presets document for an inert preview."
+        runCatching { openInstrumentDocument.launch(arrayOf("application/json", "application/octet-stream", "text/plain")) }
+            .onFailure {
+                instrumentImportRevision?.let(instrumentDocuments::finish)
+                instrumentImportRevision = null
+                ui.instrumentDocumentBusy = false
+                instrumentFailure(it)
+            }
+    }
+
+    override fun exportInstrumentPresets(id: String?) {
+        if (!taskIsCurrent() || ui.instrumentDocumentBusy || instrumentImportRevision != null || instrumentExport != null) return
+        runCatching {
+            val collection = checkNotNull(instrumentStore.collection) { "Recover saved collection before exporting" }
+            val json = if (id == null) InstrumentPresetCodec.encode(collection) else InstrumentPresetCodec.exportRecord(collection, id)
+            instrumentExport = (instrumentDocuments.begin() ?: return) to json
+            ui.instrumentDocumentBusy = true
+            ui.instrumentStatus = "Choose where to export Instrument presets."
+            createInstrumentDocument.launch("Instrument presets.phospresets")
+        }.onFailure {
+            instrumentExport?.first?.let(instrumentDocuments::finish)
+            instrumentExport = null
+            ui.instrumentDocumentBusy = false
+            instrumentFailure(it)
+        }
+    }
+
+    override fun chooseInstrumentImport(id: String, choice: InstrumentImportChoice) {
+        val preview = ui.instrumentPreview ?: return
+        if (preview.incoming.records.none { it.id == id }) return
+        ui.instrumentChoices = ui.instrumentChoices + (id to choice)
+    }
+    override fun commitInstrumentImport() {
+        val preview = ui.instrumentPreview ?: return
+        val choices = ui.instrumentChoices
+        changeInstruments("Imported saved records. No tuning applied.") { it.resolveImport(preview, choices) }
+        if (instrumentStore.error.isEmpty()) {
+            ui.instrumentPreview = null
+            ui.instrumentChoices = emptyMap()
+        }
+    }
+    override fun cancelInstrumentImport() {
+        instrumentDocuments.cancel()
+        ui.instrumentPreview = null
+        ui.instrumentChoices = emptyMap()
+        ui.instrumentDocumentBusy = instrumentDocuments.busy
+        ui.instrumentStatus = if (instrumentDocuments.busy)
+            "Cancelled. Waiting for the document provider to return before another operation. An export already writing may leave a document."
+            else "Preview cancelled. Collection and tuning unchanged."
+    }
 
     private fun reportImportFailure(error: Throwable) {
         ui.settingsTransferStatus = when (error) {
@@ -247,6 +572,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun acceptSettingsArchive(decoded: SettingsArchive.ImportResult) {
         if (isFinishing || isDestroyed) return
+        instrumentWorkflow?.settle("Apply superseded by settings import.")
+        if (instrumentWorkflow?.editsBlocked == true) {
+            ui.settingsTransferStatus = "Instrument state is uncertain. Recover it in INSTRUMENT PRESETS before importing settings."
+            return
+        }
+        instrumentWorkflow?.keepSafe()
         runCatching {
             settingsWriteOwner.write {
                 val merged = SettingsArchive.merge(decoded, prefs().all)
@@ -277,6 +608,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }.onSuccess { (imported, pendingLight, lightPublished) ->
             // Same main-thread callback, before another event can publish a later revision.
             restoreTuning(lightPublished)
+            instrumentWorkflow?.externalRestoreSaved()
+            refreshInstrumentState()
             ui.lightPending = pendingLight
             applyScopeRotationPreference()
             applyImmersive()
@@ -403,6 +736,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         PhosphorNative.setReducedMotion(reduced)
         ui.bindRandomModeRequest(::armAndRollRandomMode)
         restoreTuning()
+        initializeInstruments()
         refreshCaptureMetadataAccess()
         applyScopeRotationPreference()
         // The scope starts immersive; an edge swipe can reveal system bars temporarily.
@@ -577,6 +911,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onStop() {
+        instrumentWorkflow?.settle("Activity stopped. Pending apply cancelled.")
         activityStarted = false
         ui.presentationVisible = false
         updateOrientationSensor()
@@ -601,6 +936,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
 
     override fun onDestroy() {
+        instrumentWorkflow?.close()
+        instrumentDocuments.close()
+        tick.removeCallbacks(persistGain)
         if (taskIsCurrent() && mic.ownsSource() && runtimePrefs().getString("last_source", "none") == "mic") {
             runtimePrefs().edit { putString("last_source", "none") }
         }
@@ -648,9 +986,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             val remoteScope = rs?.optJSONObject("scope")
             val remoteGain = remoteScope?.optJSONObject("gain")
             // Show measured renderer and relay gain rather than saved preference values.
-            ui.localAutoGain = PhosphorNative.gainAutoNow()
-            if (!ui.remoteGeometry) ui.gain = PhosphorNative.gainNow()
-            if (ui.remote) {
+            if (!ui.remoteGeometry && instrumentWorkflow?.pending != true) ui.gain = PhosphorNative.gainNow()
+            if (ui.remote && ui.remoteGeometry) {
                 remoteGain?.let { ui.autoGain = it.optBoolean("auto", false) }
             } else {
                 ui.autoGain = ui.localAutoGain
@@ -770,6 +1107,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     /** The one MediaSession is the source of truth for every visible now-playing face. */
     private fun syncSessionFace(c: MediaController, metadata: MediaMetadata = c.mediaMetadata) {
+        val nextInstrumentSource = metadata.extras?.getString("source")
+            ?: c.currentMediaItem?.mediaId?.takeIf { it.startsWith("q") }?.let { "local" }
+        if (instrumentSource != nextInstrumentSource) {
+            instrumentWorkflow?.settle("Source capability changed. Pending apply cancelled.")
+            instrumentSource = nextInstrumentSource
+        }
         syncCaptureCommands(c)
         acceptTrackTitle(metadata.title?.toString())
         ui.trackArtist = metadata.artist?.toString()
@@ -836,6 +1179,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun selectSource(): Long {
+        instrumentWorkflow?.settle("Source changed. Pending apply cancelled.")
         micHandoffCancel()
         pendingAudioPermission = AudioPermissionPurpose.NONE
         pendingCaptureConsent = null
@@ -1034,12 +1378,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun setRemoteStreams(audio: Boolean, geometry: Boolean) {
+        instrumentWorkflow?.settle("Remote stream capability changed. Pending apply cancelled.")
         PhosphorNative.remoteSetStreams(audio, geometry)
         ui.remoteAudio = audio
         ui.remoteGeometry = geometry
     }
 
     override fun disconnectRemote() {
+        instrumentWorkflow?.settle("Remote source disconnected. Pending apply cancelled.")
         selectSource()
         startSourceService(
             Intent(this, PlaybackService::class.java)
@@ -1186,6 +1532,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
             if (status.sequence <= captureStatusSequence) return
             captureStatusSequence = status.sequence
         }
+        val captureActive = status.state == CaptureService.STATE_STARTING || status.state == CaptureService.STATE_FLOWING
+        if (captureActive != ui.sourceLabel.startsWith("capture")) {
+            instrumentWorkflow?.settle("Capture source changed. Pending apply cancelled.")
+        }
         if (micHandoff.isPending) {
             observeMicCaptureStatus(status)
             return
@@ -1229,6 +1579,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun applyLocalSourcePublication(revision: Long) {
         val publication = PlaybackService.localSourcePublication
         if (!publication.accepts(revision)) return
+        instrumentWorkflow?.settle("Local source changed. Pending apply cancelled.")
         when (publication.current.source) {
             LocalSourcePublication.Source.LOCAL -> {
                 ui.sourceLabel = "deck"
@@ -1255,6 +1606,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // ── Tuning persistence: the scope remembers its knobs across launches. ──
     private fun saveTuning() {
+        instrumentWorkflow?.settle("Saving current tuning. Pending apply cancelled.")
+        // Do not silently make a failed preset durable during lifecycle autosave.
+        val preserved = if (instrumentWorkflow?.unsaved == true) {
+            preferenceValueSnapshots(prefs().all, CuratedInstrumentPresets.cleanXy.setup.preferenceValues().keys)
+        } else emptyMap()
         prefs().edit {
             putInt("mode", ui.modeIndex)
             putBoolean("random_mode_armed", ui.randomModeArmed)
@@ -1299,6 +1655,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("ov_desig", when (ui.styleOverride.designators) {
                 null -> -1; true -> 1; false -> 0
             })
+            restoreSnapshots(preserved)
         }
         runtimePrefs().edit {
             putString("random_track_title", lastRandomTrackTitle)
@@ -1488,14 +1845,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun acceptTrackTitle(title: String?) {
         ui.trackTitle = title
         if (title != null && title != lastRandomTrackTitle) {
-            lastRandomTrackTitle = title
-            if (ui.randomModeArmed) rollRandomMode()
-            if (ui.beamRandomArmed) applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi))
-            if (ui.glowRandomArmed) applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi))
+            instrumentEdit {
+                lastRandomTrackTitle = title
+                if (ui.randomModeArmed) rollRandomMode()
+                if (ui.beamRandomArmed) applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi))
+                if (ui.glowRandomArmed) applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi))
+            }
         }
     }
 
-    private fun armAndRollRandomMode() {
+    private fun armAndRollRandomMode() = instrumentEdit {
         ui.randomModeArmed = true
         rollRandomMode()
     }
@@ -1509,22 +1868,27 @@ class MainActivity : ComponentActivity(), ScopeActions {
             PhosphorNative.remoteScopeCtl("mode", dev.phosphor.mobil3.ui.ModeTags[index])
         }
     }
-    override fun setMode(index: Int) {
+    override fun setMode(index: Int) = instrumentEdit {
         ui.randomModeArmed = false
         applyMode(index)
     }
-    override fun setBeam(index: Int) = applyPresetLight(ui.light, index, { applyLight(it) }) {
-        if (ui.remote && ui.remoteGeometry) {
-            PhosphorNative.remoteScopeCtl("theme", dev.phosphor.mobil3.ui.BeamColors[index].label)
+    override fun setRandomBanModes(modes: Set<Int>) = instrumentEdit {
+        if (modes.all { it in 0..10 } && modes.size <= 9) ui.randomBanModes = modes
+    }
+    override fun setBeam(index: Int) = instrumentEdit {
+        applyPresetLight(ui.light, index, { applyLight(it) }) {
+            if (ui.remote && ui.remoteGeometry) {
+                PhosphorNative.remoteScopeCtl("theme", dev.phosphor.mobil3.ui.BeamColors[index].label)
+            }
         }
     }
 
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
-    override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
+    override fun setOversample(n: Int) = instrumentEdit { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
-    override fun setFocus(focus: Float) { ui.focus = focus; PhosphorNative.setFocus(focus) }
+    override fun setFocus(focus: Float) = instrumentEdit { ui.focus = focus; PhosphorNative.setFocus(focus) }
 
-    override fun setGainAbsolute(g: Float) {
+    override fun setGainAbsolute(g: Float) = instrumentEdit {
         gainValue = g.coerceIn(0.1f, 7f)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
@@ -1545,7 +1909,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
     private var lastRemoteGainMs = 0L
 
-    override fun setGainAuto(on: Boolean) {
+    override fun setGainAuto(on: Boolean) = instrumentEdit {
         prefs().edit { putBoolean("auto_gain", on) }
         // Keep the local renderer ready for local/captured remote audio, while a
         // remote source also receives the desktop's existing typed gain verb.
@@ -1586,6 +1950,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         snapshots: Map<String, PreferenceValueSnapshot>,
     ): Boolean {
         val editor = prefs().edit()
+        editor.restoreSnapshots(snapshots)
+        return editor.commit()
+    }
+
+    private fun android.content.SharedPreferences.Editor.restoreSnapshots(
+        snapshots: Map<String, PreferenceValueSnapshot>,
+    ) {
+        val editor = this
         snapshots.forEach { (key, snapshot) ->
             if (!snapshot.present) {
                 editor.remove(key)
@@ -1605,7 +1977,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 else -> editor.remove(key)
             }
         }
-        return editor.commit()
     }
 
     override fun setRemoteLatencyMode(mode: Int) {
@@ -1615,12 +1986,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun applyLocalGainPolicy() {
-        val on = prefs().getBoolean("auto_gain", true)
+        instrumentWorkflow?.settle("Source gain policy changed. Pending apply cancelled.")
+        val on = if (instrumentWorkflow?.unsaved == true) ui.localAutoGain else prefs().getBoolean("auto_gain", true)
         PhosphorNative.setGain(gainValue) // restores the remembered manual landing
         PhosphorNative.setGainAuto(on)
         ui.gain = gainValue
         ui.autoGain = on
         ui.localAutoGain = on
+        refreshInstrumentState()
     }
 
     private fun applyImmersive() {
@@ -1904,12 +2277,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
             safe.selectedMask, safe.preset, safe.seconds, safe.perTrack, safe.generatedAuto,
             safe.shuffle, safe.randomInterval, safe.intervalMin, safe.intervalMax, deletedSlot)
 
-    override fun setLight(settings: LightSettings) { applyLight(settings) }
-    override fun deleteLightSlot(index: Int) {
+    override fun setLight(settings: LightSettings) { instrumentEdit { applyLight(settings) } }
+    override fun deleteLightSlot(index: Int) = instrumentEdit {
         if (index in ui.light.slots.indices) applyLight(ui.light.delete(index), index)
     }
 
-    private fun applyLight(settings: LightSettings, deletedSlot: Int = -1): Boolean = settingsWriteOwner.write {
+    private fun applyLight(settings: LightSettings, deletedSlot: Int = -1): Boolean = instrumentValueEdit(false) { settingsWriteOwner.write {
         val guarded = LightCycleGuard.evaluate(settings, epilepsyAcknowledged())
         val safe = guarded.safe
         val prior = preferenceValueSnapshots(prefs().all, safe.values().keys)
@@ -1932,18 +2305,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.lightTemporary = false
         ui.lightError = ""
         true
-    }
+    } }
 
-    override fun rollLight() {
+    override fun rollLight() = instrumentEdit {
         if (PhosphorNative.rollLight()) ui.lightTemporary = !ui.light.generatedAuto
         else ui.lightError = "Renderer could not roll a color. Reopen Phosphor and try again."
     }
 
-    override fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int) =
+    override fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int) = instrumentEdit {
         setLight(ui.light.copy(slots = colors.map { LightRgb(it.red, it.green, it.blue) }, selectedMask = (1 shl count) - 1))
+    }
 
-    override fun setBeamCycle(seconds: Float, perTrack: Boolean) =
+    override fun setBeamCycle(seconds: Float, perTrack: Boolean) = instrumentEdit {
         setLight(ui.light.copy(seconds = seconds, perTrack = perTrack))
+    }
 
     // Photosensitivity acceptance persists forever, as on desktop.
     override fun epilepsyAcknowledged(): Boolean = runtimePrefs().getBoolean("epilepsy_ack", false)
@@ -1956,31 +2331,31 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     // Manual drag of a rule is a takeover: it disarms that die, exactly like picking a
     // mode disarms the mode-⚄.
-    override fun setBeamEnergy(e: Float) { ui.beamRandomArmed = false; applyBeamEnergy(e) }
-    override fun setGlow(g: Float) { ui.glowRandomArmed = false; applyGlow(g) }
+    override fun setBeamEnergy(e: Float) = instrumentEdit { ui.beamRandomArmed = false; applyBeamEnergy(e) }
+    override fun setGlow(g: Float) = instrumentEdit { ui.glowRandomArmed = false; applyGlow(g) }
 
     // The checkbox is a true toggle: check = arm + roll now; uncheck = disarm, the last
     // rolled value simply stays on the rule.
-    override fun tapBeamRandom() {
+    override fun tapBeamRandom() = instrumentEdit {
         ui.beamRandomArmed = !ui.beamRandomArmed
         if (ui.beamRandomArmed) applyBeamEnergy(rollIn(ui.beamRandomLo, ui.beamRandomHi))
     }
-    override fun tapGlowRandom() {
+    override fun tapGlowRandom() = instrumentEdit {
         ui.glowRandomArmed = !ui.glowRandomArmed
         if (ui.glowRandomArmed) applyGlow(rollIn(ui.glowRandomLo, ui.glowRandomHi))
     }
-    override fun setBeamRandomRange(lo: Float, hi: Float) {
+    override fun setBeamRandomRange(lo: Float, hi: Float) = instrumentEdit {
         ui.beamRandomLo = lo.coerceIn(1f, 30f)
         ui.beamRandomHi = hi.coerceIn(ui.beamRandomLo, 30f)
     }
-    override fun setGlowRandomRange(lo: Float, hi: Float) {
+    override fun setGlowRandomRange(lo: Float, hi: Float) = instrumentEdit {
         ui.glowRandomLo = lo.coerceIn(0f, 0.98f)
         ui.glowRandomHi = hi.coerceIn(ui.glowRandomLo, 0.98f)
     }
-    override fun setGeomFx(kind: Int) { ui.geomFx = kind.coerceIn(0, 4); PhosphorNative.setGeomFx(ui.geomFx) }
-    override fun setGeomAmount(v: Float) { ui.geomAmount = v.coerceIn(0f, 1f); PhosphorNative.setGeomAmount(ui.geomAmount) }
-    override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
-    override fun setGridData(on: Boolean) {
+    override fun setGeomFx(kind: Int) = instrumentEdit { ui.geomFx = kind.coerceIn(0, 4); PhosphorNative.setGeomFx(ui.geomFx) }
+    override fun setGeomAmount(v: Float) = instrumentEdit { ui.geomAmount = v.coerceIn(0f, 1f); PhosphorNative.setGeomAmount(ui.geomAmount) }
+    override fun setGrid(on: Boolean) = instrumentEdit { PhosphorNative.setGrid(on); ui.grid = on }
+    override fun setGridData(on: Boolean) = instrumentEdit {
         ui.gridData = on
         ui.gridReading = null
         prefs().edit { putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, on) }

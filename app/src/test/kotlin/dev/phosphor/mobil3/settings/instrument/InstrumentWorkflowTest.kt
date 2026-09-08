@@ -1,0 +1,434 @@
+package dev.phosphor.mobil3.settings.instrument
+
+import dev.phosphor.mobil3.settings.SettingsWriteOwner
+import dev.phosphor.mobil3.ui.LightSettings
+import org.junit.Assert.*
+import org.junit.Test
+import java.util.concurrent.CountDownLatch
+import java.util.concurrent.TimeUnit
+import java.util.concurrent.atomic.AtomicReference
+
+class InstrumentWorkflowTest {
+    private val original = CuratedInstrumentPresets.cleanXy.setup
+    private val ambient = CuratedInstrumentPresets.ambient.setup
+    private val spectral = CuratedInstrumentPresets.spectralBench.setup
+
+    private class Rig(start: InstrumentSetup) {
+        var current = start
+        var rendered = start
+        var saved = start
+        var capable = true
+        var ack = false
+        var persistenceError: InstrumentWorkflow.PersistenceFailure? = null
+        var persistenceAction: ((InstrumentSetup) -> InstrumentWorkflow.PersistenceFailure?)? = null
+        var sequence = 0L
+        val outcomes = mutableMapOf<Long, Int>()
+        val candidates = mutableMapOf<Long, InstrumentSetup>()
+        val replies = mutableMapOf<Long, (Int) -> Unit>()
+        val released = mutableListOf<Long>()
+        val trace = mutableListOf<String>()
+        val settings = SettingsWriteOwner()
+        var notifications = 0
+        val owner = InstrumentWorkflow(
+            native = object : InstrumentWorkflow.Native {
+                override fun request(setup: InstrumentSetup): Long {
+                    val id = ++sequence
+                    outcomes[id] = 0
+                    candidates[id] = setup
+                    trace += "request:$id"
+                    return id
+                }
+                override fun cancel(id: Long): Int {
+                    if (outcomes[id] == 0) outcomes[id] = 2
+                    trace += "cancel:$id:${outcomes[id]}"
+                    return outcomes[id] ?: 4
+                }
+                override fun release(id: Long) { released += id; trace += "release:$id" }
+            },
+            snapshot = { current },
+            publish = { current = it; trace += "publish:${it.mode}" },
+            persist = { setup -> settings.write {
+                trace += "persist:${setup.mode}"
+                val failure = persistenceAction?.invoke(setup) ?: persistenceError
+                if (failure == null) saved = setup
+                failure
+            } },
+            canApply = { capable }, acknowledged = { ack },
+            waitOffMain = { id, callback -> replies[id] = callback },
+            changed = { notifications++ },
+        )
+        fun admit(id: Long = sequence): Boolean {
+            if (outcomes[id] != 0) return false
+            outcomes[id] = if (capable) 1 else 3
+            if (capable) rendered = candidates.getValue(id)
+            trace += "admit:$id:${outcomes[id]}"
+            return capable
+        }
+        fun reply(id: Long = sequence) { replies.getValue(id)(outcomes.getValue(id)) }
+        fun manualFocus(focus: Float) = owner.edit {
+            current = current.copy(focus = focus)
+            rendered = rendered.copy(focus = focus)
+            trace += "manual:$focus"
+        }
+    }
+
+    @Test fun delayedCommitPublishesOnlyCompleteExactCandidate() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        assertTrue(r.owner.pending)
+        assertEquals(original, r.current)
+        assertEquals(original, r.saved)
+        r.admit()
+        assertEquals(original, r.current)
+        r.reply()
+        assertEquals(ambient, r.current)
+        assertEquals(ambient, r.rendered)
+        assertEquals(ambient, r.saved)
+        assertEquals(original, r.owner.undoSetup)
+        assertEquals(listOf(1L), r.released)
+        assertFalse(r.owner.pending)
+    }
+
+    @Test fun committedCancelReconcilesBeforeManualBAndLateReplyCannotOverwriteB() {
+        val r = Rig(original)
+        r.owner.apply(ambient, InstrumentWorkflow.Association("curated:Ambient", "Ambient", ambient))
+        r.admit()
+        r.manualFocus(1.2f)
+        val beforeReply = r.current
+        val trace = r.trace.toList()
+        assertEquals(listOf("request:1", "admit:1:1", "cancel:1:1", "publish:7", "persist:7", "release:1", "manual:1.2"), trace)
+        r.reply()
+        assertEquals(trace, r.trace)
+        assertEquals(beforeReply, r.current)
+        assertEquals(1.2f, r.current.focus)
+        assertEquals(ambient.copy(focus = 1.2f), r.rendered)
+        assertTrue(r.owner.modified)
+    }
+
+    @Test fun cancelledQueuedApplyCannotRunAfterLaterManualEdit() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.manualFocus(2f)
+        assertFalse(r.admit())
+        r.reply()
+        assertEquals(original.copy(focus = 2f), r.current)
+        assertEquals(r.current, r.rendered)
+        assertEquals(original, r.saved)
+        assertNull(r.owner.undoSetup)
+        assertEquals(listOf(1L), r.released)
+    }
+
+    @Test fun settingsImportAndNestedLightEditSettleBeforeEnteringSynchronousWriteOwner() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.admit()
+        r.owner.edit {
+            r.settings.write {
+                r.current = r.current.copy(focus = 2f)
+                r.rendered = r.current
+                r.trace += "import:focus"
+            }
+            r.owner.edit {
+                r.settings.write {
+                    r.current = r.current.copy(light = LightSettings(preset = 2))
+                    r.rendered = r.current
+                    r.trace += "manual:light"
+                }
+            }
+        }
+        r.reply()
+        assertEquals(ambient.copy(focus = 2f, light = LightSettings(preset = 2)), r.current)
+        assertTrue(r.trace.indexOf("persist:7") < r.trace.indexOf("import:focus"))
+        assertEquals(1, r.released.size)
+    }
+
+    @Test fun supersededApplyReleasesOnlyItsReceiptAndStaleCallbackDoesNothing() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.owner.apply(spectral)
+        assertEquals(listOf(1L), r.released)
+        r.reply(1)
+        assertTrue(r.owner.pending)
+        assertEquals(original, r.current)
+        r.admit(2)
+        r.reply(2)
+        assertEquals(spectral, r.current)
+        assertEquals(listOf(1L, 2L), r.released)
+    }
+
+    @Test fun sourceChangeCancelsQueuedWorkAndCommittedResultPrecedesSourceGainPolicy() {
+        for (commitFirst in listOf(false, true)) {
+            val r = Rig(original)
+            r.owner.apply(ambient)
+            if (commitFirst) r.admit()
+            r.owner.settle("Source changed")
+            r.capable = false
+            r.current = r.current.copy(gain = 4f)
+            r.rendered = r.current
+            assertFalse(r.admit())
+            r.reply()
+            assertEquals((if (commitFirst) ambient else original).copy(gain = 4f), r.current)
+            r.owner.apply(spectral)
+            assertEquals(1L, r.sequence)
+            assertTrue(r.owner.status.contains("Desktop geometry"))
+        }
+    }
+
+    @Test fun changedNativeCapabilityRejectsWithoutPublishingOrSaving() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.capable = false
+        assertFalse(r.admit())
+        r.reply()
+        assertEquals(original, r.current)
+        assertEquals(original, r.saved)
+        assertEquals(original, r.rendered)
+        assertTrue(r.owner.status.contains("rejected"))
+    }
+
+    @Test fun onDestroyReconcilesCommittedReceiptOnceAndLateReplyCannotReachReplacement() {
+        for (committed in listOf(false, true)) {
+            val r = Rig(original)
+            r.owner.apply(ambient)
+            if (committed) r.admit()
+            r.owner.close()
+            val count = r.notifications
+            val replacement = Rig(spectral)
+            r.reply()
+            r.owner.close()
+            assertEquals(count, r.notifications)
+            assertEquals(spectral, replacement.current)
+            assertEquals(if (committed) ambient else original, r.current)
+            assertEquals(listOf(1L), r.released)
+            assertThrows(IllegalStateException::class.java) { r.manualFocus(2f) }
+        }
+    }
+
+    @Test fun delayedWorkerReplyIsDeliveredOnOwnerAndLostReplyResolvedByCancel() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        val ready = CountDownLatch(1)
+        val release = CountDownLatch(1)
+        val delivered = AtomicReference<Int>()
+        val worker = Thread {
+            ready.countDown()
+            check(release.await(2, TimeUnit.SECONDS))
+            delivered.set(1)
+        }
+        worker.start()
+        assertTrue(ready.await(2, TimeUnit.SECONDS))
+        r.admit()
+        r.manualFocus(1.8f)
+        release.countDown()
+        worker.join(2000)
+        assertFalse(worker.isAlive)
+        r.replies.getValue(1)(delivered.get())
+        assertEquals(ambient.copy(focus = 1.8f), r.current)
+        assertEquals(listOf(1L), r.released)
+    }
+
+    @Test fun persistenceFailureKeepsActualCommittedUiAndPriorUndoWithoutClaimingSaved() {
+        val r = Rig(original)
+        r.persistenceError = InstrumentWorkflow.PersistenceFailure("Saving failed. Previous settings restored. Try again.", true)
+        r.owner.apply(ambient)
+        r.admit()
+        r.reply()
+        assertEquals(ambient, r.current)
+        assertEquals(ambient, r.rendered)
+        assertEquals(original, r.saved)
+        assertEquals(original, r.owner.undoSetup)
+        assertTrue(r.owner.unsaved)
+        assertTrue(r.owner.status.startsWith("Active, not saved"))
+        r.persistenceError = null
+        r.owner.undo()
+        r.admit()
+        r.reply()
+        assertEquals(original, r.current)
+        assertFalse(r.owner.unsaved)
+        assertNull(r.owner.undoSetup)
+    }
+
+    @Test fun guardClampedSetupIsModifiedAndImportNeverAcknowledges() {
+        val rapid = ambient.copy(light = ambient.light.copy(seconds = 0.2f))
+        val r = Rig(original)
+        val record = InstrumentWorkflow.Association("rapid", "Rapid", rapid)
+        r.owner.apply(rapid, record)
+        r.admit()
+        r.reply()
+        assertEquals(1f, r.current.light.seconds)
+        assertTrue(r.owner.modified)
+        assertNotNull(r.owner.rapidReview)
+        val collection = InstrumentPresetCollection.empty().create("Rapid", rapid)
+        InstrumentPresetCodec.decode(InstrumentPresetCodec.encode(collection))
+        assertFalse(r.ack)
+        r.owner.allowRapid()
+        assertEquals(1L, r.sequence)
+        r.ack = true
+        r.owner.allowRapid()
+        r.admit()
+        r.reply()
+        assertEquals(rapid, r.current)
+        assertFalse(r.owner.modified)
+    }
+
+    @Test fun deletionAndRenameOnlyChangeAssociationAndManualEditDoesNotMutateSavedRecord() {
+        var collection = InstrumentPresetCollection.empty().create("Ambient", ambient)
+        val record = collection.records.single()
+        val r = Rig(original)
+        r.owner.apply(record.setup, InstrumentWorkflow.Association(record.id, record.name, record.setup))
+        r.admit(); r.reply()
+        r.manualFocus(1f)
+        assertEquals(ambient, collection.record(record.id).setup)
+        collection = collection.rename(record.id, "Slow")
+        r.owner.refreshAssociation(collection)
+        assertEquals("Slow", r.owner.association?.name)
+        assertTrue(r.owner.modified)
+        r.owner.refreshAssociation(collection.delete(record.id))
+        assertNull(r.owner.association)
+        assertEquals(ambient.copy(focus = 1f), r.current)
+    }
+
+    @Test fun preferenceAllowlistContainsOnlyAuthoredTuning() {
+        val values = ambient.copy(gain = 2.4f, autoGain = false, focus = 1.7f).preferenceValues()
+        assertEquals(2.4f, values["gain"])
+        assertEquals(false, values["auto_gain"])
+        assertEquals(1.7f, values["focus"])
+        assertFalse(values.keys.any { it.contains("source") || it.contains("root") || it.contains("pause") || it.contains("volume") })
+        assertFalse(values.containsKey("fps"))
+        assertEquals(ambient.light, LightSettings.read(values))
+    }
+
+    @Test fun actualSynchronousCommitFalseAndRollbackFailureBlockEditsUntilExplicitRecovery() {
+        val r = Rig(original)
+        val prior = original.preferenceValues() - "focus"
+        var preferences = prior
+        var fail = true
+        var saves = 0
+        r.persistenceAction = { setup ->
+            val before = preferences
+            r.settings.commit(
+                commit = { preferences = setup.preferenceValues(); saves++; !fail },
+                publish = { true },
+                rollback = { preferences = before; false },
+            )?.let { InstrumentWorkflow.PersistenceFailure(it.message(), it.restored) }
+        }
+        r.owner.apply(ambient)
+        r.admit(); r.reply()
+        assertEquals(prior, preferences)
+        assertEquals(ambient, r.current)
+        assertEquals(ambient, r.rendered)
+        assertTrue(r.owner.storageUncertain)
+        assertTrue(r.owner.editsBlocked)
+        assertTrue(r.owner.status.contains("rollback failed"))
+        assertThrows(IllegalStateException::class.java) { r.manualFocus(2f) }
+        assertThrows(IllegalStateException::class.java) { r.owner.externalRestoreSaved() }
+        r.owner.apply(spectral)
+        assertEquals(1L, r.sequence)
+        assertEquals(1, saves)
+        r.owner.retryPersistence()
+        assertTrue(r.owner.storageUncertain)
+        fail = false
+        r.owner.retryPersistence()
+        assertFalse(r.owner.editsBlocked)
+        assertFalse(r.owner.unsaved)
+        assertEquals(ambient.preferenceValues(), preferences)
+        assertEquals(1L, r.sequence)
+        r.manualFocus(2f)
+        assertEquals(ambient.copy(focus = 2f), r.current)
+    }
+
+    @Test fun unavailableReceiptNeverMeansSuccessAndCannotEnablePartialTuning() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.outcomes[1] = 4
+        r.reply()
+        assertTrue(r.owner.uncertain)
+        assertTrue(r.owner.editsBlocked)
+        assertEquals(original, r.current)
+        assertEquals(original, r.saved)
+        assertThrows(IllegalStateException::class.java) { r.manualFocus(2f) }
+        r.owner.retryPersistence()
+        r.owner.apply(spectral)
+        assertEquals(1L, r.sequence)
+        assertEquals(listOf(1L), r.released)
+    }
+
+    @Test fun repeatedApplicationsRetainOnlyOneOwnedReceiptAndUndoSlot() {
+        val r = Rig(original)
+        repeat(20) { index ->
+            val prior = r.current
+            r.owner.apply(if (index % 2 == 0) ambient else spectral)
+            r.admit(); r.reply()
+            assertEquals(prior, r.owner.undoSetup)
+            assertEquals(index + 1, r.released.size)
+            assertFalse(r.owner.pending)
+        }
+        r.owner.undo()
+        r.admit(); r.reply()
+        assertNull(r.owner.undoSetup)
+        val count = r.sequence
+        r.owner.undo()
+        assertEquals(count, r.sequence)
+    }
+
+    @Test fun importReenteredInsideLightCommitCannotPartiallyWriteOrLeakTheOuterOwner() {
+        val r = Rig(original)
+        r.owner.apply(ambient)
+        r.admit()
+        r.owner.edit {
+            r.settings.write {
+                val nested = runCatching { r.settings.write { r.current = spectral } }
+                assertTrue(nested.isFailure)
+                assertEquals(ambient, r.current)
+                r.current = r.current.copy(light = LightSettings(preset = 2))
+                r.rendered = r.current
+            }
+        }
+        r.reply()
+        assertEquals(ambient.copy(light = LightSettings(preset = 2)), r.current)
+        r.owner.edit { r.settings.write { r.current = r.current.copy(focus = 2f) } }
+        assertEquals(2f, r.current.focus)
+        assertEquals(listOf(1L), r.released)
+    }
+
+    @Test fun negativeReservationNeverSchedulesWaitOrReleasesAnotherReceipt() {
+        for (code in listOf(-1L, -2L, -3L)) {
+            var waits = 0
+            var releases = 0
+            val owner = InstrumentWorkflow(
+                native = object : InstrumentWorkflow.Native {
+                    override fun request(setup: InstrumentSetup) = code
+                    override fun cancel(id: Long): Int = error("No owned receipt")
+                    override fun release(id: Long) { releases++ }
+                }, snapshot = { original }, publish = { error("No commit") }, persist = { error("No save") },
+                canApply = { true }, acknowledged = { false }, waitOffMain = { _, _ -> waits++ }, changed = {},
+            )
+            owner.apply(ambient)
+            assertEquals(0, waits)
+            assertEquals(0, releases)
+            assertFalse(owner.pending)
+            assertFalse(owner.status.contains("applied"))
+        }
+    }
+
+    @Test fun waitLaunchFailureResolvesExactCommittedReceiptInsteadOfRetrying() {
+        for (outcome in listOf(1, 2)) {
+            var current = original
+            var releases = 0
+            var requests = 0
+            val owner = InstrumentWorkflow(
+                native = object : InstrumentWorkflow.Native {
+                    override fun request(setup: InstrumentSetup): Long { requests++; return 42 }
+                    override fun cancel(id: Long) = outcome
+                    override fun release(id: Long) { assertEquals(42L, id); releases++ }
+                }, snapshot = { current }, publish = { current = it }, persist = { null },
+                canApply = { true }, acknowledged = { false }, waitOffMain = { _, _ -> error("Thread unavailable") }, changed = {},
+            )
+            owner.apply(ambient)
+            assertEquals(if (outcome == 1) ambient else original, current)
+            assertEquals(1, requests)
+            assertEquals(1, releases)
+            assertFalse(owner.pending)
+        }
+    }
+}

@@ -132,7 +132,7 @@ internal fun Modifier.stageChromeBounds(
 }
 
 // What the chrome can ask the host to do. Keeps Compose free of Android service plumbing.
-interface ScopeActions {
+interface ScopeActions : InstrumentPresetActions {
     fun toggleDisplayPause() {}
     fun resetInspection() {}
     fun setPauseBlack(black: Boolean) {}
@@ -152,6 +152,7 @@ interface ScopeActions {
     fun seekTo(ms: Long)
     fun startRemote()
     fun setMode(index: Int)
+    fun setRandomBanModes(modes: Set<Int>) {}
     fun setBeam(index: Int)
     fun setFps(value: Int)
     fun setOversample(n: Int)
@@ -266,6 +267,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     var sheet by remember { mutableStateOf(Sheet.NONE) }
     LaunchedEffect(state.showSourcePicker) {
         if (state.showSourcePicker) { sheet = Sheet.SOURCE; state.showSourcePicker = false }
+    }
+    LaunchedEffect(state.showInstrumentPresets) {
+        if (state.showInstrumentPresets) { sheet = Sheet.INSTRUMENT; state.showInstrumentPresets = false }
     }
     var manualFrom by remember { mutableStateOf(Sheet.SETTINGS) } // where MANUAL returns to
     var overflowComposed by remember { mutableStateOf(false) }
@@ -781,6 +785,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onPick = { actions.setMode(it) },
                     onGeomFx = { actions.setGeomFx(it) },
                     onGeomAmount = { actions.setGeomAmount(it) },
+                    onBanModes = actions::setRandomBanModes,
                 ) {
                     sheet = Sheet.NONE
                 }
@@ -793,6 +798,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     epilepsyAcknowledged = { actions.epilepsyAcknowledged() },
                     ackEpilepsy = { actions.ackEpilepsy() },
                 ) { sheet = Sheet.NONE }
+                Sheet.INSTRUMENT -> InstrumentPresetSheet(state, p, reduced, actions) { sheet = Sheet.NONE }
                 Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) }) {
                     sheet = Sheet.NONE
                 }
@@ -801,6 +807,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     sheetActions.withSheetRouting(
                         openRoom = { sheet = Sheet.ROOM },
                         openLight = { sheet = Sheet.LIGHT },
+                        openInstrument = { actions.openInstrumentPresets(); sheet = Sheet.INSTRUMENT },
                         openManual = { manualFrom = Sheet.SETTINGS; sheet = Sheet.MANUAL },
                     ),
                     focusValue = state.focus,
@@ -836,12 +843,14 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 private fun SheetActions.withSheetRouting(
     openRoom: () -> Unit = {},
     openLight: () -> Unit = {},
+    openInstrument: () -> Unit = {},
     openManual: () -> Unit = {},
 ): SheetActions {
     val base = this
     return object : SheetActions by base {
         override fun openRoom() = openRoom()
         override fun openLight() = openLight()
+        override fun openInstrument() = openInstrument()
         override fun openManual() = openManual()
     }
 }
