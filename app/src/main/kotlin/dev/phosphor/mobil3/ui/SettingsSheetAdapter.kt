@@ -52,8 +52,12 @@ internal class SettingsSheetDismiss(private val scope: CoroutineScope) {
         private set
     var returning by mutableStateOf(false)
         private set
+    var interrupted by mutableStateOf(false)
+        private set
     private var returnJob: Job? = null
     private var revision = 0L
+
+    fun observeInterruption() { interrupted = gesture.requiresReopen }
 
     fun follow(density: Float) {
         revision++
@@ -81,6 +85,7 @@ internal class SettingsSheetDismiss(private val scope: CoroutineScope) {
 
     fun cancel(reduced: Boolean) {
         gesture.cancel()
+        observeInterruption()
         if (!gesture.committed) returnToRest(reduced)
     }
 
@@ -140,10 +145,11 @@ internal fun Modifier.settingsPointerObserver(
                         change.pressed, change.previousPressed, pointers,
                         change.type == PointerType.Touch || change.type == PointerType.Stylus,
                     )
+                    owner.observeInterruption()
                     if (change.pressed && !change.previousPressed) owner.follow(density)
                 }
-                awaitPointerEvent(PointerEventPass.Final)
-                when (owner.gesture.final()) {
+                val finalEvent = awaitPointerEvent(PointerEventPass.Final)
+                when (owner.gesture.final(finalEvent.changes.any { it.isConsumed })) {
                     SettingsDismissOwner.Release.CLOSE -> onClose()
                     SettingsDismissOwner.Release.RETURN -> owner.returnToRest(reduced)
                     SettingsDismissOwner.Release.NONE -> {

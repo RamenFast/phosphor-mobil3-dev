@@ -4,6 +4,115 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SettingsGestureAdapterTest {
+    @Test fun queuedReversalCannotLeaveStaleSlowCloseAtNextUp() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 200f, 1000) { adapter.remainder(200f, true, true) }
+        adapter.initial(1, 100f, 1100, true, true, 1)
+        adapter.final(consumedByChild = true) // Scrollable queued -100, not delivered yet.
+        assertEquals(SettingsDismissOwner.Release.NONE, up(adapter, 100f, 1110))
+        assertFalse(adapter.committed)
+        assertTrue(adapter.requiresReopen)
+        assertEquals(0f, adapter.rawDp, 0f)
+        assertEquals(0f, adapter.reverse(-100f, true), 0f)
+        adapter.remainder(0f, true, false, childConsumedDp = -100f)
+        assertEquals(SettingsDismissOwner.Release.NONE, adapter.postFling())
+        assertTrue(adapter.requiresReopen)
+    }
+
+    @Test fun queuedOldDeltaCannotSpendANewerPhysicalBudget() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 100f, 1000) { adapter.remainder(100f, true, true) }
+        adapter.initial(1, 140f, 1100, true, true, 1)
+        adapter.final(consumedByChild = true)
+        adapter.initial(1, 150f, 1110, true, true, 1)
+        assertEquals(0f, adapter.remainder(40f, true, true), 0f)
+        assertEquals(0f, adapter.remainder(10f, true, true), 0f)
+        assertEquals(SettingsDismissOwner.Release.NONE, adapter.final(true))
+        assertEquals(0f, adapter.rawDp, 0f)
+        assertTrue(adapter.requiresReopen)
+    }
+
+    @Test fun queuedCallbacksCannotRearmAfterANewDownOrUntaggedFling() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        adapter.initial(1, 80f, 40, true, true, 1)
+        adapter.final(true)
+        adapter.cancel()
+        down(adapter, 100)
+        move(adapter, 250f, 1000) { assertEquals(0f, adapter.remainder(250f, true, true), 0f) }
+        adapter.postFling()
+        down(adapter, 2000)
+        move(adapter, 250f, 3000) { assertEquals(0f, adapter.header(250f), 0f) }
+        assertEquals(SettingsDismissOwner.Release.NONE, up(adapter, 250f, 3100))
+        assertTrue(adapter.requiresReopen)
+        adapter.retire()
+        val nextOpening = SettingsGestureAdapter()
+        down(nextOpening)
+        move(nextOpening, 192f, 1000) { nextOpening.header(192f) }
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(nextOpening, 192f, 1100))
+    }
+
+    @Test fun consumedDelayedCallbackBeforeNextInitialStillUsesOriginalBudget() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        adapter.initial(1, 192f, 1000, true, true, 1)
+        adapter.final(true)
+        assertEquals(192f, adapter.remainder(192f, true, true), 0f)
+        assertFalse(adapter.requiresReopen)
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 192f, 1100))
+    }
+
+    @Test fun completedReversalBeforeNextInitialKeepsOrdinaryReturn() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 200f, 1000) { adapter.remainder(200f, true, true) }
+        adapter.initial(1, 100f, 1100, true, true, 1)
+        adapter.final(true)
+        assertEquals(-100f, adapter.reverse(-100f, true), 0f)
+        adapter.remainder(0f, true, true)
+        assertEquals(SettingsDismissOwner.Release.RETURN, up(adapter, 100f, 1110))
+        assertFalse(adapter.requiresReopen)
+    }
+
+    @Test fun unconsumedSlopAndCompletedChildOnlyScrollDoNotLatchInterruption() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 2f, 10)
+        move(adapter, 4f, 20)
+        adapter.initial(1, 20f, 100, true, true, 1)
+        adapter.remainder(0f, true, false, childConsumedDp = 16f)
+        adapter.final(true)
+        adapter.initial(1, 220f, 1100, true, true, 1)
+        adapter.remainder(200f, true, true)
+        adapter.final(true)
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 220f, 1200))
+        assertFalse(adapter.requiresReopen)
+    }
+
+    @Test fun headerCompletionBeforeFinalDoesNotCreateAPendingBodyReceipt() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        adapter.initial(1, 80f, 40, true, true, 1)
+        adapter.header(80f)
+        adapter.final(true)
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 80f, 40))
+        assertFalse(adapter.requiresReopen)
+    }
+
+    @Test fun actualFinalPointerObservationCarriesConsumedStateWithoutConsumingInput() {
+        val source = listOf("src/main/kotlin", "app/src/main/kotlin")
+            .map { java.io.File(it, "dev/phosphor/mobil3/ui/SettingsSheetAdapter.kt") }
+            .first { it.isFile }.readText()
+            .substringAfter("internal fun Modifier.settingsPointerObserver(")
+            .substringBefore("internal fun Modifier.settingsHeaderDrag(")
+        assertTrue(source.contains("val finalEvent = awaitPointerEvent(PointerEventPass.Final)"))
+        assertTrue(source.contains("owner.gesture.final(finalEvent.changes.any { it.isConsumed })"))
+        assertTrue(source.contains("owner.observeInterruption()"))
+        assertFalse(source.contains(".consume()"))
+    }
+
     private fun down(adapter: SettingsGestureAdapter, time: Long = 0) {
         adapter.initial(1, 0f, time, true, false, 1)
         assertEquals(SettingsDismissOwner.Release.NONE, adapter.final())

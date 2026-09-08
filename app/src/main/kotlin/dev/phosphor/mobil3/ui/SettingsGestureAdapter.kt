@@ -11,6 +11,10 @@ internal class SettingsGestureAdapter {
     private var eventMillis = 0L
     private var releasePending = false
     private var budget = 0f
+    private var delivered = false
+    private var pendingDelivery = false
+    var requiresReopen = false
+        private set
     val offsetDp: Float get() = owner.offsetDp
     val rawDp: Float get() = owner.rawDp
     val committed: Boolean get() = owner.committed
@@ -21,8 +25,11 @@ internal class SettingsGestureAdapter {
         pressed: Boolean, previouslyPressed: Boolean, pointers: Int,
         directPointer: Boolean = true,
     ) {
+        if (pendingDelivery) cancel()
+        if (requiresReopen) return
         budget = 0f
         releasePending = false
+        delivered = false
         if (!directPointer || pointers != 1 || !positionDp.isFinite() || timeMillis < 0) {
             cancel()
             return
@@ -52,12 +59,17 @@ internal class SettingsGestureAdapter {
         releasePending = !pressed && previouslyPressed
     }
 
-    fun header(deltaDp: Float): Float = admit(deltaDp) { owner.header(it, deltaDpBounded(deltaDp)) }
+    fun header(deltaDp: Float): Float {
+        val consumed = admit(deltaDp) { owner.header(it, deltaDpBounded(deltaDp)) }
+        completeDelivery()
+        return consumed
+    }
 
     fun remainder(deltaDp: Float, direct: Boolean, atTop: Boolean, childConsumedDp: Float = 0f): Float {
         if (direct) {
             if (!childConsumedDp.isFinite()) { cancel(); return 0f }
             if (budget > 0f) budget = (budget - childConsumedDp.coerceAtLeast(0f)).coerceAtLeast(0f)
+            completeDelivery()
         }
         if (!direct || !atTop || deltaDp <= 0f) return 0f
         return admit(deltaDp) { owner.remainder(it, deltaDpBounded(deltaDp), true, true) }
@@ -70,6 +82,12 @@ internal class SettingsGestureAdapter {
 
     private fun deltaDpBounded(delta: Float): Float =
         if (delta > 0f) minOf(delta, budget) else maxOf(delta, budget)
+
+    private fun completeDelivery() {
+        if (ticket == null) return
+        delivered = true
+        pendingDelivery = false
+    }
 
     private inline fun admit(delta: Float, travel: (SettingsDismissOwner.Ticket) -> Float): Float {
         val current = ticket ?: return 0f
@@ -84,8 +102,10 @@ internal class SettingsGestureAdapter {
     }
 
     /** Final pass. Child consumption alone is not eligible travel. Release decides exactly once. */
-    fun final(): SettingsDismissOwner.Release {
+    fun final(consumedByChild: Boolean = false): SettingsDismissOwner.Release {
         val current = ticket ?: return SettingsDismissOwner.Release.NONE
+        // Consumption queues Scrollable work. Final is not an acknowledgement that it ran.
+        pendingDelivery = consumedByChild && eventY != y && !releasePending && !delivered
         // A scrollable may deliver its nested remainder after the Final pass. Keep the
         // previous physical sample until eligibility begins, including that delivery order.
         if ((owner.rawDp > 0f || releasePending) && !owner.observe(current, eventY, eventMillis, 1)) {
@@ -106,6 +126,9 @@ internal class SettingsGestureAdapter {
     fun postFling(): SettingsDismissOwner.Release = SettingsDismissOwner.Release.NONE
 
     fun cancel() {
+        if (pendingDelivery) requiresReopen = true
+        pendingDelivery = false
+        delivered = false
         ticket = null
         pointer = null
         budget = 0f
