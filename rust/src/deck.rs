@@ -325,14 +325,10 @@ pub fn position_micros() -> u64 {
 }
 
 pub fn close() {
-    crate::pause::invalidate();
-    close_inner(false);
+    close_inner(true);
 }
 
 fn close_inner(invalidate: bool) {
-    if invalidate {
-        crate::pause::invalidate();
-    }
     let deck = { DECK.lock().unwrap().take() };
     if let Some(mut deck) = deck {
         close_session(&mut deck.session, || {
@@ -340,4 +336,8 @@ fn close_inner(invalidate: bool) {
         });
     }
     set_ring_state(false);
+    // No retired decoder can publish after its join and this visual boundary.
+    if invalidate {
+        crate::pause::invalidate();
+    }
 }

@@ -21,10 +21,13 @@ class HoldRenderBoundaryTest {
 
     @Test fun visualFreshBoundaryClearsGpuBeforeConsumingNewSourceSamples() {
         val render = File("../rust/src/render.rs").readText()
-        val fresh = render.substringAfter("if VISUAL_FRESH.swap(false, Ordering::AcqRel)")
+        val fresh = render.substringAfter("if energy_epoch.needs_clear(frame_token)")
             .substringBefore("let (source_active, samples, raw_peak)")
         assertTrue("r.clear_energy();" in fresh)
         assertTrue(fresh.indexOf("r.clear_energy();") < fresh.indexOf("computer.reset();"))
+        assertTrue(fresh.indexOf("r.clear_energy();") < fresh.indexOf("energy_epoch.cleared(frame_token)"))
+        assertTrue("s.frame_token()" in render && ".commit(frame_token, image)" in render)
+        assertTrue("VISUAL_FRESH" !in render)
         val shared = File("../../phosphor/crates/phosphor-render-gpu/src/lib.rs").readText()
             .substringAfter("pub fn clear_energy(&mut self)").substringBefore("pub fn resize(")
         assertTrue("for view in &self.energy_views" in shared)
@@ -45,6 +48,15 @@ class HoldRenderBoundaryTest {
         val pause = File("../rust/src/pause.rs").readText()
         val transition = pause.substringAfter("fn apply_transition(").substringBefore("pub fn invalidate()")
         assertTrue(transition.indexOf("with_stereo_window") < transition.indexOf("DISPLAY.lock"))
-        assertTrue("VISUAL_EPOCH.fetch_add" in transition && "ring.clear_pending()" in transition)
+        assertTrue("VISUAL_EPOCH.store(s.visual_revision" in transition && "ring.clear_pending()" in transition)
+        assertTrue("finish_visual_reset" !in pause && "fresh_visual_ingress" !in pause)
+    }
+
+    @Test fun localRetirementClearsAfterProducerJoinAndInactivePublication() {
+        val deck = File("../rust/src/deck.rs").readText()
+        val close = deck.substringAfter("fn close_inner(invalidate: bool)")
+        assertTrue(close.indexOf("close_session(") < close.indexOf("set_ring_state(false)"))
+        assertTrue(close.indexOf("set_ring_state(false)") < close.indexOf("crate::pause::invalidate()"))
+        assertTrue("close_inner(true)" in deck.substringAfter("pub fn close()").substringBefore("fn close_inner"))
     }
 }

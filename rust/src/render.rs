@@ -162,24 +162,11 @@ pub struct SendWindow(pub NativeWindow);
 unsafe impl Send for SendWindow {}
 
 static GEOMETRY_LATEST: std::sync::Mutex<Option<GeomFrame>> = std::sync::Mutex::new(None);
-static VISUAL_FRESH: AtomicBool = AtomicBool::new(false);
 pub fn geometry_frame(frame: GeomFrame) {
     let mut latest = GEOMETRY_LATEST.lock().unwrap();
     if frame.epoch == crate::pause::visual_epoch() && frame.owner.live() {
         *latest = Some(frame);
     }
-}
-pub fn fresh_visual_ingress() {
-    with_stereo_window(|ring, meter| {
-        crate::pause::VISUAL_EPOCH.fetch_add(1, Ordering::AcqRel);
-        ring.clear_pending();
-        meter.clear_visual_measurement();
-    });
-    finish_visual_reset();
-}
-pub fn finish_visual_reset() {
-    *GEOMETRY_LATEST.lock().unwrap() = None;
-    VISUAL_FRESH.store(true, Ordering::Release);
 }
 
 static SENDER: OnceLock<mpsc::Sender<Cmd>> = OnceLock::new();
@@ -258,6 +245,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut retained_presenter = None;
     let mut held_retries = 0u8;
     let mut retained_generation = 0;
+    let mut energy_epoch = crate::pause::EnergyEpoch::default();
 
     let defaults = Settings::default();
     let mut computer = Computer::new();
@@ -588,20 +576,20 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             continue;
         };
 
-        let (display_paused, black, inspection, pinned, source_generation) = {
+        let (display_paused, black, inspection, pinned, frame_token) = {
             let s = crate::pause::DISPLAY.lock().unwrap();
             (
                 s.paused,
                 s.black,
                 s.inspection,
                 s.pinned.clone(),
-                s.generation,
+                s.frame_token(),
             )
         };
-        if retained_generation != source_generation {
+        if retained_generation != frame_token.generation {
             spare_frame = None;
             geom_frame = None;
-            retained_generation = source_generation;
+            retained_generation = frame_token.generation;
         }
         if display_paused {
             if !display_dirty {
@@ -661,13 +649,14 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             SEGS_LAST.store(0, Ordering::Relaxed);
             continue;
         }
-        if VISUAL_FRESH.swap(false, Ordering::AcqRel) {
+        if energy_epoch.needs_clear(frame_token) {
             r.clear_energy();
             geom_frame = None;
             computer.reset();
             geom_last = std::time::Instant::now();
             last_present = geom_last;
             silent_since = None;
+            energy_epoch.cleared(frame_token);
         }
         if let Some(f) = GEOMETRY_LATEST.lock().unwrap().take() {
             if f.epoch == crate::pause::visual_epoch() && f.owner.live() {
@@ -955,7 +944,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             let old = crate::pause::DISPLAY
                 .lock()
                 .unwrap()
-                .commit(source_generation, image);
+                .commit(frame_token, image);
             spare_frame = old.and_then(|image| std::sync::Arc::try_unwrap(image).ok());
         }
 

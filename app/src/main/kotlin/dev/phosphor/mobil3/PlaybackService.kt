@@ -69,6 +69,7 @@ class PlaybackService : MediaSessionService() {
     private var captureActive = false
     private var captureSessionsListenerRegistered = false
     private val captureBinding = CaptureControllerBinding<PlatformMediaController>()
+    private val capturePause = CapturePauseObservation<PlatformMediaController>()
     private val externalCaptureController: PlatformMediaController? get() = captureBinding.current
     private var externalControllerCallback: PlatformMediaController.Callback? = null
     private var captureTrackKey: String? = null
@@ -472,6 +473,7 @@ class PlaybackService : MediaSessionService() {
             }
             clearExternalCaptureController()
             val isCurrent = captureBinding.bind(chosen)
+            capturePause.bind(chosen)
             if (chosen != null) {
                 val callback = object : PlatformMediaController.Callback() {
                     override fun onMetadataChanged(metadata: PlatformMediaMetadata?) {
@@ -483,8 +485,7 @@ class PlaybackService : MediaSessionService() {
                             "owner=${System.identityHashCode(chosen)} current=${captureActive && isCurrent()} state=${state?.state}"
                         }
                         if (captureActive && isCurrent()) {
-                            if (state?.state == PlatformPlaybackState.STATE_PAUSED) PhosphorNative.observeTransportPaused(true)
-                            else if (state?.state == PlatformPlaybackState.STATE_PLAYING) PhosphorNative.observeTransportPaused(false)
+                            observeCapturePause(state)
                             publishCaptureMetadata(chosen.metadata)
                             publishCapturePlayback(state)
                         }
@@ -515,6 +516,7 @@ class PlaybackService : MediaSessionService() {
     private fun clearExternalCaptureController() {
         val previous = externalCaptureController
         captureBinding.bind(null)
+        capturePause.bind(null)
         externalControllerCallback?.let { callback ->
             runCatching { previous?.unregisterCallback(callback) }
         }
@@ -587,13 +589,21 @@ class PlaybackService : MediaSessionService() {
         }
     }
 
+    private fun observeCapturePause(state: PlatformPlaybackState?) {
+        val paused = when (state?.state) {
+            PlatformPlaybackState.STATE_PAUSED -> true
+            PlatformPlaybackState.STATE_PLAYING -> false
+            else -> null
+        }
+        capturePause.observe(externalCaptureController, paused)?.let { PhosphorNative.setDisplayPaused(it) }
+    }
+
     private fun publishCapturePlayback(state: PlatformPlaybackState?) {
         if (!captureActive) return
         AcceptanceTrace.record("capture_publish") {
             "owner=${System.identityHashCode(externalCaptureController)} state=${state?.state} actions=${state?.actions}"
         }
-        if (state?.state == PlatformPlaybackState.STATE_PAUSED) PhosphorNative.observeTransportPaused(true)
-        else if (state?.state == PlatformPlaybackState.STATE_PLAYING) PhosphorNative.observeTransportPaused(false)
+        observeCapturePause(state)
         if (state == null || !CaptureMirrorPolicy.available(state.state)) publishCaptureMetadata(null)
         capturePlayer.updatePlayback(
             state = state?.state ?: PlatformPlaybackState.STATE_NONE,
