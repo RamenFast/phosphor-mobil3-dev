@@ -8,7 +8,17 @@ WORK="$(mktemp -d "$SCRATCH_ROOT/phosphor-play-boundary-test.XXXXXX")"
 trap 'rm -rf "$WORK"' EXIT
 
 "$REPO/scripts/check-play-boundary.sh" schema --json | jq -e '.status == "ok" and .data.exits["2"] == "required evidence unavailable"' >/dev/null
-"$REPO/scripts/check-play-boundary.sh" source --json | jq -e '.status == "ok" and .data.source_checks == 11' >/dev/null
+"$REPO/scripts/check-play-boundary.sh" schema --json | jq -e '
+  .data.result_schema.oneOf | length == 2 and all(.[]; .additionalProperties == false)' >/dev/null
+"$REPO/scripts/check-play-boundary.sh" source --json | jq -e '.status == "ok" and .data.source_checks == 12' >/dev/null
+
+JDK="$REPO/.toolchain/jdk-21"
+if [ ! -x "$JDK/bin/javac" ]; then JDK="${JAVA_HOME:-}"; fi
+[ -x "$JDK/bin/javac" ] || { printf 'Build JDK unavailable. Fix: source scripts/env.sh after bootstrap.\n' >&2; exit 2; }
+mkdir -p "$WORK/classes"
+"$JDK/bin/javac" --release 17 -Xlint:all -Werror -d "$WORK/classes" \
+  "$REPO/scripts/lib/ManifestBoundary.java" "$REPO/scripts/tests/ManifestBoundaryTest.java"
+"$JDK/bin/java" -cp "$WORK/classes" ManifestBoundaryTest "$WORK/policy.xml" "$REPO/app/src/main/AndroidManifest.xml"
 
 printf '<manifest package="dev.phosphor.mobil3"><application/></manifest>\n' > "$WORK/AndroidManifest.xml"
 printf 'releaseRuntimeClasspath\n+--- androidx.core:core-ktx\n' > "$WORK/dependencies.txt"
@@ -34,11 +44,45 @@ printf '@ classes.dex\n@=/absolute\n' | zipnote -w "$WORK/absolute-path.aab"
 
 "$REPO/scripts/check-play-boundary.sh" artifact --json \
   --artifact "$WORK/clean.aab" --manifest "$WORK/AndroidManifest.xml" --dependencies "$WORK/dependencies.txt" \
-  | jq -e '.status == "ok" and .data.artifact_checks == 5' >/dev/null
+  | jq -e '.status == "ok" and .data.artifact_checks == 6' >/dev/null
 
 "$REPO/scripts/check-play-boundary.sh" artifact --json \
   --artifact "$WORK/split.aab" --manifest "$WORK/AndroidManifest.xml" --dependencies "$WORK/dependencies.txt" \
-  | jq -e '.status == "ok" and .data.artifact_checks == 5' >/dev/null
+  | jq -e '.status == "ok" and .data.artifact_checks == 6' >/dev/null
+
+cat > "$WORK/expanded.xml" <<'XML'
+<manifest xmlns:a="http://schemas.android.com/apk/res/android" package="dev.phosphor.mobil3">
+  <uses-permission a:name="android.permission.FOREGROUND_SERVICE"/>
+  <uses-permission a:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
+  <uses-permission a:name="android.permission.SYSTEM_ALERT_WINDOW"/>
+  <application>
+    <service a:name=".FloatingHudService" a:exported="false" a:foregroundServiceType="specialUse">
+      <property a:name="android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE" a:value="User-started floating instrument"/>
+    </service>
+  </application>
+</manifest>
+XML
+"$REPO/scripts/check-play-boundary.sh" artifact --json \
+  --artifact "$WORK/clean.aab" --manifest "$WORK/expanded.xml" --dependencies "$WORK/dependencies.txt" \
+  | jq -e '.status == "ok" and .data.artifact_checks == 6' >/dev/null
+
+expect_manifest_error() {
+  local file="$1" output code
+  set +e
+  output=$("$REPO/scripts/check-play-boundary.sh" artifact --json \
+    --artifact "$WORK/clean.aab" --manifest "$file" --dependencies "$WORK/dependencies.txt" 2>/dev/null)
+  code=$?
+  set -e
+  [ "$code" -eq 4 ]
+  printf '%s\n' "$output" | jq -e 'keys == ["error","fix","message","status","tool","ts","version"]
+    and .status == "error" and .error == "manifest_boundary_violation" and (.fix | length > 0)' >/dev/null
+}
+sed 's/exported="false"/exported="true"/' "$WORK/expanded.xml" > "$WORK/exported-hud.xml"
+expect_manifest_error "$WORK/exported-hud.xml"
+printf '<manifest xmlns:a="http://schemas.android.com/apk/res/android" package="dev.phosphor.mobil3"><uses-permission a:name="android.permission.UNKNOWN&#x9;NAME"/><application/></manifest>\n' > "$WORK/tab-permission.xml"
+expect_manifest_error "$WORK/tab-permission.xml"
+printf '<manifest><application>\n' > "$WORK/malformed.xml"
+expect_manifest_error "$WORK/malformed.xml"
 
 set +e
 BAD_JSON=$("$REPO/scripts/check-play-boundary.sh" artifact --json \

@@ -1,0 +1,44 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "title": "check-play-boundary source, artifact and all result",
+  "oneOf": [
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "tool", "version", "ts", "data"],
+      "properties": {
+        "status": {"const": "ok"},
+        "tool": {"const": "check-play-boundary"},
+        "version": {"type": "string", "minLength": 1},
+        "ts": {"type": "string", "format": "date-time"},
+        "data": {
+          "type": "object",
+          "additionalProperties": false,
+          "required": ["mode", "source_checks", "artifact_checks", "trusted_runtime_exemptions", "artifact", "manifest"],
+          "properties": {
+            "mode": {"enum": ["source", "artifact", "all"]},
+            "source_checks": {"type": "integer", "minimum": 0},
+            "artifact_checks": {"type": "integer", "minimum": 0},
+            "trusted_runtime_exemptions": {"type": "integer", "minimum": 0},
+            "artifact": {"type": "string"},
+            "manifest": {"type": "string"}
+          }
+        }
+      }
+    },
+    {
+      "type": "object",
+      "additionalProperties": false,
+      "required": ["status", "tool", "version", "ts", "error", "message", "fix"],
+      "properties": {
+        "status": {"const": "error"},
+        "tool": {"const": "check-play-boundary"},
+        "version": {"type": "string", "minLength": 1},
+        "ts": {"type": "string", "format": "date-time"},
+        "error": {"type": "string", "minLength": 1},
+        "message": {"type": "string", "minLength": 1},
+        "fix": {"type": "string", "minLength": 1}
+      }
+    }
+  ]
+}

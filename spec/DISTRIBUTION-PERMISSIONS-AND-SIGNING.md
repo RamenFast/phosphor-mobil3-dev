@@ -52,6 +52,30 @@ Allowed manifest permissions must map to a supported feature:
 
 `POST_NOTIFICATIONS` remains only if a tested user flow needs a runtime grant.
 
+### Exact manifest gate
+
+The local boundary command parses XML by namespace and rejects malformed documents, DTDs, external entities, and unknown permission/component identities. Comments and formatting cannot grant an exception. Its private parser uses the existing pinned JDK's standard XML library. This adds no product dependency, Android build runtime, public helper command, or installed service.
+
+Base permission entries are `INTERNET`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `FOREGROUND_SERVICE_MEDIA_PROJECTION`, `RECORD_AUDIO`, and `WAKE_LOCK`. Optional expansion entries are `SYSTEM_ALERT_WINDOW`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `BLUETOOTH_CONNECT`, and legacy `BLUETOOTH` bounded through API 30. Adding an entry to this permitted set does not grant access or establish tested product behavior.
+
+Merged AndroidX output may add `ACCESS_NETWORK_STATE` and the production package's signature-only `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. This is not authorization for process-wide physical-network routing. App source retains the existing forced-routing ban. Production rejects debug package identity, `debuggable=true`, `testOnly=true`, shared system UID, persistent application mode, instrumentation, unknown services/providers/receivers, and activity aliases.
+
+| Component | Exposure | Required role |
+|---|---|---|
+| `MainActivity` | Exported | MAIN/LAUNCHER only |
+| `PlaybackService` | Exported | MediaSessionService action and mediaPlayback FGS |
+| `CaptureService` | Private | mediaProjection FGS |
+| `CaptureNotificationListenerService` | Private | NotificationListenerService action and BIND_NOTIFICATION_LISTENER_SERVICE |
+| `MicCaptureService` | Private, optional expansion | microphone FGS |
+| `RootCaptureService` | Private, optional expansion | specialUse FGS with a nonempty declared purpose |
+| `FloatingHudService` | Private, optional expansion | specialUse FGS with a nonempty declared purpose |
+| `androidx.startup.InitializationProvider` | Private, merged only | Exact package-local androidx-startup authority and reviewed initializers |
+| `androidx.profileinstaller.ProfileInstallReceiver` | Exported, merged only | DUMP permission and the four existing profileinstaller actions |
+
+Optional component identities reserve a checkable boundary, not a final backend implementation or Play approval. Before adding a service, prove its actual platform role and add its paired manifest permission. Root/HUD specialUse candidates require real Android acceptance and distribution review. Do not silently broaden the permitted type or export rule when a candidate fails.
+
+Keep archive/dependency/reporting/seeded-endpoint scans and exact release provenance/signing checks. A clean source gate is not a compiled-artifact gate. Missing parser/toolchain evidence returns exit 2 with a fix. XML/policy violations return exit 4 through the command's normal error envelope.
+
 Forbidden production access includes Binder authority permissions, package management, Shizuku, ADB product sidecars, accessibility authority, advertising ID, and installation ID. Hidden opt-in root capture and floating HUD are approved under `EXPANSION.md`. Root capture requires a measured foreground-service declaration for its real role, not a fictitious projection token. No helper exposes arbitrary commands or exported control IPC. Permission and component scanners use exact permitted entries rather than a blanket root/overlay string ban.
 
 Ordinary source wake remains tied to actual live owners. The separate, off-by-default brightness pin may keep only the full foreground app window awake during pause or no-source use. It uses the window brightness override, never global brightness settings, and releases ownership outside full-app foreground. HUD/PiP cannot acquire that exception.

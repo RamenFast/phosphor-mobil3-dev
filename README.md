@@ -60,6 +60,8 @@ The Gradle wrapper is the sole Android build authority. The bootstrap installs J
 
 The debug package is `dev.phosphor.mobil3.debug`. The production package is `dev.phosphor.mobil3`.
 
+`scripts/check-play-boundary.sh schema --json` describes local source/artifact checks and their strict result schema. The manifest checks use the same build JDK and enforce exact permissions, component exposure, and foreground-service declarations. Passing this development boundary does not establish Google Play approval or replace signing/provenance gates.
+
 ### Developer CLI
 
 `dev/pm3` is local developer tooling. It builds, installs, launches, captures receipts, and reads diagnostics. Every device operation requires an explicit serial.

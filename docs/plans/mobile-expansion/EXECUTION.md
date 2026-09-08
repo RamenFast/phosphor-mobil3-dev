@@ -11,7 +11,7 @@ Authority: [2026-09-08 execution decision](../../../decisions/2026-09-08-mobile-
 - Required worker routing confirmation remains pending. One beacon at 00:19:40 UTC reported `visible:true` and expired. Expiry is not approval. Do not repeat it.
 - Proposed mapping: `openai-oauth:gpt-6-astra`, explicit `high`, for audio, presentation, experience, and independent critique.
 - At most two live workers, one implementation writer. Coordinator owns shared files, real device actions, verification, commits, and cleanup.
-- Section 1 is in progress. The initial source-contract checkpoint does not close its exact permission-scanner work or independent critique. No expanded product feature is implemented or accepted yet.
+- Section 1 contracts and exact permission-scanner implementation are checked. [Boundary receipt](section-01-boundary.md) records 91 parser cases and the public CLI/retained release gates. [Independent critique](critiques/section-01-route-blocker.md) is still blocked, with no score or round used. No expanded app feature is accepted yet.
 
 ## Baseline and recovery
 
@@ -44,7 +44,7 @@ Statuses are `pending`, `in progress`, `implemented`, `accepted`, or `blocked`. 
 
 | Section | Requirement | Planned owner | Status | Required evidence | Critique |
 |---|---|---|---|---|---|
-| 1 | Baseline/contracts | Coordinator | in progress | Backups, current specs, exact permission gates, baseline receipts | Pending routing |
+| 1 | Baseline/contracts | Coordinator | implemented | Verified backups, active specs, 91 manifest cases, public CLI and retained gate checks in section-01-boundary.md | Blocked on routing, 0 rounds |
 | 2 | R01 root | Audio | pending | App-authorized PCM, audible output, opt-out test, helper/route recovery, no system writes | Not started |
 | 3 | R09 mic/mix | Audio | pending | Actual accessory route, two signals, rate/drift/buffer/clipping and partial-loss checks | Not started |
 | 4 | R02 HUD | Presentation | pending | Real transparency, touch isolation, owner transfer, teardown and no duplicate source | Not started |
@@ -86,11 +86,11 @@ These checks do not accept any expansion feature or production release. New arti
 
 ## Next actions
 
-1. Finish exact permitted manifest/component checks and their fixtures without weakening retained privacy/IPC/artifact gates.
-2. Verify the reconciled source documents, protected hashes, and local CLI/boundary/release test baseline.
-3. Continue from the owned initial source-contract commit, then commit the completed section 1 implementation with fresh evidence.
-4. After routing confirmation, independently critique section 1 and assign bounded root/audio work.
-5. Prove authorization under the actual app/helper identity before claiming root capture works.
+1. Continue section 2 with actual app/helper authorization proof, then bounded non-diverting AudioPolicy capture feasibility.
+2. Keep normal root-off startup inert and avoid system/kernel/security changes.
+3. Re-run the Android build/gates after the section 1 checkpoint and retain exact source/artifact identity.
+4. After routing confirmation, independently critique section 1 and assign bounded root/audio work. No confirmation means no worker spawn, not a blanket stop on coordinator implementation.
+5. Fold actual backend/service findings into the active spec before integrating them.
 
 ## Blocked outcome and release boundary
 

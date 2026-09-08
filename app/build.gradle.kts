@@ -304,7 +304,7 @@ val writeReleaseRuntimeDependencyReport = tasks.register("writeReleaseRuntimeDep
 
 tasks.register<Exec>("checkPlayBoundary") {
     group = "verification"
-    description = "Build and prove the production artifact stays inside the approved Play-safe boundary."
+    description = "Build and check the approved production boundary, without asserting store approval."
     dependsOn("bundleRelease", writeReleaseRuntimeDependencyReport)
     workingDir = rootProject.projectDir
     commandLine(

@@ -3,7 +3,7 @@
 set -euo pipefail
 
 TOOL="check-play-boundary"
-VERSION="3.1.0"
+VERSION="3.2.0"
 REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
 MODE="all"
 ARTIFACT="$REPO/app/build/outputs/bundle/release/app-release.aab"
@@ -15,7 +15,9 @@ now() { date -u +%Y-%m-%dT%H:%M:%SZ; }
 escape() {
   local value="${1//\\/\\\\}"
   value="${value//\"/\\\"}"
-  value="${value//$'\n'/}"
+  value="${value//$'\n'/\\n}"
+  value="${value//$'\r'/\\r}"
+  value="${value//$'\t'/\\t}"
   printf '%s' "$value"
 }
 want_json() { [ "$JSON_FORCE" -eq 1 ] || [ ! -t 1 ]; }
@@ -55,7 +57,9 @@ while [ "$#" -gt 0 ]; do
 done
 
 if [ "$MODE" = schema ]; then
-  ok '{"usage":"check-play-boundary.sh [schema|source|artifact|all] [--artifact PATH] [--manifest PATH] [--dependencies PATH] [--json]","modes":{"source":"checks the single-product source and build graph","artifact":"checks the compiled archive, merged manifest, and runtime classpath","all":"runs source and artifact checks"},"exits":{"0":"success","2":"required evidence unavailable","3":"bad input","4":"boundary violation or runtime failure"},"fix":"build bundleRelease, then run all"}' \
+  [ -f "$REPO/scripts/check-play-boundary.schema.json" ] || fail 2 schema_unavailable "The result schema is missing" "restore scripts/check-play-boundary.schema.json from the same source revision"
+  RESULT_SCHEMA=$(cat "$REPO/scripts/check-play-boundary.schema.json") || fail 4 schema_read_failed "The result schema could not be read" "check the schema file permissions"
+  ok "{\"usage\":\"check-play-boundary.sh [schema|source|artifact|all] [--artifact PATH] [--manifest PATH] [--dependencies PATH] [--json]\",\"modes\":{\"source\":\"checks the single-product source, build graph and exact source manifest\",\"artifact\":\"checks the compiled archive, exact merged manifest and runtime classpath\",\"all\":\"runs source and artifact checks\"},\"exits\":{\"0\":\"success\",\"2\":\"required evidence unavailable\",\"3\":\"bad input\",\"4\":\"boundary violation or runtime failure\"},\"result_schema\":$RESULT_SCHEMA,\"fix\":\"build bundleRelease with approved source/signing evidence, then run all. A clean boundary does not assert store approval\"}" \
     'check-play-boundary: schema printed'
   exit 0
 fi
@@ -86,6 +90,23 @@ record_hits() {
   fail 4 scanner_command_failed "Boundary check '$label' could not run: $output" "repair the named evidence path or scanner dependency"
 }
 
+check_manifest() {
+  local kind="$1" file="$2" java output status
+  [ -f "$file" ] || fail 2 manifest_unavailable "Manifest evidence is unavailable" "provide the source or merged production AndroidManifest.xml"
+  java="$REPO/.toolchain/jdk-21/bin/java"
+  if [ ! -x "$java" ]; then java="${JAVA_HOME:-}/bin/java"; fi
+  [ -x "$java" ] || fail 2 manifest_parser_unavailable "The manifest parser needs the build JDK" "run scripts/bootstrap-android.sh or set JAVA_HOME to a JDK 17 or newer"
+  [ -f "$REPO/scripts/lib/ManifestBoundary.java" ] || fail 2 manifest_parser_unavailable "The private manifest parser source is missing" "restore scripts/lib/ManifestBoundary.java from the same source revision"
+  set +e
+  output=$("$java" --source 17 "$REPO/scripts/lib/ManifestBoundary.java" "$kind" "$file" 2>&1)
+  status=$?
+  set -e
+  if [ "$status" -eq 4 ]; then
+    fail 4 manifest_boundary_violation "$output" "repair the named manifest entry according to spec/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md"
+  fi
+  [ "$status" -eq 0 ] || fail 4 manifest_parser_failed "$output" "repair the build JDK or private parser before accepting manifest evidence"
+}
+
 check_source() {
   [ ! -e "$REPO/app/src/play" ] || fail 4 legacy_source_set "The retired Play source set remains" "merge public code into main and remove app/src/play"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
@@ -102,7 +123,7 @@ check_source() {
   [ ! -d "$REPO/app/src/main/jniLibs" ] || fail 4 stale_native_tree "An unmanaged main/jniLibs tree remains" "build native libraries only through Gradle cargo tasks"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
 
-  local retired_regex='Nexus|Nexidex|dev[.]nexus[.]mobile|Pm3AdminProvider|NEXUS_BINDER|NexusBinder|nexus-status|nexus-grant|nexus-revoke|state-get|state-watch|action-run|audit-list|audit-export|rikka[.]shizuku|moe[.]shizuku|SYSTEM_ALERT_WINDOW|CAPTURE_AUDIO_OUTPUT|POST_NOTIFICATIONS'
+  local retired_regex='Nexus|Nexidex|dev[.]nexus[.]mobile|Pm3AdminProvider|NEXUS_BINDER|NexusBinder|nexus-status|nexus-grant|nexus-revoke|state-get|state-watch|action-run|audit-list|audit-export|rikka[.]shizuku|moe[.]shizuku|org[.]lsposed|de[.]robv[.]android[.]xposed'
   local tracking_regex='firebase[-.:/]analytics|crashlytics|sentry[-.:/]|appsflyer|mixpanel|amplitude|datadog|newrelic|appcenter|advertising[_.-]?id|installation[_.-]?id'
   record_hits retired_product_surface grep -RInE "$retired_regex" "$REPO/app/src/main" "$REPO/app/src/debug" "$REPO/app/build.gradle.kts"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
@@ -112,6 +133,8 @@ check_source() {
   record_hits forced_physical_routing grep -RInE "$forced_routing_regex" "$REPO/app/src/main" "$REPO/app/src/debug"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
   record_hits source_symlink find "$REPO/app/src" -type l -print
+  SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
+  check_manifest source "$REPO/app/src/main/AndroidManifest.xml"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
 }
 
@@ -206,9 +229,9 @@ check_artifact() {
   # retired implementation identities here, not generic words such as
   # "nexus", "analytics", or permission names. Permissions remain a strict
   # merged-manifest check below.
-  local archive_regex='dev[./]phosphor[./]mobil3[./](fortress|nexus|distribution|entitlement)|dev[.]phosphor[.]mobil3[.](fortress|nexus|distribution|entitlement)|dev[.]nexus[.]mobile|Pm3AdminProvider|NexusBinder(Service|Runtime|Protocol|Bootstrap|DispatcherOwner)|Nexus(RuntimeManager|ObservationDispatcher|AuthorityPersistence|SessionContracts)|NEXUS_BINDER|rikka[./]shizuku|moe[./]shizuku|nexus-status|state-watch|action-run|audit-export'
-  local manifest_regex='SYSTEM_ALERT_WINDOW|CAPTURE_AUDIO_OUTPUT|POST_NOTIFICATIONS|dev[.]phosphor[.]mobil3[.]fortress|dev[.]nexus[.]mobile|Nexus|Nexidex|shizuku'
-  local dependency_regex='firebase[-.:/]analytics|crashlytics|sentry|appsflyer|mixpanel|amplitude|datadog|newrelic|appcenter|shizuku|rikka|adb[-_. ]sidecar'
+  local archive_regex='dev[./]phosphor[./]mobil3[./](fortress|nexus|distribution|entitlement)|dev[.]phosphor[.]mobil3[.](fortress|nexus|distribution|entitlement)|dev[.]nexus[.]mobile|Pm3AdminProvider|NexusBinder(Service|Runtime|Protocol|Bootstrap|DispatcherOwner)|Nexus(RuntimeManager|ObservationDispatcher|AuthorityPersistence|SessionContracts)|NEXUS_BINDER|rikka[./]shizuku|moe[./]shizuku|org[./]lsposed|de[./]robv[./]android[./]xposed|nexus-status|state-watch|action-run|audit-export'
+  local manifest_regex='dev[.]phosphor[.]mobil3[.]fortress|dev[.]nexus[.]mobile|Nexus|Nexidex|shizuku|lsposed'
+  local dependency_regex='firebase[-.:/]analytics|crashlytics|sentry|appsflyer|mixpanel|amplitude|datadog|newrelic|appcenter|shizuku|rikka|lsposed|adb[-_. ]sidecar'
   local reporting_regex='firebaseio[.]com|appcenter[.]ms|sentry[.]io|datadoghq[.]com|newrelic[.]com|amplitude[.]com|mixpanel[.]com'
   local seeded_endpoint_regex='100[.](66|102|114)[.]|thinkcenter|interserve|2bmillerb'
 
@@ -218,6 +241,8 @@ check_artifact() {
   record_hits reporting_endpoint grep -InEi "$reporting_regex" "$WORK/archive-strings.txt"
   record_hits seeded_private_endpoint grep -InEi "$seeded_endpoint_regex" "$WORK/archive-strings.txt"
   ARTIFACT_CHECKS=$((ARTIFACT_CHECKS + 5))
+  check_manifest merged "$MANIFEST"
+  ARTIFACT_CHECKS=$((ARTIFACT_CHECKS + 1))
 }
 
 case "$MODE" in
@@ -230,7 +255,7 @@ esac
 if [ -s "$HITS" ]; then
   cat "$HITS" >&2
   COUNT=$(grep -c '^\[' "$HITS")
-  fail 4 play_boundary_violation "$COUNT production-boundary categories failed" "remove the named private, control, tracking, or elevated surface and rebuild"
+  fail 4 play_boundary_violation "$COUNT production-boundary categories failed" "remove the named unapproved control, tracking, dependency, or private-data surface and rebuild"
 fi
 
 ok "{\"mode\":\"$MODE\",\"source_checks\":$SOURCE_CHECKS,\"artifact_checks\":$ARTIFACT_CHECKS,\"trusted_runtime_exemptions\":$TRUSTED_RUNTIME_EXEMPTIONS,\"artifact\":\"$(escape "$ARTIFACT")\",\"manifest\":\"$(escape "$MANIFEST")\"}" \
