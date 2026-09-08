@@ -172,6 +172,35 @@ class SettingsGestureAdapterTest {
         adapter.initial(1, 0f, time, true, false, 1)
         assertEquals(SettingsDismissOwner.Release.NONE, adapter.final())
     }
+    @Test fun terminalOnlyReversalRepaysSlowDistance() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 200f, 1000) { adapter.remainder(200f, true, true) }
+        assertEquals(SettingsDismissOwner.Release.RETURN, up(adapter, 190f, 1020))
+        assertFalse(adapter.committed)
+    }
+
+    @Test fun terminalOnlyReversalCannotCreateNegativeDistance() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 200f, 1000) { adapter.header(200f) }
+        assertEquals(SettingsDismissOwner.Release.RETURN, up(adapter, -100f, 1020))
+        assertEquals(0f, adapter.rawDp, 0f)
+    }
+
+    @Test fun positiveTerminalTravelCannotCreateSlowDismissal() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 190f, 1000) { adapter.header(190f) }
+        assertEquals(SettingsDismissOwner.Release.RETURN, up(adapter, 200f, 2000))
+    }
+
+    @Test fun unchangedTerminalSlowThresholdStillCloses() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        move(adapter, 192f, 1000) { adapter.header(192f) }
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 192f, 1020))
+    }
     private fun move(adapter: SettingsGestureAdapter, y: Float, time: Long, action: () -> Unit = {}) {
         adapter.initial(1, y, time, true, true, 1)
         action()

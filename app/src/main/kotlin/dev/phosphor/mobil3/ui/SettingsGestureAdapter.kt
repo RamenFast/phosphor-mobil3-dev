@@ -110,6 +110,9 @@ internal class SettingsGestureAdapter {
         val current = ticket ?: return SettingsDismissOwner.Release.NONE
         // Consumption queues Scrollable work. Final is not an acknowledgement that it ran.
         pendingDelivery = consumedByChild && eventY != y && !releasePending && !delivered
+        // Up can carry a final reversal without a separate nested move. Repay only:
+        // unproven positive terminal travel must never create dismissal distance.
+        if (releasePending && eventY < y) owner.reverse(current, eventY - y, true)
         // A scrollable may deliver its nested remainder after the Final pass. Keep the
         // previous physical sample until eligibility begins, including that delivery order.
         if ((owner.rawDp > 0f || releasePending) && !owner.observe(current, eventY, eventMillis, 1)) {

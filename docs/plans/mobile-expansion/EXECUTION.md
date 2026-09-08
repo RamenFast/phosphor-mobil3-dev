@@ -328,3 +328,12 @@ This append supersedes the early section matrix and historical writer/build stat
 | 15 | No new install. Five-cycle, soak, exact reviewed dualAPK freeze, restoration and hardware acceptance remain open. |
 
 Latest full gate5457814owf is working-source integration evidence, not final clean reviewed acceptance. Its exact APK pair was copied before another build and SHA-256 reverified at15:02UTC: app27fedae3277a1370df3fde0fdd3dbbafa51c677ad3d1e1dab8e088696cc48f6c, androidTest82c7b7eac2d06772002ba72dcb161c56a960e1c8597ef6b49306dba2456bf466. Private prefix `appearance-core-migration-r01` retains the pair, runner, inventories, logs and JVM archive. No device action occurred. Last14:13 host inventory had no ASUS. Ant is the only live writer, deadline15:10UTC. No Gradle starts before explicit release.
+
+## 2026-09-08 15:45 UTC continuation
+
+- Combined appearance/manual/settings gate405519lhyk passed871 JVM,126 native and3 offscreen GPU cases, Android compilation/lint/dual APK/source checks. Integrated485bc9f. Exact receipt: section-10-11-integration.md. No install.
+- Developer CLI, release provenance and packaged boundary fixture suites7293643sv6 passed. These are fixtures, not real installation/signing/release acceptance. Both retained debug artifact hashes stayed unchanged. Logs: `expansion-1519-{pm3,release-fixtures,boundary-fixtures}.log` in the private task directory.
+- Independent Settings round3 at485bc9f is7/10, original7/7 unchanged. Report retained byte-identically as section-09-round-03.md, SHA2566de3739c16ebffb4b6e4f71936a54d8a39a562212292c98d05fef3264892b96b. Terminal-only reversal correction06 passed58 host cases196243bjpx; combined gate remains pending.
+- Independent appearance round1 at485bc9f is7/10. Report retained byte-identically as section-10-round-01.md, SHA256508f838b8c795cea9a480955f0be9737bb901f852dbe47cbae873ebe10ab6e6b. Cat, Astra/high, owns only the four finite correction seams through16:15 UTC. Chicken independently reviews immutable manual SECTION11 through16:06. No Gradle during the writer window.
+- Ben requested root LOW and workers HIGH at15:14, then300K compression at15:39. Native threshold changed200000 to300000 in Jcode config and the harness confirmed live application. Model routes were not changed.
+- Brightness contract is pre-code only. HDR, startup coordinator, mixing and final device acceptance remain open. Last host inventory15:14 found no ASUS. S25 remains undisturbed.
