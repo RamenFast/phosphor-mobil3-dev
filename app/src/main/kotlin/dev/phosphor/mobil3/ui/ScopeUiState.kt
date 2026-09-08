@@ -50,6 +50,7 @@ class ScopeUiState {
     var durationMs by mutableLongStateOf(0L)
 
     var gain by mutableFloatStateOf(1.8332275f)
+    var focus by mutableFloatStateOf(0.3f)
     var beamEnergy by mutableFloatStateOf(8.0f)
     var glow by mutableFloatStateOf(0.7f)
     var grid by mutableStateOf(false)

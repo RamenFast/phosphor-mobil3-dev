@@ -8,6 +8,58 @@ use std::sync::Once;
 static INIT: Once = Once::new();
 static WINDOWS: std::sync::Mutex<Vec<crate::surface_lifecycle::Retirement>> =
     std::sync::Mutex::new(Vec::new());
+static INSTRUMENT_REQUESTS: std::sync::LazyLock<std::sync::Mutex<crate::instrument::RequestBook>> =
+    std::sync::LazyLock::new(|| std::sync::Mutex::new(crate::instrument::RequestBook::default()));
+
+fn instrument_outcome(outcome: crate::instrument::Outcome) -> jni::sys::jint {
+    match outcome {
+        crate::instrument::Outcome::Pending => 0,
+        crate::instrument::Outcome::Committed => 1,
+        crate::instrument::Outcome::Cancelled => 2,
+        crate::instrument::Outcome::Rejected => 3,
+    }
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_requestInstrument(
+    mut env: JNIEnv, _class: JClass, json: jni::objects::JString,
+) -> jni::sys::jlong {
+    let Ok(length) = env.call_method(&json, "length", "()I", &[]).and_then(|v| v.i()) else { return -1; };
+    if length < 0 || length as usize > crate::instrument::MAX_SETUP_BYTES { return -1; }
+    let Ok(text) = env.get_string(&json) else { return -1; };
+    let text: String = text.into();
+    let Ok(setup) = crate::instrument::Setup::decode(&text) else { return -1; };
+    let deadline = std::time::Instant::now() + std::time::Duration::from_millis(750);
+    let Ok((id, request)) = INSTRUMENT_REQUESTS.lock().unwrap().reserve(setup, deadline) else { return -2; };
+    if crate::render::sender().send(crate::render::Cmd::ApplyInstrument(request)).is_err() {
+        INSTRUMENT_REQUESTS.lock().unwrap().release(id);
+        return -3;
+    }
+    id as jni::sys::jlong
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_awaitInstrument(
+    _env: JNIEnv, _class: JClass, id: jni::sys::jlong,
+) -> jni::sys::jint {
+    let request = INSTRUMENT_REQUESTS.lock().unwrap().get(id as u64);
+    request.map(|request| instrument_outcome(request.wait())).unwrap_or(4)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_cancelInstrument(
+    _env: JNIEnv, _class: JClass, id: jni::sys::jlong,
+) -> jni::sys::jint {
+    let request = INSTRUMENT_REQUESTS.lock().unwrap().get(id as u64);
+    request.map(|request| instrument_outcome(request.cancel())).unwrap_or(4)
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_releaseInstrument(
+    _env: JNIEnv, _class: JClass, id: jni::sys::jlong,
+) -> jni::sys::jboolean {
+    INSTRUMENT_REQUESTS.lock().unwrap().release(id as u64) as jni::sys::jboolean
+}
 
 fn retire_surface() -> bool {
     let mut retirements = std::mem::take(&mut *WINDOWS.lock().unwrap());

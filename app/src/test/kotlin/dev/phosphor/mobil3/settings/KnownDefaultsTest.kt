@@ -115,7 +115,7 @@ class KnownDefaultsTest {
             "gainValue = p.getFloat(\"gain\", 1.8332275f)",
             "val autoGain = p.getBoolean(\"auto_gain\", true)",
             "ui.grid = p.getBoolean(\"grid\", false).also { PhosphorNative.setGrid(it) }",
-            "focusPref = p.getFloat(\"focus\", 0.3f).also { PhosphorNative.setFocus(it) }",
+            "ui.focus = p.getFloat(\"focus\", 0.3f).also { PhosphorNative.setFocus(it) }",
             "ui.hudMode = p.getInt(\"hud_mode\", 1).coerceIn(0, 2)",
             "ui.bandMode = p.getInt(\"band_mode\", 1)",
             "ui.fullscreen = p.getBoolean(\"fullscreen\", true)",
@@ -125,7 +125,9 @@ class KnownDefaultsTest {
             "paletteById(p.getString(\"room\", \"amoled\") ?: \"amoled\")",
         )) assertTrue(restore.contains(read), read)
         assertTrue(activity.contains("private var gainValue = 1.8332275f"))
-        assertTrue(activity.contains("private var focusPref = 0.3f"))
+        assertTrue(File("src/main/kotlin/dev/phosphor/mobil3/ui/ScopeUiState.kt").readText().contains("var focus by mutableFloatStateOf(0.3f)"))
+        assertTrue(File("src/main/kotlin/dev/phosphor/mobil3/ui/PhosphorScreen.kt").readText().contains("focusValue = state.focus"))
+        assertTrue(activity.contains("putFloat(\"focus\", ui.focus)"))
         assertTrue(restore.contains("ui.gain = gainValue"))
         assertTrue(restore.contains("PhosphorNative.setGain(gainValue)"))
         assertTrue(restore.contains("PhosphorNative.setGainAuto(autoGain)"))

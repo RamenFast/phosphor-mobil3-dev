@@ -69,6 +69,7 @@ pub enum Cmd {
     SetGrid(bool),
     /// One validated portable light snapshot, published atomically.
     SetLight(crate::light_cycle::LightSettings, Option<usize>),
+    ApplyInstrument(std::sync::Arc<crate::instrument::Request>),
     RollLight,
     /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
     CycleAdvance,
@@ -507,6 +508,35 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     if light.apply_edit(settings, light_clock.elapsed().as_secs_f64(), deleted) {
                         beam_color = light.settings().preset as usize;
                     }
+                }
+                Cmd::ApplyInstrument(request) => {
+                    request.admit(!geometry_active, |setup| {
+                        // The validated tuple changes before the next frame. No driver calls here.
+                        flip = None;
+                        computer.mode = mode_from_index(setup.mode);
+                        CURRENT_MODE.store(setup.mode, Ordering::Relaxed);
+                        manual_gain = setup.gain;
+                        computer.gain = auto_gain.set_manual(manual_gain);
+                        computer.gain = auto_gain.set_auto(setup.auto_gain, manual_gain);
+                        GAIN_AUTO.store(setup.auto_gain, Ordering::Relaxed);
+                        GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
+                        geom_fx = setup.geom_fx;
+                        geom_amount = setup.geom_amount;
+                        computer.beam_energy = setup.beam_energy;
+                        glow_persistence = setup.glow;
+                        focus_px = setup.focus;
+                        grid_on = setup.grid;
+                        oversample = crate::engine::set_reconstruction_rate(&mut computer, setup.oversample as u32);
+                        let accepted = light.apply(setup.light.settings(), light_clock.elapsed().as_secs_f64());
+                        debug_assert!(accepted);
+                        beam_color = setup.light.preset as usize;
+                        if let Some(r) = renderer.as_mut() {
+                            r.persistence = glow_persistence;
+                            r.beam_focus = focus_px;
+                            r.grid_enabled = grid_on;
+                            r.theme = phosphor_beam::THEME_PRESETS[beam_color].1;
+                        }
+                    });
                 }
                 Cmd::RollLight => light.roll(light_clock.elapsed().as_secs_f64()),
                 Cmd::CycleAdvance => light.track(light_clock.elapsed().as_secs_f64()),

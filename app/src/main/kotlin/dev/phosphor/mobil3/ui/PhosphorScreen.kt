@@ -278,7 +278,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     // so its pull travel is measured across the screen rather than up it.
     var rootWidthPx by remember { mutableIntStateOf(0) }
     var consoleHeightPx by remember { mutableIntStateOf(0) }
-    var focusValue by remember { mutableFloatStateOf(0.3f) }
     val ribbon = remember { RibbonState() }
     val stageGeometry = remember { StageGeometry() }
     val currentActions by rememberUpdatedState(actions)
@@ -804,8 +803,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                         openLight = { sheet = Sheet.LIGHT },
                         openManual = { manualFrom = Sheet.SETTINGS; sheet = Sheet.MANUAL },
                     ),
-                    focusValue = focusValue,
-                    onFocus = { focusValue = it; actions.setFocus(it) },
+                    focusValue = state.focus,
+                    onFocus = actions::setFocus,
                     entryReveal = if (settingsPullActive) settingsReveal else null,
                 ) {
                     settingsPullActive = false

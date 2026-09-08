@@ -24,7 +24,7 @@ object PhosphorNative {
     external fun setDisplayPaused(paused: Boolean)
     external fun observeTransportPaused(paused: Boolean)
     external fun invalidateHeldFrame()
-    /** Bits: paused=1, BLACK=2, available pinned image=4. */
+    /** Bits: paused=1, BLACK=2, available pinned image=4, pending current application present=8. */
     external fun displayPauseState(): Int
     external fun setPauseBlack(black: Boolean)
     external fun inspectHeld(dx: Float, dy: Float, scale: Float, reset: Boolean)
@@ -69,6 +69,15 @@ object PhosphorNative {
         intervalMin: Float, intervalMax: Float, deletedSlot: Int = -1): Boolean
     external fun rollLight(): Boolean
     external fun cycleAdvance()
+
+    /** Positive owned request ID. Errors: -1 invalid setup, -2 receipt capacity, -3 disconnected renderer. */
+    external fun requestInstrument(setupJson: String): Long
+    /** Off-main only. 1 committed, 2 cancelled, 3 geometry-owned rejection, 4 unavailable ID. */
+    external fun awaitInstrument(requestId: Long): Int
+    /** Cancels Pending only. A committed result remains committed. Same outcome codes as await. */
+    external fun cancelInstrument(requestId: Long): Int
+    /** Releases this receipt and cancels any Pending queued work. Never changes other requests. */
+    external fun releaseInstrument(requestId: Long): Boolean
 
     /** Live beam color packed 0xRRGGBB (accent_follows_beam chrome breathing). */
     external fun beamColorNow(): Int

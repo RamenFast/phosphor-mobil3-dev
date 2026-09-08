@@ -1254,7 +1254,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun runtimePrefs() = getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)
 
     // ── Tuning persistence: the scope remembers its knobs across launches. ──
-    private var focusPref = 0.3f
     private fun saveTuning() {
         prefs().edit {
             putInt("mode", ui.modeIndex)
@@ -1275,7 +1274,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putFloat("geom_amount", ui.geomAmount)
             putBoolean("grid", ui.grid)
             putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)
-            putFloat("focus", focusPref)
+            putFloat("focus", ui.focus)
             putString("room", ui.room.id)
             // Relay auto-gain is display truth, not authority for an absent local preference.
             putBoolean("auto_gain", prefs().getBoolean("auto_gain", true))
@@ -1373,7 +1372,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.grid = p.getBoolean("grid", false).also { PhosphorNative.setGrid(it) }
         ui.gridData = p.getBoolean(dev.phosphor.mobil3.ui.GridData.KEY, dev.phosphor.mobil3.ui.GridData.DEFAULT)
         ui.gridReading = null
-        focusPref = p.getFloat("focus", 0.3f).also { PhosphorNative.setFocus(it) }
+        ui.focus = p.getFloat("focus", 0.3f).also { PhosphorNative.setFocus(it) }
         ui.hudMode = p.getInt("hud_mode", 1).coerceIn(0, 2)
         ui.bandMode = p.getInt("band_mode", 1)
         ui.fullscreen = p.getBoolean("fullscreen", true)
@@ -1523,7 +1522,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
     override fun setRoom(room: Palette) { baseRoom = room; ui.room = room }
-    override fun setFocus(focus: Float) { focusPref = focus; PhosphorNative.setFocus(focus) }
+    override fun setFocus(focus: Float) { ui.focus = focus; PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) {
         gainValue = g.coerceIn(0.1f, 7f)
