@@ -16,6 +16,7 @@ The same truthful beam moves between the full app, PiP, and a floating HUD. Ben 
 - Standard and root capture are alternative everything-playing backends, not separate product flavors.
 - Playback-plus-microphone has two readers, bounded input buffers, and one mixer producer. Mixing changes visualization only.
 - Stop acknowledgement precedes source replacement. Reader, task, source, and helper generations reject retired callbacks.
+- Root capture preserves real stereo and minimizes added latency. Measure against normal playback on the same output and verify beam-to-audible alignment. Timestamp or buffer estimates must be labeled separately from end-to-end measurements. Do not hide delay through sample drops or claim reconstructed rate creates missing bandwidth.
 - One active presentation surface belongs to full app, PiP, or HUD. Surface destruction rechecks owner/generation before touching the native surface.
 - Source transport, user display pause, and lifecycle render suspension are separate states.
 - A surviving real service can be rebound. Activity recreation does not create a new source, projection token, or permission chain.
