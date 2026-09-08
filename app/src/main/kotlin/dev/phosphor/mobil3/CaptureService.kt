@@ -46,6 +46,7 @@ open class CaptureService : Service() {
     @Volatile private var signalMeter: SignalAggregate? = null
     @Volatile private var signalDescriptor = SignalDescriptor()
     @Volatile private var signalNativeOwner: Long? = null
+    @Volatile private var signalRetirement: SignalRetirement? = null
     private val sourceWake = SourceWakeLock.forOwner(this, "capture")
 
     override fun onCreate() {
@@ -415,6 +416,7 @@ open class CaptureService : Service() {
             }
             return
         }
+        signalRetirement = SignalRetirement(signalLife(status.state), status.message)
         cleanedUp = true
         retirement.add(this, stopCompletion.result)
         if (running) Log.i(TAG, "capture stopped: $reason")
@@ -509,27 +511,36 @@ open class CaptureService : Service() {
     }
 
     companion object {
+        private fun signalLife(state: String): SignalLife = when (state) {
+            STATE_ERROR -> SignalLife.FAILED
+            STATE_PERMISSION_NEEDED -> SignalLife.PERMISSION
+            STATE_FLOWING -> SignalLife.RUNNING
+            STATE_STARTING -> SignalLife.STARTING
+            else -> SignalLife.ENDED
+        }
+
         internal fun signalObservation(): SignalInput? {
             val current = owner
             val status = lastStatus
             if (current != null && status.ownerId != current.captureOwnerId) return null
             val kind = if (status.backend == CaptureBackend.ROOT) SignalKind.ROOT else SignalKind.CAPTURE
-            val life = when (status.state) {
-                STATE_ERROR -> SignalLife.FAILED
-                STATE_PERMISSION_NEEDED -> SignalLife.PERMISSION
-                STATE_FLOWING -> SignalLife.RUNNING
-                STATE_STARTING -> SignalLife.STARTING
-                else -> if (current?.cleanedUp == true && !current.stopCompletion.result.isDone) SignalLife.STOPPING else SignalLife.ENDED
-            }
+            val retiring = current?.signalRetirement
+            val cleanup = current?.stopCompletion?.result
+            val retiredHealth = retiring?.observation(cleanup?.isDone == true,
+                if (cleanup?.isDone == true) cleanup.getNow(null) else null)
+            val publishedLife = signalLife(status.state)
+            val life = retiredHealth?.first ?: if (current == null &&
+                publishedLife in setOf(SignalLife.RUNNING, SignalLife.STARTING)) SignalLife.ENDED else publishedLife
             val root = current?.rootSession?.signalObservation()
             val result = (root ?: SignalInput(kind, status.ownerId,
                 descriptor = current?.signalDescriptor ?: SignalDescriptor(), window = current?.signalMeter?.latest)).copy(
                 owner = status.ownerId, nativeOwner = current?.signalNativeOwner,
                 life = if (life == SignalLife.RUNNING) root?.life ?: life else life,
-                reason = root?.reason?.takeIf { it.isNotBlank() && root.life != SignalLife.RUNNING } ?: status.message,
+                reason = retiredHealth?.second ?: root?.reason?.takeIf { it.isNotBlank() && root.life != SignalLife.RUNNING } ?: status.message,
                 contributing = current?.running == true && life == SignalLife.RUNNING && (root == null || root.life == SignalLife.RUNNING),
             )
-            return result.takeIf { owner === current && lastStatus === status && status.ownerId > 0 }
+            return result.takeIf { owner === current && lastStatus === status &&
+                current?.signalRetirement === retiring && current?.stopCompletion?.result === cleanup && status.ownerId > 0 }
         }
         @Volatile private var owner: CaptureService? = null
         internal fun stopIntent(context: android.content.Context) = Intent(context, owner?.javaClass ?: CaptureService::class.java).setAction(ACTION_STOP)

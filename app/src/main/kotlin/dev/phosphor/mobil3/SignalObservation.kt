@@ -10,6 +10,16 @@ internal enum class SignalLife {
     STARTING, RUNNING, STOPPING, CLEANUP_UNCONFIRMED, ENDED, FAILED, PERMISSION, DISCONNECTED, RECONNECTING, STALLED,
 }
 
+/** An owner-local diagnostic receipt, not acknowledgement that the reader has stopped. */
+internal data class SignalRetirement(val requested: SignalLife, val reason: String) {
+    fun observation(cleanupDone: Boolean, cleanupError: String?): Pair<SignalLife, String> = when {
+        cleanupDone && cleanupError != null -> SignalLife.CLEANUP_UNCONFIRMED to cleanupError
+        requested == SignalLife.FAILED || requested == SignalLife.PERMISSION -> requested to reason
+        !cleanupDone -> SignalLife.STOPPING to "Capture is stopping"
+        else -> SignalLife.ENDED to reason
+    }
+}
+
 internal data class SignalFormat(val rate: Int, val channels: Int, val encoding: String) {
     fun label() = "$rate Hz · ${if (channels == 1) "mono" else if (channels == 2) "stereo" else "$channels channels"} · $encoding"
 }

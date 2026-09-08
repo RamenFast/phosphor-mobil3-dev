@@ -57,6 +57,87 @@ class SignalObservationTest {
         assertEquals("No samples observed · read loop progresses", SignalPresentation.primary(SignalKind.MIC, input(meter.latest), 100))
     }
 
+    @Test fun zeroReadProgressExpiresWithoutInventingAReaderFailure() {
+        for (kind in listOf(SignalKind.MIC, SignalKind.CAPTURE)) {
+            val zero = input(meter(floatArrayOf()).latest).copy(kind = kind)
+            for (now in listOf(100L, 1600L)) {
+                assertEquals("No samples observed · read loop progresses", SignalPresentation.primary(kind, zero, now))
+            }
+            for (now in listOf(99L, 1601L, 10000L)) {
+                assertEquals("Stale measurement · reader health unavailable", SignalPresentation.primary(kind, zero, now))
+            }
+            assertEquals("No samples observed · read loop progresses",
+                SignalPresentation.primary(kind, zero.copy(progressAt = 10000), 10000))
+            assertEquals("Stale measurement · reader health unavailable",
+                SignalPresentation.primary(kind, zero.copy(progressAt = -1), 10000))
+            assertEquals("Starting · waiting for input",
+                SignalPresentation.primary(kind, zero.copy(window = null), 10000))
+        }
+    }
+
+    @Test fun captureRetirementOverridesFreshFlowUntilActualCleanupCompletes() {
+        val cleanup = java.util.concurrent.CompletableFuture<String?>()
+        val retirement = SignalRetirement(SignalLife.ENDED, "capture stopped")
+        for (values in listOf(floatArrayOf(.5f, .25f), floatArrayOf(0f, 0f))) {
+            val old = input(meter(values).latest).copy(kind = SignalKind.CAPTURE)
+            val (life, reason) = retirement.observation(cleanup.isDone, null)
+            val retiring = old.copy(life = life, reason = reason, contributing = false)
+            val view = SignalPresentation.present(SignalKind.CAPTURE, retiring, 100, SignalDisplay(false, false, false, false))
+            assertEquals("Stopping", view.status)
+            assertTrue(view.rows.toMap()["Raw input level"]!!.startsWith("Unavailable"))
+            assertFalse(cleanup.isDone)
+        }
+        cleanup.complete(null)
+        assertEquals(SignalLife.ENDED, retirement.observation(cleanup.isDone, cleanup.getNow(null)).first)
+    }
+
+    @Test fun knownCaptureFailureAndPermissionSurvivePendingCleanupAndRetry() {
+        for (terminal in listOf(SignalLife.FAILED, SignalLife.PERMISSION)) {
+            val retirement = SignalRetirement(terminal, "observed terminal reason")
+            val cleanup = java.util.concurrent.CompletableFuture<String?>()
+            val (life, reason) = retirement.observation(cleanup.isDone, null)
+            assertEquals(terminal, life)
+            val old = input(meter(floatArrayOf(.5f, .25f)).latest).copy(kind = SignalKind.CAPTURE,
+                life = life, reason = reason, contributing = false)
+            assertEquals("observed terminal reason", SignalPresentation.primary(SignalKind.CAPTURE, old, 100))
+            cleanup.complete("reader join timed out")
+            assertEquals(SignalLife.CLEANUP_UNCONFIRMED to "reader join timed out",
+                retirement.observation(cleanup.isDone, cleanup.getNow(null)))
+            val retry = java.util.concurrent.CompletableFuture<String?>()
+            assertEquals(terminal, retirement.observation(retry.isDone, null).first)
+            retry.complete(null)
+            assertEquals(terminal, retirement.observation(retry.isDone, retry.getNow(null)).first)
+        }
+    }
+
+    @Test fun completedStopAndReplacementCannotReviveTheRetiredMeasurement() {
+        val retirement = SignalRetirement(SignalLife.ENDED, "stopped")
+        val oldWindow = meter(floatArrayOf(.5f, .25f)).latest
+        val (life, reason) = retirement.observation(true, null)
+        assertEquals("Input ended", SignalPresentation.primary(SignalKind.CAPTURE,
+            input(oldWindow).copy(kind = SignalKind.CAPTURE, life = life, reason = reason), 100))
+        val replacement = SignalInput(SignalKind.CAPTURE, 8, life = SignalLife.STARTING, window = oldWindow)
+        assertEquals("Starting · waiting for input", SignalPresentation.primary(SignalKind.CAPTURE, replacement, 100))
+    }
+
+    @Test fun serviceRecordsDiagnosticRetirementBeforeCleanupWithoutEarlyReleaseBroadcast() {
+        val path = "app/src/main/kotlin/dev/phosphor/mobil3/CaptureService.kt"
+        val source = listOf(java.io.File(path), java.io.File("../$path")).first { it.isFile }.readText()
+        val finish = source.substringAfter("private fun finishCapture(").substringBefore("override fun onTaskRemoved")
+        val retired = finish.indexOf("signalRetirement = SignalRetirement(signalLife(status.state), status.message)")
+        assertTrue(retired >= 0)
+        assertTrue(retired < finish.indexOf("cleanedUp = true"))
+        assertTrue(retired < finish.indexOf("val oldRecord"))
+        val beforeThread = finish.substring(retired).substringBefore("Thread({")
+        assertFalse(beforeThread.contains("publishStatus("))
+        assertFalse(beforeThread.contains("cleanupFinished("))
+        val adapter = source.substringAfter("internal fun signalObservation(): SignalInput?").substringBefore("@Volatile private var owner")
+        assertTrue(adapter.contains("retiring?.observation("))
+        assertTrue(adapter.contains("val life = retiredHealth?.first"))
+        assertTrue(adapter.contains("reason = retiredHealth?.second"))
+        assertTrue(adapter.contains("current?.signalRetirement === retiring"))
+    }
+
     @Test fun positiveExactZerosAreMeasuredSilence() {
         val meter = meter(floatArrayOf(0f, -0f, 0f, 0f))
         assertEquals(2L, meter.latest.ingressFrames)

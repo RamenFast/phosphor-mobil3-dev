@@ -23,7 +23,13 @@ internal object SignalPresentation {
         val positiveAt = input?.receiptAt ?: w?.lastPositiveAt
         val positiveAge = signalAge(now, positiveAt)
         if (input?.life == SignalLife.STALLED) return "Reader / link stalled"
-        if (positiveAt == null) return if (input == null) "Waiting for current owner" else if (w?.lastReadAt != null) "No samples observed · read loop progresses" else "Starting · waiting for input"
+        if (positiveAt == null) {
+            if (input == null) return "Waiting for current owner"
+            val readAt = input.progressAt ?: w?.lastReadAt ?: return "Starting · waiting for input"
+            val readAge = signalAge(now, readAt)
+            return if (readAge != null && readAge <= FRESH_MS) "No samples observed · read loop progresses"
+                else "Stale measurement · reader health unavailable"
+        }
         if (positiveAge == null || positiveAge > FRESH_MS) {
             val progress = signalAge(now, input?.progressAt ?: w?.lastReadAt)
             return if (progress != null && progress <= FRESH_MS) "No recent input · read loop progresses" else "Stale measurement · reader health unavailable"
