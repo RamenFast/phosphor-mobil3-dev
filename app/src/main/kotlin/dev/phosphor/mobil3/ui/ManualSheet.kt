@@ -1,17 +1,22 @@
 package dev.phosphor.mobil3.ui
 
 import androidx.compose.foundation.border
+import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
+import androidx.compose.foundation.horizontalScroll
+import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
 import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.mutableIntStateOf
@@ -20,7 +25,14 @@ import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.SolidColor
+import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.text.TextStyle
+import androidx.compose.ui.text.font.FontFamily
 import androidx.compose.ui.unit.dp
+import androidx.compose.ui.unit.sp
 
 // The welcome: a little tube saying hello. Mono-set so it lines up in every room.
 private val WelcomeArt = """
@@ -41,10 +53,11 @@ private data class Beast(val glyph: String, val title: String, val tag: String, 
 private val Beasts = listOf(
     Beast(
         """
-    ___
-   / o \   "this is fine"
-  |  ._. |
-   \___/
+       .-====-.
+  ____/  ____  \___
+ (o o)  /____\    _\_>
+  \_/  |______|  / /
+        /_/  /_/
         """.trimIndent(),
         "the turtle", "universal constant",
         "the error handler. appears when things move fast but stay grounded. " +
@@ -88,20 +101,35 @@ private val Beasts = listOf(
 
 private val RhyGreen = Color(0xFF4FB06A) // FOX, not eagle! — and green, always.
 
+@Composable
+private fun ManualKey(label: String, p: Palette, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    Row(
+        modifier.fillMaxWidth().heightIn(min = 48.dp)
+            .border(Dim.hairline, p.line).settingsFocusBorder(p)
+            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .padding(horizontal = 12.dp, vertical = 10.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        Mono(label, p.ink, Type.data, maxLines = Int.MAX_VALUE)
+    }
+}
+
 // One card of the built-in viewer: title + address, taps open the user's own browser.
 @Composable
 fun LinkCard(title: String, address: String, p: Palette, onOpen: () -> Unit) {
     Row(
         Modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp)
             .border(Dim.hairline, p.line)
-            .clickable { onOpen() }
+            .settingsFocusBorder(p)
+            .clickable(role = Role.Button, onClickLabel = "Open $title", onClick = onOpen)
             .padding(horizontal = Dim.rowPad, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
         Column(Modifier.weight(1f)) {
-            Mono(title, p.ink, Type.data)
-            Mono(address, p.muted, Type.dataXs)
+            Mono(title, p.ink, Type.data, maxLines = Int.MAX_VALUE)
+            Mono(address, p.muted, Type.dataXs, maxLines = Int.MAX_VALUE)
         }
         Mono("open ↗", p.accent, Type.dataXs)
     }
@@ -127,6 +155,9 @@ fun ManualSheet(
     val scroll = rememberScrollState()
     var tubeTaps by remember { mutableIntStateOf(0) }
     var rootDisclosure by remember { mutableStateOf(false) }
+    var showBestiary by remember { mutableStateOf(false) }
+    var navigation by remember { mutableStateOf(ManualNavigation()) }
+    LaunchedEffect(navigation.chapterId, navigation.query) { scroll.scrollTo(0) }
     SheetHost(p, "MANUAL", reduced, onDismiss, glyph = SettingsGlyph.About) {
         Column(
             Modifier
@@ -135,14 +166,24 @@ fun ManualSheet(
             Mono(
                 WelcomeArt, p.accent, Type.dataXs,
                 Modifier
+                    .horizontalScroll(rememberScrollState())
+                    .semantics { contentDescription = "Welcome terminal art" }
                     .padding(bottom = Dim.gapLg)
                     .clickable {
                         // The tube keeps a secret: five taps — the die's number.
-                        if (!bestiaryFound && ++tubeTaps >= 5) onBestiaryFound()
+                        if (!bestiaryFound && ++tubeTaps >= 5) {
+                            showBestiary = true
+                            onBestiaryFound()
+                        }
                     },
                 maxLines = Int.MAX_VALUE,
             )
             if (bestiaryFound) {
+                ManualKey(if (showBestiary) "CLOSE BESTIARY" else "BESTIARY · secret workshop", p) {
+                    showBestiary = !showBestiary
+                }
+            }
+            if (bestiaryFound && showBestiary) {
                 SectionHeading("ROOT CAPTURE", p, Modifier.padding(top = 0.dp))
                 SheetRow("ROOT CAPTURE", p, checked = rootEnabled) {
                     if (rootEnabled || rootBusy) onRootCapture(false) else rootDisclosure = true
@@ -151,14 +192,14 @@ fun ManualSheet(
                 if (rootDisclosure) {
                     Prose("This uses your existing KernelSU authorization, not an Android recording prompt. The app stays unprivileged. Only KernelSU 32525 / UAPI 2 / flags 5 with an already verified Default/inherited profile is supported. Grant applies that profile. Phosphor does not change it.", p.ink)
                     Prose("Confirm that existing profile before checking authorization. Capture stays private at 16 kHz mono, duplicated into the scope channels. This does not recover stereo or bypass NO_SYSTEM_CAPTURE. Denial requires an existing manager grant, then an explicit retry.", p.muted)
-                    FlatKey("PROFILE CONFIRMED · CHECK AUTHORIZATION", p, active = true) {
+                    ManualKey("PROFILE CONFIRMED · CHECK AUTHORIZATION", p) {
                         rootDisclosure = false
                         onRootCapture(true)
                     }
-                    FlatKey("NOT NOW", p) { rootDisclosure = false }
+                    ManualKey("NOT NOW", p) { rootDisclosure = false }
                 }
-                FlatKey("OPEN ROOT MANAGER", p) { onRootManager() }
-                if (rootBusy) FlatKey("CANCEL CHECK", p) { onRootCapture(false) }
+                ManualKey("OPEN ROOT MANAGER", p) { onRootManager() }
+                if (rootBusy) ManualKey("CANCEL CHECK", p) { onRootCapture(false) }
                 SectionHeading("THE BESTIARY", p)
 
                 Prose(
@@ -172,12 +213,16 @@ fun ManualSheet(
                         beast.glyph,
                         if (beast.title == "rhy") RhyGreen else p.accent,
                         Type.dataXs,
+                        Modifier.horizontalScroll(rememberScrollState()).semantics {
+                            contentDescription = if (beast.title == "the turtle")
+                                "A turtle with a smiling mouth on the left and a pointed tail on the right" else beast.title
+                        },
                         maxLines = Int.MAX_VALUE,
                     )
                     Row(verticalAlignment = Alignment.CenterVertically) {
-                        Mono(beast.title, p.ink, Type.data)
+                        Mono(beast.title, p.ink, Type.data, Modifier.weight(1f), maxLines = Int.MAX_VALUE)
                         Spacer(Modifier.width(8.dp))
-                        Mono(beast.tag, p.muted, Type.dataXs)
+                        Mono(beast.tag, p.muted, Type.dataXs, Modifier.weight(1f), maxLines = Int.MAX_VALUE)
                     }
                     Prose(
                         beast.line, p.muted,
@@ -189,70 +234,43 @@ fun ManualSheet(
                     p.muted, modifier = Modifier.padding(bottom = Dim.gapLg),
                 )
             }
-            Prose(
-                "phosphor is a CRT oscilloscope in your pocket: the same beam physics as " +
-                    "the desktop instrument, sample-locked to what you hear. Tap the glass " +
-                    "to summon the console; everything below lives one or two taps deep.",
-                p.ink, modifier = Modifier.padding(bottom = Dim.gapLg),
+            SectionHeading("FIELD MANUAL · ${ManualContent.chapters.size} CHAPTERS", p)
+            Prose("Local help, not a shell. Practical instructions first; pocket creatures at the foot of each chapter.", p.muted)
+            Mono("SEARCH CHAPTERS", p.ink, Type.dataXs, Modifier.padding(top = 12.dp), maxLines = Int.MAX_VALUE)
+            BasicTextField(
+                value = navigation.query,
+                onValueChange = { navigation = navigation.search(it) },
+                modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .background(p.surface2).border(Dim.hairline, p.lineStrong)
+                    .settingsFocusBorder(p).padding(12.dp)
+                    .semantics { contentDescription = "Search manual chapters" },
+                singleLine = true,
+                textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 14.sp),
+                cursorBrush = SolidColor(p.accent),
             )
-
-            SectionHeading("SOURCES", p, Modifier.padding(top = 0.dp))
-            Prose(
-                "SRC picks what the beam listens to: your own files (one, or a folder as " +
-                    "a queue), the microphone, another machine over your own network " +
-                    "(REMOTE), or EVERYTHING PLAYING — the sound other apps make.",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
-            )
-
-            SectionHeading("THE SCREEN-SHARE QUESTION", p)
-            Prose(
-                "When you pick “everything playing”, Android asks you to SHARE YOUR " +
-                    "SCREEN. That's the system's blanket wording for media capture — " +
-                    "phosphor takes only the AUDIO stream and turns it into light. " +
-                    "Nothing is recorded, nothing leaves your phone, no data is taken. " +
-                    "Some DRM apps opt out and arrive as silence; Spotify currently " +
-                    "works. Track names and cover art additionally want NOTIFICATION " +
-                    "ACCESS (a different switch than “allow notifications” — SOURCE " +
-                    "has a grant… key that opens the right one).",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
-            )
-
-            SectionHeading("THE GLASS", p)
-            Prose(
-                "MODE holds 11 faces — XY figures, a 3D attractor, waveforms, spectra. " +
-                    "The ⚄ die rolls a new face on every track; BAN FACES strikes the " +
-                    "ones you're tired of (at least two stay in play). GEOMETRY bends " +
-                    "the beam after any face draws it: kaleido, spin, tunnel, pulse — " +
-                    "spin and pulse ride the loudness of the music.",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
-            )
-
-            SectionHeading("THE BENCH", p)
-            Prose(
-                "SETTINGS is the instrument bench: FOCUS, GAIN (auto-gain glides it, " +
-                    "VIEW LOCK pins the zoom), BEAM brightness and GLOW persistence. " +
-                    "The ⚄ checkboxes under BEAM and GLOW arm dice that re-roll inside " +
-                    "your kept range on every track — uncheck to disarm, the last roll " +
-                    "stays. Pinch zooms the figure; the grid rides along.",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
-            )
-
-            SectionHeading("LIGHT & ROOMS", p)
-            Prose(
-                "LIGHT picks the phosphor color — presets or up to three custom slots " +
-                    "that can cycle on a timer or once per track. ROOM changes the whole " +
-                    "chrome character; thirteen rooms, each with its own temperament.",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
-            )
-
-            SectionHeading("HOLDING IT", p)
-            Prose(
-                "Portrait and landscape both work. SCOPE ROTATION · locked pins the " +
-                    "figure's orientation; UI PLACEMENT · locked pins the chrome where " +
-                    "it is and the icons stay upright to gravity. Swipe up on the play " +
-                    "bar for SETTINGS; swipe down closes any sheet.",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gapLg),
-            )
+            if (navigation.query.isNotEmpty()) ManualKey("CLEAR SEARCH", p) { navigation = navigation.search("") }
+            val selected = navigation.chapterId?.let(ManualContent::chapter)
+            if (selected == null) {
+                val matches = ManualContent.search(navigation.query)
+                Mono("${matches.size} MATCHES", p.muted, Type.dataXs, Modifier.padding(vertical = 12.dp))
+                if (matches.isEmpty()) Prose("No chapter matches all those words. Try a source, control or symptom, such as root, gain or silence.", p.ink)
+                matches.forEach { chapter ->
+                    ManualKey("${chapter.title}\n${chapter.availability}", p) { navigation = navigation.open(chapter.id) }
+                }
+            } else {
+                Row(Modifier.fillMaxWidth()) {
+                    ManualKey("BACK", p, Modifier.weight(1f)) { navigation = navigation.back() }
+                    ManualKey("INDEX", p, Modifier.weight(1f)) { navigation = navigation.index() }
+                }
+                SectionHeading(selected.title, p)
+                Mono(selected.availability, p.accent, Type.dataXs, maxLines = Int.MAX_VALUE)
+                Prose(selected.text, p.ink, modifier = Modifier.padding(vertical = 12.dp))
+                Mono("POCKET RESPONSE", p.muted, Type.dataXs)
+                Prose(selected.response, p.muted, modifier = Modifier.padding(top = 4.dp, bottom = 12.dp))
+                val index = ManualContent.chapters.indexOf(selected)
+                if (index > 0) ManualKey("PREVIOUS CHAPTER", p) { navigation = navigation.open(ManualContent.chapters[index - 1].id) }
+                if (index < ManualContent.chapters.lastIndex) ManualKey("NEXT CHAPTER", p) { navigation = navigation.open(ManualContent.chapters[index + 1].id) }
+            }
 
             SectionHeading("CARDS", p)
             Prose(
