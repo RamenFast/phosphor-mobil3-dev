@@ -65,6 +65,10 @@ internal class SettingsGestureAdapter {
         return consumed
     }
 
+    fun childDown(id: Long) {
+        if (pointer == id) cancel()
+    }
+
     fun remainder(deltaDp: Float, direct: Boolean, atTop: Boolean, childConsumedDp: Float = 0f): Float {
         if (direct) {
             if (!childConsumedDp.isFinite()) { cancel(); return 0f }

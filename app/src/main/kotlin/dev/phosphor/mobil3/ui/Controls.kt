@@ -92,6 +92,7 @@ internal fun SliderLane(
 ) {
     Box(
         modifier.height(if (LocalSettingsControlAccess.current) 48.dp else SliderGeometry.HIT_LANE_DP.dp)
+            .settingsChildInput()
             .consoleSeekGesture(
                 durationMs = 1L,
                 onStart = onStart,

@@ -4,6 +4,61 @@ import org.junit.Assert.*
 import org.junit.Test
 
 class SettingsGestureAdapterTest {
+    @Test fun freshChildPointerKeepsConsumedSliderMotionOutOfDismissalWithoutLatching() {
+        val adapter = SettingsGestureAdapter()
+        adapter.initial(1, 0f, 0, true, false, 1)
+        adapter.childDown(1) // Child Initial runs after ancestor Initial, before any move.
+        adapter.final(true)
+        adapter.initial(1, 600f, 40, true, true, 1)
+        adapter.final(true)
+        assertEquals(SettingsDismissOwner.Release.NONE, up(adapter, 600f, 50))
+        assertFalse(adapter.requiresReopen)
+        assertEquals(0f, adapter.rawDp, 0f)
+        down(adapter, 100)
+        move(adapter, 192f, 1200) { adapter.header(192f) }
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 192f, 1300))
+    }
+
+    @Test fun wrongChildPointerCannotCancelAnotherOwner() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        adapter.childDown(2)
+        move(adapter, 192f, 1000) { adapter.remainder(192f, true, true) }
+        assertEquals(SettingsDismissOwner.Release.CLOSE, up(adapter, 192f, 1100))
+    }
+
+    @Test fun childExclusionCannotClearAnEarlierAmbiguousBodyLatch() {
+        val adapter = SettingsGestureAdapter()
+        down(adapter)
+        adapter.initial(1, 200f, 1000, true, true, 1)
+        adapter.final(true)
+        adapter.initial(1, 200f, 1010, false, true, 1)
+        adapter.final(true)
+        down(adapter, 2000)
+        adapter.childDown(1)
+        adapter.remainder(200f, true, true)
+        assertTrue(adapter.requiresReopen)
+        assertFalse(adapter.committed)
+        assertEquals(0f, adapter.rawDp, 0f)
+    }
+
+    @Test fun actualSliderInstallsNonConsumingChildObserverBeforeSeekGesture() {
+        fun source(file: String) = listOf("src/main/kotlin", "app/src/main/kotlin")
+            .map { java.io.File(it, "dev/phosphor/mobil3/ui/$file") }.first { it.isFile }.readText()
+        val slider = source("Controls.kt").substringAfter("internal fun SliderLane(")
+            .substringBefore("object Haptics")
+        assertTrue(slider.indexOf(".settingsChildInput()") >= 0)
+        assertTrue(slider.indexOf(".settingsChildInput()") < slider.indexOf(".consoleSeekGesture("))
+        val observer = source("SettingsSheetAdapter.kt").substringAfter("internal fun Modifier.settingsChildInput()")
+            .substringBefore("internal class SettingsSheetDismiss")
+        assertTrue(observer.contains("LocalSettingsGestureOwner.current ?: return this"))
+        assertTrue(observer.contains("PointerEventPass.Initial"))
+        assertTrue(observer.contains("it.pressed && !it.previousPressed"))
+        assertTrue(observer.contains("owner.gesture.childDown(it.id.value)"))
+        assertFalse(observer.contains(".consume()"))
+        assertFalse(observer.contains("onChange"))
+    }
+
     @Test fun queuedReversalCannotLeaveStaleSlowCloseAtNextUp() {
         val adapter = SettingsGestureAdapter()
         down(adapter)

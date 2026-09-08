@@ -21,6 +21,7 @@ import androidx.compose.runtime.mutableFloatStateOf
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
 import androidx.compose.runtime.setValue
+import androidx.compose.runtime.staticCompositionLocalOf
 import androidx.compose.runtime.withFrameNanos
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
@@ -44,6 +45,24 @@ import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
+
+internal val LocalSettingsGestureOwner = staticCompositionLocalOf<SettingsSheetDismiss?> { null }
+
+/** A control owns its fresh pointer without consuming parent scroll or child selection. */
+@Composable
+internal fun Modifier.settingsChildInput(): Modifier {
+    val owner = LocalSettingsGestureOwner.current ?: return this
+    return pointerInput(owner) {
+        awaitPointerEventScope {
+            while (true) {
+                val event = awaitPointerEvent(PointerEventPass.Initial)
+                event.changes.filter { it.pressed && !it.previousPressed }.forEach {
+                    owner.gesture.childDown(it.id.value)
+                }
+            }
+        }
+    }
+}
 
 /** Only Settings uses this animation and direct-input adapter. Legacy sheets keep their owner. */
 internal class SettingsSheetDismiss(private val scope: CoroutineScope) {
