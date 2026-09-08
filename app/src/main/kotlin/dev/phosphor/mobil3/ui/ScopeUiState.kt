@@ -93,6 +93,12 @@ var bestiaryFound by mutableStateOf(false)
     var rootCaptureStatus by mutableStateOf("")
     var captureRoot by mutableStateOf(false)
     var pip by mutableStateOf(false)
+    var presentationVisible by mutableStateOf(true)
+    var floatingHudEnabled by mutableStateOf(false)
+    var floatingHudTransparent by mutableStateOf(false)
+    var floatingHudActive by mutableStateOf(false)
+    var floatingHudStatus by mutableStateOf("HUD off")
+    var showSourcePicker by mutableStateOf(false)
     var settingsTransferStatus by mutableStateOf("")
 
     var customColors by mutableStateOf(

@@ -10,20 +10,19 @@ use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::mpsc;
 
+use crate::surface_lifecycle::Retiring;
 use ndk::native_window::NativeWindow;
 use phosphor_dsp::{Computer, Mode};
 use phosphor_proto::settings::Settings;
 
 pub enum Cmd {
     SurfaceCreated {
-        window: SendWindow,
+        window: Retiring<SendWindow>,
         width: u32,
         height: u32,
         density: f32,
-    },
-    SurfaceChanged {
-        width: u32,
-        height: u32,
+        transparent: bool,
+        ack: mpsc::SyncSender<i32>,
     },
     SurfaceDestroyed {
         ack: mpsc::SyncSender<()>,
@@ -179,6 +178,7 @@ struct Gpu {
     adapter: wgpu::Adapter,
     device: wgpu::Device,
     queue: wgpu::Queue,
+    format: Option<wgpu::TextureFormat>,
 }
 
 struct Active {
@@ -187,7 +187,7 @@ struct Active {
     present_caps: Vec<wgpu::PresentMode>,
     // Held so the ANativeWindow outlives the wgpu Surface built on it. Field order is
     // drop order: Surface first, then the window ref.
-    _window: SendWindow,
+    _window: Retiring<SendWindow>,
 }
 
 /// The tube-flip: trace collapses to a horizontal line (70 ms), the mode switches at the
@@ -312,17 +312,24 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     width,
                     height,
                     density,
+                    transparent,
+                    ack,
                 } => {
+                    if window.retirement.cancelled() {
+                        continue;
+                    }
                     // Drop any previous surface first — two swapchains on one
                     // ANativeWindow is a Vulkan conflict.
                     active = None;
-                    match bring_up(&mut gpu, window, width, height, target_fps) {
+                    match bring_up(&mut gpu, window, width, height, target_fps, transparent) {
                         Ok(a) => {
                             let g = gpu.as_ref().unwrap();
                             match renderer.as_mut() {
                                 Some(r) => {
                                     if let Err(e) = r.resize(width, height) {
                                         log::error!("renderer resize: {e}");
+                                        let _ = ack.send(-1);
+                                        continue;
                                     }
                                 }
                                 None => match phosphor_render_gpu::GpuRenderer::new_for_surface(
@@ -353,21 +360,28 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                                     Err(e) => log::error!("GpuRenderer::new_for_surface: {e}"),
                                 },
                             }
-                            active = Some(a);
+                            let scope_alpha = crate::surface_policy::scope_alpha(
+                                transparent,
+                                a.config.alpha_mode,
+                            );
+                            let transparent_active = scope_alpha == 0.0;
+                            if let Some(r) = renderer.as_mut() {
+                                r.display_scale = density;
+                                r.scope_alpha = scope_alpha;
+                                if a._window
+                                    .retirement
+                                    .publish(&ack, i32::from(transparent_active))
+                                {
+                                    active = Some(a);
+                                }
+                            } else {
+                                let _ = ack.send(-1);
+                            }
                             log::info!("surface up {width}x{height} density {density}");
                         }
-                        Err(e) => log::error!("surface bring-up failed: {e}"),
-                    }
-                }
-                Cmd::SurfaceChanged { width, height } => {
-                    if let (Some(a), Some(g)) = (active.as_mut(), gpu.as_ref()) {
-                        a.config.width = width.max(1);
-                        a.config.height = height.max(1);
-                        a.surface.configure(&g.device, &a.config);
-                        if let Some(r) = renderer.as_mut() {
-                            if let Err(e) = r.resize(width, height) {
-                                log::error!("renderer resize: {e}");
-                            }
+                        Err(e) => {
+                            log::error!("surface bring-up failed: {e}");
+                            let _ = ack.send(-1);
                         }
                     }
                 }
@@ -834,7 +848,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
 
 fn create_surface(
     instance: &wgpu::Instance,
-    window: &SendWindow,
+    window: &Retiring<SendWindow>,
 ) -> Result<wgpu::Surface<'static>, String> {
     use wgpu::rwh::{
         AndroidDisplayHandle, AndroidNdkWindowHandle, RawDisplayHandle, RawWindowHandle,
@@ -857,34 +871,44 @@ fn configure(
     width: u32,
     height: u32,
     target_fps: i32,
-) -> (wgpu::SurfaceConfiguration, Vec<wgpu::PresentMode>) {
+    transparent: bool,
+) -> Result<(wgpu::SurfaceConfiguration, Vec<wgpu::PresentMode>), String> {
     let caps = surface.get_capabilities(&g.adapter);
-    let format = caps
-        .formats
-        .iter()
-        .find(|f| f.is_srgb())
-        .copied()
-        .unwrap_or(caps.formats[0]);
+    let format = if let Some(format) = g.format {
+        if !caps.formats.contains(&format) {
+            return Err("surface does not support retained renderer format".into());
+        }
+        format
+    } else {
+        caps.formats
+            .iter()
+            .find(|f| f.is_srgb())
+            .copied()
+            .or_else(|| caps.formats.first().copied())
+            .ok_or("surface exposes no color format")?
+    };
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,
         width: width.max(1),
         height: height.max(1),
         present_mode: present_mode_for(target_fps, &caps.present_modes),
-        alpha_mode: caps.alpha_modes[0],
+        alpha_mode: crate::surface_policy::alpha_mode(transparent, &caps.alpha_modes)
+            .ok_or("no explicit compositor alpha mode")?,
         view_formats: vec![],
         desired_maximum_frame_latency: 2,
     };
     surface.configure(&g.device, &config);
-    (config, caps.present_modes)
+    Ok((config, caps.present_modes))
 }
 
 fn bring_up(
     gpu: &mut Option<Gpu>,
-    window: SendWindow,
+    window: Retiring<SendWindow>,
     width: u32,
     height: u32,
     target_fps: i32,
+    transparent: bool,
 ) -> Result<Active, String> {
     if gpu.is_none() {
         let instance = wgpu::Instance::default();
@@ -899,13 +923,16 @@ fn bring_up(
             pollster::block_on(adapter.request_device(&wgpu::DeviceDescriptor::default()))
                 .map_err(|e| format!("no device: {e}"))?;
         log::info!("adapter: {:?}", adapter.get_info());
-        let g = Gpu {
+        let mut g = Gpu {
             instance,
             adapter,
             device,
             queue,
+            format: None,
         };
-        let (config, present_caps) = configure(&g, &surface, width, height, target_fps);
+        let (config, present_caps) =
+            configure(&g, &surface, width, height, target_fps, transparent)?;
+        g.format = Some(config.format);
         log::info!("present modes: {present_caps:?}");
         *gpu = Some(g);
         return Ok(Active {
@@ -917,7 +944,7 @@ fn bring_up(
     }
     let g = gpu.as_ref().unwrap();
     let surface = create_surface(&g.instance, &window)?;
-    let (config, present_caps) = configure(g, &surface, width, height, target_fps);
+    let (config, present_caps) = configure(g, &surface, width, height, target_fps, transparent)?;
     Ok(Active {
         surface,
         config,

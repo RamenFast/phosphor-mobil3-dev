@@ -6,6 +6,17 @@ import java.io.File
 import kotlin.test.*
 
 class PlaybackTruthTest {
+    @Test fun localPresentationIdentityUsesQueueGenerationNotMutableLabels() {
+        val player = dev.phosphor.mobil3.ui.phase9Source("PhosphorPlayer.kt")
+        assertTrue("queueId = queueIds.incrementAndGet()" in player)
+        assertTrue(".setMediaId(\"local:\$queueId:\$i\")" in player)
+        val metadata = player.substringAfter("internal fun onTrackMetadata").substringBefore("fun setQueue")
+        assertFalse("queueId =" in metadata)
+        val advance = player.substringAfter("fun advanceIfPossible").substringBefore("override fun")
+        assertTrue("index++" in advance)
+        assertFalse("queueId =" in advance)
+    }
+
     private class Harness {
         val truth = PlaybackTruth()
         val worker = ArrayDeque<() -> Unit>()
@@ -147,7 +158,13 @@ class PlaybackTruthTest {
         assertTrue(service.contains("if (!publishOpen()) return@post"))
         assertEquals(1, Regex("PhosphorNative.confirmLocalItem").findAll(service).count())
         assertFalse(activity.contains("confirmLocalItem"))
-        assertTrue(activity.contains("PhosphorNative.cycleAdvance()")) // Existing metadata-driven cycle is untouched.
+        val host = File(base, "SurfaceHost.kt").readText()
+        assertTrue(activity.contains("surfaceHost?.metadataChanged(c)"))
+        assertFalse(activity.contains("PhosphorNative.cycleAdvance()"))
+        assertTrue(host.substringAfter("fun metadataChanged(").substringBefore("fun close()")
+            .contains("owner.change(lease)"))
+        assertTrue(host.contains("if (tracks.changed(identity)) PhosphorNative.cycleAdvance()"))
+        assertFalse(host.contains("confirmLocalItem"))
         assertFalse(File(base, "CaptureService.kt").readText().contains("confirmLocalItem"))
         val native = File(base, "PhosphorNative.kt").readText()
         assertTrue(native.contains("external fun confirmLocalItem(openId: Long)"))

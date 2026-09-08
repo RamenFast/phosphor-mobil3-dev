@@ -12,6 +12,8 @@ mod deck_events;
 pub mod engine;
 pub mod selftest;
 pub mod spsc;
+pub mod surface_lifecycle;
+pub mod surface_policy;
 
 #[cfg(target_os = "android")]
 pub mod deck;

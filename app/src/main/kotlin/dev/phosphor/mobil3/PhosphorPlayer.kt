@@ -27,6 +27,10 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         set(value) { transportIntent.publish(value) }
     private var queue: List<QueueEntry> = emptyList()
     private var index = 0
+    private var queueId = 0L
+    private companion object {
+        val queueIds = java.util.concurrent.atomic.AtomicLong()
+    }
     private var nativeSeekPosition: Long? = null
 
     internal fun transportRevision(): Long = transportIntent.revision
@@ -102,8 +106,8 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
         val loaded = i == index
         val meta = if (loaded) loadedMetadata() else null
         val mm = meta ?: MediaMetadata.Builder().setTitle(e.title).build()
-        return MediaItemData.Builder("q$i:${e.title}")
-            .setMediaItem(MediaItem.Builder().setMediaId("q$i").setMediaMetadata(mm).build())
+        return MediaItemData.Builder("local:$queueId:$i")
+            .setMediaItem(MediaItem.Builder().setMediaId("local:$queueId:$i").setMediaMetadata(mm).build())
             .setDurationUs(
                 when {
                     loaded && loadedDurationMs > 0 -> loadedDurationMs * 1000
@@ -159,6 +163,7 @@ class PhosphorPlayer(looper: Looper) : SimpleBasePlayer(looper) {
     /** Install a fresh queue (folder play). The service stages + opens entry `start`. */
     fun setQueue(entries: List<QueueEntry>, start: Int) {
         nativeSeekPosition = null
+        queueId = queueIds.incrementAndGet()
         queue = entries
         index = start.coerceIn(0, (entries.size - 1).coerceAtLeast(0))
         loadedMeta = null

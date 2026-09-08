@@ -3,6 +3,7 @@ build/
 local.properties
 *.jks
 rust/target/
+root-helper/native/target/
 app/src/main/jniLibs/
 .kotlin/
 captures/

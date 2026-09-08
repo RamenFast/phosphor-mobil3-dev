@@ -174,6 +174,10 @@ interface ScopeActions {
     fun setControlsAlwaysVisible(on: Boolean)
     fun setPipAutoEnter(on: Boolean)
     fun enterPictureInPicture()
+    fun showFloatingHud() {}
+    fun hideFloatingHud() {}
+    fun setFloatingHudEnabled(on: Boolean) {}
+    fun setFloatingHudTransparent(on: Boolean) {}
     fun setDoubleTapPlayback(on: Boolean)
     fun openCaptureMetadataSettings()
     fun openLink(url: String)
@@ -213,6 +217,11 @@ interface ScopeActions {
 
 @Composable
 fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean) {
+    if (!state.presentationVisible) return
+    if (state.pip) {
+        AndroidView(factory = { actions.makeSurface() }, modifier = Modifier.fillMaxSize())
+        return
+    }
     // Room changes crossfade palette slots; beam-color updates within one room stay immediate.
     val target = state.room
     var fromRoom by remember { mutableStateOf(target) }
@@ -249,6 +258,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
         if (state.controlsAlwaysVisible) consoleVisible = true
     }
     var sheet by remember { mutableStateOf(Sheet.NONE) }
+    LaunchedEffect(state.showSourcePicker) {
+        if (state.showSourcePicker) { sheet = Sheet.SOURCE; state.showSourcePicker = false }
+    }
     var manualFrom by remember { mutableStateOf(Sheet.SETTINGS) } // where MANUAL returns to
     var overflowComposed by remember { mutableStateOf(false) }
     var overflowTargetOpen by remember { mutableStateOf(false) }
@@ -351,6 +363,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setControlsAlwaysVisible(on: Boolean) = actions.setControlsAlwaysVisible(on)
             override fun setPipAutoEnter(on: Boolean) = actions.setPipAutoEnter(on)
             override fun enterPictureInPicture() = actions.enterPictureInPicture()
+            override fun showFloatingHud() = actions.showFloatingHud()
+            override fun hideFloatingHud() = actions.hideFloatingHud()
+            override fun setFloatingHudEnabled(on: Boolean) = actions.setFloatingHudEnabled(on)
+            override fun setFloatingHudTransparent(on: Boolean) = actions.setFloatingHudTransparent(on)
             override fun setDoubleTapPlayback(on: Boolean) = actions.setDoubleTapPlayback(on)
             override fun openCaptureMetadataSettings() = actions.openCaptureMetadataSettings()
             override fun isScopeRotationLocked() = actions.isScopeRotationLocked()

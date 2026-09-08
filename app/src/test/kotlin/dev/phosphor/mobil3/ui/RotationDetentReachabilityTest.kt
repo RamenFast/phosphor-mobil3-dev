@@ -24,7 +24,11 @@ class RotationDetentReachabilityTest {
     fun sourceOnlyRetiredActivityCannotRegisterOrMutateRotation() {
         val activity = source("MainActivity.kt")
         val register = method(activity, "private fun updateOrientationSensor()")
-        assertTrue(register.substringAfter("{").trimStart().startsWith("if (!taskIsCurrent()) return"))
+        assertTrue(register.substringAfter("{").trimStart().startsWith("if (!activityStarted || !ui.presentationVisible || ui.pip) {"))
+        val hiddenCleanup = register.substringBefore("if (!taskIsCurrent()) return")
+        assertTrue(hiddenCleanup.contains("unregisterListener(it)"))
+        assertTrue(hiddenCleanup.contains("gravityListener = null"))
+        assertTrue(register.indexOf("if (!taskIsCurrent()) return") < register.indexOf("sm.registerListener("))
         val authority = method(activity, "private fun rotationAllowed(): Boolean")
         assertTrue(authority.substringAfter("{").trimStart().startsWith("if (!taskIsCurrent()) return false"))
         val callback = register.substringAfter("override fun onSensorChanged(e: android.hardware.SensorEvent) {")
@@ -94,7 +98,9 @@ class RotationDetentReachabilityTest {
             .substringBefore("\n    }\n")
         assertTrue(tick.contains("refreshRotationAuthority()"))
         val run = tick.substringAfter("override fun run() {").trimStart()
-        assertTrue(run.startsWith("refreshRotationAuthority()"))
+        val visibleGuard = "if (!activityStarted || !ui.presentationVisible || ui.pip || activityDestroyed) return"
+        assertTrue(run.startsWith(visibleGuard))
+        assertTrue(run.substringAfter(visibleGuard).trimStart().startsWith("refreshRotationAuthority()"))
         assertTrue(tick.contains("tick.postDelayed(this, 500)"))
         assertTrue(method(activity, "override fun onStop()").contains("tick.removeCallbacks(uiTick)"))
         for (signature in listOf(

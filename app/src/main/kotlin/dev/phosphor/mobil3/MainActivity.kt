@@ -72,6 +72,23 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var activityDestroyed = false
     private var activityStarted = false
     private var scopeSurface: SurfaceView? = null
+    private var surfaceHost: SurfaceHost? = null
+    private var hudWasPresenting = false
+    private var hudConsentOpen = false
+    private val hudChanged: () -> Unit = {
+        if (::ui.isInitialized && !activityDestroyed) {
+            ui.floatingHudActive = FloatingHudService.active
+            ui.floatingHudStatus = FloatingHudService.status
+            ui.presentationVisible = activityStarted && !FloatingHudService.presenting
+            tick.removeCallbacks(uiTick)
+            if (ui.presentationVisible) tick.post(uiTick)
+            updateOrientationSensor()
+            updatePictureInPictureParams()
+            val justShown = FloatingHudService.presenting && !hudWasPresenting
+            hudWasPresenting = FloatingHudService.presenting
+            if (justShown && activityStarted) moveTaskToBack(true)
+        }
+    }
     private val controllerBinding = ActivityControllerBinding()
     private fun taskIsCurrent(): Boolean = !activityDestroyed &&
         BackgroundLifecycle.policy.accepts(taskRevision) && BackgroundLifecycle.policy.acceptsActivity(activityRevision)
@@ -157,27 +174,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
         PLAYBACK_CAPTURE,
     }
 
-    private val surfaceCallback = object : SurfaceHolder.Callback {
-        override fun surfaceCreated(holder: SurfaceHolder) {
-            reassertSourceWake()
-            if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.R) {
-                holder.surface.setFrameRate(120f, Surface.FRAME_RATE_COMPATIBILITY_DEFAULT)
-            }
-        }
-        override fun surfaceChanged(holder: SurfaceHolder, f: Int, w: Int, h: Int) {
-            PhosphorNative.surfaceCreatedOrChanged(holder.surface, w, h, resources.displayMetrics.density)
-            // Restore the persisted focus whenever Android recreates the surface.
-            PhosphorNative.setFocus(focusPref)
-            reassertSourceWake()
-        }
-        override fun surfaceDestroyed(holder: SurfaceHolder) {
-            PhosphorNative.surfaceDestroyed()
-        }
-    }
-
     private val openFileLauncher =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             if (taskIsCurrent()) uri?.let { loadUri(it) }
+        }
+
+    private val overlaySettingsLauncher =
+        registerForActivityResult(ActivityResultContracts.StartActivityForResult()) {
+            hudConsentOpen = false
+            ui.floatingHudStatus = if (Settings.canDrawOverlays(this)) "Overlay access allowed. Tap SHOW FLOATING HUD" else "Overlay access not granted. HUD remains off"
+            updatePictureInPictureParams()
         }
 
     // The service owns traversal, staging and open. Binder carries only the tree identity.
@@ -363,6 +369,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         taskRevision = BackgroundLifecycle.policy.enterActivity(taskId)
         activityRevision = BackgroundLifecycle.policy.activityRevision
         ui = ScopeUiState()
+        FloatingHudService.observe(hudChanged)
         enableEdgeToEdge()
         // Visible flags mirror actual source owners. Idle chrome must remain sleep-eligible.
         reassertSourceWake()
@@ -389,6 +396,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onResume() {
         super.onResume()
+        if (FloatingHudService.active) FloatingHudService.hide(this)
         refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
         // Resume only passive live sources once per process. Files and relays remain explicit choices.
@@ -409,6 +417,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         ui.pip = isInPictureInPictureMode
+        tick.removeCallbacks(uiTick)
+        if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)
+        updateOrientationSensor()
     }
 
     override fun onConfigurationChanged(newConfig: Configuration) {
@@ -433,21 +444,21 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 else android.util.Rational(9, 16)
             )
         if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.S) {
-            builder.setAutoEnterEnabled(PictureInPicturePolicy.platformAutoEnter(Build.VERSION.SDK_INT, ui.pipAutoEnter))
+            builder.setAutoEnterEnabled(!hudConsentOpen && !FloatingHudService.active && PictureInPicturePolicy.platformAutoEnter(Build.VERSION.SDK_INT, ui.pipAutoEnter))
         }
         if (hasSourceRectHint) builder.setSourceRectHint(sourceRectHint)
         return builder.build()
     }
 
     override fun onUserLeaveHint() {
-        if (PictureInPicturePolicy.enterOnLeave(Build.VERSION.SDK_INT, ui.pipAutoEnter, isInPictureInPictureMode)) {
+        if (!hudConsentOpen && !FloatingHudService.active && PictureInPicturePolicy.enterOnLeave(Build.VERSION.SDK_INT, ui.pipAutoEnter, isInPictureInPictureMode)) {
             enterPictureInPictureMode(pictureInPictureParams())
         }
         super.onUserLeaveHint()
     }
 
     override fun enterPictureInPicture() {
-        if (PictureInPicturePolicy.enterManually(isInPictureInPictureMode)) {
+        if (!hudConsentOpen && !FloatingHudService.active && PictureInPicturePolicy.enterManually(isInPictureInPictureMode)) {
             enterPictureInPictureMode(pictureInPictureParams())
         }
     }
@@ -455,6 +466,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun onStart() {
         super.onStart()
         activityStarted = true
+        SurfaceHost.activityVisible(true)
+        hudChanged()
         reassertSourceWake()
         val bindingRevision = controllerBinding.start()
         if (!captureStatusReceiverRegistered) {
@@ -471,7 +484,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             if (it.source == LocalSourcePublication.Source.NONE ||
                 it.source == LocalSourcePublication.Source.RELEASED_READERS) applyLocalSourcePublication(it.revision)
         }
-        PhosphorNative.setRenderPaused(false)
         val token = SessionToken(this, ComponentName(this, PlaybackService::class.java))
         val future = MediaController.Builder(this, token)
             .setListener(object : MediaController.Listener {
@@ -530,7 +542,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         ui.playing = sessionPlaying(c)
                         // Track boundary: advance a per-song light cycle (engine ignores
                         // it unless per-track cycling is active).
-                        PhosphorNative.cycleAdvance()
+                        surfaceHost?.metadataChanged(c)
                     }
                 })
                 // Initial sync: the world may have moved while the Activity slept
@@ -538,18 +550,22 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 // not just on the next change event.
                 ui.playing = sessionPlaying(c)
                 syncSessionFace(c)
+                surfaceHost?.metadataChanged(c)
             }
         }, MoreExecutors.directExecutor())
-        tick.post(uiTick)
+        tick.removeCallbacks(uiTick)
+        if (ui.presentationVisible) tick.post(uiTick)
     }
 
     override fun onStop() {
         activityStarted = false
+        ui.presentationVisible = false
+        updateOrientationSensor()
+        SurfaceHost.activityVisible(false)
         reassertSourceWake()
         controllerBinding.cancel()
         saveTuning()
         tick.removeCallbacks(uiTick)
-        PhosphorNative.setRenderPaused(true)
         if (captureStatusReceiverRegistered) {
             unregisterReceiver(captureStatusReceiver)
             captureStatusReceiverRegistered = false
@@ -570,6 +586,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
             runtimePrefs().edit { putString("last_source", "none") }
         }
         activityDestroyed = true
+        FloatingHudService.unobserve(hudChanged)
+        surfaceHost?.close()
+        surfaceHost = null
         val retiredGravityListener = gravityListener
         gravityListener = null
         retiredGravityListener?.let {
@@ -592,6 +611,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var lastRxBytes = 0L
     private val uiTick = object : Runnable {
         override fun run() {
+            if (!activityStarted || !ui.presentationVisible || ui.pip || activityDestroyed) return
             refreshRotationAuthority()
             reassertSourceWake()
             refreshRootState()
@@ -681,6 +701,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onNewIntent(intent: Intent) {
         super.onNewIntent(intent)
+        if (intent.getBooleanExtra(FloatingHudService.RETURN, false)) {
+            FloatingHudService.hide(this)
+            ui.showSourcePicker = intent.getBooleanExtra(FloatingHudService.SOURCE, false)
+            return
+        }
         selectSource()
         taskRevision = BackgroundLifecycle.policy.enterActivity(taskId)
         activityRevision = BackgroundLifecycle.policy.activityRevision
@@ -688,6 +713,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     private fun handleIntent(intent: Intent) {
+        if (intent.getBooleanExtra(FloatingHudService.RETURN, false)) {
+            FloatingHudService.hide(this)
+            ui.showSourcePicker = intent.getBooleanExtra(FloatingHudService.SOURCE, false)
+            return
+        }
         intent.getStringExtra("open")?.let { openDeck(it) }
         if (intent.getBooleanExtra("capture", false)) startCapture()
         if (intent.getBooleanExtra("remote", false)) startRemote()
@@ -818,11 +848,56 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // ---- ScopeActions ----
-    override fun makeSurface(): SurfaceView = SurfaceView(this).apply {
-        scopeSurface?.keepScreenOn = false
-        scopeSurface = this
-        holder.addCallback(surfaceCallback)
-        reassertSourceWake()
+    override fun showFloatingHud() {
+        val access = Settings.canDrawOverlays(this)
+        val locked = getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
+        val microphone = mic.ownsSource() || micHandoff.isPending || pendingAudioPermission == AudioPermissionPurpose.MICROPHONE
+        val refusal = HudPolicy.refusal(true, activityStarted && taskIsCurrent() && !isInPictureInPictureMode,
+            access, locked, microphone)
+        if (refusal != null) {
+            ui.floatingHudStatus = refusal
+            if (!access && activityStarted && taskIsCurrent() && !locked && !microphone && !isInPictureInPictureMode) {
+                hudConsentOpen = true
+                updatePictureInPictureParams()
+                runCatching { overlaySettingsLauncher.launch(Intent(Settings.ACTION_MANAGE_OVERLAY_PERMISSION, "package:$packageName".toUri())) }
+                    .onFailure {
+                        hudConsentOpen = false
+                        updatePictureInPictureParams()
+                        ui.floatingHudStatus = "Overlay settings unavailable. Open Android settings for Phosphor"
+                    }
+            }
+            return
+        }
+        setFloatingHudEnabled(true)
+        FloatingHudService.show(this)
+    }
+
+    override fun hideFloatingHud() { FloatingHudService.hide(this) }
+
+    override fun setFloatingHudEnabled(on: Boolean) {
+        prefs().edit { putBoolean(HudPolicy.ENABLED, on) }
+        ui.floatingHudEnabled = on
+        if (!on) FloatingHudService.hide(this)
+    }
+
+    override fun setFloatingHudTransparent(on: Boolean) {
+        prefs().edit { putString(HudPolicy.BACKGROUND, if (on) "TRANSPARENT" else "SOLID") }
+        ui.floatingHudTransparent = on
+        ui.floatingHudStatus = "${if (on) "TRANSPARENT" else "SOLID"} requested for next Show"
+    }
+
+    override fun makeSurface(): SurfaceView {
+        val host = SurfaceHost(this, status = { ui.floatingHudStatus = it },
+            failed = { android.widget.Toast.makeText(this, ui.floatingHudStatus, android.widget.Toast.LENGTH_LONG).show() },
+            presented = { controller?.let { surfaceHost?.metadataChanged(it) } })
+        surfaceHost?.close()
+        surfaceHost = host
+        SurfaceHost.activity(host)
+        return host.view.apply {
+            scopeSurface?.keepScreenOn = false
+            scopeSurface = this
+            reassertSourceWake()
+        }
     }
 
     private fun reassertSourceWake() {
@@ -1202,6 +1277,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun restoreTuning() {
         val p = prefs()
+        val hud = HudPolicy.read(p.all)
+        ui.floatingHudEnabled = hud.enabled
+        ui.floatingHudTransparent = hud.background == HudPolicy.Background.TRANSPARENT
         ui.lingerBackground = BackgroundLifecyclePolicy.linger(p.all)
         ui.doubleTapPlayback = p.getBoolean("double_tap_playback", true)
         ui.controlsAlwaysVisible = dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(p.all)
@@ -1630,6 +1708,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // for anyone who had not turned a lock on. Ben reported
     // rotation "still super sensitive" for exactly this reason.
     private fun updateOrientationSensor() {
+        if (!activityStarted || !ui.presentationVisible || ui.pip) {
+            gravityListener?.let { getSystemService(android.hardware.SensorManager::class.java)?.unregisterListener(it) }
+            gravityListener = null
+            return
+        }
         if (!taskIsCurrent()) return
         run {
             if (gravityListener == null) {

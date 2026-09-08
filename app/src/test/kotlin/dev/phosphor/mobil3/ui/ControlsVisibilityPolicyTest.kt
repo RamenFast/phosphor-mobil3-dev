@@ -89,10 +89,14 @@ class ControlsVisibilityPolicyTest {
         val tick = activity.substringAfter("private val uiTick = object : Runnable {")
             .substringBefore("override fun onNewIntent(")
         val run = tick.substringAfter("override fun run() {").trimStart()
-        assertTrue(run.startsWith("refreshRotationAuthority()"))
+        val visibleGuard = "if (!activityStarted || !ui.presentationVisible || ui.pip || activityDestroyed) return"
+        assertTrue(run.startsWith(visibleGuard))
+        assertTrue(run.substringAfter(visibleGuard).trimStart().startsWith("refreshRotationAuthority()"))
         assertEquals(1, Regex("tick.postDelayed\\(this, 500\\)").findAll(activity).count())
-        assertEquals(1, Regex("tick.post\\(uiTick\\)").findAll(activity).count())
-        assertEquals(1, Regex("tick.removeCallbacks\\(uiTick\\)").findAll(activity).count())
+        assertEquals(3, Regex("tick.post\\(uiTick\\)").findAll(activity).count())
+        assertEquals(4, Regex("tick.removeCallbacks\\(uiTick\\)").findAll(activity).count())
+        assertEquals(2, Regex("tick.removeCallbacks\\(uiTick\\)\\s+if \\(ui.presentationVisible\\) tick.post\\(uiTick\\)").findAll(activity).count())
+        assertTrue("tick.removeCallbacks(uiTick)\n        if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)" in activity)
     }
 
     @Test fun viewportUsesRemainingSafeHeightWithoutShrinkingSliderLanes() {

@@ -6,6 +6,24 @@ use jni::sys::jstring;
 use std::sync::Once;
 
 static INIT: Once = Once::new();
+static WINDOWS: std::sync::Mutex<Vec<crate::surface_lifecycle::Retirement>> =
+    std::sync::Mutex::new(Vec::new());
+
+fn retire_surface() -> bool {
+    let mut retirements = std::mem::take(&mut *WINDOWS.lock().unwrap());
+    for life in &retirements { life.cancel(); }
+    let (ack, result) = std::sync::mpsc::sync_channel(0);
+    let sent = crate::render::sender()
+        .send(crate::render::Cmd::SurfaceDestroyed { ack })
+        .is_ok();
+    // Channel loss is not acknowledgement. The separate resource signal still proves drop.
+    let clean = match retirements.pop() {
+        Some(life) => life.barrier(result),
+        None => result.recv().is_ok(),
+    };
+    for life in retirements { life.wait(); }
+    sent && clean
+}
 
 fn ensure_init() {
     INIT.call_once(|| {
@@ -23,14 +41,15 @@ fn ensure_init() {
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceCreated(
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_attachSurface(
     env: JNIEnv,
     _class: JClass,
     surface: jni::objects::JObject,
     width: jni::sys::jint,
     height: jni::sys::jint,
     density: jni::sys::jfloat,
-) {
+    transparent: jni::sys::jboolean,
+) -> jni::sys::jint {
     ensure_init();
     let window = unsafe {
         ndk::native_window::NativeWindow::from_surface(
@@ -40,27 +59,33 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceCreated(
     };
     let Some(window) = window else {
         log::error!("ANativeWindow_fromSurface returned null");
-        return;
+        return -1;
     };
+    let window = crate::surface_lifecycle::Retiring::new(crate::render::SendWindow(window));
+    let retirement = window.retirement.clone();
+    {
+        let mut windows = WINDOWS.lock().unwrap();
+        windows.retain(|life| !life.dropped());
+        windows.push(retirement.clone());
+    }
+    let (ack, result) = std::sync::mpsc::sync_channel(1);
     let _ = crate::render::sender().send(crate::render::Cmd::SurfaceCreated {
-        window: crate::render::SendWindow(window),
+        window,
         width: width.max(1) as u32,
         height: height.max(1) as u32,
         density,
+        transparent: transparent != 0,
+        ack,
     });
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceChanged(
-    _env: JNIEnv,
-    _class: JClass,
-    width: jni::sys::jint,
-    height: jni::sys::jint,
-) {
-    let _ = crate::render::sender().send(crate::render::Cmd::SurfaceChanged {
-        width: width.max(1) as u32,
-        height: height.max(1) as u32,
-    });
+    match retirement.attached(result, std::time::Duration::from_secs(2)) {
+        Some(mode) => mode,
+        _ => {
+            // A deadline cancels publication, not resource ownership. A driver stall
+            // can delay this required window barrier beyond the UI's deadline.
+            retire_surface();
+            -1
+        }
+    }
 }
 
 /// BLOCKS until the render thread has dropped the wgpu Surface + window ref — Android
@@ -69,20 +94,8 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceChanged(
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_surfaceDestroyed(
     _env: JNIEnv,
     _class: JClass,
-) {
-    let (ack_tx, ack_rx) = std::sync::mpsc::sync_channel(0);
-    if crate::render::sender()
-        .send(crate::render::Cmd::SurfaceDestroyed { ack: ack_tx })
-        .is_ok()
-    {
-        // 2 s guard: never wedge the UI thread forever if the render thread died.
-        if ack_rx
-            .recv_timeout(std::time::Duration::from_secs(2))
-            .is_err()
-        {
-            log::error!("surfaceDestroyed ack timeout — render thread unhealthy");
-        }
-    }
+) -> jni::sys::jboolean {
+    u8::from(retire_surface())
 }
 
 #[unsafe(no_mangle)]

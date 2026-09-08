@@ -9,6 +9,30 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test fun floatingHudTypedPreferencesRoundTripWithoutRuntimeStateOrLegacyChanges() {
+        for (enabled in listOf(false, true)) for (background in listOf("SOLID", "TRANSPARENT")) {
+            val values = mapOf("floating_hud_enabled" to enabled, "floating_hud_background" to background,
+                "floating_hud_width_dp" to 240, "floating_hud_height_dp" to 640, "hud_mode" to 1,
+                "pip_auto_enter" to true, "linger_background" to false)
+            assertEquals(values, SettingsArchive.decode(export(values).json).values)
+        }
+        for (key in listOf("floating_hud_granted", "floating_hud_running", "floating_hud_generation")) {
+            assertFalse(key in SettingsArchive.decode(singleSettingFixture(key, true)).values)
+        }
+        assertFalse(dev.phosphor.mobil3.HudPolicy.read(SettingsArchive.decode(export(mapOf("hud_mode" to 1)).json).values).enabled)
+    }
+
+    @Test fun floatingHudArchiveRejectsWrongTypesModesAndOutOfBoundsSizes() {
+        rejectsBoth("floating_hud_enabled", "true", "invalid_setting_type")
+        rejectsBoth("floating_hud_background", true, "invalid_setting_type")
+        rejectsBoth("floating_hud_background", "GLASS", "invalid_setting_value")
+        for (key in listOf("floating_hud_width_dp", "floating_hud_height_dp")) {
+            rejectsBoth(key, 239, "invalid_setting_value")
+            rejectsBoth(key, 641, "invalid_setting_value")
+            rejectsBoth(key, "320", "invalid_setting_type")
+        }
+    }
+
     @Test fun rootLocalFlagsStayInertEvenWithAValidImportedChecksum() {
         for (key in listOf("root_capture_enabled", "root_capture_profile_ack")) {
             val decoded = SettingsArchive.decode(singleSettingFixture(key, true))

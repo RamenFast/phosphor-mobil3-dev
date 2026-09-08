@@ -1165,6 +1165,16 @@ fun SettingsSheet(
                 active = state.pipAutoEnter, p = p, small = true,
             ) { actions.setPipAutoEnter(!state.pipAutoEnter) }
             FlatKey("ENTER PiP", p) { actions.enterPictureInPicture() }
+            ChipCell("FLOATING HUD · " + if (state.floatingHudEnabled) "enabled" else "off",
+                active = state.floatingHudEnabled, p = p, small = true,
+            ) { actions.setFloatingHudEnabled(!state.floatingHudEnabled) }
+            ChipCell("HUD BACKGROUND · " + if (state.floatingHudTransparent) "TRANSPARENT" else "SOLID",
+                active = state.floatingHudTransparent, p = p, small = true,
+            ) { actions.setFloatingHudTransparent(!state.floatingHudTransparent) }
+            FlatKey(if (state.floatingHudActive) "HIDE FLOATING HUD" else "SHOW FLOATING HUD", p) {
+                if (state.floatingHudActive) actions.hideFloatingHud() else actions.showFloatingHud()
+            }
+            Prose(state.floatingHudStatus + ". Show requests overlay access only when needed. Imported preferences never start a HUD.", p.muted)
             ChipCell(
                 "DOUBLE TAP PLAYBACK · " + if (state.doubleTapPlayback) "on" else "off",
                 active = state.doubleTapPlayback, p = p, small = true,
@@ -1425,6 +1435,10 @@ fun SettingsSheet(
 
 // What the sheets may ask of the host (grows per act).
 interface SheetActions {
+    fun showFloatingHud() {}
+    fun hideFloatingHud() {}
+    fun setFloatingHudEnabled(on: Boolean) {}
+    fun setFloatingHudTransparent(on: Boolean) {}
     fun jumpToQueue(index: Int)
     fun setControlsAlwaysVisible(on: Boolean)
     fun setPipAutoEnter(on: Boolean)

@@ -99,9 +99,19 @@ Ongoing microphone input has a real service owner, recording indication, correct
 
 ## Presentation, HUD, pause, HDR, and brightness [R02, R05, R06, R13]
 
-The user-started HUD provides drag, resize, close, return-to-app, and compact source/transport actions. Obtain real overlay access. Keep touches outside its bounds usable. Active HUD mode takes precedence over automatic PiP. Lock, revocation, and dismissal retire presentation according to source/linger ownership.
+### Floating HUD [R02]
 
-TRANSPARENT requires actual SurfaceView/swapchain alpha and premultiplied shared-renderer output. Fading an opaque rectangle is not transparency. Hidden surfaces/chrome stop render and animation work.
+The user-started HUD provides drag, resize, close, return-to-app, and compact source/transport actions. `floating_hud_enabled` defaults false and is preference only. `floating_hud_background` defaults SOLID and accepts SOLID or TRANSPARENT. Width and height preferences default 320 dp, accept 240–640 dp, and clamp to usable display bounds. Existing `hud_mode` remains unchanged. Imports and restoration never show a HUD or open consent, even when the imported preference is enabled.
+
+An explicit visible-activity Show action requests overlay access once when absent. Return from consent never automatically shows or repeats consent. After successful window addition, one shared SurfaceHost transfers a generation lease from the activity/PiP to FloatingHudService. Stale change/destroy callbacks cannot detach a successor. Pending or visible HUD takes precedence over PiP. Lock, revocation, dismissal, task removal and partial failure retire only owned presentation, listeners and controller. A visible activity reclaims presentation. No automatic service restart occurs.
+
+Native retirement waits for actual surface/window drop, even beyond the attach deadline. Cancelled creation cannot publish. Channel loss blocks successor ownership. Driver stalls can delay this barrier. Stable local queue/item IDs ignore metadata enrichment. Remote/capture placeholder IDs use documented label fallback. Pending controller futures retire exactly once through Media3 releaseFuture.
+
+TRANSPARENT requires translucent SurfaceView pixels, a supported Vulkan PreMultiplied swapchain, and shared-renderer scope_alpha=0. SOLID uses opaque pixels and scope_alpha=1. Report requested versus active mode. Unsupported premultiplied alpha falls back to opaque SOLID with a reason. Fading an opaque rectangle is not transparency. Hidden surfaces/chrome stop render and animation work. Size and density update without changing tuning or source.
+
+HUD uses the existing MediaSession and acknowledged source capabilities for transport. Source selection and new permission-bound input starts return to the visible app. It creates no audio reader. Until R09 supplies a microphone service owner, an active activity-owned microphone prevents HUD transfer without stopping or seizing that reader. Close leaves existing service sources intact. Task removal obeys existing source/linger policy. Keep outside touches usable and respect protected-screen restrictions. Detailed order and checks live in `docs/plans/mobile-expansion/section-04-hud-contract.md`.
+
+### Pause, HDR, and brightness
 
 HOLD retains the last fully presented beam frame before transport retirement can empty it. Its decay, deposited samples, displayed cycle, and geometry stop changing. Pan/zoom/reset affect only inspection. Live uncontrollable inputs show `display held · source live`. Local pause still pauses audio, and remote/capture commands still require real capability/acknowledgement.
 
