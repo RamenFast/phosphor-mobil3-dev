@@ -1,5 +1,14 @@
 # Serious todos
 
+## Active mobile expansion, 2026-09-08
+
+- [ ] Complete section 1's exact permitted permission/component scanner and fixtures. Current source/artifact scanners still contain the old root/overlay restrictions. Baseline scanner success does not close this replacement task.
+- [ ] Obtain the required once-per-session Astra/high routing confirmation before workers. One beacon appeared and expired. No independent expansion critique has run and no score exists.
+- [ ] Verify authorization under the actual app/helper identity and prove non-diverting capture. KernelSU's working-driver screen is not a PCM receipt. Preserve the observed manager/driver mismatch without automatic kernel/system repair.
+- [ ] Complete all R01–R17 feature and integration evidence in [the expansion execution ledger](plans/mobile-expansion/EXECUTION.md). No new feature is delivered by the initial baseline/contracts checkpoint.
+
+Ben's 2026-09-08 approval permits reversible S25 expansion work and supersedes older S25 exclusions below for that task. Historical B-card evidence and unrelated release/irreversible-action boundaries remain intact.
+
 ## Primetime cleanup
 
 - [x] Preserve the dirty starting material and create a rollback tag.

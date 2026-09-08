@@ -1,8 +1,10 @@
 # Phosphor Mobile: expanded instrument plan
 
-**Status:** approved feature direction, comprehensively recompiled on 2026-09-07 from Ben's requests through 23:15 UTC, including explicit approval of instrument presets and signal check. Plan only. No feature implementation or device activation is performed by this update.
+**Status:** execution approved by Ben on 2026-09-08 at 00:18:19 UTC. The feature direction was comprehensively recompiled on 2026-09-07, including instrument presets and signal check. Section 1 baseline and contract work has started. Feature delivery remains subject to the evidence below.
 
 **Canonical plan:** `MOBILE-EXPANSION-PLAN.md` at the repository root. This replaces the earlier accumulated versions in this same file. Git retains their history. Do not create a competing expansion plan.
+
+**Execution entry:** [one requirement/owner/evidence ledger](docs/plans/mobile-expansion/EXECUTION.md), [active expansion contracts](spec/EXPANSION.md), and [execution decision](decisions/2026-09-08-mobile-expansion-execution.md). These support this plan rather than replace it.
 
 ## Goal
 
@@ -32,7 +34,7 @@ Deliver every approved outcome below, including persistence, recovery, documenta
 
 ### Approval boundaries
 
-- This request recompiles documentation. Do not begin feature implementation as a side effect. At execution start, create an executable todo list from R01–R17 and the ordered sections.
+- Ben approved the implementation handoff on 2026-09-08. Execute R01–R17 through the ordered sections and the executable todo list. This approval does not waive routing confirmation, irreversible-action boundaries, or release gates.
 - Original vision and specs remain source documents, but Ben's newer approved direction supersedes their old root, overlay, and startup restrictions. Update them before implementation so they no longer contradict this plan.
 - Keep one Android product with debug/release builds. No silent flavor split, renderer fork, root service installed in system, runtime administration API, analytics, or unrelated relay redesign.
 - Preserve local sample-locked playback, relay behavior, standard MediaProjection capture, source truth, accepted beam-energy fixes, settings survival, and opening gestures.
@@ -325,7 +327,7 @@ These are future implementation checks, not claims that this planning session ra
 | R17 Signal check | Real owner/route/rate/channel observations, measured flow/silence/clipping versus unavailable data, distinct consent/failure/paused-display states, mixed-input health, stale-callback rejection, existing recovery actions, no permission/source side effect on open, bounded visible-only refresh and no stored audio/behavior history. |
 | Integration | Existing source/gesture/lifecycle regression tests, Gradle unit/lint/build/checkEngine, locked Cargo tests, revised boundary/release checks, exact installed APK verification, same-package update/defaults/archive survival. |
 
-Use a rooted target for root acceptance, the non-root Galaxy S25 for ordinary-path regression, API 29 for version fallbacks, and actual Bluetooth/USB accessories for route claims. Confirm live availability before activating anything. Current handset capabilities cannot be inferred from old receipts.
+Use the authorized Galaxy S25 for root and root-disabled ordinary-path acceptance, API 29 for version fallbacks, and actual Bluetooth/USB accessories for route claims. Root-disabled testing on a modified handset is not an unmodified non-root OS receipt. On 2026-09-08, KernelSU reports a working jailbreak-mode driver, but the app/helper authorization and capture backend remain unproven. Confirm live availability before activation. Current capabilities cannot be inferred from old receipts.
 
 Run sustained HUD + capture + mic + random-light sessions, with periodic pause/inspect/resume and route changes. Repeat HDR and brightness combinations where supported. Measure audio continuity, memory growth, frame pacing, thermal behavior, battery implications, and resource teardown.
 

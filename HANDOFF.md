@@ -1,8 +1,16 @@
-# Handoff: ASUS capture and slow-pinch corrections
+# Handoff: mobile expansion execution
 
-**Updated:** 2026-09-07. **Status:** partial device acceptance, not release-ready and not all B1-B21 passed.
+**Updated:** 2026-09-08. **Status:** approved expansion started at baseline/contracts. No expansion feature is accepted and no release is claimed.
 
 ## Read first
+
+- Start with the canonical [MOBILE-EXPANSION-PLAN.md](MOBILE-EXPANSION-PLAN.md), [active expansion contract](spec/EXPANSION.md), and [single execution ledger](docs/plans/mobile-expansion/EXECUTION.md).
+- Ben approved implementation and reversible S25 work at 00:18:19 UTC. This supersedes the prior S25 exclusion for this task. Preserve unrelated ASUS volume, PC-audio, signing, publication, and irreversible-action boundaries.
+- Baseline APK/settings are preserved and verified. Existing Android unit/lint/build/engine checks passed, plus 73 native and 43 relay tests. No replacement APK was installed.
+- KernelSU reports a working jailbreak-mode driver with a manager/driver mismatch. App/helper root authorization and real capture remain unproven. Do not modify kernel/system state or the logcat override.
+- Worker routing confirmation remains pending after one visible beacon. No worker has started. Proposed mapping is Astra/high for every workstream, two live workers maximum, one implementation writer. Do not repeat the unanswered beacon.
+
+## Previous repair receipts
 
 - **Fresh local continuation:** [04:40 ASUS local/rotation replay](docs/dev/receipts/pre-v2-b1-b21/phase-16-asus-local-replay-2026-09-07.md). Exact installed743d8bb passed actual gain reset, silence/EOF, paused seek, reversible3D perspective, disabled controls and held import/unlock. These now have fresh post-mapping device evidence. Phone state is restored. Spotify stayed remote and was not controlled.
 
@@ -32,7 +40,9 @@
 - [Original execution plan](PRE-V2-B1-B21-EXECUTION-PLAN.md), especially Phases 15-17. Its old volume requirements are superseded.
 - [Receipt index](docs/dev/receipts/pre-v2-b1-b21/README.md).
 
-## Ben's current boundaries
+## Previous ASUS session boundaries
+
+The following records the earlier ASUS repair session. Its S25 exclusion is superseded only for the approved expansion above. The historical device receipts remain evidence for their exact artifacts, not new expansion acceptance.
 
 **The S25 is excluded from further testing.** Ben supplied an ASUS_AI2202 Android14 replacement. The current verified USB serial is `NAAIB70036673ZC`. ASUS MUSIC is **1/30**, superseding the older muted baseline. No Phosphor package existed before this testing session, but the debug package is now installed.
 

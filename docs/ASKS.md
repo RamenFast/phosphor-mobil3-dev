@@ -103,3 +103,29 @@ This supersedes the earlier availability hold, not the volume1/30 ceiling, S25 e
 The automatic continuation requested real observations for the whole result and a requirement-to-check map, without a user interruption.
 The [audit receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-final-artifact-audit-2026-09-07.md) records final-artifact behavior, prior same-source checks and explicit unobserved paths separately.
 The final regression and exact restoration were completed. This does not convert remaining B1-B21 or release gates into passes.
+
+## 2026-09-08 00:18 UTC: approved mobile expansion execution
+
+Ben approved the complete [canonical expansion plan](../MOBILE-EXPANSION-PLAN.md) and autonomous reversible S25 work. This supersedes the older S25 exclusion for this task. The [execution ledger](plans/mobile-expansion/EXECUTION.md) owns per-section state and receipts. No new feature is accepted from planning or a baseline build.
+
+| ID | Unique approved outcome | Status |
+|---|---|---|
+| R01 | Hidden opt-in root audio capture without LSPosed or system/boot writes | open |
+| R02 | Floating HUD with solid and genuine transparent presentation | open |
+| R03 | Smiling tailed turtle and indexed, comprehensive, meme-rich terminal manual | open |
+| R04 | Meaningful animated glyphs, improved layout, and visible-only presentation work | open |
+| R05 | Optional genuine HDR scope output | open |
+| R06 | Optional full-foreground-app brightness pin without global changes | open |
+| R07 | Independent generated-color and random cycle-interval controls | open |
+| R08 | Six custom color slots with selected ordered/shuffled cycling | open |
+| R09 | Actual external/Bluetooth mic selection and visualization-only capture mixing | open |
+| R10 | More deliberate downward settings dismissal with opening unchanged | open |
+| R11 | Expandable settings sections with truthful summaries and retained state | open |
+| R12 | Light, Dark, Glass, AMOLED and shared customization preserving saved looks | open |
+| R13 | Default HOLD pause with inspection and optional BLACK presentation | open |
+| R14 | Configured default startup, contextual automatic permission requests, direct authorized root start | open |
+| R15 | Independent GPT Astra section critiques, up to four total rounds below 8 | pending required routing confirmation |
+| R16 | Named portable instrument presets distinct from appearance and source settings | open |
+| R17 | Read-only on-demand signal check showing measured input health and dark-beam causes | open |
+
+All worker workstreams use proposed Astra/high reasoning, at most two live workers and one implementation writer. The required routing beacon appeared once and expired without a new confirmation. Do not infer approval from that expiry or repeat the same unanswered notification. Publication, signing, irreversible changes, and unrelated relay work keep their existing boundaries.

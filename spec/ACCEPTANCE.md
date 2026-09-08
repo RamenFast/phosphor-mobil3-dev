@@ -18,7 +18,7 @@ Restore the log property after testing. Instrumented timing must disclose measur
 - [ ] One production package exists: `dev.phosphor.mobil3`.
 - [ ] Debug uses `.debug` and installs beside production.
 - [ ] The build has no Play/Fortress flavor dimension.
-- [ ] Active source and docs contain no removed integration or privileged-capture promise.
+- [ ] Active source and docs contain no removed integration or unmeasured universal capture promise. Opt-in root and HUD follow the approved expansion boundary.
 - [ ] Historical decisions and receipts remain intact outside the active authority chain.
 
 ## B. Android compatibility
@@ -47,7 +47,7 @@ Restore the log property after testing. Instrumented timing must disclose measur
 - [ ] The five portable settings keys and the legal 0.1-through-60-second cycle range survive archive round trips.
 - [ ] A failed or malformed legacy envelope falls back safely without blocking startup.
 
-## E. Capture
+## E. Standard capture
 
 - [ ] Microphone permission precedes MediaProjection consent when playback capture needs it.
 - [ ] The service enters the mediaProjection foreground state before obtaining projection.
@@ -146,6 +146,32 @@ These conditions extend the B21 row. They are not additional accepted cards.
 - [ ] Replacement playback waits for actual predecessor cleanup without converting a wait timeout into permanent new-owner failure. A real reader timeout, owner destruction and subsequent successful stop retry permit recovery.
 - [ ] Ordinary playback-service destruction preserves a separately owned microphone or capture source. Default task removal ends a cleaned-up started capture service even after timeout, while retaining the actual reader failure.
 - [ ] Android receipts establish actual task callback delivery and task-membership timing, including microphone-only operation with no playback service.
+
+## M. Approved mobile expansion R01–R17
+
+These rows implement `EXPANSION.md` and the canonical expansion plan. Record each observed result in `docs/plans/mobile-expansion/EXECUTION.md`, with exact mobile/shared revisions and installed artifact identity. Host fixtures do not establish Android consent, physical routing, scanout, or panel luminance.
+
+| Done | ID | Observable acceptance |
+|---|---|---|
+| [ ] | R01 | Authorized app/helper captures real PCM from ordinary and opted-out test sources while playback stays audible. Denial, revocation, helper death, repeated start/stop, and output-route changes retire resources. No system/boot/mount/SELinux change or exported root controller occurs. |
+| [ ] | R02 | Real solid/transparent HUD above another app supports drag/resize/touch isolation, close/return, PiP arbitration, recreation, lock/revocation and single-owner teardown. |
+| [ ] | R03 | Indexed/searchable manual covers every approved feature/recovery. Turtle smile/tail, five-tap discovery, at least 24 entries, themes, and large fonts remain usable. |
+| [ ] | R04 | Portrait/landscape/multi-window/HUD layouts have adequate targets. Reduced motion and hidden-surface/component tests show no ongoing invisible animation. Real frame/jank evidence accompanies visible glyph behavior. |
+| [ ] | R05 | Actual HDR surface, linear encoding, compositor and panel evidence accompany HDR/SDR/held-image/transparent-HUD tests. Unsupported hardware remains an open capability claim rather than a brighter SDR substitute. |
+| [ ] | R06 | Only the full foreground app pins brightness and wake, including pause/no-source. Exit, disabling, recreation, and failure restore window ownership without global brightness/auto-brightness changes or HUD takeover. |
+| [ ] | R07 | Seeded production policy tests prove generated-color ownership, random-interval bounds, boundary-only decisions, TIMER/TRACK precedence, rapid-cycle guard and hold/resume. |
+| [ ] | R08 | Actual six-slot editing/selection/removal/shuffle, zero/one/six membership, no immediate repeat, old three-color migration, round trips and malformed-payload rejection preserve unselected colors. |
+| [ ] | R09 | Actual available input devices, negotiated format, rate/mono conversion, disconnect/denial/privacy mute, route restoration and two distinguishable mixed inputs are proven. Mic-off/partial loss preserve playback. Buffers/drift/clipping stay bounded without speaker feedback. |
+| [ ] | R10 | Opening fixtures remain unchanged. Physical scroll/top flings/short accidental motions do not dismiss settings. Deliberate slow/qualified fast pulls do. Reversal, cancellation, sliders, expansion, Back/close and other sheets remain correct. |
+| [ ] | R11 | Multiple settings sections expand with truthful live summaries, no setting mutation, retained scroll/rotation/theme focus, readable large fonts, and collapsed children absent from accessibility focus. |
+| [ ] | R12 | Four shared-model appearance entry points meet meaning/contrast contracts. AMOLED is true black, Glass is readable over moving content, all legacy rooms/overrides survive, and appearance CRUD/reset/import changes no source or beam setup. |
+| [ ] | R13 | HOLD is default on install/migration. The last presented image remains stable without decay, pan/zoom/reset changes no live tuning, BLACK and mode switching preserve controls/image, and resume joins current input without backlog. Transport truth, source invalidation, process death and owner/HDR recreation are covered. |
+| [ ] | R14 | The complete startup decision table passes real fresh-launch, surviving-owner, cancellation, denial, missing target/input and stale-callback cases. Authorized root starts with no app/projection dialog. Imports stay inert. Resume/rotation/permission return do not restart the chain. |
+| [ ] | R15 | Each numbered section has an independent Astra route/effort/commit/round/score/evidence receipt, or an exact route blocker. Sub-8 reviews get correction up to four total passes. Carried gaps never waive acceptance or release gates. |
+| [ ] | R16 | Preset CRUD, coherent apply/undo, divergence, restrained curated setups, versioned/duplicate/malformed imports and rapid-cycle guard work. No source/theme/grant side effect occurs. Held images and remote-owned capability boundaries remain truthful. |
+| [ ] | R17 | Actual owner/route/format and measured flow/silence/clipping distinguish unavailable data, consent, failures and intentional pause. Per-input partial loss and stale-owner fencing work. Opening/refresh adds no permission, source, recording or networking action and retains no history. |
+
+Integration requires five repeated lifecycle-owner cycles and a 30-minute combined-feature soak. Check audio continuity, bounded buffers, post-warmup memory, frame pacing, thermal behavior, and complete teardown. Verify same-package settings survival and the final installed APK's hash, signer, package, version, and source identities. Report missing API 29/accessory/panel evidence explicitly.
 
 ## Release gate
 

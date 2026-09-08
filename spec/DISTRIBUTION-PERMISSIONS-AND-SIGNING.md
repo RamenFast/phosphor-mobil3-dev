@@ -43,17 +43,20 @@ Allowed manifest permissions must map to a supported feature:
 | foreground service | Active playback and capture |
 | media playback FGS | Background local or remote playback |
 | media projection FGS | User-approved playback capture |
+| microphone FGS | Actual service-owned microphone input, including optional visualization mixing |
+| `SYSTEM_ALERT_WINDOW` | Explicitly enabled floating HUD |
+| contextual Bluetooth access | Enumerating and routing a selected supported Bluetooth microphone |
 | `RECORD_AUDIO` | Microphone and playback-capture `AudioRecord` |
 | `WAKE_LOCK` | Keep the display awake only while a playback or capture source is live |
 | notification listener | Optional local media metadata, only if retained and disclosed |
 
 `POST_NOTIFICATIONS` remains only if a tested user flow needs a runtime grant.
 
-Forbidden production access includes Binder authority permissions, package management, Shizuku, ADB, overlay, accessibility, root, privileged capture, advertising ID, and installation ID.
+Forbidden production access includes Binder authority permissions, package management, Shizuku, ADB product sidecars, accessibility authority, advertising ID, and installation ID. Hidden opt-in root capture and floating HUD are approved under `EXPANSION.md`. Root capture requires a measured foreground-service declaration for its real role, not a fictitious projection token. No helper exposes arbitrary commands or exported control IPC. Permission and component scanners use exact permitted entries rather than a blanket root/overlay string ban.
 
-`WAKE_LOCK` must not create a general never-sleep mode. The visible scope keeps its surface and window awake only while an actual source is live. Start and focus return reassert current source state, not unconditional wake flags. The flags clear after source stop and when the Activity stops.
+Ordinary source wake remains tied to actual live owners. The separate, off-by-default brightness pin may keep only the full foreground app window awake during pause or no-source use. It uses the window brightness override, never global brightness settings, and releases ownership outside full-app foreground. HUD/PiP cannot acquire that exception.
 
-Each actual playback or capture owner may hold one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. PlaybackService owns local or remote playback, CaptureService owns projection capture, and the existing Activity owns microphone capture. A capture metadata mirror is not an owner. The shared platform wrapper creates one lock per owner and narrowly suppresses the deprecated constant there. It must not use a wake-up flag or change system brightness or timeout settings.
+Each actual playback or capture owner may hold one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. PlaybackService owns local or remote playback and CaptureService owns projection capture. Microphone ownership transfers from the existing Activity to a real service under the expansion contract. A capture metadata mirror is not an owner. The shared platform wrapper creates one lock per owner and narrowly suppresses the deprecated constant there. It must not use a wake-up flag or change system brightness or timeout settings.
 
 Pause, end, error, revocation, stop, destruction, and replacement release wake when that source ceases to be live. Repeated cleanup is idempotent. A destroyed owner cannot reacquire from a delayed callback. Acquisition or release failure is reported locally without claiming that PowerManager succeeded. Existing source update paths may retry. Picture-in-picture and background linger do not own wake state. Host policy and fake-lock tests do not replace Android screen timeout and sleep acceptance.
 

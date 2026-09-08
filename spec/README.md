@@ -23,6 +23,7 @@ Historical material can explain why code exists. It cannot restore removed scope
 - `EXPERIENCE.md`: interaction, motion, rotation, and visible-state rules.
 - `AUDIO-AND-CONNECTIVITY.md`: local, capture, microphone, and PC relay contracts.
 - `DISTRIBUTION-PERMISSIONS-AND-SIGNING.md`: package, build, permissions, signing, and release identity.
+- `EXPANSION.md`: approved R01–R17 state, ownership, migration, and interaction contracts.
 - `ACCEPTANCE.md`: observable release gates.
 
 ## Requirement terms

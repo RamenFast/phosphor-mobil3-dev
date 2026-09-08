@@ -1,0 +1,142 @@
+# Expanded mobile instrument contracts
+
+spec-version: mobile-expansion-1
+drift: 17
+compile-count: 0
+
+This source implements Ben's accepted R01–R17 direction. The canonical execution order remains in `MOBILE-EXPANSION-PLAN.md`. The execution ledger records implementation, real acceptance, and critiques separately. Drift counts unaccepted R requirements, not test failures. Do not lower it from a build or review score alone.
+
+## Vision
+
+The same truthful beam moves between the full app, PiP, and a floating HUD. Ben can inspect a paused image, recall an instrument setup, and understand a dark beam without turning the instrument into a dashboard. Added power remains opt-in, visible while active, private, and recoverable.
+
+## Ownership
+
+- One logical source publishes visual samples. Local playback retains the existing sample-locked audible path.
+- Standard and root capture are alternative everything-playing backends, not separate product flavors.
+- Playback-plus-microphone has two readers, bounded input buffers, and one mixer producer. Mixing changes visualization only.
+- Stop acknowledgement precedes source replacement. Reader, task, source, and helper generations reject retired callbacks.
+- One active presentation surface belongs to full app, PiP, or HUD. Surface destruction rechecks owner/generation before touching the native surface.
+- Source transport, user display pause, and lifecycle render suspension are separate states.
+- A surviving real service can be rebound. Activity recreation does not create a new source, projection token, or permission chain.
+
+## Settings and migration
+
+Use direct typed persistence rather than a command bus. Keep the accepted PiP, linger, rotation, gain, grid, beam-energy, and other defaults unless explicitly changed here.
+
+Existing `hud_mode` controls in-app information presentation and retains its accepted AUTO default. The new floating HUD is a distinct off-by-default feature. Do not repurpose `hud_mode` or treat theme glass as overlay access.
+
+| Setting | Default and domain | Storage |
+|---|---|---|
+| Pause presentation | HOLD or BLACK, default HOLD | Portable |
+| Default source | NONE until explicitly configured | Portable source kind, private target stays local |
+| Automatic permission popup | Off | Portable, imported activation needs one local confirmation |
+| Root capture | Hidden and off | Local opt-in, never an imported authorization |
+| Floating HUD | Off | Preference only, not a grant or running service |
+| HUD background | Explicit SOLID or TRANSPARENT | Portable |
+| Include microphone | Off | Preference only, not a recording grant |
+| Microphone input | Built-in by default, explicit accessory when selected | Private device identity stays local |
+| Mix levels | Independently bounded playback and mic visualization levels | Portable, no speaker-volume effect |
+| HDR | Off | Requested preference, active capability is runtime-only |
+| Foreground brightness pin | Off | Portable, no global brightness write |
+| Custom colors | Up to six RGB slots, independent selected membership | Portable |
+| Color order | Ordered unless shuffle is enabled | Portable |
+| Generated color / random interval | Independent off-by-default modes | Portable |
+| Cycle | Preserve three-second TIMER default, 0.1–60 seconds | Portable |
+| Appearance | AMOLED on clean install, preserve existing saved look | Portable |
+| Instrument presets | Named explicit beam-setting records | Portable and versioned |
+| Held image / inspection | No persisted image or transform | Transient bounded memory |
+| Signal check | On demand, closed initially | Transient observations only |
+
+The expanded archive uses `phosphor.settings/2` and retains a strict `phosphor.settings/1` reader. Preserve the existing one-MiB input limit, checksum contract, omitted-key semantics, and whole-payload validation. Old three-color arrays migrate losslessly. Count, RGB components, and selected membership validate together.
+
+Imports never start capture, request root, activate HUD, open a permission dialog, or dial a relay. They carry no grants, projection tokens, runtime health, private device/host/media identities, or inspection images. Imported automatic-start behavior requires one local confirmation before its first activation, not repeated confirmations after local approval.
+
+Before implementing each schema owner, record its exact field names, legal ranges, migration, and test fixtures here. Do not serialize all preferences into presets or copy runtime state into archives.
+
+## Root playback capture [R01]
+
+The hidden bestiary reveals the root switch. Ordinary startup with root off neither probes nor requests root. Initial enablement explains and requests real root-manager authorization.
+
+Package and version one fixed-purpose helper. Launch it from writable app/data storage and use private PCM/status IPC. Do not expose arbitrary shell execution, control endpoints, unsolicited networking, or audio recordings. Do not write system/boot directories, patch boot, remount, disable SELinux, install a persistent root service, or use LSPosed.
+
+Prefer AudioPolicy loopback-with-render. If REMOTE_SUBMIX is needed, prove local monitoring, no feedback, and complete route restoration. Root success and manager installation are not audio acceptance. Test real PCM and audible output on the target, including ordinary and opted-out sources. Label unsupported/offloaded/protected/OEM cases without claiming universal capture.
+
+Model denial, revocation, helper death, unsupported routing, cancellation, and bounded shutdown. A root session declares its actual foreground-service role rather than claiming projection consent. A healthy already-authorized root playback-only start needs no projection or redundant app recording dialog. Failure offers retry or an explicit standard-capture choice, never silent fallback.
+
+## Microphone and mixing [R09]
+
+Enumerate available built-in, wired, USB, SCO, and BLE inputs. Negotiate supported formats and convert mono/rates to the native stereo contract. Verify the actual routed device after start. Contextual Bluetooth permissions and communication routing cannot become unconditional startup actions.
+
+Explain quality/output changes before initial Bluetooth activation. Restore temporary audio mode/routes after stop. Losing an explicitly selected device reports that device unavailable, not a silent switch to a different microphone.
+
+Ongoing microphone input has a real service owner, recording indication, correct FGS type/permission, and while-in-use startup behavior. The composite mixer aligns timestamps, corrects rate/drift, bounds latency/buffering, and protects against clipping. A failed optional mic leaves healthy playback capture flowing with an explicit partial-input state. Mixing never feeds the speaker.
+
+## Presentation, HUD, pause, HDR, and brightness [R02, R05, R06, R13]
+
+The user-started HUD provides drag, resize, close, return-to-app, and compact source/transport actions. Obtain real overlay access. Keep touches outside its bounds usable. Active HUD mode takes precedence over automatic PiP. Lock, revocation, and dismissal retire presentation according to source/linger ownership.
+
+TRANSPARENT requires actual SurfaceView/swapchain alpha and premultiplied shared-renderer output. Fading an opaque rectangle is not transparency. Hidden surfaces/chrome stop render and animation work.
+
+HOLD retains the last fully presented beam frame before transport retirement can empty it. Its decay, deposited samples, displayed cycle, and geometry stop changing. Pan/zoom/reset affect only inspection. Live uncontrollable inputs show `display held · source live`. Local pause still pauses audio, and remote/capture commands still require real capability/acknowledgement.
+
+BLACK clears the scope once, including a black scope region on a transparent HUD. Controls remain available. Switching HOLD/BLACK retains the same in-memory pause image and does not change transport. Rotation and app/PiP/HUD transfers preserve the image with bounded resources. Process death or absent history shows black and `no held frame`. Source stop/replacement invalidates the image. Resume joins the current timeline without draining a saved capture backlog into the display.
+
+HDR requires real FP16 linear-scRGB presentation and compositor evidence. Linear output bypasses manual SDR gamma encoding. Keep black, controlled emission, readable SDR chrome, and the unchanged SDR path. Reconfigure safely across owner/display changes and HDR/SDR held-image transfers. Report requested versus active HDR and a concrete fallback reason. Advertised capabilities and screenshots alone do not prove panel luminance or transparent-HDR support.
+
+Brightness pin uses only the full foreground app window's `screenBrightness=1.0` and keep-awake flag, including pause/no-source. Restore `BRIGHTNESS_OVERRIDE_NONE` outside that ownership or when disabled. Never change global brightness/auto-brightness or brighten another app through HUD/PiP. Respect thermal, battery, dimming, and static-image exposure limits. Do not poll to fight the system.
+
+## Light and instrument presets [R07, R08, R16]
+
+Each saved color can be edited or removed independently from selection. One selected color is solid. Zero selected colors returns to explicit preset mode. Shuffle uses selected saved slots without immediate repetition when at least two distinct slots are selected.
+
+Generated colors, saved-slot order, and random TIMER duration are separate controls. Generated color owns color selection while enabled but retains the inactive saved order. Rust owns the clock and random decisions at leg/track boundaries, never per frame. TIMER interpolates, TRACK steps, and interval controls are inactive in TRACK. Preserve the rapid-cycle acknowledgement across range edits, imports, presets, and mode changes.
+
+Instrument presets include enumerated mode, geometry, gain/auto-gain, focus, beam energy, glow, color slots/selection, cycle/randomization, and related beam settings. They exclude source/transport, mic routing/mixing, grants, root/startup, private targets, appearance, HDR, brightness, and inspection transforms. Use versioned records rather than arbitrary preference maps.
+
+Provide create/save/update/duplicate/rename/delete and explicit apply. Editing current tuning does not mutate saved records. Show divergence from a recalled setup. Validate a whole snapshot before applying it and retain immediate undo. Failure cannot partially change the instrument. Import is inert and handles duplicate names explicitly. Curated setups have validated, restrained defaults. HOLD keeps its image while a preset changes the live setup used on resume. Remote-owned controls remain honestly unavailable unless the existing protocol supports them.
+
+## Signal check [R17]
+
+Opening signal check observes existing owners without starting readers, requesting permissions, changing source, or dialing a relay. Show selected/actual source/backend, requested/routed mic, negotiated rate/channels/format, per-input contribution, measured level/peak/clipping, sample freshness, and reader/link state.
+
+Distinguish missing measurement from measured zero, consent/startup from flow, silence from stall, and intentional display pause from transport pause. Never infer DRM or opt-out from silence alone. Existing retry/grant/route/source actions provide recovery. Refresh at a bounded visible-only UI rate, with no audio/behavior history.
+
+Worked example: `Everything playing › root · 48 kHz stereo · samples arriving · display held`. Every numerical label must come from actual negotiation or measurement.
+
+## Settings, themes, motion, and manual [R03, R04, R10, R11, R12]
+
+Opening gestures remain unchanged. Downward dismissal has progressive resistance and minimum deliberate travel before a fast flick qualifies. Only intentional header/top-boundary dragging arms dismissal. Leftover flings, programmatic scroll, sliders, and expansion animations do not. Preserve slow accessible dismissal, reversal/cancellation, Back/close, and other sheets.
+
+Expandable full-width settings rows use meaningful glyphs, headings, live summaries, and chevrons. Group Signal & Startup, Beam & Light, Display & HUD, Motion & Performance, Appearance, and About & Manual. Multiple sections can remain open. Preserve scroll, header anchoring, expansion, and focus across theme/rotation. Collapsed controls leave accessibility focus.
+
+Light, Dark, Glass, and AMOLED are curated appearances over one model/editor, not separate UIs. Preserve every legacy room and explicit override as an equivalent saved appearance. Appearance CRUD/reset affects no source or beam setting. Keep AMOLED clean defaults and true black. Glass uses legible backplates and an opaque fallback when needed. Theme glass is not HUD transparency.
+
+Use flat aligned rows, sharp forms, hairline separators, meaningful depth, and beam-first layouts. Provide at least 48 dp targets, 4.5:1 normal-text contrast, and 3:1 large-text/essential-boundary contrast. Check portrait, landscape, multi-window, HUD, and large fonts. Animation depicts actual state and obeys lifecycle, surface/component visibility, and reduced motion.
+
+The local terminal-style manual is indexed/searchable and covers every source, feature, consent, and recovery. Preserve five-tap discovery and bestiary characters. The turtle has a legible smile and tail. Include at least 24 distinct meme/bestiary entries or contextual responses. No shell, remote feed, telemetry, or administration protocol is added.
+
+## Default-source startup [R14]
+
+A configured default is not last-used source. A fresh launch is a new user app/task startup, including after process death, not resume, rotation, unlock, permission return, picker return, or HUD handoff.
+
+| Condition | Behavior |
+|---|---|
+| No configured default | No automatic source, access request, root probe, or network connection |
+| Real source owner survives | Rebind without restart or new projection token |
+| Default authorized | Start directly regardless of automatic-popup setting |
+| Missing required consent, popup off | Show inline grant/start action |
+| Missing required consent, popup on | One serialized relevant request chain after Activity visibility |
+| Healthy authorized root everything-playing default | Direct root start without projection or redundant recording dialogs |
+| Root failure | Explicit error, retry, or standard-capture choice without silent fallback |
+| Denial/cancellation/source replacement | Retire this launch chain and reject delayed callbacks |
+
+Fence callbacks by task, launch, and source generation. Revalidate local file/folder/relay access without unsolicited pickers or random fallback hosts. Keep targets private. A surviving service remains the owner.
+
+Root-manager consent cannot be fabricated or promised away. Optional ungranted mic mixing does not block healthy root playback: start playback-only and show mic unavailable with explicit enablement. Other required special access uses its real platform flow. Retain recording indicators, service obligations, and a visible stop action. Prompt-free is not covert capture.
+
+## Acceptance and critique [R15]
+
+`spec/ACCEPTANCE.md` and the execution ledger map every requirement to host and exact-device evidence. Each numbered implementation section receives an independent GPT Astra critique with route, effort, source identity, round, score, evidence, and disposition. Four rounds means four total reviews. A score of 8 ends corrective review early but never replaces missing functional/privacy/device evidence.
+
+Blocked work states the exact bottleneck, evidence, alternatives tested, useful verified result, and smallest next step. Continue independent work without claiming the missing outcome.

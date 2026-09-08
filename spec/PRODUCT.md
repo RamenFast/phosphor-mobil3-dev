@@ -19,6 +19,7 @@ Phosphor must support:
 - local files and recursive folder trees
 - microphone input
 - Android playback capture
+- explicitly enabled, authorized root playback capture as an alternative backend for everything playing
 - user-selected PC relay hosts, files, and recursive folder trees
 
 Each source must publish a clear state: unavailable, waiting for consent, starting, flowing, silent, stalled, reconnecting, or stopped where applicable.
@@ -27,7 +28,7 @@ A folder is a tree. Local and relay folder playback must visit supported audio d
 
 ## 3. Renderer and playback
 
-The Rust renderer remains the visual authority inside one Android `SurfaceView`. Compose owns surrounding chrome and user interaction.
+The Rust renderer remains the visual authority inside one active Android presentation surface. Full app, PiP, and floating HUD transfer that ownership without duplicating the renderer or source. Compose owns surrounding chrome and interaction. `EXPANSION.md` defines surface generations and user pause separately from lifecycle suspension.
 
 Local playback must remain sample-locked to the scope input. MediaSession controls, audio focus, noisy-route handling, background playback, and picture-in-picture must remain functional.
 
@@ -59,7 +60,7 @@ These keys must survive same-package updates and settings archive round trips. P
 
 A clean install must seed the accepted instrument defaults: AMOLED, auto-gain and fullscreen on, grid off, mode 1, beam 7, range 6 through 20, a 3-second cycle, automatic HUD and band, focus 0.3, gain 1.8332275, geometry 0.6, and scope rotation lock. The legal cycle range is 0.1 through 60 seconds. Unknown custom RGB values must remain absent with `custom_count=0`.
 
-Removing Phosphor from recents must stop local, relay, capture, and microphone sources when `linger_background=false`. When linger is enabled, the product may retain only a source that already has a real service owner. It must not claim that an activity-owned microphone remains alive.
+Removing Phosphor from recents must stop local, relay, capture, and microphone sources when `linger_background=false`. When linger is enabled, the product may retain only a source that already has a real service owner. The approved service-owned microphone expansion must preserve this rule. Until that owner is implemented and verified, an activity-owned microphone cannot claim background survival.
 
 ## 5. Privacy
 
@@ -78,7 +79,7 @@ A fresh install must remain network-idle until the user invokes a remote feature
 
 ## 6. Permissions
 
-Phosphor requests a permission only for a visible feature initiated by the user.
+Phosphor requests permission only for a visible user-selected feature or its explicitly configured default-source startup. A fresh unconfigured install requests no optional access. The startup rules in `EXPANSION.md` serialize missing-access requests and respect cancellation.
 
 - `RECORD_AUDIO` supports microphone and playback capture.
 - MediaProjection consent supports playback capture and is requested for every session required by Android.
@@ -86,7 +87,7 @@ Phosphor requests a permission only for a visible feature initiated by the user.
 - Notification permission must be absent if the app does not need it. Otherwise the app must request it contextually.
 - Microphone hardware must be optional.
 
-The product does not request root, Shizuku, ADB, overlay, accessibility, privileged audio, or package-management access.
+Hidden opt-in root playback capture and user-started overlay access are approved under `EXPANSION.md`. Root-manager authorization is separate from Android permissions. Bluetooth and microphone service permissions map only to their selected input feature. The product still excludes Shizuku, ADB sidecars, accessibility authority, package management, and runtime administration.
 
 ## 7. Remote playback
 
@@ -122,9 +123,9 @@ The following items are outside this stage:
 
 - relay authentication redesign
 - ProjectM
-- root or privileged capture
 - Shizuku and ADB sidecars
 - unannounced future core features
-- speculative UI systems not already implemented
+- calibration playground, beam image export, and session timer
+- UI systems outside the approved expansion
 
 Deferred work must not leave active services, permissions, dependencies, settings, or product promises behind.

@@ -2,6 +2,8 @@
 
 **A comprehensive, contained roadmap for Ben. Written 2026-09-05. Planning only, not implemented.**
 
+**Authority update, 2026-09-08:** Ben approved [MOBILE-EXPANSION-PLAN.md](../../../MOBILE-EXPANSION-PLAN.md). Its [execution decision](../../../decisions/2026-09-08-mobile-expansion-execution.md) supersedes this roadmap's quiet-device boundary and unbriefed-feature assumptions for that work. Preserve the roadmap as context. Its unrelated phases are not prerequisites for the expansion. New execution status belongs in the [expansion ledger](../mobile-expansion/EXECUTION.md).
+
 The goal is simple: sound moves, the beam answers, and neither the controls nor a lifecycle race lies about what is happening.
 We keep Phosphor's existing Android/Rust instrument. We make failures easier to catch before attempting broad structural change.
 

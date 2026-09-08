@@ -24,11 +24,19 @@ The beam remains truthful. It does not invent frames, claim audio that Android w
 
 ## Capture without deception
 
-Android playback capture begins only after the user approves the system prompt. Phosphor asks for the complete display where Android supports that request.
+Standard Android playback capture begins only after the user approves the system prompt. Phosphor asks for the complete display where Android supports that request.
 
 Some applications and protected media opt out of capture. Silence from those sources is a platform boundary, not a connection success claim.
 
-Phosphor does not use root, Shizuku, ADB, or privileged capture to bypass that boundary.
+Ben may explicitly enable a hidden root playback backend on an already-rooted handset. It needs real root-manager authorization and measured audio-policy support. It preserves audible playback without system or boot changes, LSPosed, Shizuku, or an ADB product sidecar. It does not promise universal protected-media capture.
+
+An authorized configured source may start directly on a fresh user launch. Missing Android access follows the user's automatic-permission preference. First authorization is not suppressed, denial is respected, and recording retains visible status and a stop action.
+
+## Carrying and inspecting the beam
+
+A floating HUD carries the same instrument above other apps. True transparency reveals what is below without duplicating the source or hiding active recording. Only visible presentation animates.
+
+Pause normally holds the last presented frame for inspection. Its label distinguishes stopped transport from a held display over a live source. The optional BLACK presentation is explicit. Presets shape the instrument without changing its source, and signal check explains measured reality without starting another recording.
 
 ## Remote playback inside the user's walls
 
@@ -46,7 +54,7 @@ Local settings exist to restore the instrument. Remote host data exists to make 
 
 ## One product
 
-Phosphor ships as one Play-safe application. Debug builds may expose developer receipts, but production behavior does not split into public and privileged personalities.
+Phosphor remains one application with debug and release builds. Debug builds may expose developer receipts. Production behavior does not split into public and privileged flavors. Expanded root and overlay behavior requires current distribution review before any Play-safety claim.
 
 Developer tools may build, install, test, and inspect Phosphor. They do not create an agent authority inside the product.
 
@@ -58,7 +66,7 @@ An archived plan is not a promise. A source file that happens to remain is not a
 
 ## Non-negotiable invariants
 
-- The picture follows the audible source.
+- Live presentation follows its selected source. An intentional held image is labeled and never presented as current audio.
 - The UI states the difference between silence, disconnection, and unavailable capability.
 - Consent precedes capture.
 - The app makes no unsolicited network connection.

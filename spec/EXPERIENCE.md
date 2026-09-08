@@ -1,5 +1,7 @@
 # Experience specification
 
+The approved R01–R17 extension in `EXPANSION.md` defines HOLD/BLACK inspection, HUD, six-color/random light, presets, signal check, expandable settings, four curated appearance entry points, visible-only motion, HDR, brightness pin, and startup surfaces. Those explicit newer behaviors supersede older limits below while preserving accepted defaults and settings opening gestures.
+
 ## 1. Instrument hierarchy
 
 The signal is the primary surface. Controls must not divide the display into a permanent dashboard.

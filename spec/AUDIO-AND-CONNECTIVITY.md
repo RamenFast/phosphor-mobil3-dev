@@ -9,7 +9,7 @@ Phosphor supports four source classes:
 3. Android playback capture.
 4. PC relay playback.
 
-One source owns the audible and visual path at a time. Source changes must release the previous owner before the next owner flows.
+One logical source owns the visual input at a time. Local playback remains sample-locked to its audible output. Playback-plus-microphone is one composite visualization source with two bounded reader inputs and one mixer producer, not two independent writers. Source changes acknowledge retirement before replacement flows. `EXPANSION.md` defines the expanded backend and mixer contracts.
 
 ## 2. Local playback
 
@@ -29,7 +29,7 @@ Auto-gain's new-item boundary uses the existing serial request and event owners.
 
 ## 3. Microphone
 
-Microphone input requires `RECORD_AUDIO`. The app must request permission after an explanatory user action.
+Microphone input requires `RECORD_AUDIO`. Request it after an explanatory user action or the configured default-source permission chain. Root authorization does not grant microphone or Bluetooth access.
 
 Microphone hardware is optional. Devices without a microphone may still install and use local or remote sources.
 
@@ -41,7 +41,7 @@ When stops overlap, an older completion must not replace the latest mic request'
 
 Playback audio capture requires Android 10, API 29.
 
-The capture path uses:
+The standard capture path uses:
 
 - `MediaProjectionManager`
 - user consent for each required session
@@ -51,7 +51,7 @@ The capture path uses:
 
 The capture configuration includes media, game, and unknown audio usages.
 
-Capture works only when the source application and Android policy allow it. Protected or opted-out content may produce silence. Phosphor must report that limitation without claiming a broken connection.
+Standard capture works only when the source application and Android policy allow it. Protected or opted-out content may produce silence. Measured silence alone cannot identify a particular opt-out or protection mechanism. The opt-in root alternative requires separate measured backend acceptance and must not impersonate projection consent.
 
 Captured transport and metadata must mirror the active Android MediaSession without scraping notification text. Playing, buffering, paused, and resumed states must drive an honest in-app glyph. Seek is available only when the session advertises `ACTION_SEEK_TO` and supplies a real duration. A failed, absent, or superseded session must not leave a stale title, artist, seek rule, or transport face.
 
@@ -129,6 +129,6 @@ This cleanup may strengthen documentation and boundary tests. It must not replac
 
 ## 10. Excluded capture paths
 
-The product does not use Visualizer API, root, Shizuku, ADB sidecars, privileged permissions, AudioPolicy injection, or DRM bypass.
+The product does not use Visualizer API, Shizuku, an ADB product sidecar, or DRM bypass. The approved fixed-purpose root AudioPolicy capture backend is the narrow exception to the former privileged-capture exclusion. It must preserve output and meet `EXPANSION.md` without system, boot, mount, or SELinux changes.
 
 Archived experiments do not authorize these paths.
