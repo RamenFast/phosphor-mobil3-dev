@@ -22,7 +22,7 @@ mkdir -p "$WORK/classes"
 source "$REPO/scripts/tests/packaged-manifest-fixtures.sh"
 prepare_packaged_fixtures
 
-printf '<manifest package="dev.phosphor.mobil3"><application/></manifest>\n' > "$WORK/AndroidManifest.xml"
+printf '<manifest xmlns:a="http://schemas.android.com/apk/res/android" package="dev.phosphor.mobil3"><uses-sdk a:minSdkVersion="29" a:targetSdkVersion="36"/><application/></manifest>\n' > "$WORK/AndroidManifest.xml"
 printf 'releaseRuntimeClasspath\n+--- androidx.core:core-ktx\n' > "$WORK/dependencies.txt"
 mkdir -p "$WORK/clean" "$WORK/split" "$WORK/bad" "$WORK/symlink"
 # These strings legitimately occur in dependency data tables and framework
@@ -57,6 +57,7 @@ printf '@ classes.dex\n@=/absolute\n' | zipnote -w "$WORK/absolute-path.aab"
 
 cat > "$WORK/expanded.xml" <<'XML'
 <manifest xmlns:a="http://schemas.android.com/apk/res/android" package="dev.phosphor.mobil3">
+  <uses-sdk a:minSdkVersion="29" a:targetSdkVersion="36"/>
   <uses-permission a:name="android.permission.FOREGROUND_SERVICE"/>
   <uses-permission a:name="android.permission.FOREGROUND_SERVICE_SPECIAL_USE"/>
   <uses-permission a:name="android.permission.SYSTEM_ALERT_WINDOW"/>

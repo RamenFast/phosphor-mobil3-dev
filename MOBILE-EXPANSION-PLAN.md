@@ -99,8 +99,9 @@ Execute sections in order. Investigate hardware-dependent feasibility early, the
 ### 2. Prove and integrate root capture (R01)
 
 - Inspect the target Android build, root manager, SELinux context, audio policy, routes, and existing authorization. Do not infer backend support merely from `su` succeeding.
-- Prototype a packaged fixed-command helper launched with su/app_process from writable app/data storage. Require no LSPosed, system/boot writes, remount, boot patch, reboot persistence, or global SELinux disable.
+- Prototype a packaged fixed-purpose app_process helper with an authorized session supervisor. Store sealed DEX in private app data, but execute the native bootstrap from installed app-nonwritable code under the API 29 execution rule. Require no LSPosed, system/boot writes, remount, boot patch, reboot persistence, or global SELinux disable.
 - Test privileged AudioPolicy loopback-with-render first, keeping audio audible on the phone. Investigate actual policy options against ordinary and opted-out applications and the OEM implementation.
+- Apply the source-backed API limits: privileged capture is at most 16 kHz mono PCM16 and does not bypass NO_SYSTEM_CAPTURE. Normalizing into the stereo ring must not claim recovered stereo. Initial feasibility captures only controlled Phosphor-UID MEDIA/GAME fixtures. Existing KernelSU Default/inherited-profile evidence is a prerequisite because grant applies the provider's namespace profile. Do not modify it.
 - Treat REMOTE_SUBMIX as a distinct candidate. Upstream scrcpy documents that it may divert audio away from the phone. If needed, prove a feedback-free local monitoring route and full route restoration before accepting it.
 - Normalize PCM and transfer through private IPC to the existing scope input. Package and version the helper with the app. No exported control endpoint, arbitrary shell command interface, unsolicited network traffic, or disk audio recording.
 - Integrate generation-tagged source changes, metadata mirroring, reader failures, helper death, cancellation, denial/revocation, bounded shutdown, and acknowledgement before replacement.

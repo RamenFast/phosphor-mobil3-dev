@@ -1,6 +1,6 @@
 # Expanded mobile instrument contracts
 
-spec-version: mobile-expansion-1
+spec-version: mobile-expansion-2
 drift: 17
 compile-count: 0
 
@@ -58,9 +58,15 @@ Before implementing each schema owner, record its exact field names, legal range
 
 The hidden bestiary reveals the root switch. Ordinary startup with root off neither probes nor requests root. Initial enablement explains and requests real root-manager authorization.
 
-Package and version one fixed-purpose helper. Launch it from writable app/data storage and use private PCM/status IPC. Do not expose arbitrary shell execution, control endpoints, unsolicited networking, or audio recordings. Do not write system/boot directories, patch boot, remount, disable SELinux, install a persistent root service, or use LSPosed.
+Package and version one fixed-purpose audio helper. Its framework DEX lives sealed and read-only in private app data. Its native bootstrap executes from the installed, app-nonwritable native-library directory, not writable app home. Android's API 29 execution restriction makes this distinction necessary. Use private PCM/status IPC. Do not expose arbitrary shell execution, control endpoints, unsolicited networking, or audio recordings. Do not write system/boot directories, patch boot, remount, disable SELinux, install a persistent root service, or use LSPosed.
+
+The normal app never becomes root. A session-scoped native supervisor acquires only the original app UID's existing supported provider grant. It launches one fixed framework helper, owns privileged termination and reap, and exits with that session. Neither process daemonizes. Match exact protocol/build/identity, bound all pipes and deadlines, and stop on owner EOF, heartbeat loss, revocation or helper failure. Cleanup uncertainty prevents replacement. Do not rely on the unprivileged app killing an already-root child.
+
+The initial KernelSU trial requires the already-observed Default profile with inherited namespaces. Provider grant itself applies the profile's namespace choice. Do not change the profile or infer no-remount merely from Phosphor containing no mount call. Unsupported provider/profile state is a concrete compatibility failure, not a reason to modify security configuration.
 
 Prefer AudioPolicy loopback-with-render. If REMOTE_SUBMIX is needed, prove local monitoring, no feedback, and complete route restoration. Root success and manager installation are not audio acceptance. Test real PCM and audible output on the target, including ordinary and opted-out sources. Label unsupported/offloaded/protected/OEM cases without claiming universal capture.
+
+The inspected API 29–36 privileged playback flag permits at most 16 kHz mono public linear PCM with at most two bytes per sample. The initial implementation uses PCM16. It can bypass projection/manifest opt-out, but not `NO_SYSTEM_CAPTURE` or `ALLOW_CAPTURE_BY_NONE`. Report actual input format separately from normalized 48 kHz stereo transport. Duplicated mono is not recovered stereo. Use the registered tagged mix with explicit `LOOP_BACK | RENDER`, not an untagged global submix. Initial tests match only the original Phosphor UID and controlled MEDIA/GAME fixtures, never actual calls or private messages. Suspend testing on communication mode.
 
 Model denial, revocation, helper death, unsupported routing, cancellation, and bounded shutdown. A root session declares its actual foreground-service role rather than claiming projection consent. A healthy already-authorized root playback-only start needs no projection or redundant app recording dialog. Failure offers retry or an explicit standard-capture choice, never silent fallback.
 

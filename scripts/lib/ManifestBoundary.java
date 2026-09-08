@@ -116,6 +116,7 @@ class ManifestBoundary {
         var permissions = new HashSet<String>();
         var components = new HashMap<String, Element>();
         int applications = 0;
+        int sdkDeclarations = 0;
         boolean dynamicDeclared = false;
         for (var node : children(root)) {
             String name = attr(node, "name");
@@ -134,9 +135,12 @@ class ManifestBoundary {
                         && exactEnum(attr(node, "protectionLevel"), "signature", merged), "Unapproved permission declaration: " + name);
                     dynamicDeclared = true;
                 }
-                case "uses-sdk" -> require(attr(node, "minSdkVersion").equals("29")
-                    && attr(node, "targetSdkVersion").equals("36") && attr(node, "maxSdkVersion").isEmpty(),
-                    "Wrong Android compatibility declaration");
+                case "uses-sdk" -> {
+                    require(++sdkDeclarations == 1, "Duplicate Android compatibility declaration");
+                    require(attr(node, "minSdkVersion").equals("29")
+                        && attr(node, "targetSdkVersion").equals("36") && attr(node, "maxSdkVersion").isEmpty(),
+                        "Wrong Android compatibility declaration");
+                }
                 case "uses-feature" -> require(name.equals("android.hardware.microphone")
                     && attr(node, "required").equals("false"), "Unapproved or required hardware feature");
                 case "application" -> {
@@ -168,6 +172,7 @@ class ManifestBoundary {
             }
         }
         require(applications == 1, "Expected one application");
+        require(!merged || sdkDeclarations == 1, "Merged manifest requires one Android compatibility declaration");
         require(permissions.contains(DYNAMIC) == dynamicDeclared, "Dynamic receiver signature permission must be declared and used together");
         for (var entry : components.entrySet()) {
             String type = COMPONENTS.get(entry.getKey()).fgs;

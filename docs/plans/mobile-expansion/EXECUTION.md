@@ -11,8 +11,9 @@ Authority: [2026-09-08 execution decision](../../../decisions/2026-09-08-mobile-
 - One beacon at 00:19:40 UTC reported `visible:true` and expired. No repeat beacon was used. The later human confirmation, not expiry or automatic notifications, opened worker routing.
 - Confirmed mapping: `openai-oauth:gpt-6-astra`, explicit `high`, for audio, presentation, experience, and independent critique. The route and enforced model pin were rechecked before spawning.
 - At most two live workers, one implementation writer. Coordinator owns shared files, real device actions, verification, commits, and cleanup.
-- Section 1 independent [round 1 scored 7/10](critiques/section-01-round-01.md). It reproduced a detached-manifest artifact escape and two error-contract defects. Corrections and independent round 2 are required. No expanded app feature is accepted yet.
+- Section 1 [round 1](critiques/section-01-round-01.md) and [round 2](critiques/section-01-round-02.md) each scored 7/10. Round 2 confirmed all first-round corrections, then reproduced missing/duplicate SDK declarations passing artifact checks. The narrow SDK correction and round 3 follow. No expanded app feature is accepted yet.
 - The round 1 critic, two root researchers, and section 1 correction worker are stopped after retained handoffs. The correction worker completed its eight-file patch and released ownership at 01:50 UTC. Coordinator verification precedes the correction commit and independent round 2. Next implementation scope is the fixed packaged root-audio feasibility helper, not product acceptance.
+- At 02:08 UTC `session_skunk_1788833286980_595eb5eac5d15851` became sole implementation writer for the fixed debug helper. It also owns the narrow SDK correction subset. The coordinator does not edit those files. Section 1 reviewer `session_hedgehog_1788833218692_8aebcc68229bc347` finished and was stopped at 02:15 UTC.
 
 ## Baseline and recovery
 
@@ -42,6 +43,8 @@ At 01:21:45 UTC the exact `bf9b8f2` debug probe ran in the normal `untrusted_app
 At 01:32:35 UTC the exact `ff7067e` compatibility probe returned UID 0, exit 0, through the existing KernelSU 3.2.5 provider, initiated by normal app PID 22323/UID 10401. It completed in 210 ms with confirmed pipe/child cleanup, no recording or projection, and unchanged preferences. Installed/readback SHA-256 is `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`, signer unchanged. All 17 probe tests and full Android gates passed. Existing `logcat sulogd` PID 10693 is 15 days old and was not touched. Root command authorization is now proven, but the packaged production helper and PCM are not.
 
 Display metadata advertises HDR10, HLG, and HDR10+. Actual FP16/scRGB application presentation, transparent HDR, and panel luminance remain unproven. Ordinary operation with root disabled on this modified device is not an unmodified non-root OS receipt.
+
+At 02:11 UTC read-only audio preflight showed MODE_NORMAL, speaker selection, no registered Audio Policy Mix, and speaker MUSIC volume 0/15. This newer user state supersedes the old 2/15 receipt. Preserve it. The first muted fixture can prove PCM/routing and teardown, not physical audibility. Baseline output threads were in standby. Both USB and wireless still identified the same S25. No other app or volume was controlled.
 
 The current logcat executable has the previously documented override. Its separately verified compatibility identity probe establishes authorization only. Reuse the noninvasive ignored logd diagnostic for logs. Do not replace the executable or depend on its override in the product.
 
@@ -96,6 +99,10 @@ These checks do not accept any expansion feature or production release. New arti
 ### Section 1 correction verification, 02:05 UTC
 
 The coordinator inspected the eight-file correction and independently ran `scripts/test-play-boundary.sh`, shellcheck, Bash syntax checks, the source gate, `git diff --check`, exact generated-APK hashes, and protected-file hashes. Task `055179nzvw` exited 0 in 77.48 seconds. The suite passed 102 parser cases and 67 packaged/public CLI cases, including actual debug APK rejection with unrelated production XML, real AAPT2 APK and bundletool AAB positives, all C0 bytes, and compilerless Java exit 2. Generated APK SHA-256 remained `31d90be7dd58522148397302f61686806b19e842c4507cfc0d878e02601249d3`. No app build, signing, install or device action occurred in this gate. Raw output is `section1-corrections-coordinator.log` in the private recovery directory. Independent round 2 remains required.
+
+### Section 1 SDK correction verification, 02:20 UTC
+
+The coordinator independently verified the five-file SDK correction after source ownership was released. Task `960508e89v` passed 107 parser cases, 70 real-format/public CLI cases, the original boundary fixtures, shellcheck, source checks, diff checks and exact generated-APK preservation in 83.65 seconds. Missing SDK in actual APK/AAB and duplicate SDK in an actual APK now return exit 4. Source omission remains valid. The artifact hash is unchanged. No app build or install occurred. Raw output is `section1-sdk-coordinator.log` in private recovery. Round 3 must review the correction commit independently.
 
 1. Finish and independently review section 1 corrections. Preserve the real debug-APK/mismatched-XML regression.
 2. Keep normal root-off startup inert and avoid system/kernel/security changes.

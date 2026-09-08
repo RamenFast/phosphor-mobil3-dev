@@ -6,9 +6,10 @@ class ManifestBoundaryTest {
     static int checks;
     static final String NS = "http://schemas.android.com/apk/res/android";
     static final String APP = "dev.phosphor.mobil3";
+    static final String SDK = "<uses-sdk a:minSdkVersion='29' a:targetSdkVersion='36'/>";
 
     static String manifest(String permissions, String attributes, String components) {
-        return "<manifest xmlns:a='" + NS + "' package='" + APP + "'>" + permissions
+        return "<manifest xmlns:a='" + NS + "' package='" + APP + "'>" + SDK + permissions
             + "<application " + attributes + ">" + components + "</application></manifest>";
     }
     static String permission(String name) {
@@ -22,9 +23,12 @@ class ManifestBoundaryTest {
         return "<property a:name='android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE' a:value='User-started local visualization'/>";
     }
     static void test(String name, String xml, String expectedError) throws Exception {
+        test(name, xml, expectedError, true);
+    }
+    static void test(String name, String xml, String expectedError, boolean merged) throws Exception {
         Files.writeString(fixture, xml);
         Exception failure = null;
-        try { ManifestBoundary.check(fixture, true); } catch (Exception error) { failure = error; }
+        try { ManifestBoundary.check(fixture, merged); } catch (Exception error) { failure = error; }
         if (expectedError == null && failure != null) throw new AssertionError(name + ": " + failure, failure);
         if (expectedError != null && (failure == null || !failure.getMessage().contains(expectedError)))
             throw new AssertionError(name + ": expected " + expectedError + ", got " + failure);
@@ -75,7 +79,7 @@ class ManifestBoundaryTest {
         test("sdk23 unapproved permission", manifest("<uses-permission-sdk-23 a:name='android.permission.CAPTURE_AUDIO_OUTPUT'/>", "", ""), "Unapproved permission");
         test("duplicate permission", manifest(permission("INTERNET") + permission("INTERNET"), "", ""), "Duplicate permission");
         test("permission expiry", manifest("<uses-permission a:name='android.permission.RECORD_AUDIO' a:maxSdkVersion='29'/>", "", ""), "cannot silently expire");
-        test("spoofed attribute namespace", manifest(permission("INTERNET"), "", "").replace(NS, "urn:not-android"), "Unapproved permission");
+        test("spoofed attribute namespace", manifest(permission("INTERNET"), "", "").replace(SDK, "").replace(NS, "urn:not-android"), "Unapproved permission");
         test("wrong root element", "<application/>", "Expected manifest root");
         test("namespaced root", manifest("", "", "").replace("<manifest ", "<manifest xmlns='urn:fake' "), "Expected manifest root");
         test("malformed XML", "<manifest><application>", "must start and end");
@@ -101,8 +105,13 @@ class ManifestBoundaryTest {
         test("root empty filter", manifest(special, "", root.replace("</service>", "<intent-filter/></service>")), "intent exposure");
         test("root IPC permission", manifest(special, "", root.replace("a:name=", "a:permission='android.permission.DUMP' a:name=")), "IPC permission");
         test("instrumentation", manifest("", "", "").replace("<application", "<instrumentation a:name='.Runner'/><application"), "manifest element");
-        test("wrong compatibility floor", manifest("<uses-sdk a:minSdkVersion='28' a:targetSdkVersion='36'/>", "", ""), "compatibility declaration");
-        test("declared compatibility", manifest("<uses-sdk a:minSdkVersion='29' a:targetSdkVersion='36'/>", "", ""), null);
+        test("wrong compatibility floor", manifest("", "", "").replace("minSdkVersion='29'", "minSdkVersion='28'"), "compatibility declaration");
+        test("declared compatibility", manifest("", "", ""), null);
+        test("missing merged compatibility", manifest("", "", "").replace(SDK, ""), "requires one Android compatibility declaration");
+        test("duplicate merged compatibility", manifest(SDK, "", ""), "Duplicate Android compatibility declaration");
+        test("source compatibility omitted", manifest("", "", "").replace(SDK, ""), null, false);
+        test("source compatibility declared", manifest("", "", ""), null, false);
+        test("duplicate source compatibility", manifest(SDK, "", ""), "Duplicate Android compatibility declaration", false);
         test("required microphone", manifest("<uses-feature a:name='android.hardware.microphone' a:required='true'/>", "", ""), "hardware feature");
         test("optional microphone", manifest("<uses-feature a:name='android.hardware.microphone' a:required='false'/>", "", ""), null);
         test("unknown shared library", manifest("", "", "<uses-library a:name='com.example.Code' a:required='false'/>"), "shared library");

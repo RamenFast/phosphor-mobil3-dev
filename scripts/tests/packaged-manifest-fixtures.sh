@@ -39,10 +39,13 @@ XML
   sed 's/android:hasCode="false"/android:hasCode="false" android:debuggable="true"/' "$WORK/production.xml" >"$WORK/debuggable.xml"
   sed 's#<application#<uses-permission android:name="android.permission.CAPTURE_AUDIO_OUTPUT"/><application#' "$WORK/production.xml" >"$WORK/permission.xml"
   sed 's/targetSdkVersion="36"/targetSdkVersion="35"/' "$WORK/production.xml" >"$WORK/wrong-sdk.xml"
+  sed '/<uses-sdk /d' "$WORK/production.xml" >"$WORK/no-sdk.xml"
+  sed '/<uses-sdk /p' "$WORK/production.xml" >"$WORK/duplicate-sdk.xml"
+  "$AAPT2" link --manifest "$WORK/duplicate-sdk.xml" -I "$SDK/platforms/android-36/android.jar" -o "$WORK/duplicate-sdk.apk"
   sed 's/foregroundServiceType="mediaProjection"/foregroundServiceType="mediaProjection|microphone"/' "$WORK/production.xml" >"$WORK/role-flags.xml"
   sed 's/protectionLevel="signature"/protectionLevel="signature|privileged"/' "$WORK/production.xml" >"$WORK/signature-flags.xml"
   local kind
-  for kind in production debug debuggable permission wrong-sdk role-flags signature-flags; do
+  for kind in production debug debuggable permission wrong-sdk no-sdk role-flags signature-flags; do
     "$AAPT2" link --manifest "$WORK/$kind.xml" -I "$SDK/platforms/android-36/android.jar" -o "$WORK/$kind.apk"
     "$AAPT2" link --proto-format --manifest "$WORK/$kind.xml" -I "$SDK/platforms/android-36/android.jar" -o "$WORK/$kind-proto.apk"
     mkdir -p "$WORK/$kind-module/manifest"
@@ -79,10 +82,12 @@ expect_boundary() {
 
 check_packaged_fixtures() {
   local format kind member manifest_dir
+  expect_boundary 4 manifest_boundary_violation 'apk duplicate SDK declaration' artifact \
+    --artifact "$WORK/duplicate-sdk.apk" --manifest "$WORK/production.xml" --dependencies "$WORK/dependencies.txt"
   for format in apk aab; do
     if [ "$format" = apk ]; then member=AndroidManifest.xml; else member=base/manifest/AndroidManifest.xml; fi
     expect_boundary 0 '' "$format production, no detached manifest" artifact --artifact "$WORK/production.$format" --dependencies "$WORK/dependencies.txt"
-    for kind in debug debuggable permission wrong-sdk role-flags signature-flags; do
+    for kind in debug debuggable permission wrong-sdk no-sdk role-flags signature-flags; do
       expect_boundary 4 manifest_boundary_violation "$format $kind cannot use unrelated production XML" artifact \
         --artifact "$WORK/$kind.$format" --manifest "$WORK/production.xml" --dependencies "$WORK/dependencies.txt"
     done
