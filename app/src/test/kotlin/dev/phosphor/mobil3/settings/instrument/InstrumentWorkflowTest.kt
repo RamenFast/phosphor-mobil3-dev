@@ -90,7 +90,7 @@ class InstrumentWorkflowTest {
         assertFalse(r.owner.pending)
     }
 
-    @Test fun freshOwnerRetainsRestoreTimeRollbackFailureBeforeAnyPresetRequest() {
+    @Test fun knownActiveOwnerRetainsRollbackFailureAndUsesPersistenceOnlyRetry() {
         val r = Rig(original)
         val failure = r.settings.write {
             r.settings.commit(commit = { false }, publish = { error("No publication after failed commit") }, rollback = { false })
@@ -109,6 +109,117 @@ class InstrumentWorkflowTest {
         assertFalse(r.owner.editsBlocked)
         assertTrue(r.owner.automaticPersistenceAllowed)
         assertEquals(0L, r.sequence)
+    }
+
+    @Test fun retainedRendererAndFreshUiRequireExactRecoveryBeforeSaving() {
+        val r = Rig(original)
+        r.rendered = ambient
+        r.saved = spectral
+        val failure = r.settings.write {
+            r.settings.commit({ false }, { error("No native publication") }, { false })
+        }!!
+        r.owner.persistenceFailed(InstrumentWorkflow.PersistenceFailure(failure.message(), failure.restored))
+        r.owner.restoreUnconfirmed(original)
+        assertTrue(r.owner.restoreRequired)
+        assertFalse(r.owner.automaticPersistenceAllowed)
+        assertThrows(IllegalStateException::class.java) { r.manualFocus(1.7f) }
+        r.owner.apply(spectral)
+        assertNull(r.owner.beginSettingsImport())
+        assertEquals(0L, r.sequence)
+        r.owner.retryPersistence()
+        assertEquals(1L, r.sequence)
+        assertEquals(ambient, r.rendered)
+        assertEquals(spectral, r.saved)
+        assertTrue(r.owner.restoreRequired)
+        assertTrue(r.trace.none { it.startsWith("persist:") })
+        r.admit()
+        assertEquals(original, r.rendered)
+        assertEquals(spectral, r.saved)
+        r.reply()
+        assertEquals(original, r.saved)
+        assertEquals(r.rendered, r.current)
+        assertFalse(r.owner.restoreRequired)
+        assertFalse(r.owner.storageUncertain)
+        assertFalse(r.owner.editsBlocked)
+        assertNull(r.owner.undoSetup)
+        assertNull(r.owner.association)
+        assertTrue(r.trace.indexOf("admit:1:1") < r.trace.indexOf("persist:0"))
+    }
+
+    @Test fun rejectedOrCancelledStartupRestoreDoesNotBecomeStorageOnlySuccess() {
+        for (result in listOf(2, 3, 4)) {
+            val r = Rig(original)
+            r.rendered = ambient
+            r.owner.restoreUnconfirmed(original)
+            r.owner.retryPersistence()
+            r.outcomes[1] = result
+            r.reply()
+            assertTrue(r.owner.restoreRequired)
+            assertTrue(r.owner.editsBlocked)
+            assertFalse(r.owner.automaticPersistenceAllowed)
+            assertEquals(ambient, r.rendered)
+            assertTrue(r.trace.none { it.startsWith("persist:") })
+            assertEquals(result == 4, r.owner.uncertain)
+        }
+    }
+
+    @Test fun startupRecoveryChecksCapabilityAndCannotRunAfterOwnerRetirement() {
+        val r = Rig(original)
+        r.rendered = ambient
+        r.owner.restoreUnconfirmed(original)
+        r.capable = false
+        r.owner.retryPersistence()
+        assertEquals(0L, r.sequence)
+        assertTrue(r.owner.restoreRequired)
+        r.capable = true
+        r.owner.retryPersistence()
+        r.owner.close()
+        assertFalse(r.admit())
+        r.reply()
+        assertEquals(ambient, r.rendered)
+        assertTrue(r.trace.none { it.startsWith("persist:") })
+        r.owner.retryPersistence()
+        assertEquals(1L, r.sequence)
+    }
+
+    @Test fun lateCancelledStartupReplyCannotAcknowledgeReplacementRecovery() {
+        val r = Rig(original)
+        r.rendered = ambient
+        r.owner.restoreUnconfirmed(original)
+        r.owner.retryPersistence()
+        r.owner.settle("Source changed")
+        r.owner.retryPersistence()
+        assertEquals(2L, r.sequence)
+        r.reply(1)
+        assertTrue(r.owner.restoreRequired)
+        assertTrue(r.owner.pending)
+        assertEquals(ambient, r.rendered)
+        r.admit(2)
+        r.reply(2)
+        assertFalse(r.owner.restoreRequired)
+        assertEquals(original, r.rendered)
+        assertEquals(original, r.saved)
+        assertEquals(listOf(1L, 2L), r.released)
+    }
+
+    @Test fun committedRestoreThenStorageFailureRetainsKnownActivePersistenceOnlyRetry() {
+        val r = Rig(original)
+        r.rendered = ambient
+        r.owner.restoreUnconfirmed(original)
+        r.persistenceError = InstrumentWorkflow.PersistenceFailure("Disk failed", false)
+        r.owner.retryPersistence()
+        r.admit()
+        r.reply()
+        assertFalse(r.owner.restoreRequired)
+        assertTrue(r.owner.storageUncertain)
+        assertEquals(original, r.rendered)
+        assertEquals(original, r.current)
+        val count = r.sequence
+        r.persistenceError = null
+        r.owner.retryPersistence()
+        assertEquals(count, r.sequence)
+        assertFalse(r.owner.storageUncertain)
+        assertEquals(r.rendered, r.saved)
     }
 
     @Test fun committedCancelReconcilesBeforeManualBAndLateReplyCannotOverwriteB() {

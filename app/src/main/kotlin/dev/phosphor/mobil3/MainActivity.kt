@@ -349,6 +349,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.instrumentUndo = owner.undoSetup != null
         ui.instrumentRapid = owner.rapidReview != null
         ui.instrumentUnsaved = owner.unsaved && !owner.uncertain
+        ui.instrumentRestoreRequired = owner.restoreRequired
         ui.instrumentApplyStatus = owner.status
         ui.instrumentRecall = owner.association?.let {
             "${it.name} · ${if (owner.modified) "modified" else "recalled"}"
@@ -1897,12 +1898,19 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.beamIndex = it.preset
                 ui.lightTemporary = false
                 ui.lightError = ""
-            } else setLight(it)
+            } else if (!applyLight(it)) markLightRestoreUnconfirmed(it)
         }.onFailure {
-
-            ui.lightError = "Light settings kept unchanged. ${it.message}. Restore a valid LIGHT archive."
+            ui.lightError = "Stored light settings could not be decoded. ${it.message}. Recover the displayed setup or reopen after restoring valid saved settings."
+            if (!lightPublished) markLightRestoreUnconfirmed(ui.light)
         }
 
+    }
+
+    private fun markLightRestoreUnconfirmed(target: LightSettings) {
+        ui.light = LightCycleGuard.evaluate(target, epilepsyAcknowledged()).safe
+        ui.beamIndex = ui.light.preset
+        ui.lightError += " Displayed light values are restore targets, not confirmed active tuning."
+        instrumentWorkflow?.restoreUnconfirmed(captureInstrument())
     }
     override fun captureConsentNeeded(): Boolean = !RootCaptureSettings.enabled(this) && !runtimePrefs().getBoolean("consent_seen", false)
     private fun markConsentSeen() {

@@ -116,6 +116,11 @@ class InstrumentActivityWiringTest {
         assertTrue(restore > initialize)
         assertEquals(1, Regex("initializeInstruments\\(\\)").findAll(create).count())
         val restoreBody = section("private fun restoreTuning", "override fun captureConsentNeeded")
-        assertTrue(restoreBody.contains("else setLight(it)"))
+        assertTrue(restoreBody.contains("else if (!applyLight(it)) markLightRestoreUnconfirmed(it)"))
+        assertTrue(restoreBody.contains("if (!lightPublished) markLightRestoreUnconfirmed(ui.light)"))
+        val unconfirmed = section("private fun markLightRestoreUnconfirmed", "override fun captureConsentNeeded")
+        assertTrue(unconfirmed.contains("instrumentWorkflow?.restoreUnconfirmed(captureInstrument())"))
+        assertFalse(unconfirmed.contains("PhosphorNative"))
+        assertTrue(source("ui/InstrumentPresetSheet.kt").contains("if (state.instrumentRestoreRequired) \"RESTORE DISPLAYED SETUP\""))
     }
 }

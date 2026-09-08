@@ -69,7 +69,10 @@ fun InstrumentPresetSheet(state: ScopeUiState, p: Palette, reduced: Boolean,
             }
             if (state.instrumentPending) PresetKey("CANCEL PENDING APPLY", p) { actions.cancelInstrumentApply() }
             if (state.instrumentUndo) PresetKey("UNDO LAST APPLY", p) { actions.undoInstrument() }
-            if (state.instrumentUnsaved) PresetKey("RETRY SAVE CURRENT · TUNING UNCHANGED", p) { actions.retryInstrumentSave() }
+            if (state.instrumentUnsaved) PresetKey(
+                if (state.instrumentRestoreRequired) "RESTORE DISPLAYED SETUP"
+                else "RETRY SAVE CURRENT · TUNING UNCHANGED", p,
+            ) { actions.retryInstrumentSave() }
             if (state.instrumentRapid) {
                 Prose("Below one second, full-screen color changes can trigger photosensitive seizures. Safe timing remains active. " +
                     "Only allow faster timing if it is safe for everyone watching.", p.ink)

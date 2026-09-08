@@ -19,7 +19,7 @@ class InstrumentWorkflow(
     }
     data class Association(val key: String, val name: String, val setup: InstrumentSetup)
     private data class Request(val id: Long, val before: InstrumentSetup, val setup: InstrumentSetup,
-        val association: Association?, val undo: Boolean)
+        val association: Association?, val undo: Boolean, val restoring: Boolean)
     private val thread = Thread.currentThread()
     private var request: Request? = null
     private var depth = 0
@@ -27,6 +27,8 @@ class InstrumentWorkflow(
     class SettingsImport internal constructor(internal val revision: Any)
     private var authoredRevision = Any()
     private var settingsImport: SettingsImport? = null
+    private var restoreTarget: InstrumentSetup? = null
+    val restoreRequired: Boolean get() = restoreTarget != null
     var association: Association? = null
         private set
     var undoSetup: InstrumentSetup? = null
@@ -41,7 +43,7 @@ class InstrumentWorkflow(
         private set
     var storageUncertain = false
         private set
-    val editsBlocked: Boolean get() = uncertain || storageUncertain
+    val editsBlocked: Boolean get() = uncertain || storageUncertain || restoreRequired
     val pending: Boolean get() = request != null
     val automaticPersistenceAllowed: Boolean get() = !closed && !pending && !unsaved && !editsBlocked
     val modified: Boolean get() = association?.let { it.setup != snapshot() } ?: false
@@ -53,6 +55,10 @@ class InstrumentWorkflow(
         if (closed) return
         settle("Superseded by another apply")
         if (editsBlocked) { changed(); return }
+        submit(setup, recalled, undo, restoring = false)
+    }
+
+    private fun submit(setup: InstrumentSetup, recalled: Association?, undo: Boolean, restoring: Boolean) {
         authoredRevision = Any()
         if (!canApply()) {
             status = "Desktop geometry owns shape and gain. Choose a local or audio-only source before APPLY."
@@ -72,8 +78,8 @@ class InstrumentWorkflow(
             changed()
             return
         }
-        request = Request(id, before, guarded.safe, recalled, undo)
-        status = "Applying instrument setup…"
+        request = Request(id, before, guarded.safe, recalled, undo, restoring)
+        status = if (restoring) "Restoring displayed setup. Waiting for the renderer receipt…" else "Applying instrument setup…"
         changed()
         try { waitOffMain(id) { result -> complete(id, result) } }
         catch (_: Exception) { settle("Wait could not start. Retry APPLY.") }
@@ -110,12 +116,14 @@ class InstrumentWorkflow(
                 // The exact committed setup is reconciled before any later edit.
                 authoredRevision = Any()
                 publish(pending.setup)
-                undoSetup = if (pending.undo) null else pending.before
+                if (pending.restoring) restoreTarget = null
+                undoSetup = if (pending.undo || pending.restoring) null else pending.before
                 association = pending.association
                 val error = save(pending.setup)
                 status = error?.let { "Active, not saved. ${it.message} " +
                     if (storageUncertain) "Use RETRY SAVE CURRENT before further tuning." else "Retry save or use UNDO." }
                     ?: if (rapidReview != null) "Applied with safe timing. Modified, not an exact recall. Review faster timing below."
+                    else if (pending.restoring) "Displayed setup restored to the renderer and saved."
                     else "Instrument setup applied and saved."
             } else {
                 if (result !in 2..3) {
@@ -196,6 +204,18 @@ class InstrumentWorkflow(
         changed()
     }
 
+    /** Fresh Activity defaults are not proof of a retained renderer's current setup. */
+    fun restoreUnconfirmed(target: InstrumentSetup) {
+        owner()
+        if (closed) return
+        check(!pending) { "Settle native work before marking startup restore unconfirmed" }
+        restoreTarget = target
+        authoredRevision = Any()
+        unsaved = true
+        status = "Startup tuning is unconfirmed. Controls show a restore target. Use RESTORE DISPLAYED SETUP to reconcile the renderer before saving."
+        changed()
+    }
+
     /** Settle before opening the picker, then bind its eventual reply to authored intent. */
     fun beginSettingsImport(): SettingsImport? {
         owner()
@@ -236,6 +256,10 @@ class InstrumentWorkflow(
         if (closed || uncertain) return
         settle()
         if (uncertain) return
+        restoreTarget?.let {
+            submit(it, recalled = null, undo = false, restoring = true)
+            return
+        }
         authoredRevision = Any()
         val failure = save(snapshot())
         status = failure?.let { "Active, not saved. ${it.message} Retry when storage is available." }

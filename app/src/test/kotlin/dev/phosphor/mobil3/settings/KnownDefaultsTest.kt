@@ -202,7 +202,7 @@ class KnownDefaultsTest {
         assertFalse(range.contains("mapNotNull"))
         assertFalse(range.contains("coerceIn"))
         assertTrue(restore.contains("LightSettings.read(p.all)"))
-        assertTrue(restore.contains("else setLight(it)"))
+        assertTrue(restore.contains("else if (!applyLight(it)) markLightRestoreUnconfirmed(it)"))
         val activity = source("MainActivity.kt")
         val apply = section(activity, "private fun applyLight(", "override fun rollLight()")
         assertTrue(apply.indexOf("LightCycleGuard.evaluate") < apply.indexOf("editor.putLight(safe)"))
