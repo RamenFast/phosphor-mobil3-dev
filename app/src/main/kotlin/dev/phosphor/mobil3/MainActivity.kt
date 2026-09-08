@@ -936,6 +936,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun refreshDisplayPause() {
         val state = PhosphorNative.displayPauseState()
         ui.displayPaused = state and 1 != 0
+        ui.displayPresentPending = state and 8 != 0
         ui.pauseBlack = state and 2 != 0
         ui.heldFrameAvailable = state and 4 != 0
         ui.pauseSourceLive = ui.playing || mic.isRecording() ||

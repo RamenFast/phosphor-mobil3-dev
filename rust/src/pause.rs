@@ -29,6 +29,7 @@ pub struct History<T> {
     pub generation: u64,
     pub visual_revision: u64,
     pub serial: u64,
+    presented: Option<FrameToken>,
     pub paused: bool,
     pub black: bool,
     pub transport_paused: Option<bool>,
@@ -42,6 +43,7 @@ impl<T> Default for History<T> {
             generation: 0,
             visual_revision: 0,
             serial: 0,
+            presented: None,
             paused: false,
             black: false,
             transport_paused: None,
@@ -52,6 +54,9 @@ impl<T> Default for History<T> {
     }
 }
 impl<T> History<T> {
+    pub fn present_pending(&self) -> bool {
+        !self.paused && self.presented != Some(self.frame_token())
+    }
     pub fn frame_token(&self) -> FrameToken {
         FrameToken {
             generation: self.generation,
@@ -78,6 +83,7 @@ impl<T> History<T> {
             return Some(image);
         }
         self.serial = self.serial.wrapping_add(1);
+        self.presented = Some(token);
         self.committed.replace(image)
     }
     pub fn transition(
@@ -276,11 +282,18 @@ mod tests {
         };
         assert_ne!(old.visual_revision, current.visual_revision);
         assert_eq!(old.generation != current.generation, retire);
+        assert!(history.lock().unwrap().present_pending());
         release_tx.send(()).unwrap();
         assert_eq!(
             render.join().unwrap().as_deref(),
             Some(&"in-flight stale A")
         );
+        assert!(history.lock().unwrap().present_pending());
+        {
+            let mut h = history.lock().unwrap();
+            h.commit(current, Arc::new("first current application present"));
+            assert!(!h.present_pending());
+        }
         let mut energy = EnergyEpoch::default();
         energy.cleared(old);
         assert!(energy.needs_clear(current));
@@ -322,6 +335,33 @@ mod tests {
         drop(h.retire());
         assert!(energy.needs_clear(h.frame_token()));
         assert!(h.committed.is_none() && h.pinned.is_none());
+    }
+    #[test]
+    fn only_current_live_application_present_completes_the_request() {
+        let mut h = History::default();
+        let initial = h.frame_token();
+        assert!(h.present_pending());
+        h.commit(initial, Arc::new("A"));
+        assert!(!h.present_pending());
+        h.pin();
+        h.transition(None, false, false, true);
+        let first = h.frame_token();
+        assert!(h.present_pending());
+        // Failed acquire has no commit and cannot manufacture an acknowledgement.
+        assert_eq!(h.presented, Some(initial));
+        h.pin();
+        assert!(!h.present_pending());
+        assert_eq!(h.pinned.as_deref(), Some(&"A"));
+        assert!(h.commit(first, Arc::new("paused B")).is_some());
+        h.transition(None, false, false, true);
+        let latest = h.frame_token();
+        assert!(h.commit(first, Arc::new("superseded B")).is_some());
+        assert!(h.present_pending());
+        h.commit(latest, Arc::new("C"));
+        assert!(!h.present_pending());
+        assert!(h.commit(first, Arc::new("late B")).is_some());
+        assert!(!h.present_pending());
+        assert_eq!(h.committed.as_deref(), Some(&"C"));
     }
 }
 

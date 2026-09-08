@@ -869,6 +869,7 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_displayPauseState
 ) -> jni::sys::jint {
     let s = crate::pause::DISPLAY.lock().unwrap();
     i32::from(s.paused) | (i32::from(s.black) << 1) | (i32::from(s.pinned.is_some()) << 2)
+        | (i32::from(s.present_pending()) << 3)
 }
 
 #[unsafe(no_mangle)]

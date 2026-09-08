@@ -650,7 +650,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // The gesture readout ribbon rides above the stage.
             GestureRibbon(ribbon, p)
-            if (state.displayPaused) Prose(state.pauseLabel, p.muted,
+            if (state.displayPaused || state.displayPresentPending) Prose(state.pauseLabel, p.muted,
                 modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp))
 
             // Layer 1a: read-only status band.

@@ -9,8 +9,8 @@ object PauseDisplayPolicy {
     fun controlLabel(displayOnly: Boolean, playing: Boolean, paused: Boolean): String =
         if (displayOnly) { if (paused) "LIVE" else "HOLD" } else if (playing) "❚❚" else "▶"
 
-    fun status(paused: Boolean, black: Boolean, hasFrame: Boolean, sourceLive: Boolean): String {
-        if (!paused) return ""
+    fun status(paused: Boolean, black: Boolean, hasFrame: Boolean, sourceLive: Boolean, presentPending: Boolean = false): String {
+        if (!paused) return if (presentPending) "waiting for new frame" else ""
         val image = if (!hasFrame) "no held frame" else if (black) "display black" else "display held"
         return image + if (sourceLive) " · source live" else ""
     }

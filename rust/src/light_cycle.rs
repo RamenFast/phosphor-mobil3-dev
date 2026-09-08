@@ -40,6 +40,8 @@ impl LightCycle {
     }
     pub fn apply_edit(&mut self, settings: LightSettings, now: f64, deleted: Option<usize>) -> bool {
         if !settings.valid() || !now.is_finite() { return false; }
+        let mut previous = self.settings.clone();
+        let mut removed_selected = false;
         if let Some(index) = deleted {
             if index >= self.settings.colors.len() { return false; }
             let mut remaining = self.settings.colors.clone();
@@ -47,10 +49,18 @@ impl LightCycle {
             let old = self.settings.selected_mask;
             let shifted = (old & ((1 << index) - 1)) | ((old >> (index + 1)) << index);
             if remaining != settings.colors || shifted != settings.selected_mask { return false; }
+            removed_selected = old & (1 << index) != 0;
+            previous.colors = remaining;
+            previous.selected_mask = shifted;
             self.last_id = self.last_id.and_then(|last| {
                 if last == index { None } else { Some(last - usize::from(last > index)) }
             });
-        } else if !self.temporary && self.same_owner(&settings) {
+            self.bag = self.bag.iter().filter_map(|&id| {
+                if id == index { None } else { Some(id - usize::from(id > index)) }
+            }).collect();
+        }
+        if !self.temporary && (!removed_selected || previous.generated_auto)
+            && Self::same_owner(&previous, &settings) {
             // Timing changes take effect at the next leg, not as invented track events.
             self.settings = settings;
             return true;
@@ -63,13 +73,13 @@ impl LightCycle {
         }
         true
     }
-    fn same_owner(&self, next: &LightSettings) -> bool {
-        self.settings.per_track == next.per_track
-            && self.settings.generated_auto == next.generated_auto
-            && (next.generated_auto || (self.settings.colors == next.colors
-                && self.settings.selected_mask == next.selected_mask
-                && self.settings.shuffle == next.shuffle
-                && (next.selected_mask != 0 || self.settings.preset == next.preset)))
+    fn same_owner(previous: &LightSettings, next: &LightSettings) -> bool {
+        previous.per_track == next.per_track
+            && previous.generated_auto == next.generated_auto
+            && (next.generated_auto || (previous.selected_mask == next.selected_mask
+                && if next.selected_mask == 0 { previous.preset == next.preset }
+                else { previous.shuffle == next.shuffle
+                    && next.ids().iter().all(|&id| previous.colors[id] == next.colors[id]) }))
     }
     pub fn suspend(&mut self) { self.suspended = true; }
     fn custom(&self) -> bool { self.temporary || self.settings.generated_auto || self.settings.selected_mask != 0 }
@@ -203,6 +213,48 @@ mod tests {
             settings.colors.remove(0); settings.selected_mask = 3;
             assert!(c.apply_edit(settings, 2.0, Some(0)));
             assert_eq!(c.last_id, Some(0), "surviving previous slot is now 1, even with duplicate RGB");
+        }
+    }
+    #[test] fn inactive_saved_rgb_preserves_track_and_timer_state() {
+        for per_track in [false, true] {
+            let mut c = LightCycle::new(1);
+            let mut settings = LightSettings { selected_mask: 3, per_track, shuffle: true, ..six() };
+            c.apply(settings.clone(), 0.0); c.observe(0.0);
+            let before = (c.live, c.from, c.to, c.start, c.duration, c.rng, c.draws, c.last_id, c.bag.clone(), c.suspended);
+            settings.colors[2] = [0.5, 0.0, 1.0];
+            assert!(c.apply(settings.clone(), 1.0));
+            assert_eq!(before, (c.live, c.from, c.to, c.start, c.duration, c.rng, c.draws, c.last_id, c.bag.clone(), c.suspended));
+            assert_eq!(c.settings, settings);
+        }
+    }
+    #[test] fn generated_owner_deletion_preserves_color_leg_and_rng() {
+        for per_track in [false, true] {
+            let mut c = LightCycle::new(18);
+            let mut settings = LightSettings { generated_auto: true, per_track, ..six() };
+            c.apply(settings.clone(), 0.0); c.observe(0.0);
+            let before = (c.live, c.from, c.to, c.start, c.duration, c.rng, c.draws, c.suspended);
+            settings.colors.remove(0); settings.selected_mask = 31;
+            assert!(c.apply_edit(settings.clone(), 1.0, Some(0)));
+            assert_eq!(before, (c.live, c.from, c.to, c.start, c.duration, c.rng, c.draws, c.suspended));
+            assert_eq!(c.settings, settings);
+        }
+    }
+    #[test] fn unselected_deletion_remaps_bag_without_consuming_an_event() {
+        for per_track in [false, true] {
+            for duplicate in [false, true] {
+                let mut c = LightCycle::new(1);
+                let mut settings = LightSettings { selected_mask: 42, per_track, shuffle: true, ..six() };
+                if duplicate { settings.colors.fill([1.0, 0.0, 0.0]); }
+                c.apply(settings.clone(), 0.0); c.observe(0.0);
+                let before = (c.live, c.from, c.to, c.start, c.duration, c.rng, c.draws, c.suspended);
+                let last = c.last_id.map(|id| id - 1);
+                let bag = c.bag.iter().map(|id| id - 1).collect::<Vec<_>>();
+                settings.colors.remove(0); settings.selected_mask = 21;
+                assert!(c.apply_edit(settings, 1.0, Some(0)));
+                assert_eq!(before, (c.live, c.from, c.to, c.start, c.duration, c.rng, c.draws, c.suspended));
+                assert_eq!(last, c.last_id); assert_eq!(bag, c.bag);
+                if per_track { c.track(2.0); assert_ne!(last, c.last_id); }
+            }
         }
     }
     #[test] fn invalid_deletion_does_not_mutate_settings_or_identity() {

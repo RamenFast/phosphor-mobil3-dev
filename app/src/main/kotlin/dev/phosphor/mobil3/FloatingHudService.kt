@@ -64,6 +64,7 @@ class FloatingHudService : Service() {
     private var previous: Button? = null
     private var next: Button? = null
     private var displayLive: Button? = null
+    private val presentRefresh = Runnable { if (!retired) syncTransport() }
     private val screen = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == Intent.ACTION_SCREEN_OFF || locked()) finishHud("HUD closed on display lock")
@@ -120,6 +121,7 @@ class FloatingHudService : Service() {
                             getSystemService(PowerManager::class.java).isInteractive,
                             !getSystemService(KeyguardManager::class.java).isKeyguardLocked,
                             Settings.canDrawOverlays(this@FloatingHudService)))
+                        syncTransport()
                     }
                 }
             }.apply { orientation = LinearLayout.VERTICAL }
@@ -146,6 +148,7 @@ class FloatingHudService : Service() {
                 presented = {
                     if (!surfaceReady && !retired) { surfaceReady = true; publish(status) }
                     if (!retired) controller?.let { host?.metadataChanged(it) }
+                    if (!retired) syncTransport()
                 })
             var heldX = 0f
             var heldY = 0f
@@ -275,14 +278,20 @@ class FloatingHudService : Service() {
         syncTransport()
     }
     private fun syncTransport() {
+        main.removeCallbacks(presentRefresh)
+        if (retired) return
         val c = controller
         val source = c?.mediaMetadata?.title?.toString()?.takeIf { it.isNotBlank() }
             ?: c?.mediaMetadata?.extras?.getString("source") ?: "Choose source in app"
         val held = PhosphorNative.displayPauseState()
+        if (held and 8 != 0 && surfaceReady && root?.isShown == true && !locked()) {
+            main.postDelayed(presentRefresh, 250L)
+        }
         displayLive?.isEnabled = held and 1 != 0
         val display = dev.phosphor.mobil3.ui.PauseDisplayPolicy.status(
             held and 1 != 0, held and 2 != 0, held and 4 != 0,
             (c != null && playing(c)) || (CaptureService.ownsCapture() && CaptureService.currentStatus().live),
+            held and 8 != 0,
         )
         info?.text = "$presentationStatus\n$source · $display"
         val controllable = c?.isCommandAvailable(Player.COMMAND_PLAY_PAUSE) == true
