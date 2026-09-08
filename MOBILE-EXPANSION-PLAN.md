@@ -1,6 +1,6 @@
 # Phosphor Mobile: expanded instrument plan
 
-**Status:** execution approved by Ben on 2026-09-08 at 00:18:19 UTC. The feature direction was comprehensively recompiled on 2026-09-07, including instrument presets and signal check. Section 1 baseline and contract work has started. Feature delivery remains subject to the evidence below.
+**Status:** execution approved by Ben on 2026-09-08 at 00:18:19 UTC. The feature direction was comprehensively recompiled on 2026-09-07, including instrument presets and signal check. Section 1 is accepted. R01 root capture and R02 floating HUD are in progress. Current installed evidence and remaining gaps live in the execution ledger and HANDOFF.md. Feature delivery remains subject to the evidence below.
 
 **Canonical plan:** `MOBILE-EXPANSION-PLAN.md` at the repository root. This replaces the earlier accumulated versions in this same file. Git retains their history. Do not create a competing expansion plan.
 
