@@ -55,6 +55,7 @@ fun LightSheetV2(
     state: ScopeUiState, p: Palette, reduced: Boolean,
     onPickPreset: (Int) -> Unit,
     onLightChange: (LightSettings) -> Unit,
+    onDeleteSlot: (Int) -> Unit,
     onRoll: () -> Unit,
     epilepsyAcknowledged: () -> Boolean,
     ackEpilepsy: () -> Unit,
@@ -105,7 +106,7 @@ fun LightSheetV2(
                     }
                     LightKey("Delete slot ${index + 1}", p) {
                         editSlot = -1
-                        onLightChange(light.delete(index))
+                        onDeleteSlot(index)
                     }
                     if (editSlot == index) {
                         HsvSquare(Color(rgb.red, rgb.green, rgb.blue), p) {

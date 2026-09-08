@@ -160,6 +160,7 @@ interface ScopeActions {
     fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int)
     fun setBeamCycle(seconds: Float, perTrack: Boolean)
     fun setLight(settings: LightSettings) {}
+    fun deleteLightSlot(index: Int) {}
     fun rollLight() {}
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
@@ -788,6 +789,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     state, p, reduced,
                     onPickPreset = { actions.setBeam(it) },
                     onLightChange = { actions.setLight(it) },
+                    onDeleteSlot = { actions.deleteLightSlot(it) },
                     onRoll = { actions.rollLight() },
                     epilepsyAcknowledged = { actions.epilepsyAcknowledged() },
                     ackEpilepsy = { actions.ackEpilepsy() },

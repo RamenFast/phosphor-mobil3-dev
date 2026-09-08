@@ -157,7 +157,7 @@ class KnownDefaultsTest {
         }
         val create = section(activity, "override fun onCreate(savedInstanceState: Bundle?)", "override fun onResume()")
         assertTrue(create.indexOf("restoreTuning()") < create.indexOf("applyScopeRotationPreference()"))
-        val imported = section(activity, "val decoded = SettingsArchive.decode(text)", "override fun onCreate(savedInstanceState: Bundle?)")
+        val imported = section(activity, "private fun acceptSettingsArchive(", "private val openSettingsArchive")
         assertTrue(imported.indexOf("restoreTuning(lightPublished)") < imported.indexOf("applyScopeRotationPreference()"))
     }
 
@@ -175,13 +175,15 @@ class KnownDefaultsTest {
         assertTrue(save.contains("runtimeInputSource(ui, mic.isRecording())"))
         assertTrue(activity.contains("private fun prefs() = getSharedPreferences(PhosphorApplication.PREFERENCES_NAME, MODE_PRIVATE)"))
         assertTrue(activity.contains("private fun runtimePrefs() = getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, MODE_PRIVATE)"))
-        val imported = section(activity, "val decoded = SettingsArchive.decode(text)", "Triple(imported, guard?.pending, guard != null)")
+        val imported = section(activity, "private fun acceptSettingsArchive(", "Triple(imported, guard?.pending, guard != null)")
         assertTrue(imported.contains("preferenceValueSnapshots(prefs().all, imported.values.keys)"))
         assertEquals(1, Regex(Regex.escape("imported.values.forEach")).findAll(imported).count())
         for (type in listOf("Boolean", "Int", "Float", "String")) {
             assertTrue(imported.contains("is $type -> editor.put$type(key, value)"))
         }
-        assertTrue(imported.contains("if (!editor.commit())"))
+        assertTrue(imported.contains("settingsWriteOwner.write"))
+        assertTrue(imported.contains("commit = { editor.commit() }"))
+        assertTrue(imported.contains("settingsWriteOwner.commit("))
         assertTrue(imported.contains("restorePreferenceSnapshots(priorValues)"))
         assertFalse(imported.contains(".clear("))
         assertFalse(imported.contains("runtimePrefs()"))
@@ -202,7 +204,7 @@ class KnownDefaultsTest {
         val activity = source("MainActivity.kt")
         val apply = section(activity, "private fun applyLight(", "override fun rollLight()")
         assertTrue(apply.indexOf("LightCycleGuard.evaluate") < apply.indexOf("editor.putLight(safe)"))
-        assertTrue(apply.indexOf("editor.commit()") < apply.indexOf("publishNativeLight(safe)"))
+        assertTrue(apply.indexOf("editor.commit()") < apply.indexOf("publishNativeLight(safe, deletedSlot)"))
         assertTrue(apply.contains("restorePreferenceSnapshots(prior)"))
         assertFalse(apply.contains("FloatArray(9)"))
         val empty = LightSettings.read(emptyMap<String, Any>())
@@ -215,10 +217,11 @@ class KnownDefaultsTest {
         // Source wiring only. Native policy tests separately exercise the real resolver.
         val native = repoFile("rust/src/jni_glue.rs").readText()
         assertTrue(native.contains("Java_dev_phosphor_mobil3_PhosphorNative_setLight"))
-        assertTrue(native.contains("if !settings.valid() { return 0; }"))
+        assertTrue(native.contains("if !settings.valid() || !(-1..=5).contains(&deleted) { return 0; }"))
         assertTrue(native.contains("len % 3 != 0"))
         val render = repoFile("rust/src/render.rs").readText()
-        assertTrue(render.contains("Cmd::SetLight(settings)"))
+        assertTrue(render.contains("Cmd::SetLight(settings, deleted)"))
+        assertTrue(render.contains("light.apply_edit(settings, light_clock.elapsed().as_secs_f64(), deleted)"))
         assertTrue(render.contains("light.observe(light_clock.elapsed().as_secs_f64())"))
         assertTrue(render.contains("r.theme = phosphor_beam::THEME_PRESETS[beam_color].1"))
 

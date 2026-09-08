@@ -66,7 +66,7 @@ object PhosphorNative {
     /** Exact saved RGB triples in their existing numeric convention. One atomic publication. */
     external fun setLight(rgb: FloatArray, selectedMask: Int, preset: Int, seconds: Float,
         perTrack: Boolean, generatedAuto: Boolean, shuffle: Boolean, randomInterval: Boolean,
-        intervalMin: Float, intervalMax: Float): Boolean
+        intervalMin: Float, intervalMax: Float, deletedSlot: Int = -1): Boolean
     external fun rollLight(): Boolean
     external fun cycleAdvance()
 

@@ -546,6 +546,7 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setLight(
     track: jni::sys::jboolean, generated: jni::sys::jboolean,
     shuffle: jni::sys::jboolean, random: jni::sys::jboolean,
     min: jni::sys::jfloat, max: jni::sys::jfloat,
+    deleted: jni::sys::jint,
 ) -> jni::sys::jboolean {
     let Ok(len) = env.get_array_length(&rgb) else { return 0; };
     if !(0..=18).contains(&len) || len % 3 != 0 || !(0..=63).contains(&mask) || !(0..=8).contains(&preset) {
@@ -559,8 +560,9 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setLight(
         generated_auto: generated != 0, shuffle: shuffle != 0, random_interval: random != 0,
         interval_min: min, interval_max: max,
     };
-    if !settings.valid() { return 0; }
-    crate::render::sender().send(crate::render::Cmd::SetLight(settings)).is_ok() as jni::sys::jboolean
+    if !settings.valid() || !(-1..=5).contains(&deleted) { return 0; }
+    let deleted = (deleted >= 0).then_some(deleted as usize);
+    crate::render::sender().send(crate::render::Cmd::SetLight(settings, deleted)).is_ok() as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]

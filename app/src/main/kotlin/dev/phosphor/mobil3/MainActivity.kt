@@ -236,6 +236,61 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }.start()
         }
 
+    private val settingsWriteOwner = dev.phosphor.mobil3.settings.SettingsWriteOwner()
+
+    private fun reportImportFailure(error: Throwable) {
+        ui.settingsTransferStatus = when (error) {
+            is SettingsArchive.ArchiveException -> "${error.error} · ${error.fix}"
+            else -> "import failed · ${error.message ?: "choose another archive"}"
+        }
+    }
+
+    private fun acceptSettingsArchive(decoded: SettingsArchive.ImportResult) {
+        if (isFinishing || isDestroyed) return
+        runCatching {
+            settingsWriteOwner.write {
+                val merged = SettingsArchive.merge(decoded, prefs().all)
+                val guard = if (merged.keys.any(LightSettings.keys::contains)) {
+                    LightCycleGuard.evaluate(LightSettings.read(prefs().all + merged), epilepsyAcknowledged())
+                } else null
+                val imported = decoded.copy(values = if (guard == null) merged else
+                    merged.filterKeys { it !in LightSettings.keys } + guard.safe.values())
+                val priorValues = preferenceValueSnapshots(prefs().all, imported.values.keys)
+                val editor = prefs().edit()
+                imported.values.forEach { (key, value) ->
+                    when (value) {
+                        is Boolean -> editor.putBoolean(key, value)
+                        is Int -> editor.putInt(key, value)
+                        is Float -> editor.putFloat(key, value)
+                        is String -> editor.putString(key, value)
+                        else -> error("unsupported imported preference type for $key")
+                    }
+                }
+                settingsWriteOwner.commit(
+                    commit = { editor.commit() },
+                    publish = { guard == null || publishNativeLight(guard.safe) },
+                    rollback = { restorePreferenceSnapshots(priorValues) },
+                )?.let { error(it.message()) }
+                if (guard != null && prefs().contains("custom_count")) prefs().edit().remove("custom_count").commit()
+                Triple(imported, guard?.pending, guard != null)
+            }
+        }.onSuccess { (imported, pendingLight, lightPublished) ->
+            // Same main-thread callback, before another event can publish a later revision.
+            restoreTuning(lightPublished)
+            ui.lightPending = pendingLight
+            applyScopeRotationPreference()
+            applyImmersive()
+            updatePictureInPictureParams()
+            ui.settingsTransferStatus = buildString {
+                if (pendingLight != null) append("Rapid timing kept safe. Open LIGHT to review. ")
+                append("imported ${imported.values.size}")
+                append(" from ")
+                append(imported.sourceVersion)
+                if (imported.skippedKeys.isNotEmpty()) append(" · skipped ${imported.skippedKeys.size} newer fields")
+            }
+        }.onFailure(::reportImportFailure)
+    }
+
     private val openSettingsArchive =
         registerForActivityResult(ActivityResultContracts.OpenDocument()) { uri ->
             uri ?: return@registerForActivityResult
@@ -263,67 +318,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
                         }
                         output.toString(Charsets.UTF_8.name())
                     }
-                    val decoded = SettingsArchive.decode(text)
-                    val merged = SettingsArchive.merge(decoded, prefs().all)
-                    val guard = if (merged.keys.any(LightSettings.keys::contains)) {
-                        LightCycleGuard.evaluate(LightSettings.read(prefs().all + merged), epilepsyAcknowledged())
-                    } else null
-                    val imported = decoded.copy(values = if (guard == null) merged else
-                        merged.filterKeys { it !in LightSettings.keys } + guard.safe.values())
-
-                    val priorValues = preferenceValueSnapshots(prefs().all, imported.values.keys)
-                    val editor = prefs().edit()
-                    imported.values.forEach { (key, value) ->
-                        when (value) {
-                            is Boolean -> editor.putBoolean(key, value)
-                            is Int -> editor.putInt(key, value)
-                            is Float -> editor.putFloat(key, value)
-                            is String -> editor.putString(key, value)
-                            else -> error("unsupported imported preference type for $key")
-                        }
-                    }
-                    if (!editor.commit()) {
-                        val restored = restorePreferenceSnapshots(priorValues)
-                        error(
-                            if (restored) {
-                                "Android could not commit imported settings; restored previous settings"
-                            } else {
-                                "Android could not commit imported settings; previous settings restore also failed"
-                            },
-                        )
-                    }
-                    if (guard != null && !publishNativeLight(guard.safe)) {
-                        restorePreferenceSnapshots(priorValues)
-                        error("Renderer did not accept imported light settings. Previous preferences restored. Reopen Phosphor and retry")
-                    }
-                    if (guard != null && prefs().contains("custom_count")) prefs().edit().remove("custom_count").commit()
-                    Triple(imported, guard?.pending, guard != null)
-
-                }.onSuccess { (imported, pendingLight, lightPublished) ->
-                    runOnUiThread {
-                        if (isFinishing || isDestroyed) return@runOnUiThread
-                        restoreTuning(lightPublished)
-                        ui.lightPending = pendingLight
-                        applyScopeRotationPreference()
-                        applyImmersive()
-                        updatePictureInPictureParams()
-                        ui.settingsTransferStatus = buildString {
-                            if (pendingLight != null) append("Rapid timing kept safe. Open LIGHT to review. ")
-                            append("imported ${imported.values.size}")
-                            append(" from ")
-                            append(imported.sourceVersion)
-                            if (imported.skippedKeys.isNotEmpty()) {
-                                append(" · skipped ${imported.skippedKeys.size} newer fields")
-                            }
-                        }
-                    }
+                    SettingsArchive.decode(text)
+                }.onSuccess { decoded ->
+                    runOnUiThread { acceptSettingsArchive(decoded) }
                 }.onFailure { error ->
                     runOnUiThread {
-                        ui.settingsTransferStatus = when (error) {
-                            is SettingsArchive.ArchiveException ->
-                                "${error.error} · ${error.fix}"
-                            else -> "import failed · ${error.message ?: "choose another archive"}"
-                        }
+                        if (!isFinishing && !isDestroyed) reportImportFailure(error)
                     }
                 }
             }.start()
@@ -1513,7 +1513,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.randomModeArmed = false
         applyMode(index)
     }
-    override fun setBeam(index: Int) = applyPresetLight(ui.light, index, ::applyLight) {
+    override fun setBeam(index: Int) = applyPresetLight(ui.light, index, { applyLight(it) }) {
         if (ui.remote && ui.remoteGeometry) {
             PhosphorNative.remoteScopeCtl("theme", dev.phosphor.mobil3.ui.BeamColors[index].label)
         }
@@ -1899,29 +1899,30 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
 
-    private fun publishNativeLight(safe: LightSettings): Boolean =
+    private fun publishNativeLight(safe: LightSettings, deletedSlot: Int = -1): Boolean =
         PhosphorNative.setLight(safe.slots.flatMap { it.components() }.toFloatArray(),
             safe.selectedMask, safe.preset, safe.seconds, safe.perTrack, safe.generatedAuto,
-            safe.shuffle, safe.randomInterval, safe.intervalMin, safe.intervalMax)
+            safe.shuffle, safe.randomInterval, safe.intervalMin, safe.intervalMax, deletedSlot)
 
     override fun setLight(settings: LightSettings) { applyLight(settings) }
+    override fun deleteLightSlot(index: Int) {
+        if (index in ui.light.slots.indices) applyLight(ui.light.delete(index), index)
+    }
 
-    private fun applyLight(settings: LightSettings): Boolean {
+    private fun applyLight(settings: LightSettings, deletedSlot: Int = -1): Boolean = settingsWriteOwner.write {
         val guarded = LightCycleGuard.evaluate(settings, epilepsyAcknowledged())
         val safe = guarded.safe
         val prior = preferenceValueSnapshots(prefs().all, safe.values().keys)
         val editor = prefs().edit()
         editor.putLight(safe)
-        if (!editor.commit()) {
-            restorePreferenceSnapshots(prior)
-            ui.lightError = "Light settings could not be saved. Try the edit again."
-            return false
-        }
-        val accepted = publishNativeLight(safe)
-        if (!accepted) {
-            restorePreferenceSnapshots(prior)
-            ui.lightError = "Renderer did not accept light settings. Reopen Phosphor and try again."
-            return false
+        val failure = settingsWriteOwner.commit(
+            commit = { editor.commit() },
+            publish = { publishNativeLight(safe, deletedSlot) },
+            rollback = { restorePreferenceSnapshots(prior) },
+        )
+        if (failure != null) {
+            ui.lightError = failure.message()
+            return@write false
         }
         // Copy-before-remove. A failed cleanup leaves a harmless rollback-readable key.
         if (prefs().contains("custom_count")) prefs().edit().remove("custom_count").commit()
@@ -1930,7 +1931,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.lightPending = guarded.pending
         ui.lightTemporary = false
         ui.lightError = ""
-        return true
+        true
     }
 
     override fun rollLight() {

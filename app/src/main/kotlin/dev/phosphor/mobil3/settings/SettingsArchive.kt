@@ -309,7 +309,11 @@ object SettingsArchive {
     fun merge(imported: ImportResult, existing: Map<String, *>): Map<String, Any> {
         if (imported.values.keys.none(LightSettings.keys::contains)) return imported.values
         val light = lightOrThrow {
-            LightSettings.merge(LightSettings.read(existing), imported.values, imported.sourceSchema == LEGACY_SCHEMA)
+            if (imported.sourceSchema == SCHEMA && imported.values.keys.containsAll(LightSettings().values().keys)) {
+                LightSettings.read(imported.values)
+            } else {
+                LightSettings.merge(LightSettings.read(existing), imported.values, imported.sourceSchema == LEGACY_SCHEMA)
+            }
         }
         return imported.values.filterKeys { it !in LightSettings.keys } + light.values()
     }

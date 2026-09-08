@@ -45,6 +45,19 @@ class LightArchiveTest {
         assertEquals(6, existing["custom_slot_count"])
         assertEquals(6f, existing["cycle_interval_max"])
     }
+    @Test fun completeVersionTwoTupleRepairsCorruptDestinationButPartialImportDoesNot() {
+        val corrupt = LightSettings().values() + mapOf("custom_selected_mask" to 1, "gain" to 2f)
+        val original = corrupt.toMap()
+        val replacement = LightSettings(List(2) { LightRgb(0f, 1f, 0f) }, 3, perTrack = true)
+        val complete = SettingsArchive.decode(archive(replacement.values()).json)
+        val merged = SettingsArchive.merge(complete, corrupt)
+        assertEquals(replacement, LightSettings.read(merged))
+        assertFalse(merged.containsKey("gain"))
+        assertEquals(2f, (corrupt + merged)["gain"])
+        val partial = SettingsArchive.decode(legacy("{\"cycle_seconds\":4}", SettingsArchive.SCHEMA))
+        assertThrows(SettingsArchive.ArchiveException::class.java) { SettingsArchive.merge(partial, corrupt) }
+        assertEquals(original, corrupt)
+    }
     @Test fun sourceSchemaControlsKnownKeysAndChecksums() {
         val old = SettingsArchive.decode(legacy("{\"color_generated_auto\":true}"))
         assertTrue(old.values.isEmpty())

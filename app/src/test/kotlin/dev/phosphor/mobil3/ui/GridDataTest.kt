@@ -83,7 +83,7 @@ class GridDataTest {
         assertTrue(write.contains("ui.gridData = on"))
         assertTrue(write.contains("putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, on)"))
         assertTrue(activity.contains("putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)"))
-        val imported = activity.substringAfter("val decoded = SettingsArchive.decode(text)")
+        val imported = activity.substringAfter("private fun acceptSettingsArchive(")
             .substringBefore("imported ${'$'}{imported.values.size}")
         assertTrue(imported.contains("SettingsArchive.merge(decoded, prefs().all)"))
         assertTrue(imported.contains("imported.values.forEach"))

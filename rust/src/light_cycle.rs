@@ -36,7 +36,25 @@ impl LightCycle {
     }
     pub fn settings(&self) -> &LightSettings { &self.settings }
     pub fn apply(&mut self, settings: LightSettings, now: f64) -> bool {
+        self.apply_edit(settings, now, None)
+    }
+    pub fn apply_edit(&mut self, settings: LightSettings, now: f64, deleted: Option<usize>) -> bool {
         if !settings.valid() || !now.is_finite() { return false; }
+        if let Some(index) = deleted {
+            if index >= self.settings.colors.len() { return false; }
+            let mut remaining = self.settings.colors.clone();
+            remaining.remove(index);
+            let old = self.settings.selected_mask;
+            let shifted = (old & ((1 << index) - 1)) | ((old >> (index + 1)) << index);
+            if remaining != settings.colors || shifted != settings.selected_mask { return false; }
+            self.last_id = self.last_id.and_then(|last| {
+                if last == index { None } else { Some(last - usize::from(last > index)) }
+            });
+        } else if !self.temporary && self.same_owner(&settings) {
+            // Timing changes take effect at the next leg, not as invented track events.
+            self.settings = settings;
+            return true;
+        }
         self.settings = settings;
         self.bag.clear(); self.temporary = false; self.start = now; self.suspended = true;
         if self.custom() {
@@ -44,6 +62,14 @@ impl LightCycle {
             if !self.settings.per_track && self.moving() { self.begin_leg(now); }
         }
         true
+    }
+    fn same_owner(&self, next: &LightSettings) -> bool {
+        self.settings.per_track == next.per_track
+            && self.settings.generated_auto == next.generated_auto
+            && (next.generated_auto || (self.settings.colors == next.colors
+                && self.settings.selected_mask == next.selected_mask
+                && self.settings.shuffle == next.shuffle
+                && (next.selected_mask != 0 || self.settings.preset == next.preset)))
     }
     pub fn suspend(&mut self) { self.suspended = true; }
     fn custom(&self) -> bool { self.temporary || self.settings.generated_auto || self.settings.selected_mask != 0 }
@@ -146,9 +172,46 @@ mod tests {
         c.apply(settings.clone(), 0.0);
         for i in 0..100 {
             let previous = c.last_id;
-            c.apply(settings.clone(), i as f64);
+            let mut changed = settings.clone();
+            changed.selected_mask = if i % 2 == 0 { 31 } else { 63 };
+            c.apply(changed, i as f64);
             assert_ne!(previous, c.last_id);
         }
+    }
+    #[test] fn redundant_track_and_timer_apply_preserve_leg_and_rng() {
+        for per_track in [false, true] {
+            let mut c = LightCycle::new(1);
+            let settings = LightSettings { per_track, shuffle: true, ..six() };
+            c.apply(settings.clone(), 0.0);
+            c.observe(0.0);
+            let before = (c.live, c.to, c.start, c.last_id, c.draws, c.bag.clone());
+            c.apply(settings.clone(), 1.0);
+            assert_eq!(before, (c.live, c.to, c.start, c.last_id, c.draws, c.bag.clone()));
+            c.apply(LightSettings { seconds: 8.0, ..settings }, 2.0);
+            assert_eq!(before, (c.live, c.to, c.start, c.last_id, c.draws, c.bag.clone()));
+        }
+    }
+    #[test] fn explicit_deletion_remaps_duplicate_rgb_slot_identity() {
+        for duplicate in [false, true] {
+            let mut c = LightCycle::new(1);
+            let colors = if duplicate { vec![[1.0, 0.0, 0.0]; 3] }
+                else { vec![[1.0, 0.0, 0.0], [0.0, 1.0, 0.0], [0.0, 0.0, 1.0]] };
+            let mut settings = LightSettings { colors, selected_mask: 7, per_track: true, shuffle: true, ..LightSettings::default() };
+            c.apply(settings.clone(), 0.0);
+            c.track(1.0);
+            assert_eq!(c.last_id, Some(2));
+            settings.colors.remove(0); settings.selected_mask = 3;
+            assert!(c.apply_edit(settings, 2.0, Some(0)));
+            assert_eq!(c.last_id, Some(0), "surviving previous slot is now 1, even with duplicate RGB");
+        }
+    }
+    #[test] fn invalid_deletion_does_not_mutate_settings_or_identity() {
+        let mut c = LightCycle::new(1);
+        c.apply(six(), 0.0);
+        let before = (c.settings.clone(), c.last_id, c.draws);
+        assert!(!c.apply_edit(six(), 1.0, Some(0)));
+        assert!(!c.apply_edit(six(), 1.0, Some(6)));
+        assert_eq!(before, (c.settings.clone(), c.last_id, c.draws));
     }
     #[test] fn automatic_owner_preserves_saved_slots_and_track_roll_steps_once() {
         let mut c = LightCycle::new(18);

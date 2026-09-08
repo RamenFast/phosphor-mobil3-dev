@@ -68,7 +68,7 @@ pub enum Cmd {
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
     /// One validated portable light snapshot, published atomically.
-    SetLight(crate::light_cycle::LightSettings),
+    SetLight(crate::light_cycle::LightSettings, Option<usize>),
     RollLight,
     /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
     CycleAdvance,
@@ -503,8 +503,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                         log::info!("beam focus: {:.2}", r.beam_focus);
                     }
                 }
-                Cmd::SetLight(settings) => {
-                    if light.apply(settings, light_clock.elapsed().as_secs_f64()) {
+                Cmd::SetLight(settings, deleted) => {
+                    if light.apply_edit(settings, light_clock.elapsed().as_secs_f64(), deleted) {
                         beam_color = light.settings().preset as usize;
                     }
                 }
