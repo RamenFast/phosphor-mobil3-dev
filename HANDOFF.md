@@ -1,5 +1,123 @@
 # Handoff: mobile expansion execution
 
+## Start here: recovered checkpoint, 2026-09-09 04:16 UTC
+
+This checkpoint supersedes conflicting current-state and worker-ownership claims below.
+It is a continuation receipt, not a replacement expansion plan or a new acceptance score.
+Ben requested this comprehensive repository handoff at 03:29 UTC because the original chat was failing.
+
+### Current source and last successful work
+
+- Mobile implementation: `2997afe1aa0ff4a4b230ae4675a7532b51ea9d42`, `fix: complete practical manual and readable pause status`.
+- Shared engine: `0ffd658d7f19e68180c2720e0500b23644619e90`.
+- Both working trees were clean before this documentation-only recovery. No implementation, device, or shared-engine change occurred during recovery.
+- The last successful original-session tool committed the manual, readable pause status, correction receipts, and HDR research at 03:40:58 UTC.
+- Original session: `session_parrot_1788825216343_301349c073c5faad`. Its saved JSON parses and contains 3,899 messages.
+- Subsequent OpenAI requests repeatedly hit WebSocket connection timeouts, 180-second stream inactivity, and request-send failures. Automatic todo continuation then retried.
+- A fresh minimal OpenAI OAuth diagnostic passed at approximately 04:14 UTC, including credential refresh and `AUTH_TEST_OK`. The original large request was not replayed. This does not prove the original session is fixed.
+- The saved session was left unchanged. Recovery copy: `/home/ben/.jcode/scratch/session-recovery/parrot.original.json`. Both copies matched SHA256 `a4042b3aee7919ab5f0bb3654f53a4721e1dd660a6d3dbe4e0bcd4d324ee2a56`.
+- Its compaction covers 3,680 messages and has an OpenAI-encrypted payload with no plaintext summary. A different provider cannot use that encrypted summary. Use this handoff and the repository receipts for continuity rather than assuming a provider switch preserves that context.
+
+### Latest decisions override historical instructions
+
+1. Root capture is deferred from the next release. At 03:16 UTC Ben explicitly requested an encouraging stub button instead.
+2. Preserve root research and recovery evidence. Do not treat this deferral as permission to discard it or claim stereo, SoundCloud, or latency acceptance.
+3. The current manual still exposes operational root controls. Converting the release surface to the requested honest stub remains work, not a completed change.
+4. Keep the S25 undisturbed under the latest device instruction. ASUS was absent at the last recorded host inventory, 01:35 UTC. Recovery did not probe either phone.
+5. Preserve the ASUS MUSIC ceiling of 1/30 and silent PC audio. Use an explicit authorized serial for any future device action.
+6. System, vendor, boot, and vbmeta writes remain forbidden, including raw-device aliases and both slots. No remount, flash, or bootloader change.
+7. No push, publication, signing, store submission, or unrelated relay redesign is authorized by this recovery.
+
+### Provider and worker routing
+
+Ben requested Grok 4.6 with max reasoning for future verification at 03:16 UTC.
+That is a preference to fulfill after authentication and exact capability checks, not a verified available route.
+At this checkpoint, the Jcode-managed Grok Build backend is installed and xAI device authorization awaits Ben.
+The separate `xai` provider uses an API key. `grok-build` uses subscription authentication and ACP.
+The inspected Grok backend handles tools internally. Do not assume parity with Jcode's native tools or reasoning-effort controls.
+
+The running shared Jcode server is `7c82a17`, while PATH resolves `88cffeb`.
+An installed CLI capability does not prove the running server has reloaded that capability.
+Do not restart a shared server with active sessions as a shortcut.
+Verify authentication, advertised model IDs, supported effort, a short response, and tool behavior before assigning review work.
+No worker was launched during this recovery. Historical worker ownership windows below are not current leases.
+A new root session follows the current once-per-session routing ritual. Do not reuse expired ownership or assume a prior session waived that ritual.
+Use at most two live workers and one implementation writer. The coordinator owns the sole full build slot, integration, device actions, and Git.
+
+### Evidence at the current implementation
+
+The [manual integration receipt](docs/plans/mobile-expansion/section-11-correction-01.md) records frozen gate `339523o4jw`:
+901 JVM tests across 74 suites, 126 native tests, three offscreen GPU cases, Android lint, both debug APKs, and engine/helper/source-boundary checks.
+Complete mobile/shared before-and-after source inventories matched.
+These test results are inherited evidence, not rerun by the recovery session.
+The retained result JSON explicitly reports `installed=false` and `android_device_acceptance=false`.
+
+Retained prefix: `dev/scratch/mobile-expansion-20260908T001819Z/manual-pause-integration-r2`.
+Recovery independently rehashed these three retained files and matched the committed receipt:
+
+| Artifact suffix | SHA256 |
+| --- | --- |
+| `-app.apk` | `8661645ee51f5b0d6eefdee42ba94433aec7c6b1710b9b67907fef6e47c2e79c` |
+| `-androidTest.apk` | `5d2eaaae346d7a7a51345a4d2aef6ef3cc8ce76ce1236396bbb3b8e1be27bf97` |
+| `-jvm.tar.gz` | `6b97dda8e4635ff5cc5bfe2c97abab7d4cb39feeafe630e43d0337f6278f84b5` |
+
+This is integrated working-source evidence. It is not a final reviewed release freeze, installation, or Android acceptance.
+The manual now has 35 chapters. Its correction receipt distinguishes executed content tests, source assertions, and unobserved Compose/device schedules.
+
+### Complete remaining-outcome map
+
+| Section / requirement | Current result | Remaining action |
+| --- | --- | --- |
+| 1 / artifact boundary | Accepted source review 9/10. | Preserve boundary and historical evidence during later changes. |
+| 2 / R01 root | Limited feasibility and unsuccessful stereo trials retained. | Ship the requested honest stub. Real root stereo, SoundCloud, audibility, and added latency remain deferred and unaccepted. |
+| 3 / R09 routing/mixer | Research exists, no accepted mixer. | Finish external/Bluetooth mic selection and visualization-only mixing without presenting deferred root capture as working. Establish format/clock ownership before implementation. |
+| 4 / R02 HUD | Source review 8 plus callback addendum, integrated. | Actual transparency, touch, owner handoff, and surface continuity on an authorized target. |
+| 5 / R13 HOLD | Epochs, retained images, and application-present acknowledgement integrated. Original 6/7/7 plus narrow addenda retained. | Buffered source age, actual Android callbacks, retained output, and display acceptance. |
+| 6 / R07/R08 colors | Six slots and cycle controls integrated. Original 7/7, narrow correction 8. | Actual persistence, UI selection/cycling, and track handoff. |
+| 7 / R16 instruments | Full reviews 7/7/7/8, corrections integrated. | Real SAF/storage/native/UI acceptance. Full-review cap reached. |
+| 8 / R17 signal check | Full reviews 7/7/8, corrections integrated. | Real D1-D10 Android observations. Preserve unavailable measurements as unavailable. |
+| 9 / R10/R11 settings | Full reviews 7/7/7. Terminal reversal correction06 passed focused tests and later full integration. | Fourth and final full review, then actual input/focus/large-font/queue acceptance. |
+| 10 / R04/R12 appearance | Full reviews 7/7. Round2 pause-label contrast finding corrected in `2997afe`. | Next full independent review and actual four-theme, migration, authoring, visibility, and lifecycle acceptance. |
+| 11 / R03 manual | Original full review 7. Five corrections and 35 chapters integrated in `2997afe`. | Update root help/control behavior for the new stub. Full correction review and navigation/search/IME/accessibility/pixel/link-recovery acceptance. |
+| 12 / R05 HDR | Detailed source feasibility handoff committed, not implementation. | Implement genuine negotiated HDR and truthful SDR fallback, then actual compositor/panel evidence. |
+| 13 / R06 brightness | Foreground-only contract authored, not implementation. | Integrate persisted default-off window policy, restoration, UI/manual, and foreground/PiP/HUD acceptance. |
+| 14 / R14 startup | Explicit coordinator pending. | Implement default-source/permission/lifecycle behavior while keeping deferred root startup unavailable. |
+| Critique / R15 | Original reports remain immutable. | Stop full corrective rounds at 8 or after four total. Separate narrow addenda from full rounds. Verify the new requested Grok route before use. |
+| 15 / regression/release | Host gates and tooling fixtures passed. No new installation. | Complete requirement-linked regression, five cycles, 30-minute soak, exact reviewed dual-APK freeze, authorized installation, readback, restoration, and cleanup. |
+
+The saved todo list had 15 incomplete outcomes. Some descriptions still named released workers or earlier test counts.
+Recreate the outcomes from this map, not stale worker activity. Root capture's release deferral is newer than that list.
+
+### Ordered continuation
+
+1. Read machine governance, relevant skills, `docs/AGENTS.md`, the canonical plan, `spec/EXPANSION.md`, and the execution ledger.
+2. Recheck live Git state and ownership. Preserve unrelated changes and all original review reports.
+3. Record the root-stub release behavior in the canonical plan and active contracts before changing runtime or manual behavior.
+4. Implement and verify that stub without deleting research or claiming capture acceptance.
+5. Verify provider capabilities and obtain the required worker routing confirmation before independent reviews.
+6. Finish the remaining feature contracts and implementations in small owned units. Keep the single full build slot.
+7. Run the missing full settings, appearance, and manual reviews within their remaining budgets. Preserve original scores.
+8. Use an authorized available target for actual acceptance. Do not substitute S25 access for the ASUS absence.
+9. Freeze exact reviewed source and both APKs. Complete the final regression, installation/readback, restoration, and release gates.
+
+Key next-feature references:
+[HDR source handoff](docs/plans/mobile-expansion/section-12-hdr-source-handoff.md),
+[brightness contract](docs/plans/mobile-expansion/section-13-brightness-contract.md),
+[appearance correction03](docs/plans/mobile-expansion/section-10-correction-03.md),
+[appearance round2](docs/plans/mobile-expansion/section-10-round-02.md),
+[manual correction/integration](docs/plans/mobile-expansion/section-11-correction-01.md), and
+[routing research](docs/plans/mobile-expansion/section-03-routing-research.md).
+
+Use `scripts/env.sh` and the Gradle wrapper for Android builds. Use locked Cargo resolution.
+`docs/AGENTS.md` owns command examples, and the retained frozen runner owns the prior full-gate recipe.
+Do not reconstruct a successful gate from test counts alone or build while another writer owns the source.
+
+**Blocked outcome:** name the exact absent provider capability, device, approval, or reproducible failure.
+Keep the useful source and receipts, record the smallest resolving action, and continue independent authorized work.
+Do not turn missing hardware, authentication, or a review budget into fabricated completion.
+
+## Historical checkpoints
+
 **Updated:** 2026-09-08,15:45UTC. **Current status:** Combined gate405519lhyk passed871 JVM/126 native/three offscreen GPU tests, Android compilation/lint/dual APK and engine/source checks. Integrated485bc9f, no installation. Tooling fixture suites7293643sv6 also passed. Settings round3=7 found terminal-only reversal, now corrected with58 actual host tests; Android integration of that correction is pending. Appearance round1=7 found four finite consumer defects, assigned to Cat (Astra/high) through16:15UTC. Chicken independently reviews immutable485bc9f manual through16:06. Both prior reviewers are stopped. No Gradle while Cat owns source. Root is LOW, workers HIGH by Ben's15:14 direction. Last host inventory15:14 found no ASUS. S25 remains undisturbed. Root stereo/SoundCloud/audibility/latency, buffered source age and device acceptance remain open.
 
 **Historical checkpoint below, superseded where the current status differs:** Latest full frozen gate5457814owf passed803 JVM/126 native/three offscreen GPU tests, lint, dual APKs and engine/source boundary checks with unchanged inventories. Both APKs were retained and rehashed before any later build. Subsequent Settings child-input correction d8760e5 passed54 pure tests. Manual cca1e8d adds26 chapters and passed12 pure/source-linked tests. These were subsequently compiled in405519lhyk.

@@ -347,3 +347,13 @@ Gate267547pfgo failed one of891 JVM tests: the stage geometry source assertion s
 Chick, Astra/high, now owns only manual F1-F5 correction paths and the narrow browser error adapter until02:03UTC. Chipmunk independently reviews immutable4f285a6 full appearance ROUND2 until01:59UTC. No Gradle during writer ownership. Root remainsLOW. Device state has not been probed or changed in this continuation. Fifteen outcome milestones remain incomplete, and source/build success is not hardware acceptance.
 
 Host-only device inventory at2026-09-09 01:35UTC still lists only the S25 wireless transport. USB inventory has no ASUS/Android handset. No shell, UI, connection restart or setting command was sent to either phone. ASUS device acceptance remains unavailable, not attempted through the excluded S25.
+
+## 2026-09-09 04:16 UTC: session recovery and missing handoff completed
+
+Current implementation is `2997afe1aa0ff4a4b230ae4675a7532b51ea9d42`, shared engine `0ffd658d7f19e68180c2720e0500b23644619e90`. Both trees were clean before documentation recovery. Released manual and pause-label corrections are committed, along with the HDR source handoff. Historical worker deadlines above are not current ownership.
+
+The [current handoff](../../../HANDOFF.md) records all remaining outcomes and supersedes stale current-state descriptions. Gate `339523o4jw` is inherited evidence for 901 JVM/126 native/three GPU tests and full Android integration. Recovery rehashed the retained app APK, companion APK, and JVM archive against the committed manual receipt. All matched. No tests, builds, device operations, or installation were rerun by recovery.
+
+Ben's03:16 UTC direction defers root capture from the next release and requires an honest stub. That implementation and its plan/spec/manual changes remain pending. His requested Grok4.6/max verifier requires authenticated catalog and effort verification first. No new worker ran.
+
+The original session parses with3,899 messages. Repeated OpenAI transport failures and automatic todo retries explain its stalled tail. A fresh minimal OAuth probe now passes, but the original large request was not retried. The unchanged session has a hash-matched private backup. Its encrypted OpenAI compaction has no plaintext summary, so the repository handoff is the portable continuation entry.
