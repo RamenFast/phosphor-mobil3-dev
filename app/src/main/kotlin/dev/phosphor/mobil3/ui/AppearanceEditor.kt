@@ -56,6 +56,9 @@ internal fun AppearanceEditor(state: ScopeUiState, actions: AppearanceActions) {
     DisposableEffect(Unit) { onDispose { currentActions.value.cancelAppearancePreview() } }
     // The repair surface is deliberately opaque and separate from the authored chrome palette.
     val p = remember { AppearancePalette.palette(CuratedAppearances.dark, "editor:readable", "Readable editor") }
+    val style = LocalRoomStyle.current
+    val plane = state.appearanceValue?.colors?.plane?.let { androidx.compose.ui.graphics.Color(it or 0xff000000.toInt()) }
+        ?: p.plane
     val committed = state.appearanceDocument
     val seed = committed?.active ?: CuratedAppearances.amoled
     var draft by remember(committed) { mutableStateOf(seed) }
@@ -82,16 +85,17 @@ internal fun AppearanceEditor(state: ScopeUiState, actions: AppearanceActions) {
         alpha = value.panelAlphaScale.toString()
         error = ""
     }
-    Column(Modifier.fillMaxWidth().background(p.surface).padding(8.dp)
+    Column(Modifier.fillMaxWidth().background(plane).padding(style.space(3.dp))
+        .background(p.surface).padding(style.space(8.dp))
         .onPreviewKeyEvent {
             if (it.type == KeyEventType.KeyUp && it.key == Key.Escape) {
                 actions.cancelAppearancePreview()
                 replaceDraft(seed)
                 true
             } else false
-        }, verticalArrangement = Arrangement.spacedBy(6.dp)) {
+        }, verticalArrangement = Arrangement.spacedBy(style.space(6.dp))) {
         EditorText(state.appearanceSummary, p)
-        EditorText("Readable editor surface. Stored colors stay exact. Glass means translucent app chrome, not compositor blur or HUD transparency.", p)
+        EditorText("Readable editor surface. Status text and control labels/outlines use contrast-safe presentation colors over opaque interiors. Stored colors stay exact. The outer frame previews plane. Glass means translucent app chrome, not compositor blur or HUD transparency.", p)
         if (state.appearanceStatus.isNotBlank()) EditorText(state.appearanceStatus, p)
         if (state.appearanceRepairRequired) {
             EditorText("Original appearance bytes remain untouched. Complete replacement discards the unavailable appearance document only.", p)
@@ -137,7 +141,7 @@ internal fun AppearanceEditor(state: ScopeUiState, actions: AppearanceActions) {
         checks.filterNot { it.passes }.forEach {
             EditorText("READABILITY WARNING · ${it.role}: ${String.format(Locale.ROOT, "%.2f", it.ratio)}:1, needs ${it.minimum}:1. Stored values remain exact.", p)
         }
-        if (draft.accentFollowsBeam) EditorText("Measured beam contrast varies. Static checks cannot certify the live accent.", p)
+        if (draft.accentFollowsBeam) EditorText("Measured beam contrast varies. Control text uses a readable presentation fallback when needed. Stored and native beam colors stay exact.", p)
         if (checks.any { !it.passes }) AppearanceButton("PROPOSE READABLE COLORS IN DRAFT · replaces all color roles", p, enabled) {
             runDraft { replaceDraft(AppearanceEditorValues.readable(it)) }
         }
@@ -186,7 +190,7 @@ private fun EditorText(text: String, p: Palette) {
 internal fun AppearanceButton(label: String, p: Palette, enabled: Boolean = true, action: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).settingsFocusBorder(p)
         .border(1.dp, p.lineStrong).clickable(enabled = enabled, role = Role.Button, onClick = action)
-        .padding(10.dp), verticalArrangement = Arrangement.Center) {
+        .padding(LocalRoomStyle.current.space(10.dp)), verticalArrangement = Arrangement.Center) {
         EditorText(if (enabled) label else "$label · unavailable", p)
     }
 }
@@ -198,7 +202,7 @@ private fun AppearanceField(label: String, value: String, p: Palette, enabled: B
         EditorText(label, p)
         BasicTextField(value = value, onValueChange = change, enabled = enabled,
             modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).settingsChildInput().settingsFocusBorder(p)
-                .border(1.dp, p.lineStrong).semantics { contentDescription = label }.padding(10.dp),
+                .border(1.dp, p.lineStrong).semantics { contentDescription = label }.padding(LocalRoomStyle.current.space(10.dp)),
             textStyle = TextStyle(color = p.ink, fontSize = 16.sp, fontFamily = FontFamily.Monospace),
             cursorBrush = SolidColor(p.accent), singleLine = false,
             keyboardOptions = KeyboardOptions(keyboardType = if (ascii) KeyboardType.Ascii else KeyboardType.Text,

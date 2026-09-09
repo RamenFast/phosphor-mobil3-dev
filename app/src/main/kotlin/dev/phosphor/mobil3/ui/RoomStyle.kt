@@ -4,6 +4,7 @@ import androidx.compose.runtime.Immutable
 import androidx.compose.runtime.compositionLocalOf
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
+import dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy
 
 // Each room defines control character, motion, density, and panel treatment.
 // Glass is the only built-in room that rounds controls.
@@ -80,6 +81,19 @@ val Palette.style: RoomStyle
 
 /** Provided at the PhosphorScreen root from the DISPLAYED room (crossfade-aware). */
 val LocalRoomStyle = compositionLocalOf { CarvedStyle }
+
+/** Current flattened style controls send only the selected field. */
+fun RoomStyle.nextCharacter() = StyleOverride(character = ChromeCharacter.entries[(character.ordinal + 1) % ChromeCharacter.entries.size])
+fun RoomStyle.nextMotion() = StyleOverride(motion = MotionFeel.entries[(motion.ordinal + 1) % MotionFeel.entries.size])
+fun RoomStyle.nextCorners(): StyleOverride {
+    val values = listOf(0, 8, 12)
+    return StyleOverride(radiusDp = values[(values.indexOf(cornerRadius.value.toInt()) + 1) % values.size])
+}
+fun RoomStyle.nextLabels() = StyleOverride(designators = !designators)
+
+fun RoomStyle.choices() = StyleOverride(character, motion, cornerRadius.value.toInt(), designators)
+
+fun RoomStyle.space(base: Dp): Dp = AppearancePresentationPolicy.spacing(base.value, densityScale).dp
 
 // FEEL selects its coupled defaults. Explicit controls win. Null follows that base.
 @Immutable

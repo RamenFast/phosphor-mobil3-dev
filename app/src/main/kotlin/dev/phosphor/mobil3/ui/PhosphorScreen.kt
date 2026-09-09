@@ -699,7 +699,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                             start = 18.dp,
                             bottom = if (chromeLandscape) 18.dp else 140.dp,
                         )
-                ) { BenchPost(state, p) }
+                ) { BenchPost(state, p, reduced, chromeVisible = sheet == Sheet.NONE && !overflowComposed) }
             }
 
             // Layer 1b: console strip, auto-hiding, with the settle-down exit.

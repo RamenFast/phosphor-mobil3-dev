@@ -137,7 +137,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     )
     private var pendingAudioPermission = AudioPermissionPurpose.NONE
     private var controller: MediaController? = null
-    private var reduced = false
+    private var reduced by mutableStateOf(false)
     private var gainValue = 1.8332275f
     private var lastRandomTrackTitle: String? = null
     private var scopeRotationLockState by mutableStateOf(true)
@@ -352,6 +352,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             baseRoom = palette
             ui.room = palette
             ui.appearanceStyle = AppearancePalette.style(value)
+            ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride()
         }
     }
 
@@ -870,6 +871,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onResume() {
         super.onResume()
+        reduced = readReducedMotion(this)
+        PhosphorNative.setReducedMotion(reduced)
         signalResumed = true
         if (FloatingHudService.active) FloatingHudService.hide(this)
         refreshRotationAuthority(force = true)
@@ -2101,11 +2104,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setRoom(room: Palette) {
         val owner = appearanceWorkflow ?: return
         if (owner.blocked) return
-        val ov = ui.styleOverride
-        val value = AppearancePalette.legacy(dev.phosphor.mobil3.ui.LegacyAppearanceInput(
-            room.id, ov.character?.ordinal, ov.motion?.ordinal, ov.radiusDp,
-            ov.designators?.let { if (it) 1 else 0 },
-        )).value
+        val value = AppearancePalette.legacy(dev.phosphor.mobil3.ui.LegacyAppearanceInput(room.id)).value
         val id = "legacy:${room.id}".takeIf { key -> owner.committed?.legacy?.any { it.id == key } == true } ?: ""
         owner.apply(value, id)
     }
@@ -2114,11 +2113,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val owner = appearanceWorkflow ?: return
         if (owner.blocked) return
         val current = owner.committed ?: return
-        val base = (AppearanceDocument.CURATED + current.users + current.legacy)
-            .find { it.id == current.activeId }?.value ?: current.active
-        val value = AppearancePalette.restyled(current.active, AppearancePalette.style(base).overridden(overrides))
+        val value = AppearancePalette.editCurrentStyle(owner.effective ?: return, overrides)
         owner.apply(value, current.activeId)
-        if (owner.committed?.active == value) ui.styleOverride = overrides
     }
     override fun setFocus(focus: Float) = instrumentEdit { ui.focus = focus; PhosphorNative.setFocus(focus) }
 

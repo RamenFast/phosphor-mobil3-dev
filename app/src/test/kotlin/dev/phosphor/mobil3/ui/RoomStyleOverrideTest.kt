@@ -27,9 +27,9 @@ class RoomStyleOverrideTest {
         assertTrue("Column(Modifier.fillMaxWidth())" in footer)
         assertTrue("SectionHeading(\"STYLE\", p)" in footer)
         for (next in listOf("nextCharacter", "nextMotion", "nextCorners", "nextLabels")) {
-            assertTrue("state.styleOverride.$next()" in footer)
+            assertTrue("state.appearanceStyle.$next()" in footer)
         }
-        assertEquals(1, Regex("LiveStyleSample\\(p, reduced, state.styleOverride\\)").findAll(footer).count())
+        assertEquals(1, Regex("LiveStyleSample\\(p, reduced, currentStyle.choices\\(\\)\\)").findAll(footer).count())
     }
 
     @Test fun sampleReadsAnimatedOffsetDuringPlacementInsteadOfComposition() {
@@ -143,10 +143,10 @@ class RoomStyleOverrideTest {
         assertTrue("LocalRoomStyle provides style" in screen)
         val sheets = phase9Source("ui/Sheets.kt")
         for (next in listOf("nextCharacter", "nextMotion", "nextCorners", "nextLabels")) {
-            assertTrue("onStyle(state.styleOverride.$next())" in sheets)
+            assertTrue("onStyle(state.appearanceStyle.$next())" in sheets)
             assertFalse("state.styleOverride = state.styleOverride.$next()" in sheets)
         }
-        assertEquals(1, Regex("LiveStyleSample\\(p, reduced, state.styleOverride\\)").findAll(sheets).count())
+        assertEquals(1, Regex("LiveStyleSample\\(p, reduced, currentStyle.choices\\(\\)\\)").findAll(sheets).count())
         val sample = phase9Source("ui/Controls.kt").substringAfter("internal fun LiveStyleSample(").substringBefore("internal fun Modifier.sliderTrack")
         assertTrue("val style = LocalRoomStyle.current" in sample)
         assertTrue("LaunchedEffect(overrides)" in sample)

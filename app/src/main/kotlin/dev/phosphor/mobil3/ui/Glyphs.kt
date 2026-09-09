@@ -18,6 +18,7 @@ import androidx.compose.ui.graphics.SolidColor
 import androidx.compose.ui.graphics.StrokeCap
 import androidx.compose.ui.graphics.StrokeJoin
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.drawscope.rotate
 import androidx.compose.ui.graphics.vector.ImageVector
 import androidx.compose.ui.graphics.vector.path
 import androidx.compose.ui.unit.Dp
@@ -610,11 +611,12 @@ fun OverflowHandleGlyph(
     active: Boolean,
     modifier: Modifier = Modifier,
 ) {
+    val index = stateGlyphFloat(dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy.overflowIndex(active), "overflow-state")
     Canvas(modifier.size(26.dp)) {
         val ink = if (active) p.accent else p.ink2
         val hairline = 1.dp.toPx()
         val cx = size.width / 2f
-        val railY = size.height * 0.34f
+        val railY = size.height * (0.34f - 0.08f * index)
         drawLine(
             ink,
             Offset(size.width * 0.24f, railY),
@@ -625,7 +627,7 @@ fun OverflowHandleGlyph(
         drawLine(
             ink.copy(alpha = 0.82f),
             Offset(cx, railY),
-            Offset(cx, size.height * 0.17f),
+            Offset(cx, size.height * (0.17f - 0.08f * index)),
             hairline,
             cap = StrokeCap.Butt,
         )
@@ -637,6 +639,18 @@ fun OverflowHandleGlyph(
                 topLeft = Offset(size.width * x - dot / 2f, dotY),
                 size = androidx.compose.ui.geometry.Size(dot, dot),
             )
+        }
+    }
+}
+
+@Composable
+internal fun SettingsExpansionGlyph(expanded: Boolean, p: Palette, modifier: Modifier = Modifier) {
+    val angle = stateGlyphFloat(dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy.sectionAngle(expanded), "section-expansion")
+    Canvas(modifier.size(20.dp)) {
+        rotate(angle) {
+            fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
+            drawLine(p.ink2, point(.25f, .35f), point(.5f, .65f), 1.5.dp.toPx(), cap = StrokeCap.Butt)
+            drawLine(p.ink2, point(.5f, .65f), point(.75f, .35f), 1.5.dp.toPx(), cap = StrokeCap.Butt)
         }
     }
 }

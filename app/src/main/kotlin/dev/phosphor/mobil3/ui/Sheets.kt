@@ -1038,22 +1038,22 @@ fun RoomSheet(
             item(span = { GridItemSpan(maxLineSpan) }) {
                 Column(Modifier.fillMaxWidth()) {
                     SectionHeading("STYLE", p)
-                    val ov = state.styleOverride
+                    val currentStyle = state.appearanceStyle
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.weight(1f)) {
                             ChipCell(
-                                "FEEL · " + (ov.character?.name?.lowercase() ?: "match"),
-                                active = ov.character != null, p = p, small = true,
+                                "FEEL · " + currentStyle.character.name.lowercase(),
+                                active = true, p = p, small = true,
                             ) {
-                                onStyle(state.styleOverride.nextCharacter())
+                                onStyle(state.appearanceStyle.nextCharacter())
                             }
                         }
                         Box(Modifier.weight(1f)) {
                             ChipCell(
-                                "MOTION · " + (ov.motion?.name?.lowercase() ?: "match"),
-                                active = ov.motion != null, p = p, small = true,
+                                "MOTION · " + currentStyle.motion.name.lowercase(),
+                                active = true, p = p, small = true,
                             ) {
-                                onStyle(state.styleOverride.nextMotion())
+                                onStyle(state.appearanceStyle.nextMotion())
                             }
                         }
                     }
@@ -1061,24 +1061,24 @@ fun RoomSheet(
                     Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                         Box(Modifier.weight(1f)) {
                             ChipCell(
-                                "CORNERS · " + (ov.radiusDp?.let { "${it}dp" } ?: "match"),
-                                active = ov.radiusDp != null, p = p, small = true,
+                                "CORNERS · ${currentStyle.cornerRadius.value.toInt()}dp",
+                                active = true, p = p, small = true,
                             ) {
-                                onStyle(state.styleOverride.nextCorners())
+                                onStyle(state.appearanceStyle.nextCorners())
                             }
                         }
                         Box(Modifier.weight(1f)) {
                             ChipCell(
-                                "LABELS · " + (ov.designators?.let { if (it) "part-nos" else "plain" } ?: "match"),
-                                active = ov.designators != null, p = p, small = true,
+                                "LABELS · " + if (currentStyle.designators) "part-nos" else "plain",
+                                active = true, p = p, small = true,
                             ) {
-                                onStyle(state.styleOverride.nextLabels())
+                                onStyle(state.appearanceStyle.nextLabels())
                             }
                         }
                     }
-                    LiveStyleSample(p, reduced, state.styleOverride)
+                    LiveStyleSample(p, reduced, currentStyle.choices())
                     Prose(
-                        "FEEL sets the chrome defaults. MOTION, CORNERS and LABELS override them. Match follows FEEL, or the room when FEEL matches.",
+                        "FEEL selects coupled chrome defaults. MOTION sets timing. CORNERS and LABELS change only their displayed field.",
                         p.muted, modifier = Modifier.padding(top = 6.dp),
                     )
                 }

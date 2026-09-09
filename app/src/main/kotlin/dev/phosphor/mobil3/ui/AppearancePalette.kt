@@ -89,6 +89,12 @@ internal object AppearancePalette {
         designators = value.designators, panelAlphaScale = value.panelAlphaScale,
     )
 
+    /** ROOM sends one field, never a saved record or stale legacy override tuple. */
+    fun editCurrentStyle(value: AppearanceValue, edit: StyleOverride): AppearanceValue {
+        require(listOf(edit.character, edit.motion, edit.radiusDp, edit.designators).count { it != null } == 1)
+        return restyled(value, style(value).overridden(edit))
+    }
+
     fun restyled(value: AppearanceValue, style: RoomStyle): AppearanceValue = value.copy(
         character = AppearanceCharacter.entries[style.character.ordinal],
         motion = AppearanceMotion.entries[style.motion.ordinal],

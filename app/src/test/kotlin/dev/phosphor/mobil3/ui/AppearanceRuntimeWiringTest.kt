@@ -51,7 +51,7 @@ class AppearanceRuntimeWiringTest {
         assertFalse(legacy.contains("PhosphorNative"))
         val room = source("ui/Sheets.kt").substringAfter("fun RoomSheet(").substringBefore("private fun StyleSampleChip")
         assertFalse(room.contains("state.styleOverride ="))
-        assertTrue(room.contains("onStyle(state.styleOverride.nextCharacter())"))
+        assertTrue(room.contains("onStyle(state.appearanceStyle.nextCharacter())"))
     }
 
     @Test fun lifecycleAndEditorRetirementCancelPreview() {

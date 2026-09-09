@@ -283,7 +283,9 @@ internal fun SettingsExpandableSection(
     content: @Composable () -> Unit,
 ) {
     val expanded = id in presentation.expanded
-    Column(Modifier.fillMaxWidth()) {
+    val style = LocalRoomStyle.current
+    val p = p.readableOn()
+    Column(Modifier.fillMaxWidth().background(p.surface)) {
         Spacer(Modifier.fillMaxWidth().height(Dim.hairline).background(p.lineStrong))
         Row(
             Modifier.fillMaxWidth().heightIn(min = 48.dp)
@@ -295,20 +297,20 @@ internal fun SettingsExpandableSection(
                 .clickable(role = Role.Button, onClickLabel = if (expanded) "Collapse $title" else "Expand $title") {
                     presentation.toggle(id)
                 }
-                .padding(vertical = 12.dp),
+                .padding(vertical = style.space(12.dp)),
             verticalAlignment = Alignment.CenterVertically,
-            horizontalArrangement = Arrangement.spacedBy(8.dp),
+            horizontalArrangement = Arrangement.spacedBy(style.space(8.dp)),
         ) {
             SettingsGlyphIcon(glyph, p, 20.dp)
             Column(Modifier.weight(1f)) {
                 Mono(title, p.ink, Type.data, maxLines = Int.MAX_VALUE)
-                Prose(summary, p.ink2, modifier = Modifier.padding(top = 4.dp))
+                Prose(summary, p.ink2, modifier = Modifier.padding(top = style.space(4.dp)))
             }
-            Mono(if (expanded) "▴" else "▾", p.ink2, modifier = Modifier.clearAndSetSemantics { })
+            SettingsExpansionGlyph(expanded, p, Modifier.clearAndSetSemantics { })
         }
         if (expanded) {
             content()
-            Spacer(Modifier.height(12.dp))
+            Spacer(Modifier.height(style.space(12.dp)))
         }
     }
 }

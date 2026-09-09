@@ -9,7 +9,12 @@ import androidx.compose.animation.core.FiniteAnimationSpec
 import androidx.compose.animation.core.snap
 import androidx.compose.animation.core.spring
 import androidx.compose.animation.core.tween
+import androidx.compose.animation.core.animateFloatAsState
+import androidx.compose.runtime.Composable
+import androidx.compose.runtime.getValue
 import androidx.compose.runtime.compositionLocalOf
+import dev.phosphor.mobil3.settings.appearance.AppearanceMotion
+import dev.phosphor.mobil3.settings.appearance.AppearanceMotionPolicy
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.launch
@@ -191,6 +196,18 @@ fun readReducedMotion(context: Context): Boolean =
     ) == 0f
 
 val LocalReducedMotion = compositionLocalOf { false }
+
+/** Composed visible glyphs animate only a real state change, never an idle clock. */
+@Composable
+internal fun stateGlyphFloat(target: Float, label: String): Float {
+    val style = LocalRoomStyle.current
+    val motion = AppearanceMotion.entries[style.motion.ordinal]
+    if (!AppearanceMotionPolicy.stateChange(true, true, true, LocalReducedMotion.current, motion)) return target
+    val value by animateFloatAsState(target,
+        tween((Motion.settle * style.durationScale).toInt().coerceIn(80, 200),
+            easing = if (style.motion == MotionFeel.Detented) stepEasing() else Motion.standard), label = label)
+    return value
+}
 
 // An animation spec that honors reduced-motion (hard cut when on).
 fun <T> motionSpec(

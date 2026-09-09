@@ -2,6 +2,9 @@ package dev.phosphor.mobil3.ui
 
 import androidx.compose.runtime.Immutable
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.toArgb
+import dev.phosphor.mobil3.settings.appearance.AppearanceContrast
+import dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy
 import kotlin.math.pow
 
 // House design tokens, ported verbatim from phosphor/crates/phosphor-app/src/theme.rs
@@ -34,6 +37,20 @@ data class Palette(
     val beamAccent: Color = Color.Unspecified,
 ) {
     val liveAccent: Color get() = if (beamAccent == Color.Unspecified) accent else beamAccent
+
+    fun readableColor(color: Color, background: Color = surface, minimum: Double = 4.5): Color =
+        Color(AppearancePresentationPolicy.foreground(color.toArgb(), background.toArgb() and 0xffffff, minimum) or 0xff000000.toInt())
+
+    /** A local presentation copy for a component with this exact opaque interior. */
+    fun readableOn(background: Color = surface): Palette = copy(
+        surface = background.copy(alpha = 1f),
+        ink = readableColor(ink, background), ink2 = readableColor(ink2, background),
+        muted = readableColor(muted, background), accent = readableColor(accent, background),
+        line = readableColor(line, background, 3.0), lineStrong = readableColor(lineStrong, background, 3.0),
+    )
+
+    fun controlBackplate(pressed: Boolean): Color = if (!pressed) surface.copy(alpha = 1f) else
+        Color(AppearanceContrast.over(accent.copy(alpha = .10f).toArgb(), surface.toArgb() and 0xffffff) or 0xff000000.toInt())
 
     // Blend a beam color into the chrome — port of theme.rs with_beam: gamma-lift,
     // then 82% toward the beam hue. Every room gets beamAccent; only

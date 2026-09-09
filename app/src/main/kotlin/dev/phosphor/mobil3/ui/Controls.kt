@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.widthIn
 import androidx.compose.runtime.Composable
 import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
@@ -35,6 +36,7 @@ import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy
 
 @Composable
 internal fun LiveStyleSample(p: Palette, reduced: Boolean, overrides: StyleOverride) {
@@ -152,7 +154,7 @@ fun StoneKey(
     val lo = if (pressed) p.stoneHi else p.stoneLo
     Box(
         modifier
-            .size(size)
+            .size(AppearancePresentationPolicy.target(size.value).dp)
             .drawBehind {
                 if (glass) {
                     // A glass slab: translucent fill, iOS-6 gloss (top sheen),
@@ -212,13 +214,16 @@ fun StoneKey(
     ) {
         Box(Modifier.offset { IntOffset(sink.roundToPx(), sink.roundToPx()) }) {
             // The transport glyph (▶ / ❚❚) uprights to the viewing edge.
-            UprightCell { Mono(label, if (void && pressed) p.accent else p.ink, Type.dataXl) }
+            UprightCell {
+                Mono(label, p.readableColor(if (void && pressed) p.accent else p.ink), Type.dataXl,
+                    Modifier.background(p.surface))
+            }
         }
         // Silk-screened part number (`S1` — the main switch), bench rooms only.
         if (style.designators && designator != null) {
             Mono(
-                designator, p.muted, Type.dataXs,
-                Modifier.align(Alignment.TopStart).padding(start = 3.dp, top = 2.dp),
+                designator, p.readableColor(p.muted), Type.dataXs,
+                Modifier.align(Alignment.TopStart).padding(start = 3.dp, top = 2.dp).background(p.surface),
                 letterSpacing = 1.2.sp,
             )
         }
@@ -255,7 +260,7 @@ fun StoneToggle(
     val lo = if (down) p.stoneHi else p.stoneLo
     Box(
         modifier
-            .height(Dim.stoneKey)
+            .heightIn(min = 48.dp).widthIn(min = 48.dp)
             .drawBehind {
                 if (glass) {
                     val r = style.cornerRadius.toPx()
@@ -307,7 +312,8 @@ fun StoneToggle(
             .padding(horizontal = 18.dp),
         contentAlignment = Alignment.Center,
     ) {
-        Mono(label, if (engaged) p.accent else p.ink, Type.data)
+        Mono(label, p.readableColor(if (engaged) p.accent else p.ink), Type.data,
+            Modifier.background(p.surface).padding(vertical = LocalRoomStyle.current.space(6.dp)))
     }
 }
 
@@ -327,15 +333,16 @@ fun FlatKey(
     val pressed by interaction.collectIsPressedAsState()
     val style = LocalRoomStyle.current
     val accessible = LocalSettingsControlAccess.current
+    val p = p.readableOn(p.controlBackplate(pressed))
     Box(
         modifier
-            .then(if (accessible) Modifier.heightIn(min = 48.dp) else Modifier.height(Dim.flatKey))
+            .heightIn(min = 48.dp).widthIn(min = 48.dp)
             .then(if (accessible) Modifier.settingsChoice(active) else Modifier)
-            .background(if (pressed) p.accent.copy(alpha = 0.10f) else Color.Transparent)
+            .background(p.surface)
             .border(Dim.hairline, if (active || pressed) p.accent else p.line)
             .then(if (accessible) Modifier.settingsFocusBorder(p) else Modifier)
             .clickable(interactionSource = interaction, indication = null, onClick = onClick)
-            .padding(horizontal = 14.dp, vertical = if (accessible) 6.dp else 0.dp),
+            .padding(horizontal = style.space(14.dp), vertical = style.space(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
         // UI-locked mode: the label stays upright toward the viewing edge, through
@@ -365,12 +372,15 @@ fun SheetRow(
     glyph: SettingsGlyph? = null,
     onClick: () -> Unit,
 ) {
+    val p = p.readableOn()
+    val style = LocalRoomStyle.current
     Box(
         modifier
             .fillMaxWidth()
+            .heightIn(min = 48.dp).background(p.surface)
             .clickable(onClick = onClick)
             .border(Dim.hairline, if (checked) p.accent else p.line)
-            .padding(Dim.rowPad),
+            .padding(style.space(Dim.rowPad)),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
             glyph?.let {
@@ -400,15 +410,18 @@ fun ChipCell(
     onClick: () -> Unit,
 ) {
     val accessible = LocalSettingsControlAccess.current
+    val p = p.readableOn()
+    val style = LocalRoomStyle.current
     Box(
         Modifier
-            .padding(3.dp)
+            .padding(style.space(3.dp))
             .fillMaxWidth()
-            .then(if (accessible) Modifier.heightIn(min = 48.dp) else Modifier.height(if (small) 40.dp else 48.dp))
+            .heightIn(min = 48.dp).widthIn(min = 48.dp)
             .then(if (accessible) Modifier.settingsChoice(active) else Modifier)
+            .background(p.surface)
             .border(Dim.hairline, if (active && enabled) p.accent else p.line)
             .clickable(enabled = enabled, onClick = onClick)
-            .padding(6.dp),
+            .padding(style.space(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
         Mono(

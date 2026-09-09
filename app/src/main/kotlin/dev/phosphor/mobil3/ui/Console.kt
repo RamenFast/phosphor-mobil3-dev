@@ -56,6 +56,8 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import java.util.Locale
 import kotlin.math.roundToInt
+import dev.phosphor.mobil3.settings.appearance.AppearanceMotion
+import dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy
 
 // ── Burn-in walk: persistent chrome drifts ±1 px on a slow orbit (60 s period) ──
 @Composable
@@ -79,12 +81,14 @@ fun Modifier.burnInWalk(reduced: Boolean, visible: Boolean = true): Modifier {
 // ── Status band — read-only, mono, flanking the punch-hole. Never a tap target. ──
 @Composable
 fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean, chromeVisible: Boolean = true) {
+    val p = p.readableOn(p.plane)
+    val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
     Box(
         Modifier
             .fillMaxWidth()
             .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
-            .padding(horizontal = 16.dp, vertical = 6.dp)
+            .padding(horizontal = style.space(16.dp), vertical = style.space(6.dp))
             .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip),
     ) {
         Row(
@@ -95,7 +99,8 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                         .fillMaxWidth()
                     else Modifier.fillMaxWidth()
                 )
-                .then(if (LocalRoomStyle.current.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier),
+                .background(p.plane)
+                .padding(style.space(4.dp)),
             horizontalArrangement = Arrangement.SpaceBetween,
         ) {
             val left = buildString {
@@ -104,16 +109,16 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                 if (state.noSignal) append("   ·   no signal")
             }
             androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Mono(left, p.ink2.copy(alpha = 0.70f), Type.dataSm)
+                Mono(left, p.ink2, Type.dataSm)
                 if (state.gridData) {
                     Mono(GridData.line(state.gridReading, left = true), p.ink2, Type.dataXs)
                     Mono(GridData.line(state.gridReading, left = false), p.ink2, Type.dataXs)
                 }
                 if (hudVisible && state.hudLine.isNotBlank()) {
-                    Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
+                    Mono(state.hudLine, p.muted, Type.dataXs)
                 }
                 if (hudVisible && state.hudLine2.isNotBlank()) {
-                    Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
+                    Mono(state.hudLine2, p.muted, Type.dataXs)
                 }
             }
             // Remote geometry reports the desktop mode and measured gain, not the idle local renderer.
@@ -127,8 +132,8 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                 "${state.modeTag}$rolledMark · $gainTag"
             }
             Mono(
-                right, p.ink2.copy(alpha = 0.70f), Type.dataSm,
-                Modifier.padding(start = Dim.gapLg).widthIn(max = 280.dp),
+                right, p.ink2, Type.dataSm,
+                Modifier.padding(start = style.space(Dim.gapLg)).widthIn(max = 280.dp),
             )
         }
     }
@@ -194,6 +199,7 @@ fun Console(
     chromeVisible: Boolean = true,
 ) {
     val view = LocalView.current
+    val p = p.readableOn()
     val hasTransport = state.trackTitle != null || state.remote
     val capture = state.sourceLabel == "capture"
     val style = LocalRoomStyle.current
@@ -224,8 +230,11 @@ fun Console(
                     p.surface.copy(alpha = Dim.consoleAlpha * style.panelAlphaScale)
                 )
                 .border(Dim.hairline, p.line, cardShape)
-                .padding(horizontal = Dim.consolePadH, vertical = Dim.consolePadV)
-                .then(if (style.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier)
+                .padding(style.space(2.dp))
+                .background(p.plane)
+                .padding(style.space(2.dp))
+                .background(p.surface)
+                .padding(horizontal = style.space(Dim.consolePadH), vertical = style.space(Dim.consolePadV))
                 // The play bar owns this deliberate upward reveal. Stage drags remain
                 // gain/orbit gestures, and horizontal seek scrubs keep their lane.
                 .playBarSwipeUp(onSettingsSwipe, settingsPullHost),
@@ -245,16 +254,16 @@ fun Console(
                         velocity = 24.dp,
                     ) else Modifier,
                 )
-                Spacer(Modifier.height(Dim.gap))
+                Spacer(Modifier.height(style.space(Dim.gap)))
             }
             if (state.seekable && state.durationMs > 0) {
                 SeekRule(p, state.positionMs, state.durationMs, onSeek)
-                Spacer(Modifier.height(Dim.gap))
+                Spacer(Modifier.height(style.space(Dim.gap)))
             }
             Row(verticalAlignment = Alignment.CenterVertically) {
                 if (hasTransport && (!capture || state.captureCanPrevious)) {
                     FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
-                    Spacer(Modifier.width(Dim.gap))
+                    Spacer(Modifier.width(style.space(Dim.gap)))
                 }
                 if (!capture || state.captureCanPlay || state.live) {
                     val displayOnly = PauseDisplayPolicy.displayOnly(state.live, state.captureCanPlay)
@@ -272,17 +281,17 @@ fun Console(
                     }
                 }
                 if (hasTransport && (!capture || state.captureCanNext)) {
-                    Spacer(Modifier.width(Dim.gap))
+                    Spacer(Modifier.width(style.space(Dim.gap)))
                     FlatKey("▸▸", p) { Haptics.light(view); onNext() }
                 }
-                Spacer(Modifier.width(Dim.gapLg))
+                Spacer(Modifier.width(style.space(Dim.gapLg)))
                 // Reference-designator conventions, honestly applied: V = the tube
                 // (the mode IS the displayed figure), J = input jack, S = switch.
                 FlatKey("MODE", p, designator = "V2") {
                     if (state.randomModeArmed) state.requestRandomMode()
                     onMode()
                 }
-                Spacer(Modifier.width(Dim.gap))
+                Spacer(Modifier.width(style.space(Dim.gap)))
                 FlatKey("SRC", p, designator = "J1", onClick = onSrc)
                 Spacer(Modifier.weight(1f))
                 OverflowHandleKey(
@@ -307,16 +316,15 @@ private fun OverflowHandleKey(
 ) {
     var pressed by remember { mutableStateOf(false) }
     val style = LocalRoomStyle.current
+    val p = p.readableOn(p.controlBackplate(pressed))
     Box(
         Modifier
             .width(52.dp)
-            .height(Dim.flatKey)
-            .background(
-                if (pressed) p.accent.copy(alpha = 0.10f) else Color.Transparent
-            )
+            .heightIn(min = 48.dp)
+            .background(p.surface)
             .border(Dim.hairline, if (active || pressed) p.accent else p.line)
             .overflowHandleGesture(pullHost, onTap) { pressed = it }
-            .padding(horizontal = 10.dp),
+            .padding(horizontal = style.space(10.dp), vertical = style.space(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
         UprightCell { OverflowHandleGlyph(p, active || pressed) }
@@ -334,25 +342,24 @@ private fun OverflowHandleKey(
 //    stepped in like a line printer under the thermionic bloom. Every line is
 //    REAL state — no theatre (honesty law). ──
 @Composable
-fun BenchPost(state: ScopeUiState, p: Palette) {
+fun BenchPost(state: ScopeUiState, p: Palette, reduced: Boolean, chromeVisible: Boolean) {
+    val style = LocalRoomStyle.current
     var lines by remember { mutableIntStateOf(0) }
-    var visible by remember { mutableStateOf(true) }
-    LaunchedEffect(Unit) {
-        repeat(3) {
-            kotlinx.coroutines.delay(160)
-            lines = it + 1
-        }
-        kotlinx.coroutines.delay(900)
-        visible = false
+    var retired by remember { mutableStateOf(false) }
+    val policy = AppearancePresentationPolicy.post(state.presentationVisible, !state.pip, chromeVisible,
+        reduced, AppearanceMotion.entries[style.motion.ordinal], retired)
+    LaunchedEffect(policy) {
+        AppearancePresentationPolicy.revealPost(policy, { lines = it }, { retired = true }) { kotlinx.coroutines.delay(it) }
     }
-    if (!visible) return
+    if (policy == AppearancePresentationPolicy.Post.HIDDEN) return
+    val p = p.readableOn(p.plane)
     val checks = listOf(
         "V1 ENGINE" to "OK",
         "J1 RELAY" to if (state.remote) "OK" else "—",
         "V2 HEATER" to if (state.remote && state.remoteAudio) "OK" else "—",
     )
-    Column {
-        checks.take(lines).forEach { (k, v) ->
+    Column(Modifier.background(p.plane).padding(style.space(4.dp))) {
+        checks.take(if (policy == AppearancePresentationPolicy.Post.STATIC) checks.size else lines).forEach { (k, v) ->
             Mono("$k · $v", p.muted, Type.dataXs, letterSpacing = 1.2.sp)
             Spacer(Modifier.height(2.dp))
         }
