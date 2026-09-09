@@ -323,8 +323,8 @@ open class CaptureService : Service() {
             finishCapture("controlled request cancelled", CaptureStatus.idle())
             return START_NOT_STICKY
         }
-        if (check == null && !RootCaptureSettings.enabled(this)) {
-            finishCapture("root opt-in missing", CaptureStatus.error("root capture is off", "Enable ROOT CAPTURE in the hidden bestiary first"))
+        if (!RootCapturePolicy.mayStart(BuildConfig.DEBUG, check != null, RootCaptureSettings.enabled(this))) {
+            finishCapture("root product deferred", CaptureStatus.error("root capture is coming later", RootCapturePolicy.DEFERRED))
             return START_NOT_STICKY
         }
         publishStatus(CaptureStatus(STATE_STARTING, "root capture starting", RootCapturePolicy.CAPABILITY, false))

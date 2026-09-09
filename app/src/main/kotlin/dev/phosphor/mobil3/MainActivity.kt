@@ -1693,12 +1693,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun setRootCapture(enabled: Boolean) {
         if (!taskIsCurrent()) return
+        if (!RootCapturePolicy.PRODUCT_AVAILABLE) {
+            Toast.makeText(this, RootCapturePolicy.DEFERRED, Toast.LENGTH_LONG).show()
+            return
+        }
         selectSource()
         if (enabled) RootCaptureSettings.enable(this) else RootCaptureSettings.disable(this)
         refreshRootState()
     }
 
     override fun openRootManager() {
+        if (!RootCapturePolicy.PRODUCT_AVAILABLE) {
+            Toast.makeText(this, RootCapturePolicy.DEFERRED, Toast.LENGTH_LONG).show()
+            return
+        }
         runCatching {
             startActivity(Intent(Intent.ACTION_MAIN).addCategory(Intent.CATEGORY_LAUNCHER).setPackage("me.weishu.kernelsu"))
         }.onFailure {

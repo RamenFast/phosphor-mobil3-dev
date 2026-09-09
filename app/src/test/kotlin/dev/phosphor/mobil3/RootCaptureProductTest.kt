@@ -29,15 +29,15 @@ class RootCaptureProductTest {
     private fun source(path: String): String = listOf(File(path), File("app", path)).first { it.isFile }.readText()
     private fun main(name: String) = source("src/main/kotlin/dev/phosphor/mobil3/$name.kt")
 
-    @Test fun rootOffAndUnacknowledgedSettingsCannotSelectOrAuthorizeRoot() {
+    @Test fun deferredRootIgnoresEveryLegacySettingCombination() {
         for (enabled in listOf(false, true)) for (ack in listOf(false, true)) for (standard in listOf(false, true)) {
-            assertEquals(if (enabled && ack && !standard) CaptureBackend.ROOT else CaptureBackend.STANDARD,
+            assertEquals(CaptureBackend.STANDARD,
                 RootCapturePolicy.backend(enabled, ack, standard))
         }
         assertFalse(RootCapturePolicy.mayAuthorize(false, false))
         assertFalse(RootCapturePolicy.mayAuthorize(false, true))
         assertFalse(RootCapturePolicy.mayAuthorize(true, false))
-        assertTrue(RootCapturePolicy.mayAuthorize(true, true))
+        assertFalse(RootCapturePolicy.mayAuthorize(true, true))
         assertFalse(main("PhosphorApplication").contains("RootCaptureSession("))
         assertFalse(main("RootCaptureSettings").substringAfter("fun enabled(").substringBefore("fun enable(").contains("RootCaptureSession("))
     }

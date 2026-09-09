@@ -1,5 +1,11 @@
 # Handoff: mobile expansion execution
 
+## Prime continuation, 2026-09-09 22:49 UTC
+
+This checkpoint supersedes the older pending-stub and unavailable-ASUS claims below. The honest deferred-root stub is implemented, reviewed by Grok 4.6 high (8/10 then 9/10), installed and readback-verified on dedicated non-root ASUS NAAIB70036673ZC. Astra medium writes; current acceptance is strictly above 8, max four rounds. 909 JVM tests, lint/dual APKs and 126 native tests passed. Real preview open/close, Android standard-capture consent and legacy-root inertness passed bounded checks. Preferences restored byte-for-byte, app stopped, MUSIC 1/30. S25 remains excluded. See [receipt and exact limits](docs/plans/mobile-expansion/root-stub-asus-checkpoint.md).
+
+Next: R06 foreground-only brightness pin under its existing contract, then remaining expansion outcomes. Jcode is not fixed: short HTTPS text works, but BashTool null Boolean parsing fails and large-history transport cause remains open. No push, signing, publication, root-audio or full expansion acceptance. Build backup: `/media/ben/Mass storage/agenticTinkering/claude/phosphor-mobile/root-stub-20260909/`.
+
 ## Start here: recovered checkpoint, 2026-09-09 04:16 UTC
 
 This checkpoint supersedes conflicting current-state and worker-ownership claims below.

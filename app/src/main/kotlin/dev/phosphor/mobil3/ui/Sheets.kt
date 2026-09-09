@@ -740,7 +740,7 @@ fun SourceSheet(
             if (actions.captureConsentNeeded()) consentCard = true
             else { actions.startCapture(); onDismiss() }
         }
-        if (state.rootCaptureEnabled || state.captureRoot) {
+        if (dev.phosphor.mobil3.RootCapturePolicy.PRODUCT_AVAILABLE && (state.rootCaptureEnabled || state.captureRoot)) {
             Prose("Root input: 16 kHz mono · duplicated mono. Protected or NO_SYSTEM_CAPTURE sources remain excluded.", p.muted)
             SheetRow("use standard capture · Android consent", p, checked = state.live && state.sourceLabel == "capture" && !state.captureRoot) {
                 actions.startStandardCapture(); onDismiss()
@@ -770,7 +770,7 @@ fun SourceSheet(
         ) {
             Prose(
                 "Standard capture uses Android's “share your screen” consent for audio. " +
-                    "Enabled, authorized root capture uses its private helper instead. Nothing is recorded or sent away.",
+                    "Root capture is deferred from this release. Nothing is recorded or sent away.",
                 p.muted,
                 modifier = Modifier.weight(1f),
             )
@@ -803,7 +803,7 @@ fun SourceSheet(
         Prose(
             "Remote scopes another machine's audio over Tailscale. It plays here and " +
                 "the transport drives that machine. Standard capture respects app playback-capture opt-outs. " +
-                "Root capture can include BY_SYSTEM audio, but NO_SYSTEM_CAPTURE and protected sources remain excluded.",
+                "The hidden manual workshop has a root-capture preview, not another capture option.",
             p.muted, modifier = Modifier.padding(top = Dim.gap, bottom = Dim.gapLg),
         )
         StoneToggle(

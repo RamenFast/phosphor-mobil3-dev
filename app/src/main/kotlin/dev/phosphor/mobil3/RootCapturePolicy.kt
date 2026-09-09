@@ -6,9 +6,13 @@ internal object RootCapturePolicy {
     const val ENABLED = "root_capture_enabled"
     const val PROFILE_ACK = "root_capture_profile_ack"
     const val CAPABILITY = "16 kHz mono · duplicated mono"
+    const val PRODUCT_AVAILABLE = false
+    const val DEFERRED = "Root capture is coming later. Use standard capture with Android consent for now."
+    fun mayStart(debug: Boolean, controlledCheck: Boolean, enabled: Boolean) =
+        (debug && controlledCheck) || (PRODUCT_AVAILABLE && enabled)
     fun backend(enabled: Boolean, acknowledged: Boolean, explicitStandard: Boolean = false) =
-        if (enabled && acknowledged && !explicitStandard) CaptureBackend.ROOT else CaptureBackend.STANDARD
-    fun mayAuthorize(explicitEnable: Boolean, acknowledged: Boolean) = explicitEnable && acknowledged
+        if (PRODUCT_AVAILABLE && enabled && acknowledged && !explicitStandard) CaptureBackend.ROOT else CaptureBackend.STANDARD
+    fun mayAuthorize(explicitEnable: Boolean, acknowledged: Boolean) = PRODUCT_AVAILABLE && explicitEnable && acknowledged
     fun owns(backend: CaptureBackend, running: Boolean, projection: Boolean, record: Boolean, helper: Boolean) =
         running && when (backend) {
             CaptureBackend.STANDARD -> projection && record && !helper

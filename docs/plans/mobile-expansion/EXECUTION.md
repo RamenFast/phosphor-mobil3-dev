@@ -357,3 +357,54 @@ The [current handoff](../../../HANDOFF.md) records all remaining outcomes and su
 Ben's03:16 UTC direction defers root capture from the next release and requires an honest stub. That implementation and its plan/spec/manual changes remain pending. His requested Grok4.6/max verifier requires authenticated catalog and effort verification first. No new worker ran.
 
 The original session parses with3,899 messages. Repeated OpenAI transport failures and automatic todo retries explain its stalled tail. A fresh minimal OAuth probe now passes, but the original large request was not retried. The unchanged session has a hash-matched private backup. Its encrypted OpenAI compaction has no plaintext summary, so the repository handoff is the portable continuation entry.
+
+## Prime continuation, 2026-09-09
+
+Ben requested continuation from Parrot and Seedling after Jcode stalled.
+The source checkpoint is clean `9b99c5e`, implementation `2997afe`.
+Prime owns integration, full builds, Git, and device work. One bounded writer owns
+only the deferred-root stub and its contracts/tests. At most two workers may run.
+Ben confirmed Astra medium for implementation and Grok high for independent review.
+Acceptance is strictly above 8/10, with at most four full rounds. Preserve original
+scores and reports. This supersedes older threshold and routing instructions.
+
+Ben reports the ASUS Zenfone 9 is connected and dedicated to non-root testing.
+This entry records his authorization, not a fresh device inventory check.
+The coordinator alone operates it. Keep MUSIC at or below 1/30 and PC audio silent.
+Leave the S25 undisturbed. Existing system/vendor/boot/vbmeta and publication limits hold.
+
+The next-release root contract is updated before runtime edits. The stub must not
+request authorization or capture, including through legacy saved enablement.
+Standard capture remains available. Preserve controlled debug research and receipts.
+No build, device acceptance, independent review, or installation is claimed here.
+
+The bounded stub implementation passed 26 focused JVM tests on actual policy/manual
+production sources, including five deferred-root tests and 21 manual tests.
+Evidence: `dev/scratch/root-stub-20260909/{command.txt,compile.log,tests.log}`.
+Cached Kotlin 2.4.10 and JUnit 4.13.2 ran through the project JDK, without Gradle.
+The existing ManualNavigation copy-visibility warning remains. Android/UI files were
+not compiled by this focused check. Full integration and Grok review belong to Prime.
+
+The coordinator subsequently confirmed ASUS serial `NAAIB70036673ZC`, model
+`ASUS_AI2202`, installed debug package, and speaker MUSIC 1/30 without device changes.
+This is a coordinator observation, not a device check performed by the writer.
+
+### Deferred-root correction after Grok round 1
+
+Grok round 1 scored 8/10. The strictly-above-8 gate did not accept it.
+The immutable report remains `dev/scratch/root-stub-20260909/grok-round-01.md`.
+F1: SRC operational root controls now require product availability, independently
+of legacy flags or stale root status. Ordinary SRC copy states the deferral.
+F2: deferred disable returns before preference, revision, message, or cleanup changes.
+F3: the manual API and its caller no longer carry root state or operational callbacks.
+Controlled debug research, standard capture, and retained helper code are unchanged.
+
+The correction passed 29 focused JVM tests: eight deferred-root policy/source tests
+and 21 manual tests. Commands and logs use `command-r2.txt`, `compile-r2.log`, and
+`tests-r2.log` in the same evidence directory. Android adapters are source assertions,
+not instantiated Android tests. Full gate and independent round 2 remain pending.
+
+
+## Prime root-stub ASUS checkpoint, 2026-09-09
+
+Grok rounds 8/10 then 9/10 accept the bounded source stub. 909 JVM and 126 native tests passed. Reviewed APK installed/readback verified on ASUS; local preview, real standard-consent path and legacy-root inertness observed. Preferences restored exactly; ASUS idle at MUSIC 1/30. See [full receipt and limits](root-stub-asus-checkpoint.md). R06 is next; no full-expansion or release acceptance.

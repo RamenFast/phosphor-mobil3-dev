@@ -854,11 +854,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.MANUAL -> ManualSheet(
                     p, reduced,
                     bestiaryFound = state.bestiaryFound,
-                    rootEnabled = state.rootCaptureEnabled,
-                    rootBusy = state.rootCaptureBusy,
-                    rootStatus = state.rootCaptureStatus,
-                    onRootCapture = actions::setRootCapture,
-                    onRootManager = actions::openRootManager,
                     onBestiaryFound = { actions.markBestiaryFound() },
                     onOpenLink = { actions.openLink(it) },
                 ) { sheet = manualFrom }

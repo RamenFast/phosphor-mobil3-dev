@@ -6,6 +6,26 @@ compile-count: 0
 
 This source implements Ben's accepted R01–R17 direction. The canonical execution order remains in `MOBILE-EXPANSION-PLAN.md`. The execution ledger records implementation, real acceptance, and critiques separately. Drift counts unaccepted R requirements, not test failures. Do not lower it from a build or review score alone.
 
+## Next-release override: deferred root capture, 2026-09-09
+
+Ben deferred root capture from the next release and requested an encouraging stub.
+This overrides operational root activation below, not the retained research contract.
+The hidden bestiary offers ROOT CAPTURE · COMING LATER as an informational button.
+It opens local, dismissible help only. It does not authorize, open a root manager,
+change source selection, write root preferences, or start a helper.
+
+A fixed product policy disables root selection and authorization for both app build types.
+Legacy enabled/acknowledged preferences remain inert and are not erased.
+Ordinary Everything playing and explicit standard capture keep real Android consent.
+Direct product root-service starts fail with a deferred status before helper creation.
+Only the existing debug-only controlled check entry remains available for research.
+No root research, protocol evidence, or cleanup behavior is removed.
+
+Acceptance requires tests for all legacy flag combinations, inert button callbacks,
+authorization before side effects, and service rejection before helper creation.
+Host/source assertions are not Android execution evidence. Root stereo, SoundCloud,
+audibility, and latency remain deferred and unaccepted.
+
 ## Vision
 
 The same truthful beam moves between the full app, PiP, and a floating HUD. Ben can inspect a paused image, recall an instrument setup, and understand a dark beam without turning the instrument into a dashboard. Added power remains opt-in, visible while active, private, and recoverable.

@@ -4,7 +4,6 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
-import androidx.compose.foundation.selection.toggleable
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
@@ -122,21 +121,6 @@ private fun ManualKey(label: String, p: Palette, modifier: Modifier = Modifier, 
     }
 }
 
-@Composable
-private fun ManualRootToggle(p: Palette, checked: Boolean, onClick: () -> Unit) {
-    Row(
-        Modifier.fillMaxWidth().heightIn(min = 48.dp)
-            .border(Dim.hairline, if (checked) p.accent else p.line)
-            .settingsFocusBorder(p)
-            .toggleable(value = checked, role = Role.Switch, onValueChange = { onClick() })
-            .padding(horizontal = 12.dp, vertical = 10.dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        Mono("ROOT CAPTURE · " + if (checked) "on" else "off", p.ink, Type.data,
-            maxLines = Int.MAX_VALUE)
-    }
-}
-
 // One card of the built-in viewer: title + address, taps open the user's own browser.
 @Composable
 fun LinkCard(title: String, address: String, p: Palette, onOpen: () -> Unit) {
@@ -167,11 +151,6 @@ fun ManualSheet(
     reduced: Boolean,
     bestiaryFound: Boolean = false,
     onBestiaryFound: () -> Unit = {},
-    rootEnabled: Boolean = false,
-    rootBusy: Boolean = false,
-    rootStatus: String = "",
-    onRootCapture: (Boolean) -> Unit = {},
-    onRootManager: () -> Unit = {},
     onOpenLink: (String) -> Unit,
     onDismiss: () -> Unit,
 ) {
@@ -213,21 +192,13 @@ fun ManualSheet(
                 }
                 if (bestiaryFound && showBestiary) {
                     ManualHeading("ROOT CAPTURE", p, Modifier.padding(top = 0.dp))
-                    ManualRootToggle(p, checked = rootEnabled) {
-                        if (rootEnabled || rootBusy) onRootCapture(false) else rootDisclosure = true
-                    }
-                    Prose(rootStatus, p.muted)
+                    ManualKey("ROOT CAPTURE · COMING LATER", p) { rootDisclosure = true }
+                    Prose("A little door to a future beam. Root capture is deferred from this release.", p.muted)
                     if (rootDisclosure) {
-                        Prose("This uses your existing KernelSU authorization, not an Android recording prompt. The app stays unprivileged. Only KernelSU 32525 / UAPI 2 / flags 5 with an already verified Default/inherited profile is supported. Grant applies that profile. Phosphor does not change it.", p.ink)
-                        Prose("Confirm that existing profile before checking authorization. Capture stays private at 16 kHz mono, duplicated into the scope channels. This does not recover stereo or bypass NO_SYSTEM_CAPTURE. Denial requires an existing manager grant, then an explicit retry.", p.muted)
-                        ManualKey("PROFILE CONFIRMED · CHECK AUTHORIZATION", p) {
-                            rootDisclosure = false
-                            onRootCapture(true)
-                        }
-                        ManualKey("NOT NOW", p) { rootDisclosure = false }
+                        Prose("This is a preview, not an authorization switch. It does not request root, open a manager, or start audio capture. Earlier root settings stay inactive.", p.ink)
+                        Prose("For now, choose SRC > everything playing and approve Android consent, or select a local file or microphone. Standard capture cannot guarantee audio from every app. Stereo root capture and SoundCloud still need their own proof.", p.muted)
+                        ManualKey("GOT IT · CLOSE PREVIEW", p) { rootDisclosure = false }
                     }
-                    ManualKey("OPEN ROOT MANAGER", p) { onRootManager() }
-                    if (rootBusy) ManualKey("CANCEL CHECK", p) { onRootCapture(false) }
                     ManualHeading("THE BESTIARY", p)
 
                     Prose(

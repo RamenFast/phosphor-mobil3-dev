@@ -12,13 +12,17 @@ internal object RootCaptureSettings {
     private var authorization: RootCaptureSession? = null
     @Volatile var busy = false
         private set
-    @Volatile var message = "Off · no helper is probed"
+    @Volatile var message = RootCapturePolicy.DEFERRED
         private set
     private fun prefs(context: Context) = context.getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, Context.MODE_PRIVATE)
     fun enabled(context: Context): Boolean = prefs(context).let {
         RootCapturePolicy.backend(it.getBoolean(RootCapturePolicy.ENABLED, false), it.getBoolean(RootCapturePolicy.PROFILE_ACK, false)) == CaptureBackend.ROOT
     }
     fun enable(context: Context) {
+        if (!RootCapturePolicy.PRODUCT_AVAILABLE) {
+            message = RootCapturePolicy.DEFERRED
+            return
+        }
         if (busy || enabled(context)) return
         ++revision
         val app = context.applicationContext
@@ -43,6 +47,7 @@ internal object RootCaptureSettings {
         }, "root-authorization").start()
     }
     fun disable(context: Context) {
+        if (!RootCapturePolicy.PRODUCT_AVAILABLE) return
         val request = ++revision
         prefs(context).edit { putBoolean(RootCapturePolicy.ENABLED, false) }
         val old = authorization

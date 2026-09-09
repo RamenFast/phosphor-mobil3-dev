@@ -87,7 +87,7 @@ class ManualContentTest {
             assertEquals("Planned", ManualContent.chapter(it).availability)
         }
         val root = ManualContent.chapter("root")
-        assertEquals("Experimental", root.availability)
+        assertEquals("Deferred from this release", root.availability)
         assertTrue(root.text.contains("16 kHz mono"))
         assertTrue(root.text.contains("does not recover stereo"))
         assertTrue(root.text.contains("not yet accepted"))
@@ -235,21 +235,21 @@ class ManualContentTest {
         answer("preset recovery", "preset-recovery", "CANCEL PENDING APPLY", "RESTORE DISPLAYED SETUP", "not transport")
     }
 
-    @Test fun manualRootToggleOwnsWrappingFocusAndCheckedSemanticsWithoutChangingActions() {
+    @Test fun rootPreviewIsLocalDismissibleAndHasNoOperationalCallbacks() {
         val source = sheet()
-        val toggle = source.substringAfter("private fun ManualRootToggle(").substringBefore("// One card")
+        val button = source.substringAfter("private fun ManualKey(").substringBefore("// One card")
         listOf("heightIn(min = 48.dp)", "settingsFocusBorder(p)", "maxLines = Int.MAX_VALUE",
-            "toggleable(value = checked, role = Role.Switch, onValueChange = { onClick() })", "ROOT CAPTURE · ").forEach {
-            assertTrue("Root-specific affordance: $it", toggle.contains(it))
-        }
-        assertFalse(source.contains("SheetRow("))
-        assertTrue(source.contains("ManualRootToggle(p, checked = rootEnabled)"))
-        assertTrue(source.contains("if (rootEnabled || rootBusy) onRootCapture(false) else rootDisclosure = true"))
-        assertTrue(Regex("ManualKey\\(\"PROFILE CONFIRMED · CHECK AUTHORIZATION\", p\\) \\{\\s+rootDisclosure = false\\s+onRootCapture\\(true\\)").containsMatchIn(source))
-        assertTrue(source.contains("ManualKey(\"NOT NOW\", p) { rootDisclosure = false }"))
-        assertTrue(source.contains("if (rootBusy) ManualKey(\"CANCEL CHECK\", p) { onRootCapture(false) }"))
-        assertEquals(1, Regex("onRootCapture\\(true\\)").findAll(source).count())
-        assertEquals(2, Regex("onRootCapture\\(false\\)").findAll(source).count())
+            "role = Role.Button").forEach { assertTrue(button.contains(it)) }
+        assertTrue(source.contains("ManualKey(\"ROOT CAPTURE · COMING LATER\", p) { rootDisclosure = true }"))
+        assertTrue(source.contains("ManualKey(\"GOT IT · CLOSE PREVIEW\", p) { rootDisclosure = false }"))
+        assertFalse(source.contains("onRootCapture(true)"))
+        assertFalse(source.contains("onRootCapture(false)"))
+        assertFalse(source.contains("onRootManager()"))
+        assertFalse(source.contains("ManualRootToggle"))
+        val root = ManualContent.chapter("root")
+        assertTrue(root.text.contains("Earlier root-enabled settings stay inactive"))
+        assertTrue(root.text.contains("does not request root"))
+        assertTrue(root.text.contains("approve Android consent"))
     }
 
     @Test fun browserFailureHasVisibleExactUrlRecoveryWithoutRetry() {
@@ -264,12 +264,10 @@ class ManualContentTest {
         listOf("WebView", "HttpClient", "postDelayed", "retry", "openLink(url)").forEach { assertFalse(adapter.contains(it)) }
     }
 
-    @Test fun actualSheetKeepsDiscoveryAndExplicitRootCallbacks() {
+    @Test fun actualSheetKeepsDiscoveryAndBestiaryArt() {
         val source = sheet()
         assertTrue(source.contains("!bestiaryFound && ++tubeTaps >= 5"))
-        listOf("onBestiaryFound()", "onRootCapture(true)", "onRootCapture(false)", "onRootManager()").forEach {
-            assertTrue(it, source.contains(it))
-        }
+        assertTrue(source.contains("onBestiaryFound()"))
         assertTrue(source.contains("bestiaryFound && showBestiary"))
         assertTrue(source.contains("A turtle with a smiling mouth on the left and a pointed tail on the right"))
         assertTrue(source.contains("\\_/  |______|"))
