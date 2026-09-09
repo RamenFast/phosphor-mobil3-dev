@@ -10,7 +10,7 @@ import java.security.MessageDigest
 class LightArchiveTest {
     private fun archive(values: Map<String, *>) = SettingsArchive.export("dev.phosphor.mobil3", "2.0", "release", "2026-09-08T00:00:00Z", values)
     private fun legacy(values: String, schema: String = SettingsArchive.LEGACY_SCHEMA): String {
-        val canonical = "{\"exported_at\":\"2026-09-08T00:00:00Z\",\"schema\":\"$schema\",\"settings\":$values,\"source_distribution\":\"release\",\"source_package\":\"dev.phosphor.mobil3\",\"source_version\":\"1.0\"}"
+        val canonical = "{\"exported_at\":\"2026-09-08T00:00:00Z\",\"schema\":${SettingsArchive.canonicalQuote(schema)},\"settings\":$values,\"source_distribution\":\"release\",\"source_package\":\"dev.phosphor.mobil3\",\"source_version\":\"1.0\"}"
         val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray()).joinToString("") { "%02x".format(it) }
         return JSONObject(canonical).put("content_sha256", digest).toString()
     }

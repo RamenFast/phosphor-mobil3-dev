@@ -59,7 +59,7 @@ Existing `hud_mode` controls in-app information presentation and retains its acc
 | Microphone input | Built-in by default, explicit accessory when selected | Private device identity stays local |
 | Mix levels | Independently bounded playback and mic visualization levels | Portable, no speaker-volume effect |
 | HDR | Off | Requested preference, active capability is runtime-only |
-| Foreground brightness pin | Off | Portable, no global brightness write |
+| Foreground brightness pin | Off; Boolean `pin_screen_brightness` | Schema /2 only; no global brightness write |
 | Custom colors | Up to six RGB slots, independent selected membership | Portable |
 | Color order | Ordered unless shuffle is enabled | Portable |
 | Generated color / random interval | Independent off-by-default modes | Portable |
@@ -153,7 +153,7 @@ App AudioRecord capture and mic retain a runtime visual epoch sampled before eac
 
 HDR requires real FP16 linear-scRGB presentation and compositor evidence. Linear output bypasses manual SDR gamma encoding. Keep black, controlled emission, readable SDR chrome, and the unchanged SDR path. Reconfigure safely across owner/display changes and HDR/SDR held-image transfers. Report requested versus active HDR and a concrete fallback reason. Advertised capabilities and screenshots alone do not prove panel luminance or transparent-HDR support.
 
-Brightness pin uses only the full foreground app window's `screenBrightness=1.0` and keep-awake flag, including pause/no-source. Restore `BRIGHTNESS_OVERRIDE_NONE` outside that ownership or when disabled. Never change global brightness/auto-brightness or brighten another app through HUD/PiP. Respect thermal, battery, dimming, and static-image exposure limits. Do not poll to fight the system.
+Brightness pin uses only the full foreground app window's `screenBrightness=1.0` and keep-awake flag, including pause/no-source. The exact focused-foreground condition, event ordering, and schema /2 key are in [section13](../docs/plans/mobile-expansion/section-13-brightness-contract.md). Restore `BRIGHTNESS_OVERRIDE_NONE` outside that ownership or when disabled. Never change global brightness/auto-brightness or brighten another app through HUD/PiP. Respect thermal, battery, dimming, and static-image exposure limits. Do not poll to fight the system.
 
 ## Light and instrument presets [R07, R08, R16]
 

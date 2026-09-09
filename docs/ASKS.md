@@ -145,3 +145,30 @@ All worker workstreams use proposed Astra/high reasoning, at most two live worke
 - At03:16 UTC Ben deferred root capture from the next release and requested an encouraging stub button. This supersedes older instructions to finish working root capture for that release. The current implementation still exposes operational controls. Stub implementation and matching plan/spec/manual changes remain open.
 - At03:16 UTC Ben requested Grok 4.6 with max reasoning for subsequent independent verification and offered OAuth sign-in. At04:06 UTC he requested session diagnosis and xAI OAuth setup. The Grok Build backend is provisioned, with device authorization pending at the recovery checkpoint. Exact model and effort support remain unverified. Existing defaults were preserved.
 - At03:29 UTC Ben requested a comprehensive repository handoff because the chat was failing. The 04:16 UTC recovery checkpoint in [HANDOFF.md](../HANDOFF.md) supplies source pins, inherited and freshly checked evidence, all remaining outcomes, latest boundaries, and ordered continuation. The original saved session remains unchanged and backed up.
+
+
+## 2026-09-09 Prime continuation and current TODOs
+
+This current-status entry supersedes old pending-stub/provider/device claims above, without changing historical receipts.
+
+- Done: deferred-root stub b222818. Grok source scores 8 then9/10. Installed/readback verified on ASUS; local preview, standard consent and legacy-root inertness checked. Preferences restored, app stopped, MUSIC1/30.
+- Active: R06 brightness source authored; 67 focused tests pass. Full Android build, code review and real ASUS acceptance remain.
+- Active: independent visual proposals, Muse1.3 Contributor direct high (Ben-approved fallback) and DeepSeek v4.1 flash `deepseek-v4.1-flash-expires-on-0910` xhigh. OpenRouter Muse attempt returned no output.
+- New design ask: preserve playback controls and AOSP4.4 KitKat character; improve layout/readability/personal craft. Tactile early2000s game buttons, original vector symbols, skeuomorphism, wireframes, restrained crackling light, fluid animation and extensive theming. Genuine HDR where supported, truthful SDR fallback. Astra medium/high handles3D and implementation.
+- Current review rule: **8/10 or above passes**, max4 rounds. Preserve old scores. Detailed custom critics must inspect actual evidence and distinct interaction/theme states. Grok reviews code quality, never visual taste. Muse/DeepSeek own visual design and critique.
+- Remaining implementations: external/Bluetooth mic and visualization-only mixing; negotiated HDR; explicit default-source/startup coordinator. Root audio remains deferred.
+- Remaining acceptance: settings, appearance/manual, HUD/HOLD/colors/presets/signal-check device regressions; review remaining budgets without rewriting prior reports; five lifecycle cycles,30-minute soak, exact reviewed APK freeze and final installation/restoration.
+- Separate open repair: Jcode BashTool null Boolean input bug, plus unresolved large-history transport stalls. Short native HTTPS Astra text works; full tool smoke does not.
+- Boundaries: dedicated non-root ASUS NAAIB70036673ZC, MUSIC<=1/30, PC silent; S25 untouched; no system/vendor/boot/vbmeta writes, push, signing, publication or store submission.
+
+Detailed evidence and next step remain in `docs/plans/mobile-expansion/EXECUTION.md`, the canonical expansion plan and HANDOFF.md.
+
+- At23:08 UTC Ben requested persistent completion, periodic TODO checks, and disabling the heartbeat only when all work is genuinely complete. Goal87579191-0c7b-4e71-be25-44fabd0a0040 is active; no arbitrary token budget.
+
+## 2026-09-09 23:26 UTC verification update
+
+R06 source review attempt2 scored8/10 and passes; attempt1 remains build-blocked/unscored. Android918 tests/lint/dualAPK passed. ASUS actual brightness/wake transitions passed for no-source, display pause, Home/focus, PiP/HUD, disable and process recreation. Global slider60/auto1 unchanged. Real SAF import exposed existing cross-runtime checksum quoting divergence, confirmed bidirectionally with native Android and desktop exports. Astra owns a narrow deterministic Android-compatible canonicalizer repair before final acceptance. Checksum validation is not weakened. Both preference XML files are restored exactly; app idle, pin off; overlay permission back to default.
+
+Jcode maintainer_feedback was invoked once with sanitized facts. Tool reports queued, not confirmed delivery/read. Isolated sender cleaned up. Exact-source null-bool candidate passes4 added regressions; full BashTool module tests continue with existing test-environment issues isolated. Live channels unchanged.
+
+-23:36 R06 implemented and bounded-tested; final921 tests,Grok8,ASUS SAF on/off passed after deterministic checksum repair. Restored preferences,pin off,no services. Full baseline acceptance remains active; next tactile U1 console.

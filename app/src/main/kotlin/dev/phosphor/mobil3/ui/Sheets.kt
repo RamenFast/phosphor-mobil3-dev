@@ -1235,6 +1235,16 @@ internal fun SettingsSheet(
             )
         }
         val display: @Composable () -> Unit = {
+            ChipCell("PIN SCREEN BRIGHTNESS · " + if (state.pinScreenBrightness) "on" else "off",
+                active = state.pinScreenBrightness, p = p, small = true,
+            ) { actions.setPinScreenBrightness(!state.pinScreenBrightness) }
+            Prose(if (state.brightnessPinActive) "Full window brightness requested · keeps this window awake."
+                else if (state.pinScreenBrightness) "Pin selected · waiting for the focused full app."
+                else "Android controls screen brightness.", p.muted)
+            Prose("Sustained brightness and static images use more battery and can wear the panel. " +
+                "Thermal, panel and accessibility limits still apply. This is not HDR or measured luminance. " +
+                "The pin releases in PiP, HUD, background or focus loss.", p.muted)
+            if (state.brightnessPinError.isNotBlank()) Prose(state.brightnessPinError, p.ink)
             ChipCell("PAUSE DISPLAY · " + if (state.pauseBlack) "BLACK" else "HOLD FRAME",
                 active = !state.pauseBlack, p = p, small = true,
             ) { actions.setPauseBlack(!state.pauseBlack) }
@@ -1540,6 +1550,7 @@ interface SheetActions : AppearanceActions {
     fun setFloatingHudTransparent(on: Boolean) {}
     fun jumpToQueue(index: Int)
     fun setControlsAlwaysVisible(on: Boolean)
+    fun setPinScreenBrightness(on: Boolean)
     fun setPipAutoEnter(on: Boolean)
     fun enterPictureInPicture()
     fun setDoubleTapPlayback(on: Boolean)

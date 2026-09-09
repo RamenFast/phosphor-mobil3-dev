@@ -83,7 +83,7 @@ class ManualContentTest {
     }
 
     @Test fun pendingFeaturesAndRootEvidenceStayExplicit() {
-        listOf("mix", "hdr", "brightness", "startup").forEach {
+        listOf("mix", "hdr", "startup").forEach {
             assertEquals("Planned", ManualContent.chapter(it).availability)
         }
         val root = ManualContent.chapter("root")
@@ -131,7 +131,9 @@ class ManualContentTest {
     @Test fun plannedFeaturesProvideExistingAlternatives() {
         answer("accessory mix", "mix", "pending", "choose one existing input in SRC", "never speaker output", "Bluetooth")
         answer("hdr", "hdr", "ordinary SDR remains the working output", "not HDR", "own combined proof")
-        answer("screen brightness", "brightness", "use Android's brightness control", "no accepted PIN SCREEN BRIGHTNESS", "thermal")
+        answer("screen brightness", "brightness", "DISPLAY & HUD > PIN SCREEN BRIGHTNESS", "off by default",
+            "use Android's brightness control", "thermal", "focused full app", "Device acceptance remains pending")
+        assertEquals("Host-integrated, device acceptance pending", ManualContent.chapter("brightness").availability)
         answer("startup", "startup", "open SRC", "choose the source manually", "not accepted controls")
     }
 

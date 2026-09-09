@@ -81,6 +81,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var activityRevision = -1L
     private var activityDestroyed = false
     private var activityStarted = false
+    private var activityResumed = false
+    private var activityFocused = false
     private var scopeSurface: SurfaceView? = null
     private var surfaceHost: SurfaceHost? = null
     private var hudWasPresenting = false
@@ -90,6 +92,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             ui.floatingHudActive = FloatingHudService.active
             ui.floatingHudStatus = FloatingHudService.status
             ui.presentationVisible = activityStarted && !FloatingHudService.presenting
+            applyBrightnessPin()
             tick.removeCallbacks(uiTick)
             if (ui.presentationVisible) tick.post(uiTick)
             updateOrientationSensor()
@@ -697,6 +700,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 appearanceWorkflow?.imported(checkNotNull(AppearanceMigration.stored(imported.values)))
             }
             restoreTuning(lightPublished)
+            if (ForegroundBrightnessPolicy.KEY in imported.values) ui.brightnessPinError = ""
             instrumentWorkflow?.externalRestoreSaved()
             refreshInstrumentState()
             ui.lightPending = pendingLight
@@ -874,6 +878,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         reduced = readReducedMotion(this)
         PhosphorNative.setReducedMotion(reduced)
         signalResumed = true
+        activityResumed = true
+        applyBrightnessPin()
         if (FloatingHudService.active) FloatingHudService.hide(this)
         refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
@@ -890,6 +896,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun onPause() {
+        activityResumed = false
+        applyBrightnessPin()
         appearanceWorkflow?.cancel()
         signalResumed = false
         super.onPause()
@@ -901,6 +909,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
         ui.pip = isInPictureInPictureMode
+        applyBrightnessPin()
         if (ui.pip) appearanceWorkflow?.cancel()
         tick.removeCallbacks(uiTick)
         if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)
@@ -909,6 +918,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onConfigurationChanged(newConfig: Configuration) {
         super.onConfigurationChanged(newConfig)
+        applyBrightnessPin()
         refreshRotationAuthority(force = true)
         // The SurfaceView is still full-bleed and receives its new buffer dimensions
         // through surfaceChanged. Only PiP's advertised frame needs explicit refresh.
@@ -1046,6 +1056,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         appearanceWorkflow?.cancel()
         instrumentWorkflow?.settle("Activity stopped. Pending apply cancelled.")
         activityStarted = false
+        activityResumed = false
+        applyBrightnessPin()
         ui.presentationVisible = false
         updateOrientationSensor()
         SurfaceHost.activityVisible(false)
@@ -1077,6 +1089,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             runtimePrefs().edit { putString("last_source", "none") }
         }
         activityDestroyed = true
+        activityResumed = false
+        applyBrightnessPin()
         FloatingHudService.unobserve(hudChanged)
         surfaceHost?.close()
         surfaceHost = null
@@ -1449,15 +1463,46 @@ class MainActivity : ComponentActivity(), ScopeActions {
         return host.view.apply {
             scopeSurface?.keepScreenOn = false
             scopeSurface = this
-            reassertSourceWake()
+            applyBrightnessPin()
         }
     }
 
+    private fun brightnessPinActive(): Boolean = ::ui.isInitialized && ForegroundBrightnessPolicy.active(
+        ui.pinScreenBrightness, ForegroundBrightnessPolicy.WindowState(
+            started = activityStarted, resumed = activityResumed, focused = activityFocused,
+            current = taskIsCurrent(), destroyed = activityDestroyed,
+            pip = ui.pip || isInPictureInPictureMode, hud = FloatingHudService.presenting,
+        ),
+    )
+
+    private fun applyBrightnessPin() {
+        if (!::ui.isInitialized) return
+        val active = brightnessPinActive()
+        val requested = ForegroundBrightnessPolicy.brightness(active)
+        val attributes = window.attributes
+        if (attributes.screenBrightness != requested) {
+            attributes.screenBrightness = requested
+            window.attributes = attributes
+        }
+        ui.brightnessPinActive = active
+        reassertSourceWake()
+    }
+
+    override fun setPinScreenBrightness(on: Boolean) {
+        if (!taskIsCurrent()) return
+        ui.pinScreenBrightness = on
+        applyBrightnessPin()
+        val saved = runCatching { prefs().edit().putBoolean(ForegroundBrightnessPolicy.KEY, on).commit() }.getOrDefault(false)
+        ui.brightnessPinError = if (saved) "" else
+            "Brightness choice applies now but saving failed. Toggle it again to retry before closing Phosphor."
+    }
+
     private fun reassertSourceWake() {
-        val awake = SourceWakePolicy.visible(
+        val sourceAwake = SourceWakePolicy.visible(
             started = activityStarted && !activityDestroyed,
             sourceLive = micWake.live || PlaybackService.hasLiveWakeSource() || CaptureService.hasLiveWakeSource(),
         )
+        val awake = ForegroundBrightnessPolicy.awake(sourceAwake, brightnessPinActive())
         scopeSurface?.keepScreenOn = awake
         if (awake) window.addFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
         else window.clearFlags(WindowManager.LayoutParams.FLAG_KEEP_SCREEN_ON)
@@ -1887,6 +1932,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun restoreTuning(lightPublished: Boolean = false) {
         val p = prefs()
+        ui.pinScreenBrightness = ForegroundBrightnessPolicy.requested(p.all)
+        applyBrightnessPin()
         PhosphorNative.setPauseBlack(dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(p.all))
         refreshDisplayPause()
         val hud = HudPolicy.read(p.all)
@@ -2496,6 +2543,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun onWindowFocusChanged(hasFocus: Boolean) {
         super.onWindowFocusChanged(hasFocus)
         signalFocused = hasFocus
+        activityFocused = hasFocus
+        applyBrightnessPin()
         if (hasFocus) {
             refreshRotationAuthority(force = true)
             applyImmersive()

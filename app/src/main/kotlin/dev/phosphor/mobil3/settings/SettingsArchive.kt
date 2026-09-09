@@ -92,6 +92,7 @@ object SettingsArchive {
         "hud_mode" to intRange(0, 2),
         "band_mode" to intRange(0, 2),
         "fullscreen" to Spec(Kind.BOOLEAN),
+        "pin_screen_brightness" to Spec(Kind.BOOLEAN),
         "linger_background" to Spec(Kind.BOOLEAN),
         "double_tap_playback" to Spec(Kind.BOOLEAN),
         "controls_always_visible" to Spec(Kind.BOOLEAN),
@@ -129,7 +130,7 @@ object SettingsArchive {
         "cycle_per_track" to Spec(Kind.BOOLEAN),
     )
 
-    private val v2Only = setOf("appearance_state", "custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
+    private val v2Only = setOf("pin_screen_brightness", "appearance_state", "custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
         "cycle_random_interval", "cycle_interval_min", "cycle_interval_max")
 
     private fun validAppearance(text: String): Boolean = try {
@@ -400,26 +401,45 @@ object SettingsArchive {
         schema: String = SCHEMA,
     ): String = buildString {
         append('{')
-        append("\"exported_at\":").append(JSONObject.quote(exportedAt)).append(',')
-        append("\"schema\":").append(JSONObject.quote(schema)).append(',')
+        append("\"exported_at\":").append(canonicalQuote(exportedAt)).append(',')
+        append("\"schema\":").append(canonicalQuote(schema)).append(',')
         append("\"settings\":").append(canonicalObject(values)).append(',')
-        append("\"source_distribution\":").append(JSONObject.quote(sourceDistribution)).append(',')
-        append("\"source_package\":").append(JSONObject.quote(sourcePackage)).append(',')
-        append("\"source_version\":").append(JSONObject.quote(sourceVersion))
+        append("\"source_distribution\":").append(canonicalQuote(sourceDistribution)).append(',')
+        append("\"source_package\":").append(canonicalQuote(sourcePackage)).append(',')
+        append("\"source_version\":").append(canonicalQuote(sourceVersion))
         append('}')
     }
 
     private fun canonicalObject(values: Map<String, Any>): String = values.toSortedMap().entries.joinToString(
         prefix = "{", postfix = "}", separator = ","
-    ) { (key, value) -> JSONObject.quote(key) + ":" + canonicalValue(value) }
+    ) { (key, value) -> canonicalQuote(key) + ":" + canonicalValue(value) }
 
     private fun canonicalValue(value: Any): String = when (value) {
         is Boolean -> value.toString()
-        is String -> JSONObject.quote(value)
+        is String -> canonicalQuote(value)
         is Number -> BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
         else -> throw ArchiveException(
             "non_inert_value", "Archive contains an unsupported value type", "Use an unmodified Phosphor export"
         )
+    }
+
+    /** Android JSONStringer spelling, independent of the host org.json implementation. */
+    internal fun canonicalQuote(value: String): String = buildString {
+        append('"')
+        for (c in value) when (c) {
+            '"', '\\', '/' -> { append('\\'); append(c) }
+            '\t' -> append("\\t")
+            '\b' -> append("\\b")
+            '\n' -> append("\\n")
+            '\r' -> append("\\r")
+            '\u000c' -> append("\\f")
+            else -> if (c.code <= 0x1f) {
+                append("\\u00")
+                append("0123456789abcdef"[c.code ushr 4])
+                append("0123456789abcdef"[c.code and 15])
+            } else append(c)
+        }
+        append('"')
     }
 
     private fun sha256(text: String): String = MessageDigest.getInstance("SHA-256")

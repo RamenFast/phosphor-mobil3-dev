@@ -10,6 +10,39 @@ import org.json.JSONObject
 import java.security.MessageDigest
 
 class SettingsArchiveTest {
+    @Test fun brightnessPinIsV2OnlyBooleanAndExcludesActiveWindowState() {
+        val key = dev.phosphor.mobil3.ForegroundBrightnessPolicy.KEY
+        for (on in listOf(false, true)) {
+            val decoded = SettingsArchive.decode(export(mapOf(key to on)).json)
+            assertEquals(mapOf(key to on), decoded.values)
+            assertEquals(on, dev.phosphor.mobil3.ForegroundBrightnessPolicy.requested(decoded.values))
+            val legacy = SettingsArchive.decode(legacyFixture(mapOf(key to on)))
+            assertTrue(legacy.values.isEmpty())
+            assertEquals(listOf(key), legacy.skippedKeys)
+        }
+        for (bad in listOf<Any>("true", 1, 0, 1.0)) {
+            assertEquals("invalid_setting_type", assertFailsWith<SettingsArchive.ArchiveException> {
+                export(mapOf(key to bad))
+            }.error)
+            assertEquals("invalid_setting_type", assertFailsWith<SettingsArchive.ArchiveException> {
+                SettingsArchive.decode(singleSettingFixture(key, bad, SettingsArchive.SCHEMA))
+            }.error)
+        }
+        for (private in listOf("brightness_pin_active", "screen_brightness", "brightness_window_owner")) {
+            assertTrue(SettingsArchive.decode(singleSettingFixture(private, true)).values.isEmpty())
+        }
+    }
+
+    @Test fun brightnessPinImportPreservesOmissionAndExplicitFalseOverridesTrue() {
+        val key = dev.phosphor.mobil3.ForegroundBrightnessPolicy.KEY
+        val existing = mapOf<String, Any>(key to true)
+        val omitted = SettingsArchive.decode(export(mapOf("grid" to true)).json)
+        assertFalse(key in SettingsArchive.merge(omitted, existing))
+        assertTrue(dev.phosphor.mobil3.ForegroundBrightnessPolicy.requested(existing + SettingsArchive.merge(omitted, existing)))
+        val off = SettingsArchive.decode(export(mapOf(key to false)).json)
+        assertFalse(dev.phosphor.mobil3.ForegroundBrightnessPolicy.requested(existing + SettingsArchive.merge(off, existing)))
+    }
+
     @Test fun pauseModeRoundTripsWithoutImagesOrInspectionState() {
         for (mode in listOf("HOLD", "BLACK")) {
             val values = mapOf("pause_display" to mode, "gain" to 1.25f)
@@ -237,16 +270,16 @@ class SettingsArchiveTest {
     private fun legacyFixture(values: Map<String, *>): String {
         val fields = values.toSortedMap().entries.joinToString(",") { (key, value) ->
             val encoded = when (value) {
-                is String -> JSONObject.quote(value)
+                is String -> SettingsArchive.canonicalQuote(value)
                 is Boolean -> value.toString()
                 is Number -> java.math.BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
                 else -> error("unsupported fixture")
             }
-            JSONObject.quote(key) + ":" + encoded
+            SettingsArchive.canonicalQuote(key) + ":" + encoded
         }
         val canonical = "{" +
             "\"exported_at\":\"${metadata[3]}\"," +
-            "\"schema\":\"phosphor.settings/1\"," +
+            "\"schema\":\"phosphor.settings\\/1\"," +
             "\"settings\":{$fields}," +
             "\"source_distribution\":\"${metadata[2]}\"," +
             "\"source_package\":\"${metadata[0]}\"," +
@@ -270,16 +303,16 @@ class SettingsArchiveTest {
 
     // Single-setting wire fixture only, not a substitute validator or a copied production owner.
     // Explicit canonical bytes let decode reach validation instead of stopping at a bad checksum.
-    private fun singleSettingFixture(key: String, value: Any): String {
+    private fun singleSettingFixture(key: String, value: Any, schema: String = SettingsArchive.LEGACY_SCHEMA): String {
         val encoded = when (value) {
-            is String -> JSONObject.quote(value)
+            is String -> SettingsArchive.canonicalQuote(value)
             is Boolean -> value.toString()
             is Number -> java.math.BigDecimal(value.toString()).stripTrailingZeros().toPlainString()
             else -> error("unsupported fixture")
         }
         val canonical = "{" +
             "\"exported_at\":\"${metadata[3]}\"," +
-            "\"schema\":\"${SettingsArchive.LEGACY_SCHEMA}\"," +
+            "\"schema\":${SettingsArchive.canonicalQuote(schema)}," +
             "\"settings\":{\"$key\":$encoded}," +
             "\"source_distribution\":\"${metadata[2]}\"," +
             "\"source_package\":\"${metadata[0]}\"," +
@@ -321,7 +354,7 @@ class SettingsArchiveTest {
             val encoded = if (invalid is String) "\"$invalid\"" else invalid.toString()
             val canonical = "{" +
                 "\"exported_at\":\"${metadata[3]}\"," +
-                "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+                "\"schema\":${SettingsArchive.canonicalQuote(SettingsArchive.SCHEMA)}," +
                 "\"settings\":{\"grid_data\":$encoded}," +
                 "\"source_distribution\":\"${metadata[2]}\"," +
                 "\"source_package\":\"${metadata[0]}\"," +
@@ -374,7 +407,7 @@ class SettingsArchiveTest {
             val encoded = if (invalid is String) "\"$invalid\"" else invalid.toString()
             val canonical = "{" +
                 "\"exported_at\":\"${metadata[3]}\"," +
-                "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+                "\"schema\":${SettingsArchive.canonicalQuote(SettingsArchive.SCHEMA)}," +
                 "\"settings\":{\"$key\":$encoded}," +
                 "\"source_distribution\":\"${metadata[2]}\"," +
                 "\"source_package\":\"${metadata[0]}\"," +
@@ -425,7 +458,7 @@ class SettingsArchiveTest {
             val value = if (invalid is String) "\"$invalid\"" else invalid.toString()
             val canonical = "{" +
                 "\"exported_at\":\"${metadata[3]}\"," +
-                "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+                "\"schema\":${SettingsArchive.canonicalQuote(SettingsArchive.SCHEMA)}," +
                 "\"settings\":{\"double_tap_playback\":$value}," +
                 "\"source_distribution\":\"${metadata[2]}\"," +
                 "\"source_package\":\"${metadata[0]}\"," +
@@ -551,7 +584,7 @@ class SettingsArchiveTest {
         settings.put("future_field", "inert")
         val canonical = "{" +
             "\"exported_at\":\"${metadata[3]}\"," +
-            "\"schema\":\"${SettingsArchive.SCHEMA}\"," +
+            "\"schema\":${SettingsArchive.canonicalQuote(SettingsArchive.SCHEMA)}," +
             "\"settings\":{\"future_field\":\"inert\",\"grid\":true}," +
             "\"source_distribution\":\"${metadata[2]}\"," +
             "\"source_package\":\"${metadata[0]}\"," +

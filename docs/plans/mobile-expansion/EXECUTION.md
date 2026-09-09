@@ -408,3 +408,92 @@ not instantiated Android tests. Full gate and independent round 2 remain pending
 ## Prime root-stub ASUS checkpoint, 2026-09-09
 
 Grok rounds 8/10 then 9/10 accept the bounded source stub. 909 JVM and 126 native tests passed. Reviewed APK installed/readback verified on ASUS; local preview, real standard-consent path and legacy-root inertness observed. Preferences restored exactly; ASUS idle at MUSIC 1/30. See [full receipt and limits](root-stub-asus-checkpoint.md). R06 is next; no full-expansion or release acceptance.
+
+## R06 foreground brightness implementation, 2026-09-09
+
+Prime assigned the sole bounded writer after deferred-root acceptance at `b222818`.
+Before code, section13 fixed `pin_screen_brightness` as Boolean, default off, schema /2 only.
+The pin requires a started, resumed, focused, current Activity outside PiP/HUD/destruction.
+The Activity event adapter writes 1.0/-1.0 only when window attributes differ.
+The existing source-wake ticker remains brightness-write-free. Its original wake decision
+is combined with the active pin. No source, global setting, service, root or engine changed.
+Local disable applies before persistence. A saving failure remains visible with a retry.
+Imports retain omitted keys and activate this window choice only after valid persistence.
+The existing-style settings control and manual distinguish requests from measured luminance.
+
+Ben corrected the review threshold to at least 8/10, with four full rounds maximum.
+That supersedes earlier strictly-above-8 entries without changing their original reports.
+Grok now reviews code quality, not visual design. This unit does not redesign the UI.
+Ben assigns visual choices to Muse1.3-contributor/xhigh and exact DeepSeek v4.1 Flash/xhigh,
+subject to route verification. Astra medium/high owns 3D. Playback controls and the
+AOSP4.4 KitKat character remain protected by the current design direction.
+
+Focused check: 67 JVM tests passed across ForegroundBrightnessPolicyTest (6),
+SettingsArchiveTest (40), and ManualContentTest (21). Actual changed policy, archive,
+and manual sources compiled with cached Kotlin2.4.10 using the project JDK.
+Unchanged dependencies came from the prior coordinator-compiled debug classes and
+cached jars. No mock Android framework, Gradle build or device check ran in this unit.
+Lifecycle/UI checks are source assertions plus pure policy schedules, not Android execution.
+The first run correctly skipped an invalid new key in a legacy-schema fixture.
+The test was corrected to use a valid-checksum schema /2 fixture. All original logs remain.
+Evidence: `dev/scratch/brightness-pin-20260909/{command-r2.txt,compile-r2.log,tests-r2.log}`.
+The existing ManualNavigation copy-visibility warning remains. Full Android integration,
+Grok review and ASUS window/global-state restoration checks belong to the coordinator.
+
+### R06 adapter correction before review attempt 2
+
+The coordinator Android gate failed: MainActivity.setPinScreenBrightness overrode
+nothing. The writer had added only SheetActions, not ScopeActions or its real adapter.
+Grok released attempt 1 as build-blocked and unscored. That report is preserved.
+ScopeActions now declares the setter. SheetActions requires it without a no-op default.
+PhosphorScreen's actual SheetActions object delegates directly to its ScopeActions host.
+The Android compiler must now check both implementations. A source-linked regression
+checks the declarations and real delegation, but does not replace compiler/device proof.
+
+The corrected source passed 68 focused tests and git diff --check. Evidence uses
+`command-r3.txt`, `compile-r3.log`, `tests-r3.log`, and `source-r2.sha256` in the R06
+receipt directory. The earlier command/log/freeze remain unchanged. The full Android
+rerun, Grok attempt 2, and actual ASUS UI/window check remain coordinator-owned.
+
+### R06 SAF check exposed cross-runtime archive canonicalization
+
+The ASUS rejected a host-native Boolean archive with checksum_mismatch, despite
+matching transferred bytes. Its own export reimported successfully. Native reflection
+showed JSON-java omitted the schema slash escape while Android included it.
+The Android-export checksum was reproduced exactly by the slash-corrected canonical
+bytes. The coordinator's diagnostic OFF import then passed and released brightness.
+This was a pre-existing checksum algorithm portability defect, not an R06 Boolean error.
+Original diagnostics and fixtures remain in `canonical-probe/` and the R06 receipt root.
+
+SettingsArchive checksum strings now use explicit Android JSONStringer quoting.
+The Android10/API29 and Android14 reference string bodies are identical; Android13
+was also inspected. Quote, slash, backslash, short controls and lowercase other-control
+escapes match. Non-control Unicode stays unchanged. The parser, output serializer,
+number normalization and strict checksum comparison are unchanged. No host-hash fallback
+was added: prior host-only fixtures were never compatible Android exports.
+
+Focused tests passed 86 cases across policy, manual, settings, light, appearance and
+canonicalization suites. Golden vectors cover all32 controls, slash/quote/backslash,
+non-ASCII text, supplementary Unicode and U+0085/U+2028/U+2029. Fixed independently
+hashed minimal fixtures preserve actual ASUS metadata and the diagnostic OFF checksum.
+Existing type-validation fixture builders now use the deterministic quote spelling;
+the fixed golden vectors, rather than those builders, independently test checksum bytes.
+The initial run caught an expected-vector typo for form feed; the Android-compatible
+production output was correct and the vector now expects the short escape.
+
+Evidence: `dev/scratch/brightness-pin-20260909/canonical-repair/` retains command-r2.txt,
+compile-r2.log and tests-r2.log. Current native production is compiled from source,
+with unchanged prior Android-built dependency classes. No Gradle/device action ran
+in this correction. Parent owns full integration and Grok attempt3 of4.
+The earlier source-review8 remains historical, not acceptance of this correction.
+
+The repaired native decoder also accepted the exact full ASUS export: its computed
+SHA matched stored `ba75b1f9732926475ffd027ba9bd50e7a8dffdcb89f527cb8c30feab73b16905`.
+Only hashes and the pin Boolean were logged, not appearance content.
+New native-exported ON/OFF fixtures are under `canonical-repair/fixtures/`; original
+incompatible host fixtures remain unchanged for the regression record.
+
+
+## Prime R06 ASUS checkpoint,23:36 UTC
+
+Final921-test/lint/dualAPK gate and Grok attempt3=8 passed, preserving attempt2=8 and blocked attempt1. Deterministic Android checksum repair passed actual SAF on/off imports. Brightness lifecycle,PiP/HUD and restoration observed on ASUS. Final preferences restored exactly, app idle,pin off,MUSIC1/30. See [receipt and remaining limits](brightness-asus-checkpoint.md). Next U1 tactile console; full remaining baseline remains active.

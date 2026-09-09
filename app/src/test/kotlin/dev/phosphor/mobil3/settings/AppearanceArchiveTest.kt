@@ -17,8 +17,8 @@ class AppearanceArchiveTest {
         active = CuratedAppearances.glass, activeId = "curated:glass"))
 
     private fun fixture(value: Any, schema: String = SettingsArchive.SCHEMA): String {
-        val spelling = if (value is String) JSONObject.quote(value) else value.toString()
-        val canonical = "{\"exported_at\":\"$instant\",\"schema\":\"$schema\"," +
+        val spelling = if (value is String) SettingsArchive.canonicalQuote(value) else value.toString()
+        val canonical = "{\"exported_at\":\"$instant\",\"schema\":${SettingsArchive.canonicalQuote(schema)}," +
             "\"settings\":{\"appearance_state\":$spelling},\"source_distribution\":\"release\"," +
             "\"source_package\":\"dev.phosphor.mobil3\",\"source_version\":\"2.0.0\"}"
         val digest = MessageDigest.getInstance("SHA-256").digest(canonical.toByteArray(Charsets.UTF_8))
