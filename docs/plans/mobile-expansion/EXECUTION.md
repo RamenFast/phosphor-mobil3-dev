@@ -337,3 +337,13 @@ Latest full gate5457814owf is working-source integration evidence, not final cle
 - Independent appearance round1 at485bc9f is7/10. Report retained byte-identically as section-10-round-01.md, SHA256508f838b8c795cea9a480955f0be9737bb901f852dbe47cbae873ebe10ab6e6b. Cat, Astra/high, owns only the four finite correction seams through16:15 UTC. Chicken independently reviews immutable manual SECTION11 through16:06. No Gradle during the writer window.
 - Ben requested root LOW and workers HIGH at15:14, then300K compression at15:39. Native threshold changed200000 to300000 in Jcode config and the harness confirmed live application. Model routes were not changed.
 - Brightness contract is pre-code only. HDR, startup coordinator, mixing and final device acceptance remain open. Last host inventory15:14 found no ASUS. S25 remains undisturbed.
+
+## 2026-09-09 01:33 UTC recovery and integration
+
+The session resumed with mobile82f3f98 and Cat's uncommitted released files intact. The old worker was no longer in the active swarm. Its immutable report explicitly released source at2026-09-08T16:00:24Z; all private manifest and18 live-source hashes verified before using the build slot. No elapsed-time assumption substituted for release.
+
+Gate267547pfgo failed one of891 JVM tests: the stage geometry source assertion still searched for old unscaled padding. Root verified actual report-before-gutters-and-inner-padding ordering, retained the failed XML archive, and strengthened the assertion to require all markers and ordering. Full gate409985gj6g then passed891 JVM/126 native/3offscreen GPU plus lint, dual APK, engine/helper/boundary/source inventories. Exact retained hashes are in section-10-correction-02.md. Working-source success is not finalcleanreviewfreeze or device acceptance. Commit4f285a6 integrates the corrections and original manual round1 report unchanged.
+
+Chick, Astra/high, now owns only manual F1-F5 correction paths and the narrow browser error adapter until02:03UTC. Chipmunk independently reviews immutable4f285a6 full appearance ROUND2 until01:59UTC. No Gradle during writer ownership. Root remainsLOW. Device state has not been probed or changed in this continuation. Fifteen outcome milestones remain incomplete, and source/build success is not hardware acceptance.
+
+Host-only device inventory at2026-09-09 01:35UTC still lists only the S25 wireless transport. USB inventory has no ASUS/Android handset. No shell, UI, connection restart or setting command was sent to either phone. ASUS device acceptance remains unavailable, not attempted through the excluded S25.
