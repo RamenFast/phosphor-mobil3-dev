@@ -2049,6 +2049,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         // Cards leave through the user's own browser — the app renders no web content.
         runCatching {
             startActivity(Intent(Intent.ACTION_VIEW, url.toUri()))
+        }.onFailure {
+            android.app.AlertDialog.Builder(this)
+                .setTitle("Browser could not open")
+                .setMessage("Enable a browser in Android Settings > Apps. Open this URL in that browser:\n\n$url")
+                .setPositiveButton("CLOSE", null)
+                .show()
         }
     }
 

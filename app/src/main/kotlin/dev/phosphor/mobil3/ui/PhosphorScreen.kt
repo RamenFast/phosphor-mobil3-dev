@@ -12,6 +12,7 @@ import androidx.compose.animation.fadeIn
 import androidx.compose.animation.fadeOut
 import androidx.compose.animation.slideOutVertically
 import androidx.compose.foundation.gestures.detectTapGestures
+import androidx.compose.foundation.background
 import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.BoxWithConstraints
 import androidx.compose.foundation.layout.WindowInsets
@@ -676,8 +677,12 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     SignalCheckAction("SIGNAL CHECK", p) { sheet = Sheet.SIGNAL_CHECK }
                 }
             }
-            if (state.displayPaused || state.displayPresentPending) Prose(state.pauseLabel, p.muted,
-                modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp))
+            if (state.displayPaused || state.displayPresentPending) {
+                val pausePalette = p.readableOn(p.plane)
+                Prose(state.pauseLabel, pausePalette.muted,
+                    modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp)
+                        .background(pausePalette.plane).padding(horizontal = 8.dp, vertical = 4.dp))
+            }
 
             // Layer 1a: read-only status band.
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.

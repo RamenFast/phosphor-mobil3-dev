@@ -136,6 +136,26 @@ class AppearancePresentationTest {
         assertEquals(encoded, AppearanceDocumentCodec.encode(AppearanceDocument.of(active = authored)))
     }
 
+    @Test fun pauseLabelRemainsReadableOverBlackAndBrightHeldContentWithoutChangingAuthoredBytes() {
+        val document = AppearanceDocument.of(active = CuratedAppearances.light)
+        val before = AppearanceDocumentCodec.encode(document)
+        val p = palette(document.active)
+        val pausePalette = p.readableOn(p.plane)
+        for (held in listOf(0, 0xffffff)) {
+            assertEquals(document.active.colors.plane, AppearanceContrast.over(pausePalette.plane.toArgb(), held))
+            contrast(pausePalette.muted, pausePalette.plane, 4.5)
+        }
+        assertEquals(before, AppearanceDocumentCodec.encode(document))
+        val screen = listOf("src/main/kotlin", "app/src/main/kotlin")
+            .map { File(it, "dev/phosphor/mobil3/ui/PhosphorScreen.kt") }.first { it.isFile }.readText()
+        val label = screen.substringAfter("if (state.displayPaused || state.displayPresentPending)")
+            .substringBefore("// Layer 1a:")
+        assertTrue(label.contains("val pausePalette = p.readableOn(p.plane)"))
+        assertTrue(label.contains("Prose(state.pauseLabel, pausePalette.muted,"))
+        assertTrue(label.contains(".background(pausePalette.plane)"))
+        assertFalse(label.contains("bandMode"))
+    }
+
     @Test fun passingPresentationColorsAreKeptAndLowContrastCustomColorsRemainAuthored() {
         val low = CuratedAppearances.light.copy(colors = CuratedAppearances.light.colors.copy(
             ink = 0x777777, surface = 0x777777, plane = 0x777777, accent = 0x777777))
