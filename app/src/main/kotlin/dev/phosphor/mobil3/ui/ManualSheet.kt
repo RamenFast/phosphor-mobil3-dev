@@ -5,6 +5,7 @@ import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
 import androidx.compose.foundation.horizontalScroll
 import androidx.compose.foundation.text.BasicTextField
+import androidx.compose.foundation.layout.Box
 import androidx.compose.foundation.layout.Column
 import androidx.compose.foundation.layout.Row
 import androidx.compose.foundation.layout.Spacer
@@ -12,6 +13,7 @@ import androidx.compose.foundation.layout.fillMaxWidth
 import androidx.compose.foundation.layout.height
 import androidx.compose.foundation.layout.heightIn
 import androidx.compose.foundation.layout.padding
+import androidx.compose.foundation.layout.size
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -241,13 +243,42 @@ fun ManualSheet(
                     onValueChange = { navigation = navigation.search(it) },
                     modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp)
                         .background(p.surface2).border(Dim.hairline, p.lineStrong)
-                        .settingsFocusBorder(p).padding(12.dp)
+                        .settingsFocusBorder(p)
                         .semantics { contentDescription = "Search manual chapters" },
                     singleLine = true,
                     textStyle = TextStyle(color = p.ink, fontFamily = FontFamily.Monospace, fontSize = 14.sp),
                     cursorBrush = SolidColor(p.accent),
+                    decorationBox = { inner ->
+                        Row(
+                            Modifier.fillMaxWidth().heightIn(min = 48.dp),
+                            verticalAlignment = Alignment.CenterVertically,
+                        ) {
+                            Spacer(Modifier.width(10.dp))
+                            SheetChromeMark(SheetChromeVector.Search, p.ink2, size = 18.dp)
+                            Box(
+                                Modifier.weight(1f).padding(horizontal = 8.dp),
+                                contentAlignment = Alignment.CenterStart,
+                            ) {
+                                if (navigation.query.isEmpty()) {
+                                    Mono("source, control, or symptom", p.muted, Type.dataLg, maxLines = 1)
+                                }
+                                inner()
+                            }
+                            if (navigation.query.isNotEmpty()) {
+                                Box(
+                                    Modifier.size(48.dp)
+                                        .semantics { contentDescription = "Clear search" }
+                                        .clickable { navigation = navigation.search("") },
+                                    contentAlignment = Alignment.Center,
+                                ) {
+                                    SheetChromeMark(SheetChromeVector.Close, p.ink2, size = 16.dp)
+                                }
+                            } else {
+                                Spacer(Modifier.width(12.dp))
+                            }
+                        }
+                    },
                 )
-                if (navigation.query.isNotEmpty()) ManualKey("CLEAR SEARCH", p) { navigation = navigation.search("") }
                 val matches = ManualContent.search(navigation.query)
                 Mono("${matches.size} MATCHES", p.muted, Type.dataXs, Modifier.padding(vertical = 12.dp))
                 if (matches.isEmpty()) Prose("No chapter matches all those words. Try a source, control or symptom, such as root, gain or silence.", p.ink)

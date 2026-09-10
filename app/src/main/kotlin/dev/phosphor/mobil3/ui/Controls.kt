@@ -32,7 +32,12 @@ import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.geometry.Rect
+import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
+import androidx.compose.ui.graphics.Path
+import androidx.compose.ui.graphics.PathFillType
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
@@ -362,6 +367,56 @@ fun FlatKey(
     }
 }
 
+internal enum class SheetChromeVector { Close, Tick, Search }
+
+/** Closed sheet silhouettes, independent of installed fonts and fontScale. */
+@Composable
+internal fun SheetChromeMark(kind: SheetChromeVector, ink: Color, modifier: Modifier = Modifier, size: Dp = 18.dp) {
+    Canvas(modifier.size(size)) {
+        val box = minOf(this.size.width, this.size.height)
+        when (kind) {
+            SheetChromeVector.Close -> drawPath(Path().apply {
+                moveTo(box * .20f, box * .08f)
+                lineTo(box * .50f, box * .38f)
+                lineTo(box * .80f, box * .08f)
+                lineTo(box * .92f, box * .20f)
+                lineTo(box * .62f, box * .50f)
+                lineTo(box * .92f, box * .80f)
+                lineTo(box * .80f, box * .92f)
+                lineTo(box * .50f, box * .62f)
+                lineTo(box * .20f, box * .92f)
+                lineTo(box * .08f, box * .80f)
+                lineTo(box * .38f, box * .50f)
+                lineTo(box * .08f, box * .20f)
+                close()
+            }, ink)
+            SheetChromeVector.Tick -> drawPath(Path().apply {
+                moveTo(box * .10f, box * .50f)
+                lineTo(box * .22f, box * .38f)
+                lineTo(box * .40f, box * .60f)
+                lineTo(box * .80f, box * .14f)
+                lineTo(box * .94f, box * .28f)
+                lineTo(box * .42f, box * .88f)
+                close()
+            }, ink)
+            SheetChromeVector.Search -> {
+                drawPath(Path().apply {
+                    fillType = PathFillType.EvenOdd
+                    addOval(Rect(Offset(box * .08f, box * .08f), Size(box * .60f, box * .60f)))
+                    addOval(Rect(Offset(box * .20f, box * .20f), Size(box * .36f, box * .36f)))
+                }, ink)
+                drawPath(Path().apply {
+                    moveTo(box * .54f, box * .62f)
+                    lineTo(box * .62f, box * .54f)
+                    lineTo(box * .92f, box * .84f)
+                    lineTo(box * .84f, box * .92f)
+                    close()
+                }, ink)
+            }
+        }
+    }
+}
+
 @Composable
 fun SheetRow(
     label: String,
@@ -377,18 +432,22 @@ fun SheetRow(
     Box(
         modifier
             .fillMaxWidth()
-            .heightIn(min = 48.dp).background(p.surface)
+            .heightIn(min = 48.dp).background(if (checked) p.surface2 else p.surface)
             .clickable(onClick = onClick)
             .border(Dim.hairline, if (checked) p.accent else p.line)
             .padding(style.space(Dim.rowPad)),
     ) {
         Row(verticalAlignment = Alignment.CenterVertically) {
+            if (checked) {
+                SheetChromeMark(SheetChromeVector.Tick, p.ink, size = 14.dp)
+                Spacer(Modifier.width(Dim.gap))
+            }
             glyph?.let {
                 SettingsGlyphIcon(it, p, 20.dp)
                 Spacer(Modifier.width(Dim.gap))
             }
             Mono(
-                (if (checked) "✓ " else "") + label,
+                label,
                 if (checked) p.accent else p.ink,
                 Type.dataLg,
             )

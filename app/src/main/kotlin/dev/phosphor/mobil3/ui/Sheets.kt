@@ -180,7 +180,7 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
 }
 
 // ── Sheet mechanics (shared): a safe-area floating card over the live scope;
-// fill-driven top curl; drag-down / scrim-tap / ✕ / Back to dismiss. ──
+// fill-driven top curl; drag-down / scrim-tap / close / Back to dismiss. ──
 internal class SheetDismissState(private val scope: CoroutineScope) {
     data class Commitment(val edge: SheetEntry, val offsetPx: Float)
 
@@ -506,14 +506,16 @@ fun SheetHost(
                             }
                             Mono(title, p.ink2, Type.data)
                         }
-                        Mono(
-                            "✕", p.ink2, Type.dataXl,
+                        Box(
                             (if (settingsDismiss != null) Modifier.size(48.dp)
                                 .semantics { contentDescription = "Close settings" }
                                 .clickable(onClick = dismiss)
                             else Modifier.size(48.dp).semantics { contentDescription = "Close $title" }
-                                .clickable(onClick = dismiss)).padding(horizontal = 6.dp),
-                        )
+                                .clickable(onClick = dismiss)),
+                            contentAlignment = Alignment.Center,
+                        ) {
+                            SheetChromeMark(SheetChromeVector.Close, p.ink2, size = 18.dp)
+                        }
                     }
                     Spacer(Modifier.height(Dim.gapLg))
                     if (style.character == ChromeCharacter.Glass) {

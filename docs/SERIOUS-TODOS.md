@@ -29,7 +29,9 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Muse visual of tactile track console with a real track: look 1 was 7; look 2 **9/10 PASS**. Prefs restored.
 - [x] Console/status loud-frame flatten source: Grok 8. `bd35b08`. ASUS no-track shot taken.
 - [x] Muse visual of flattened chrome: 8/10. Idle SIGNAL CHECK overlay accepted as quiet on that shot.
-- [ ] Remaining visual: sheet/manual hierarchy, animation/theming polish, Muse pixel score of a real track. 3D still Grok.
+- [x] Muse pixel score of a real track: look 2 **9/10**.
+- [x] Sheet B1 source: vector close, checked-row tick, manual inline clear. Muse code 9. Device pixels open.
+- [ ] Remaining visual: sheet plates/right-rail/LinkCard, animation/theming polish.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
