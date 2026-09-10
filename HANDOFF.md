@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~07:10 UTC
+
+Tactile track Muse visual round 1 **7/10** (F1 prev/next weight). Skip-pair source `15742d2`/`4bb2c0f`. ASUS pixels still tiny skip marks after install; PREV label probe did not appear. F1 not closed. Prefs restored. See [F1 checkpoint](docs/plans/mobile-expansion/tactile-track-f1-asus-checkpoint.md). Do not soak.
+
 ## Latest Prime checkpoint, 2026-09-10 ~07:40 UTC
 
 Mic-label source+ASUS: colliding built-in SRC rows suffix `(id)` on display only. Grok 7 then Muse 9. 956 JVM tests, lint, dual APK. Installed `08923e33…`. Bottom (19) and back (21) both start `MicCaptureService` at 48 kHz mono. Stored key unsuffixed. Prefs restored, RECORD_AUDIO revoked. See [mic-label ASUS checkpoint](docs/plans/mobile-expansion/mic-label-asus-checkpoint.md). Accessories/mix/HUD/linger still open. Do not soak.
