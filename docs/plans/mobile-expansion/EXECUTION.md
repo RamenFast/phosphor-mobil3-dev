@@ -654,3 +654,8 @@ See [r09-asus-pip-rebind-checkpoint.md](r09-asus-pip-rebind-checkpoint.md). Nati
 ## Tactile empty-install ASUS, 2026-09-10 ~05:12UTC
 
 See [tactile-empty-asus-checkpoint.md](tactile-empty-asus-checkpoint.md). Empty prefs look 2. Baseline gain-without-appearance stays look 1. Prefs restored.
+
+
+## ASUS chrome regression slice, 2026-09-10 ~05:45UTC
+
+HEAD af10694. MODE sheet opened (xy/3D/helix faces). HOLD latched `display held`. SRC sheet did not open from SRC key this run. Play-bar swipe did not show Settings. Prefs restored. MUSIC 1/30. Not a full regression matrix.
