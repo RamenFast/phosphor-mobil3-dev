@@ -182,6 +182,16 @@ fn set_hdr_report(text: &str) {
     *hdr_report_slot().lock().unwrap() = text.to_string();
 }
 
+fn append_dataspace(window: &NativeWindow) {
+    let space = window
+        .buffers_data_space()
+        .map(|space| format!("{space:?}"))
+        .unwrap_or_else(|error| format!("unread ({error})"));
+    let mut report = hdr_report_slot().lock().unwrap();
+    let base = report.split(" · dataspace ").next().unwrap_or(&report).to_string();
+    *report = format!("{base} · dataspace {space}");
+}
+
 pub fn set_hdr_requested(requested: bool, api: i32) {
     HDR_REQUESTED.store(requested, Ordering::Relaxed);
     HDR_API.store(api, Ordering::Relaxed);
@@ -459,6 +469,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                                 a.config = config;
                                 a.present_caps = present_caps;
                                 g.format = Some(a.config.format);
+                                append_dataspace(&a._window.0);
                                 if changed {
                                     retained_presenter = None;
                                     match phosphor_render_gpu::GpuRenderer::new_for_surface(
@@ -1080,7 +1091,7 @@ fn configure(
             "non_vulkan" => "SDR · adapter is not Vulkan",
             "no_fp16_pair" => "SDR · no FP16 scRGB pair",
             "metadata_api" => "SDR · HDR metadata needs API 34",
-            "attempt_linear" => "attempt linear HDR · not dataspace-proven",
+            "attempt_linear" => "attempt linear HDR",
             other => other,
         },
         backend,
@@ -1149,6 +1160,7 @@ fn bring_up(
             configure(&g, &surface, width, height, target_fps, transparent)?;
         g.format = Some(config.format);
         log::info!("present modes: {present_caps:?}");
+        append_dataspace(&window.0);
         *gpu = Some(g);
         return Ok(Active {
             surface,
@@ -1160,6 +1172,7 @@ fn bring_up(
     let g = gpu.as_ref().unwrap();
     let surface = create_surface(&g.instance, &window)?;
     let (config, present_caps) = configure(g, &surface, width, height, target_fps, transparent)?;
+    append_dataspace(&window.0);
     Ok(Active {
         surface,
         config,
