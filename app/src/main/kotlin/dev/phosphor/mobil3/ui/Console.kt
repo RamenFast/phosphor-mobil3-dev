@@ -82,7 +82,7 @@ fun Modifier.burnInWalk(reduced: Boolean, visible: Boolean = true): Modifier {
 @Composable
 fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean,
     chromeVisible: Boolean = true, onHeightChanged: (Int) -> Unit = {}) {
-    val p = p.readableOn(p.plane)
+    val p = p.readableOn(p.surface)
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
     val measurer = androidx.compose.ui.text.rememberTextMeasurer()
@@ -104,7 +104,9 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
         .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip)) {
         androidx.compose.foundation.layout.BoxWithConstraints(Modifier.align(Alignment.TopCenter)
             .then(if (landscape) Modifier.widthIn(max = Dim.landscapeBandMaxWidth).fillMaxWidth() else Modifier.fillMaxWidth())
-            .background(p.plane).padding(style.space(4.dp))) {
+            .background(p.surface)
+            .border(Dim.hairline, p.line)
+            .padding(style.space(4.dp))) {
             val textStyle = androidx.compose.ui.text.TextStyle(fontFamily = MonoFace, fontSize = Type.dataSm)
             val leftWidth = measurer.measure(left, textStyle, softWrap = false, maxLines = 1).size.width
             val rightWidth = measurer.measure(right, textStyle, softWrap = false, maxLines = 1).size.width
@@ -223,10 +225,6 @@ fun Console(
                     p.surface.copy(alpha = Dim.consoleAlpha * style.panelAlphaScale)
                 )
                 .border(Dim.hairline, p.line, cardShape)
-                .padding(style.space(2.dp))
-                .background(p.plane)
-                .padding(style.space(2.dp))
-                .background(p.surface)
                 .padding(horizontal = style.space(
                     if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 12.dp else Dim.consolePadH),
                     vertical = style.space(if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 6.dp else Dim.consolePadV))

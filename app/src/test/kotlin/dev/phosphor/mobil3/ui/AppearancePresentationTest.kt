@@ -275,8 +275,10 @@ class AppearancePresentationTest {
     @Test fun actualConsumersUseOpaqueReadableRolesAndDensityWithoutShrinkingTargets() {
         val console = source("ui/Console.kt")
         val status = console.substringAfter("fun StatusBand(").substringBefore("fun SeekRule(")
-        assertTrue(status.contains("val p = p.readableOn(p.plane)"))
-        assertTrue(status.contains(".background(p.plane)"))
+        assertTrue(status.contains("val p = p.readableOn(p.surface)"))
+        assertTrue(status.contains(".background(p.surface)"))
+        assertTrue(status.contains(".border(Dim.hairline, p.line)"))
+        assertFalse(status.contains(".background(p.plane)"))
         assertTrue(status.contains("Mono(left, p.ink2, Type.dataSm, maxLines = if (stacked) Int.MAX_VALUE else 1)"))
         assertTrue(status.contains("measurer.measure(left, textStyle"))
         assertTrue(status.contains("StageReadability.stackStatus"))
