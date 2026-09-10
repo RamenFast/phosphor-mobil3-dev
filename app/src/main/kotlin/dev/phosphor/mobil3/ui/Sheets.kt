@@ -85,6 +85,7 @@ import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalConfiguration
 import androidx.compose.ui.unit.IntOffset
 import androidx.compose.ui.unit.Velocity
+import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import kotlinx.coroutines.CoroutineScope
@@ -644,6 +645,46 @@ fun RangeDragRule(
     }
 }
 
+// Trailing action keys sit beside prose only when the sheet column is wide
+// and type is not enlarged. Narrow columns or large fontScale drop the key
+// below so the prose keeps a full-width line and the key stays a ≥48dp target.
+private val TrailingActionRailMinWidth = 340.dp
+private const val TrailingActionRailMaxFontScale = 1.3f
+
+private fun trailingActionKeepsRail(columnWidth: Dp, fontScale: Float): Boolean =
+    columnWidth >= TrailingActionRailMinWidth && fontScale < TrailingActionRailMaxFontScale
+
+@Composable
+private fun TrailingActionRow(
+    prose: String,
+    keyLabel: String,
+    p: Palette,
+    onClick: () -> Unit,
+) {
+    val fontScale = LocalDensity.current.fontScale
+    BoxWithConstraints(Modifier.fillMaxWidth().padding(bottom = Dim.gap)) {
+        val keepRail = trailingActionKeepsRail(maxWidth, fontScale)
+        if (keepRail) {
+            Row(
+                Modifier.fillMaxWidth(),
+                horizontalArrangement = Arrangement.spacedBy(Dim.gap),
+                verticalAlignment = Alignment.CenterVertically,
+            ) {
+                Prose(prose, p.muted, modifier = Modifier.weight(1f))
+                FlatKey(keyLabel, p, onClick = onClick)
+            }
+        } else {
+            Column(
+                Modifier.fillMaxWidth(),
+                verticalArrangement = Arrangement.spacedBy(Dim.gap),
+            ) {
+                Prose(prose, p.muted, modifier = Modifier.fillMaxWidth())
+                FlatKey(keyLabel, p, onClick = onClick)
+            }
+        }
+    }
+}
+
 // Source selection, capture disclosure, microphone, and PC relay controls.
 @Composable
 fun SourceSheet(
@@ -770,34 +811,20 @@ fun SourceSheet(
                 modifier = Modifier.padding(bottom = Dim.gap),
             )
         }
-        Row(
-            Modifier.fillMaxWidth().padding(bottom = Dim.gap),
-            horizontalArrangement = Arrangement.spacedBy(Dim.gap),
-            verticalAlignment = Alignment.CenterVertically,
-        ) {
-            Prose(
-                "Standard capture uses Android's “share your screen” consent for audio. " +
-                    "Root capture is deferred from this release. Nothing is recorded or sent away.",
-                p.muted,
-                modifier = Modifier.weight(1f),
-            )
-            FlatKey("manual…", p) { actions.openManual() }
-        }
+        TrailingActionRow(
+            "Standard capture uses Android's “share your screen” consent for audio. " +
+                "Root capture is deferred from this release. Nothing is recorded or sent away.",
+            "manual…",
+            p,
+        ) { actions.openManual() }
         if (!state.captureMetadataAccess) {
-            Row(
-                Modifier.fillMaxWidth().padding(bottom = Dim.gap),
-                horizontalArrangement = Arrangement.spacedBy(Dim.gap),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Prose(
-                    "Track names and cover art need NOTIFICATION ACCESS — a different " +
-                        "switch than “allow notifications”. grant… opens the right one. " +
-                        "Sound capture works without it.",
-                    p.muted,
-                    modifier = Modifier.weight(1f),
-                )
-                FlatKey("grant…", p) { actions.openCaptureMetadataSettings() }
-            }
+            TrailingActionRow(
+                "Track names and cover art need NOTIFICATION ACCESS — a different " +
+                    "switch than “allow notifications”. grant… opens the right one. " +
+                    "Sound capture works without it.",
+                "grant…",
+                p,
+            ) { actions.openCaptureMetadataSettings() }
         }
         SectionHeading("MICROPHONE", p)
         SheetRow(

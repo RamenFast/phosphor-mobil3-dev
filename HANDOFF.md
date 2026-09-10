@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~09:20 UTC
+
+Sheet B2c source-accepted: Muse code **9/10**. Trailing action keys stay beside prose only at ≥340dp and fontScale < 1.3. Device pixels open. See [sheet-b2c muse code](docs/plans/mobile-expansion/critiques/sheet-b2c-muse-code.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~09:05 UTC
 
 Sheet B2/B2b Muse visual **9/10 PASS**. Opaque plates + StatusBand hidden while a sheet is open. LinkCard prose `open`. AMOLED ghost gone even at 8x header boost. Installed `7ad2304d…`. Prefs restored. See [sheet-b2 pixels](docs/plans/mobile-expansion/sheet-b2-asus-checkpoint.md). Next: right-rail then animation/theming.
