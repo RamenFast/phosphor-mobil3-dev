@@ -1512,6 +1512,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
             "Brightness choice applies now but saving failed. Toggle it again to retry before closing Phosphor."
     }
 
+    override fun setHdrRequested(on: Boolean) {
+        if (!taskIsCurrent()) return
+        ui.hdrRequested = on
+        ui.hdrStatus = HdrPresentationPolicy.reason(on, false, android.os.Build.VERSION.SDK_INT, false)
+        PhosphorNative.setHdrRequested(on, android.os.Build.VERSION.SDK_INT)
+        runCatching { prefs().edit().putBoolean(HdrPresentationPolicy.KEY, on).commit() }
+    }
+
     private fun reassertSourceWake() {
         val sourceAwake = SourceWakePolicy.visible(
             started = activityStarted && !activityDestroyed,
@@ -2067,6 +2075,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val p = prefs()
         ui.pinScreenBrightness = ForegroundBrightnessPolicy.requested(p.all)
         applyBrightnessPin()
+        ui.hdrRequested = HdrPresentationPolicy.requested(p.all)
+        ui.hdrStatus = HdrPresentationPolicy.reason(ui.hdrRequested, false, android.os.Build.VERSION.SDK_INT, false)
+        PhosphorNative.setHdrRequested(ui.hdrRequested, android.os.Build.VERSION.SDK_INT)
         PhosphorNative.setPauseBlack(dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(p.all))
         refreshDisplayPause()
         val hud = HudPolicy.read(p.all)

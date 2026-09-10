@@ -1,6 +1,12 @@
 # Handoff: mobile expansion execution
 
-## Latest Prime checkpoint, 2026-09-10 ~02:58 UTC
+## Latest Prime checkpoint, 2026-09-10 ~03:37 UTC
+
+HDR request path source-accepted: Grok OAuth 7 then 8. Request default off. Format change rebuilds composite/HOLD. No active-HDR claim. Sibling render-gpu `3171e0f`. See [R05 source checkpoint](docs/plans/mobile-expansion/r05-source-checkpoint.md). Device dataspace/nits unproven.
+
+R09 source remains `8bed59a` with bounded ASUS built-in mic.
+
+## Previous Prime checkpoint, 2026-09-10 ~02:58 UTC
 
 R09 source accepted: 946 JVM tests, lint, dual APK, checkEngine. Grok OAuth code 7 then 8. F1 epoch rewind closed. APK `4e436e263443c1d9b4f4ef572b7f08251b7f93b6e1971ad60708e6008debcfd8`. See [R09 source checkpoint](docs/plans/mobile-expansion/r09-source-checkpoint.md). Not device-accepted. Next: bounded ASUS mic/route/mix evidence, then HDR from `dev/scratch/r05-current-handoff.md`.
 

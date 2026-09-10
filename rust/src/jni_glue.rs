@@ -946,6 +946,16 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setPauseBlack(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setHdrRequested(
+    _env: JNIEnv,
+    _class: JClass,
+    requested: jni::sys::jboolean,
+    api: jni::sys::jint,
+) {
+    crate::render::set_hdr_requested(requested != 0, api);
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_inspectHeld(
     _env: JNIEnv,
     _class: JClass,

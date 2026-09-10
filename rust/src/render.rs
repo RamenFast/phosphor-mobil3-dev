@@ -7,7 +7,7 @@
 //! its decay textures survive across surface loss (the beam remembers backgrounding).
 
 use std::sync::OnceLock;
-use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
+use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::mpsc;
 
 use crate::surface_lifecycle::Retiring;
@@ -29,6 +29,7 @@ pub enum Cmd {
     },
     Paused(bool),
     DisplayDirty,
+    HdrChanged,
     SetMode(u8),
     SetBeamColor(u8),
     /// -1 = unlimited (Immediate present, may exceed the panel), 0 = panel vsync (Fifo),
@@ -164,6 +165,15 @@ pub fn geometry_frame(frame: GeomFrame) {
 
 static SENDER: OnceLock<mpsc::Sender<Cmd>> = OnceLock::new();
 
+static HDR_REQUESTED: AtomicBool = AtomicBool::new(false);
+static HDR_API: AtomicI32 = AtomicI32::new(29);
+
+pub fn set_hdr_requested(requested: bool, api: i32) {
+    HDR_REQUESTED.store(requested, Ordering::Relaxed);
+    HDR_API.store(api, Ordering::Relaxed);
+    let _ = sender().send(Cmd::HdrChanged);
+}
+
 pub fn sender() -> &'static mpsc::Sender<Cmd> {
     SENDER.get_or_init(|| {
         let (tx, rx) = mpsc::channel();
@@ -251,6 +261,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut fps_t0 = std::time::Instant::now();
     let mut beam_color: usize = 0;
     let mut target_fps: i32 = 0; // 0 = panel vsync
+    let mut last_transparent = false;
     let mut oversample: u32 = 1; // DSP reconstruction multiplier (48/96/192 kHz)
     let mut view_rotation: u32 = 0; // quadrants; beam-to-gravity in UI-locked mode
     // Geometry FX state is loop-local (like view_rotation/oversample): the idle loop
@@ -320,6 +331,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     transparent,
                     ack,
                 } => {
+                    last_transparent = transparent;
                     display_dirty = true;
                     held_retries = 0;
                     if window.retirement.cancelled() {
@@ -331,15 +343,19 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     match bring_up(&mut gpu, window, width, height, target_fps, transparent) {
                         Ok(a) => {
                             let g = gpu.as_ref().unwrap();
-                            match renderer.as_mut() {
-                                Some(r) => {
-                                    if let Err(e) = r.resize(width, height) {
-                                        log::error!("renderer resize: {e}");
-                                        let _ = ack.send(-1);
-                                        continue;
-                                    }
+                            let same = renderer.as_ref().is_some_and(|r| r.output_format == a.config.format);
+                            if same {
+                                if let Err(e) = renderer.as_mut().unwrap().resize(width, height) {
+                                    log::error!("renderer resize: {e}");
+                                    let _ = ack.send(-1);
+                                    continue;
                                 }
-                                None => match phosphor_render_gpu::GpuRenderer::new_for_surface(
+                            } else {
+                                retained_presenter = None;
+                                renderer = None;
+                            }
+                            if renderer.is_none() {
+                            match phosphor_render_gpu::GpuRenderer::new_for_surface(
                                     &g.adapter,
                                     g.device.clone(),
                                     g.queue.clone(),
@@ -365,7 +381,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                                         }
                                     }
                                     Err(e) => log::error!("GpuRenderer::new_for_surface: {e}"),
-                                },
+                                }
                             }
                             let scope_alpha = crate::surface_policy::scope_alpha(
                                 transparent,
@@ -406,6 +422,53 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     }
                     display_dirty = true;
                     held_retries = 0;
+                }
+                Cmd::HdrChanged => {
+                    display_dirty = true;
+                    held_retries = 0;
+                    if let (Some(g), Some(a)) = (gpu.as_mut(), active.as_mut()) {
+                        match configure(
+                            g,
+                            &a.surface,
+                            a.config.width,
+                            a.config.height,
+                            target_fps,
+                            last_transparent,
+                        ) {
+                            Ok((config, present_caps)) => {
+                                let changed = a.config.format != config.format;
+                                a.config = config;
+                                a.present_caps = present_caps;
+                                g.format = Some(a.config.format);
+                                if changed {
+                                    retained_presenter = None;
+                                    match phosphor_render_gpu::GpuRenderer::new_for_surface(
+                                        &g.adapter,
+                                        g.device.clone(),
+                                        g.queue.clone(),
+                                        a.config.width,
+                                        a.config.height,
+                                        2,
+                                        a.config.format,
+                                    ) {
+                                        Ok(mut next) => {
+                                            if let Some(old) = renderer.as_ref() {
+                                                next.beam_focus = old.beam_focus;
+                                                next.persistence = old.persistence;
+                                                next.grid_enabled = old.grid_enabled;
+                                                next.display_scale = old.display_scale;
+                                                next.theme = old.theme;
+                                                next.scope_alpha = old.scope_alpha;
+                                            }
+                                            renderer = Some(next);
+                                        }
+                                        Err(e) => log::error!("hdr output rebuild: {e}"),
+                                    }
+                                }
+                            }
+                            Err(e) => log::error!("hdr configure: {e}"),
+                        }
+                    }
                 }
                 Cmd::Paused(p) => {
                     display_dirty = true;
@@ -982,7 +1045,18 @@ fn configure(
     transparent: bool,
 ) -> Result<(wgpu::SurfaceConfiguration, Vec<wgpu::PresentMode>), String> {
     let caps = surface.get_capabilities(&g.adapter);
-    let format = if let Some(format) = g.format {
+    let vulkan = g.adapter.get_info().backend == wgpu::Backend::Vulkan;
+    let has_fp16 = caps.formats.contains(&wgpu::TextureFormat::Rgba16Float);
+    let choice = crate::surface_policy::choose_output(
+        HDR_REQUESTED.load(Ordering::Relaxed),
+        vulkan,
+        HDR_API.load(Ordering::Relaxed),
+        has_fp16,
+    );
+    let format = if choice.use_fp16 {
+        wgpu::TextureFormat::Rgba16Float
+    } else if let Some(format) = g.format.filter(|format| *format != wgpu::TextureFormat::Rgba16Float)
+    {
         if !caps.formats.contains(&format) {
             return Err("surface does not support retained renderer format".into());
         }

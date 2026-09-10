@@ -17,7 +17,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] R09 source: service-owned mic, route proof, visualization mixer. 946 tests, Grok code 7 then 8. Not device-accepted.
 - [x] R09 ASUS bounded built-in start/stop at 48 kHz mono on NAAIB70036673ZC. Prefs restored, RECORD_AUDIO revoked.
 - [ ] R09 remaining device matrix: accessory routes, playback-plus-mic mix, PiP/HUD/linger identity, duplicate built-in row honesty.
-- [ ] Implement genuine Vulkan FP16 linear HDR with truthful SDR fallback from `dev/scratch/r05-current-handoff.md`. Enable existing ndk `nativewindow` feature only as part of that unit. No luminance claim from screenshots.
+- [x] HDR request path source: `hdr_requested` off by default, selector, pipeline rebuild, HOLD transfer 2.0. Grok 7 then 8. Sibling `3171e0f`.
+- [ ] HDR device proof: Vulkan identity, dataspace after present, matching metadata, honest SDR fallback on ASUS. Screenshots are not nits.
 - [ ] Default-source startup coordinator (R14), consent-chain rules, inert imports. Root auto-start stays deferred.
 - [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
 - [ ] Proven fresh-install tactile default that does not rewrite existing saved looks.

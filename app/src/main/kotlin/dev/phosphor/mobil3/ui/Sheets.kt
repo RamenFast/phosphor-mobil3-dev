@@ -1240,6 +1240,10 @@ internal fun SettingsSheet(
             ChipCell("PIN SCREEN BRIGHTNESS · " + if (state.pinScreenBrightness) "on" else "off",
                 active = state.pinScreenBrightness, p = p, small = true,
             ) { actions.setPinScreenBrightness(!state.pinScreenBrightness) }
+            ChipCell("REQUEST HDR · " + if (state.hdrRequested) "on" else "off",
+                active = state.hdrRequested, p = p, small = true,
+            ) { actions.setHdrRequested(!state.hdrRequested) }
+            Prose(state.hdrStatus, p.muted, modifier = Modifier.padding(top = 6.dp))
             Prose(if (state.brightnessPinActive) "Full window brightness requested · keeps this window awake."
                 else if (state.pinScreenBrightness) "Pin selected · waiting for the focused full app."
                 else "Android controls screen brightness.", p.muted)
@@ -1553,6 +1557,7 @@ interface SheetActions : AppearanceActions {
     fun jumpToQueue(index: Int)
     fun setControlsAlwaysVisible(on: Boolean)
     fun setPinScreenBrightness(on: Boolean)
+    fun setHdrRequested(on: Boolean)
     fun setPipAutoEnter(on: Boolean)
     fun enterPictureInPicture()
     fun setDoubleTapPlayback(on: Boolean)

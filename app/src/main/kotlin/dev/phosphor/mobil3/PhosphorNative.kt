@@ -29,6 +29,7 @@ object PhosphorNative {
     /** Bits: paused=1, BLACK=2, available pinned image=4, pending current application present=8. */
     external fun displayPauseState(): Int
     external fun setPauseBlack(black: Boolean)
+    external fun setHdrRequested(requested: Boolean, api: Int)
     external fun inspectHeld(dx: Float, dy: Float, scale: Float, reset: Boolean)
 
 
