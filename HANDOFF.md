@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~10:55 UTC
+
+ASUS landscape: 2400x1080 console strip. Rotation restored `lock 0`. Prefs restored. USB gadget only (adb), BT connections 0. Mix still needs MediaProjection.
+
 ## Latest Prime checkpoint, 2026-09-10 ~10:40 UTC
 
 ASUS regressions partial: SIGNAL CHECK honest empty, LIGHT P7 Green latch, HOLD pause/return. TalkBack not toggled. Landscape not rotated (lock + rotation 0). Prefs restored. See [asus-regressions-20260910](docs/plans/mobile-expansion/asus-regressions-20260910.md).
