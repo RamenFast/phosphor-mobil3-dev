@@ -26,7 +26,7 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [ ] ASUS proof of empty-install tactile default vs upgrade-like prefs.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
 - [x] Five ASUS lifecycle cycles (start/Home/return/recreate/stop). Prefs restored.
-- [ ] 30-minute soak on the exact accepted APK, then restore original preferences.
+- [ ] ~~30-minute soak~~ Ben 2026-09-10: do not soak. Idle soak cancelled. Prefs restored after ~4.5 min. Do not resume.
 - [ ] Keep `GPT6-REVIEW-LATER.md` current when a unit lands so Astra can review after GPT-6 usage resets.
 
 Heartbeat `eae54bc2-7c95-4bd5-94f2-4745e05d2a78` stays on until the list above is

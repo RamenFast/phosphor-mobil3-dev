@@ -629,3 +629,8 @@ APK `4de177797c38cbcda07f3a4c9ab4696eb77b241f0262e7f1cd9fcff7726409bd` (HEAD 192
 ## Lifecycle cycles 2–5, 2026-09-10 ~04:36UTC
 
 Same installed APK as cycle 1 on NAAIB70036673ZC. Each cycle: start, Home, return, `am start -S` recreate. Then force-stop. No Phosphor services after stop. Prefs restored byte-for-byte. MUSIC 1/30. Five cycles now recorded. Not a 30-minute soak. Not accessory/PiP/HDR-nits proof.
+
+
+## Soak aborted, 2026-09-10 ~04:41UTC
+
+Ben: do not soak. Stopped after ~4.5 min wall-clock. Force-stop. Prefs restored. MUSIC 1/30. Do not resume idle soak.
