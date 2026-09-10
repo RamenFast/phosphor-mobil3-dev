@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~08:10 UTC
+
+Sheet B1 on ASUS: vector close, checked tick, search field. Muse code 9. Prefs restored. Typed-query clear unshot. See [sheet-b1-asus-checkpoint](docs/plans/mobile-expansion/sheet-b1-asus-checkpoint.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~08:00 UTC
 
 Sheet B1 source-accepted: Muse code **9/10**. Vector close, checked tick, inline search clear. 956 tests. Device pixels not yet shot. Prefs still baseline.
