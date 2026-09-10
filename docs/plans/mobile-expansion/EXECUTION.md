@@ -639,3 +639,8 @@ Ben: do not soak. Stopped after ~4.5 min wall-clock. Force-stop. Prefs restored.
 ## R14 ASUS matrix, 2026-09-10 ~04:45UTC
 
 See [r14-asus-checkpoint.md](r14-asus-checkpoint.md). Last-used is not default. Confirmed mic auto-starts. Capture not prompt-free. Prefs restored. Rotation analogue not proven. Soak cancelled.
+
+
+## R09 ASUS PiP identity, 2026-09-10 ~04:47UTC
+
+See [r09-asus-pip-checkpoint.md](r09-asus-pip-checkpoint.md). MicCaptureService identity held in PiP. Mix/accessories/HUD/linger/SRC-row honesty not proven. Prefs restored.
