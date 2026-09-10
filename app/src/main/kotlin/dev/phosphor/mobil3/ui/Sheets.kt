@@ -470,7 +470,11 @@ fun SheetHost(
                         )
                         .nestedScroll(settingsNestedScroll ?: dismissNestedScroll)
                         .clip(sheetShape)
-                        .background(p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale))
+                        .background(
+                            if (style.character == ChromeCharacter.Glass)
+                                p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale)
+                            else p.surface,
+                        )
                         .border(Dim.hairline, p.lineStrong, sheetShape)
                         .padding(Dim.sheetPad)
                         .then(if (style.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier)

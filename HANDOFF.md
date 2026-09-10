@@ -1,5 +1,13 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~08:35 UTC
+
+Sheet B2 source-accepted: Muse code **9/10**. Opaque non-Glass plates; Glass dual layer unchanged; LinkCard prose `open`. 956 tests. Device pixels not yet shot. Prefs still baseline. See [sheet-b2 muse code](docs/plans/mobile-expansion/critiques/sheet-b2-muse-code.md).
+
+## Latest Prime checkpoint, 2026-09-10 ~08:20 UTC
+
+R09 linger and HUD overlay proven on ASUS `NAAIB70036673ZC`. Linger: wav playing + `linger_background` true, HOME keeps `PlaybackService` `isForeground=true` with USAGE_MEDIA focus. HUD: appops `SYSTEM_ALERT_WINDOW` allow + SHOW FLOATING HUD; overlay window over home (`dev/scratch/night-20260910/hud-over-home.png`); appops ignore closes it. Prefs restored to baseline hashes. Overlay left `default`. S25 untouched. Sheet B2 (opaque plates + LinkCard) still in Grok. Mix/USB still blocked. Do not soak.
+
 ## Latest Prime checkpoint, 2026-09-10 ~08:10 UTC
 
 Sheet B1 on ASUS: vector close, checked tick, search field. Muse code 9. Prefs restored. Typed-query clear unshot. See [sheet-b1-asus-checkpoint](docs/plans/mobile-expansion/sheet-b1-asus-checkpoint.md).

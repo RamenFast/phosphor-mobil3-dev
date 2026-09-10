@@ -19,7 +19,9 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] R09 ASUS PiP identity: same pid and MicCaptureService across HOME PiP. Prefs restored.
 - [x] R09 PiP return: native segs resume after surface rebind 9ff96bd (Grok 8). Prefs restored.
 - [x] Duplicate built-in SRC rows: distinct `(id)` labels; both ASUS bottom/back start. Muse 9. Prefs restored.
-- [ ] R09 remaining: accessory USB/BT (none connected; bonded but disconnected, not taken over), playback+mic mix (needs MediaProjection consent), HUD overlay (SYSTEM_ALERT_WINDOW false), linger.
+- [x] R09 linger: local wav + linger_background on, HOME keeps PlaybackService foreground with media focus. Prefs restored, force-stop.
+- [x] R09 HUD overlay: appops SYSTEM_ALERT_WINDOW allow + SHOW FLOATING HUD presents TYPE_APPLICATION_OVERLAY over home (`hud-over-home.png`). Revoke ignore closes HUD. Restored appops default. dumpsys permission still granted=false; appops is the live gate.
+- [ ] R09 remaining: accessory USB/BT (none connected; bonded but disconnected, not taken over), playback+mic mix (needs MediaProjection consent).
 - [x] HDR request path source: `hdr_requested` off by default, selector, pipeline rebuild, HOLD transfer 2.0. Grok 7 then 8. Sibling `3171e0f`.
 - [ ] HDR device proof: Vulkan identity, dataspace after present, matching metadata, honest SDR fallback on ASUS. Screenshots are not nits.
 - [x] R14 startup source: default none, process-death fresh, import unconfirmed. Grok 7 then 8.
@@ -31,7 +33,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Muse visual of flattened chrome: 8/10. Idle SIGNAL CHECK overlay accepted as quiet on that shot.
 - [x] Muse pixel score of a real track: look 2 **9/10**.
 - [x] Sheet B1 source: vector close, checked-row tick, manual inline clear. Muse code 9. Device pixels open.
-- [ ] Remaining visual: sheet plates/right-rail/LinkCard, animation/theming polish.
+- [x] Sheet B2 source: opaque non-Glass plates, LinkCard prose `open`. Muse code 9. Device pixels open.
+- [ ] Remaining visual: right-rail, animation/theming polish.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.

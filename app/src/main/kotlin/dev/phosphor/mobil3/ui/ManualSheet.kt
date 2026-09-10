@@ -140,7 +140,7 @@ fun LinkCard(title: String, address: String, p: Palette, onOpen: () -> Unit) {
             Mono(title, p.ink, Type.data, maxLines = Int.MAX_VALUE)
             Mono(address, p.muted, Type.dataXs, maxLines = Int.MAX_VALUE)
         }
-        Mono("open ↗", p.accent, Type.dataXs)
+        Mono("open", p.accent, Type.dataXs)
     }
     Spacer(Modifier.height(6.dp))
 }
