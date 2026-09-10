@@ -2,7 +2,7 @@
 
 ## Latest Prime checkpoint, 2026-09-10 ~10:15 UTC
 
-Edge flash source-accepted: Muse code **9/10**. 80ms lit-edge pulse on tactile HIGH bevel. Device pixels open (80ms is hard to still-frame). See [edge-flash muse code](docs/plans/mobile-expansion/critiques/edge-flash-muse-code.md).
+Edge flash source-accepted: Muse code **9/10**. 80ms lit-edge pulse on tactile HIGH bevel. ASUS still-frame of the 80ms pulse not captured: look 2 needs APPLY (baseline omits look_version); appearance editor field taps stole the CONSOLE KEYS hit. Prefs restored. Code gate stands. Look-2 rest console already Muse visual 9 earlier. See [edge-flash muse code](docs/plans/mobile-expansion/critiques/edge-flash-muse-code.md).
 
 ## Latest Prime checkpoint, 2026-09-10 ~10:00 UTC
 

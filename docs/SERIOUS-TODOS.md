@@ -40,7 +40,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Muse visual of SOURCE trailing-action drop: **9/10**. Prefs restored.
 - [x] ChipCell latch source: surface2 + 1dp sink when active. Muse code 9.
 - [x] Muse visual of ChipCell latch: **8/10**. Prefs restored.
-- [x] Edge flash source: 80ms tactile HIGH bevel pulse, gated, luminance ≤0.60. Muse code 9. Device pixels open.
+- [x] Edge flash source: 80ms tactile HIGH bevel pulse, gated, luminance ≤0.60. Muse code 9.
+- [ ] Edge flash ASUS still-frame: 80ms pulse not captured this run (look 2 APPLY path). Code accepted. Prefs restored.
 - [ ] Remaining visual: non-AMOLED recipes unshot; two press languages on look 1 StoneKey (accepted watch).
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
