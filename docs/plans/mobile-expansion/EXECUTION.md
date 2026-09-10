@@ -624,3 +624,8 @@ Dirty unreleased tree: 945 JVM tests, 0 fail/error/skip; lintDebug; assembleDebu
 ## Lifecycle cycle 1, 2026-09-10 ~04:32UTC
 
 APK `4de177797c38cbcda07f3a4c9ab4696eb77b241f0262e7f1cd9fcff7726409bd` (HEAD 1921b38) on NAAIB70036673ZC. Start, Home, return, `am start -S` recreate, force-stop. PlaybackService bound while visible. No Phosphor services after stop. Prefs restored byte-for-byte. MUSIC 1/30. Not five cycles. Not a 30-minute soak.
+
+
+## Lifecycle cycles 2–5, 2026-09-10 ~04:36UTC
+
+Same installed APK as cycle 1 on NAAIB70036673ZC. Each cycle: start, Home, return, `am start -S` recreate. Then force-stop. No Phosphor services after stop. Prefs restored byte-for-byte. MUSIC 1/30. Five cycles now recorded. Not a 30-minute soak. Not accessory/PiP/HDR-nits proof.

@@ -25,7 +25,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [ ] ASUS proof of empty-install tactile default vs upgrade-like prefs.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
-- [ ] Five lifecycle cycles and 30-minute soak on the exact accepted APK, then restore original preferences.
+- [x] Five ASUS lifecycle cycles (start/Home/return/recreate/stop). Prefs restored.
+- [ ] 30-minute soak on the exact accepted APK, then restore original preferences.
 - [ ] Keep `GPT6-REVIEW-LATER.md` current when a unit lands so Astra can review after GPT-6 usage resets.
 
 Heartbeat `eae54bc2-7c95-4bd5-94f2-4745e05d2a78` stays on until the list above is
