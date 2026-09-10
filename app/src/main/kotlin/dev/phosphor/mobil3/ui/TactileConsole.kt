@@ -287,7 +287,7 @@ private fun TactileKeyFace(tokens: ConsoleTactileTokens, primary: Boolean, press
             }
             if (designator.isNotEmpty()) KeyText(designator, ink, small = true)
         }) { measurables, constraints ->
-            val padding = 10.dp.roundToPx()
+            val padding = if (glyph != null && label.isEmpty()) 4.dp.roundToPx() else 10.dp.roundToPx()
             val inset = 3.dp.roundToPx()
             val loose = constraints.copy(minWidth = 0, minHeight = 0)
             val main = measurables[0].measure(loose.copy(maxWidth = (constraints.maxWidth - 2 * padding).coerceAtLeast(0)))
@@ -312,7 +312,7 @@ private fun KeyText(label: String, ink: Color, small: Boolean = false) {
 /** Closed transport silhouettes and square overflow contacts, independent of installed fonts. */
 @Composable
 private fun ConsoleVectorGlyph(glyph: ConsoleVector, ink: Color) {
-    Canvas(Modifier.size(26.dp)) {
+    Canvas(Modifier.requiredSize(26.dp)) {
         fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
         when (glyph) {
             ConsoleVector.PLAY -> drawPath(Path().apply {

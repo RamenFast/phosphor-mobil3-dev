@@ -74,6 +74,7 @@ class ConsoleTactileTest {
         assertTrue("size.width * .53f, size.height * .82f" in source)
         assertFalse("◂◂" in source)
         assertFalse("▸▸" in source)
+        assertTrue("requiredSize(26.dp)" in source)
         assertTrue("fun tactile(lookVersion: Int, hasTransport: Boolean) = lookVersion == 2" in
             phase9Source("ui/ConsoleTactileTokens.kt"))
     }
