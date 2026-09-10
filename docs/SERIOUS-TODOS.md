@@ -27,7 +27,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Tactile track well source: look 2 stays tactile with transport. Grok 7 then 8. `0d9d751`.
 - [ ] Muse visual of tactile track console with a real track on ASUS (no-track screenshot only so far).
 - [x] Console/status loud-frame flatten source: Grok 8. `bd35b08`. ASUS no-track shot taken.
-- [ ] Remaining visual: sheet/manual hierarchy, animation/theming polish, Muse pixel score of flattened chrome and of a real track. 3D still Grok.
+- [x] Muse visual of flattened chrome: 8/10. Idle SIGNAL CHECK overlay accepted as quiet on that shot.
+- [ ] Remaining visual: sheet/manual hierarchy, animation/theming polish, Muse pixel score of a real track. 3D still Grok.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
