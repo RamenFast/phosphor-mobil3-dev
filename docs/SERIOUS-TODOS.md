@@ -36,7 +36,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Sheet B2 source: opaque non-Glass plates, LinkCard prose `open`. Muse code 9.
 - [x] Sheet B2b: hide StatusBand while a sheet is open. Muse code 9.
 - [x] Muse visual of sheet plates + LinkCard: **9/10**. Prefs restored.
-- [x] Sheet B2c source: trailing-action rail drop at <340dp or fontScale ≥1.3. Muse code 9. Device pixels open.
+- [x] Sheet B2c source: trailing-action rail drop at <340dp or fontScale ≥1.3. Muse code 9.
+- [x] Muse visual of SOURCE trailing-action drop: **9/10**. Prefs restored.
 - [ ] Remaining visual: ChipCell latch non-hue, animation/theming polish (edge flash).
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.

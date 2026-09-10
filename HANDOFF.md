@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~09:35 UTC
+
+Sheet B2c Muse visual **9/10 PASS**. ASUS density 440 makes the SOURCE column <340dp, so `manual…`/`grant…` drop below prose. Prefs restored. Next: ChipCell latch non-hue, then edge flash.
+
 ## Latest Prime checkpoint, 2026-09-10 ~09:20 UTC
 
 Sheet B2c source-accepted: Muse code **9/10**. Trailing action keys stay beside prose only at ≥340dp and fontScale < 1.3. Device pixels open. See [sheet-b2c muse code](docs/plans/mobile-expansion/critiques/sheet-b2c-muse-code.md).
