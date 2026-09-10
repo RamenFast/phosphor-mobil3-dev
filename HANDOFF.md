@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~12:35 UTC
+
+Complete-baseline remaining is blocked. USB accessory false, BT connections 0, mix needs MediaProjection, named APPLY editor steal, TalkBack not toggled. Prefs baseline. See [remaining](docs/plans/mobile-expansion/complete-baseline-remaining-20260910.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~12:25 UTC
 
 Named saved-look APPLY still blocked: appearance editor put `NightLook0` then `1.0` into a numeric field; SAVE refused (`named-look-blocked.png`). USB `audio_accessory_connected=false`. BT Connections 0. Prefs restored.
