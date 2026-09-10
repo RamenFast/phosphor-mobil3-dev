@@ -36,8 +36,31 @@ class CaptureMixPolicyTest {
         val out = MicrophoneRoutePolicy.disambiguate(listOf(a, b))
         assertEquals(2, out.map { it.label }.toSet().size)
         assertEquals(setOf(3, 9), out.map { it.id }.toSet())
+        assertEquals(a.key, out.single { it.id == 3 }.key)
+        assertEquals(a.name, out.single { it.id == 3 }.name)
+        assertEquals("3", out.single { it.id == 3 }.displayTag)
+        // Empty addresses still share one identity key. Display suffix must not invent a second key.
         assertNull(MicrophoneRoutePolicy.select(out, a.key))
         assertEquals(3, MicrophoneRoutePolicy.select(out, null)?.id)
+        val front = MicrophoneChoice(3, 15, "ASUS_AI2202", "bottom")
+        val back = MicrophoneChoice(9, 15, "ASUS_AI2202", "back")
+        val raw = listOf(front, back)
+        val split = MicrophoneRoutePolicy.disambiguate(raw)
+        assertEquals(2, split.map { it.label }.toSet().size)
+        assertEquals(front.key, split.single { it.id == 3 }.key)
+        assertEquals(front.name, split.single { it.id == 3 }.name)
+        assertEquals("3", split.single { it.id == 3 }.displayTag)
+        assertEquals(3, MicrophoneRoutePolicy.select(split, front.key)?.id)
+        assertEquals(3, MicrophoneRoutePolicy.select(raw, split.single { it.id == 3 }.key)?.id)
+        assertEquals(9, MicrophoneRoutePolicy.select(raw, split.single { it.id == 9 }.key)?.id)
+        assertTrue(split.any { it.label.endsWith("(3)") })
+        assertTrue(split.any { it.label.endsWith("(9)") })
+        val unique = MicrophoneRoutePolicy.disambiguate(
+            listOf(front, MicrophoneChoice(4, 3, "Headset", "port")),
+        )
+        assertTrue(unique.all { it.displayTag.isEmpty() })
+        assertEquals(front.key, unique.single { it.id == 3 }.key)
+        assertEquals(3, MicrophoneRoutePolicy.select(listOf(front), unique.single { it.id == 3 }.key)?.id)
     }
     @Test fun candidateTrialsAreFiniteAndKeepMonoPcm16() {
         val any = MicrophoneRoutePolicy.candidates(intArrayOf(), intArrayOf(), intArrayOf())

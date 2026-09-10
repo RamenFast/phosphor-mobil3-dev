@@ -1,10 +1,15 @@
 package dev.phosphor.mobil3
 
 /** Portable policy uses framework type numbers, not Android objects or device names as authority. */
-data class MicrophoneChoice(val id: Int, val type: Int, val name: String, val address: String = "") {
+data class MicrophoneChoice(val id: Int, val type: Int, val name: String, val address: String = "",
+    val displayTag: String = "") {
     val bluetooth: Boolean get() = type == 7 || type == 26
     val key: String get() = "$type\n$address\n$name"
-    val label: String get() = "$name · ${when (type) { 15 -> "built-in"; 3 -> "wired"; 7 -> "Bluetooth SCO"; 26 -> "Bluetooth LE"; else -> "USB" }}"
+    val label: String get() {
+        val kind = when (type) { 15 -> "built-in"; 3 -> "wired"; 7 -> "Bluetooth SCO"; 26 -> "Bluetooth LE"; else -> "USB" }
+        val base = "$name · $kind"
+        return if (displayTag.isEmpty()) base else "$base ($displayTag)"
+    }
 }
 internal object MicrophoneRoutePolicy {
     const val SELECTED = "microphone_selected_input"
@@ -15,9 +20,9 @@ internal object MicrophoneRoutePolicy {
         if (key.isNullOrEmpty()) choices.filter { it.type == 15 }.minByOrNull { it.id }
         else choices.filter { it.key == key }.singleOrNull()
     fun disambiguate(choices: List<MicrophoneChoice>): List<MicrophoneChoice> {
-        val counts = choices.groupingBy { it.key }.eachCount()
+        val counts = choices.groupingBy { it.label }.eachCount()
         return choices.map { choice ->
-            if ((counts[choice.key] ?: 0) > 1) choice.copy(name = "${choice.name} (${choice.id})")
+            if ((counts[choice.label] ?: 0) > 1) choice.copy(displayTag = choice.id.toString())
             else choice
         }
     }
