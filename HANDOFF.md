@@ -1,5 +1,17 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint,2026-09-10 00:49UTC
+
+U1 tactile no-track console now has bounded source and visual acceptance:933 JVM tests/lint/dualAPK pass; Grokcode8/8/8,Musevisual5/7/8,DeepSeekvisualround2/3=8/8. FinalAPK installed/readback tested on ASUS; four themes/focus/largefont/narrow-window evidence retained. Original preferences restored exactly,app idle,font1,wmreset,owned fixtures removed. See [U1 receipt and remaining full-baseline work](docs/plans/mobile-expansion/visual-u1-asus-checkpoint.md). R06+checksum is b74beb2 and rootstub b222818.
+
+Next R09 service-owned microphone/accessory routing and standard-only visualization mixer, grounded handoff `dev/scratch/r09-current-handoff.md`. Root stays deferred. Remaining HDR,startup,full visual craft/fresh-look default,regression/soak are NOT complete. Jcode fresh text/tool paths are repaired and verified on immutable d4b6aab0 build; old huge-history transport remains unproven. Persistent goal87579191 and owned heartbeat continue until the full requested baseline is truly complete.
+
+## Current Prime checkpoint,2026-09-09 23:42 UTC
+
+R06 brightness and deterministic Android-compatible archive checksums are committed `b74beb2`.921 JVM tests/lint/dualAPK passed; Grok code attempts blocked/8/8 preserved. Exact final APK is installed/readback verified on ASUS; lifecycle/PiP/HUD and repaired SAF on/off imports passed bounded checks. Preferences restored exactly,app idle,pin off,MUSIC1/30. See [R06 receipt and limits](docs/plans/mobile-expansion/brightness-asus-checkpoint.md).
+
+Astra medium is sole U1 writer: tactile vector no-track console with opt-in versioned look, preserving saved appearance bytes and playback/gesture truth. Independent Muse direct-high and DeepSeek v4.1-flash xhigh design briefs plus source corrections are retained in ignored `dev/scratch/design-20260909/`; Grok reviews code only. Current pass threshold >=8/10,max4 attempts. Root owns builds/Git/ASUS. Complete polished baseline goal87579191 remains active; remaining mic/mixer,HDR,startup,visual implementation and full regression/soak are not complete. Jcode isolated null-bool candidate passes38 tests and builds; independent review pending,live unchanged. Its built-in maintainer feedback is queued,not a confirmed delivery. Heartbeat remains on until everything is truly done.
+
 ## Prime continuation, 2026-09-09 22:49 UTC
 
 This checkpoint supersedes the older pending-stub and unavailable-ASUS claims below. The honest deferred-root stub is implemented, reviewed by Grok 4.6 high (8/10 then 9/10), installed and readback-verified on dedicated non-root ASUS NAAIB70036673ZC. Astra medium writes; current acceptance is strictly above 8, max four rounds. 909 JVM tests, lint/dual APKs and 126 native tests passed. Real preview open/close, Android standard-capture consent and legacy-root inertness passed bounded checks. Preferences restored byte-for-byte, app stopped, MUSIC 1/30. S25 remains excluded. See [receipt and exact limits](docs/plans/mobile-expansion/root-stub-asus-checkpoint.md).

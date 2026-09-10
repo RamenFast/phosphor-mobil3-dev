@@ -132,8 +132,8 @@ class ManualContentTest {
         answer("accessory mix", "mix", "pending", "choose one existing input in SRC", "never speaker output", "Bluetooth")
         answer("hdr", "hdr", "ordinary SDR remains the working output", "not HDR", "own combined proof")
         answer("screen brightness", "brightness", "DISPLAY & HUD > PIN SCREEN BRIGHTNESS", "off by default",
-            "use Android's brightness control", "thermal", "focused full app", "Device acceptance remains pending")
-        assertEquals("Host-integrated, device acceptance pending", ManualContent.chapter("brightness").availability)
+            "use Android's brightness control", "thermal", "focused full app", "checked on ASUS Zenfone 9", "physical luminance remain unverified")
+        assertEquals("ASUS foreground and archive checks passed", ManualContent.chapter("brightness").availability)
         answer("startup", "startup", "open SRC", "choose the source manually", "not accepted controls")
     }
 
@@ -208,7 +208,9 @@ class ManualContentTest {
     @Test fun gestureDiagnosticRateAndPresetAnswersMatchImplementedOwners() {
         val screen = source("ui/PhosphorScreen.kt")
         assertTrue(screen.contains("override fun gainLocked() = state.viewLock"))
-        assertTrue(screen.contains("if (state.bandMode == 0 || (state.bandMode == 1 && consoleShown))"))
+        assertTrue(screen.contains("val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)"))
+        assertTrue(screen.contains("if (bandShown)"))
+        assertTrue(screen.contains("onHeightChanged = { statusBandHeightPx = it }"))
         assertTrue(screen.contains("hudVisible = state.hudMode == 0 ||"))
         assertTrue(source("ui/Console.kt").contains("if (state.gridData)"))
         val gestures = source("ui/Gestures.kt")

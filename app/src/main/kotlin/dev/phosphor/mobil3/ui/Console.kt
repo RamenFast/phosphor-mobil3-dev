@@ -80,61 +80,54 @@ fun Modifier.burnInWalk(reduced: Boolean, visible: Boolean = true): Modifier {
 
 // ── Status band — read-only, mono, flanking the punch-hole. Never a tap target. ──
 @Composable
-fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean, chromeVisible: Boolean = true) {
+fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean,
+    chromeVisible: Boolean = true, onHeightChanged: (Int) -> Unit = {}) {
     val p = p.readableOn(p.plane)
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
-            .padding(horizontal = style.space(16.dp), vertical = style.space(6.dp))
-            .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip),
-    ) {
-        Row(
-            Modifier
-                .align(Alignment.TopCenter)
-                .then(
-                    if (landscape) Modifier.widthIn(max = Dim.landscapeBandMaxWidth)
-                        .fillMaxWidth()
-                    else Modifier.fillMaxWidth()
-                )
-                .background(p.plane)
-                .padding(style.space(4.dp)),
-            horizontalArrangement = Arrangement.SpaceBetween,
-        ) {
-            val left = buildString {
-                append("src · ")
-                append(state.sourceLabel)
-                if (state.noSignal) append("   ·   no signal")
-            }
-            androidx.compose.foundation.layout.Column(Modifier.weight(1f)) {
-                Mono(left, p.ink2, Type.dataSm)
-                if (state.gridData) {
-                    Mono(GridData.line(state.gridReading, left = true), p.ink2, Type.dataXs)
-                    Mono(GridData.line(state.gridReading, left = false), p.ink2, Type.dataXs)
+    val measurer = androidx.compose.ui.text.rememberTextMeasurer()
+    val density = androidx.compose.ui.platform.LocalDensity.current
+    val left = buildString {
+        append("src · "); append(state.sourceLabel)
+        if (state.noSignal) append("   ·   no signal")
+    }
+    val rolledMark = if (state.randomModeArmed) " ⚄" else ""
+    val right = state.remoteScopeLine?.let { remoteTruth ->
+        if (rolledMark.isEmpty()) remoteTruth else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
+    } ?: run {
+        val gainTag = "×" + String.format(Locale.ROOT, "%.2f", state.gain) + if (state.localAutoGain) "·a" else ""
+        "${state.modeTag}$rolledMark · $gainTag"
+    }
+    Box(Modifier.fillMaxWidth().onSizeChanged { onHeightChanged(it.height) }
+        .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
+        .padding(horizontal = style.space(16.dp), vertical = style.space(6.dp))
+        .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip)) {
+        androidx.compose.foundation.layout.BoxWithConstraints(Modifier.align(Alignment.TopCenter)
+            .then(if (landscape) Modifier.widthIn(max = Dim.landscapeBandMaxWidth).fillMaxWidth() else Modifier.fillMaxWidth())
+            .background(p.plane).padding(style.space(4.dp))) {
+            val textStyle = androidx.compose.ui.text.TextStyle(fontFamily = MonoFace, fontSize = Type.dataSm)
+            val leftWidth = measurer.measure(left, textStyle, softWrap = false, maxLines = 1).size.width
+            val rightWidth = measurer.measure(right, textStyle, softWrap = false, maxLines = 1).size.width
+            val stacked = StageReadability.stackStatus(constraints.maxWidth, leftWidth, rightWidth,
+                with(density) { style.space(Dim.gapLg).roundToPx() })
+            val source: @Composable (Modifier) -> Unit = { modifier ->
+                Column(modifier) {
+                    Mono(left, p.ink2, Type.dataSm, maxLines = if (stacked) Int.MAX_VALUE else 1)
+                    if (state.gridData) {
+                        Mono(GridData.line(state.gridReading, left = true), p.ink2, Type.dataXs, maxLines = Int.MAX_VALUE)
+                        Mono(GridData.line(state.gridReading, left = false), p.ink2, Type.dataXs, maxLines = Int.MAX_VALUE)
+                    }
+                    if (hudVisible && state.hudLine.isNotBlank()) Mono(state.hudLine, p.muted, Type.dataXs, maxLines = Int.MAX_VALUE)
+                    if (hudVisible && state.hudLine2.isNotBlank()) Mono(state.hudLine2, p.muted, Type.dataXs, maxLines = Int.MAX_VALUE)
                 }
-                if (hudVisible && state.hudLine.isNotBlank()) {
-                    Mono(state.hudLine, p.muted, Type.dataXs)
-                }
-                if (hudVisible && state.hudLine2.isNotBlank()) {
-                    Mono(state.hudLine2, p.muted, Type.dataXs)
-                }
             }
-            // Remote geometry reports the desktop mode and measured gain, not the idle local renderer.
-            val rolledMark = if (state.randomModeArmed) " ⚄" else ""
-            val right = state.remoteScopeLine?.let { remoteTruth ->
-                if (rolledMark.isEmpty()) remoteTruth
-                else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
-            } ?: run {
-                val gainTag = "×" + String.format(Locale.ROOT, "%.2f", state.gain) +
-                    if (state.localAutoGain) "·a" else ""
-                "${state.modeTag}$rolledMark · $gainTag"
+            if (stacked) Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(style.space(4.dp))) {
+                source(Modifier.fillMaxWidth())
+                Mono(right, p.ink2, Type.dataSm, maxLines = Int.MAX_VALUE)
+            } else Row(horizontalArrangement = Arrangement.SpaceBetween) {
+                source(Modifier.weight(1f))
+                Mono(right, p.ink2, Type.dataSm, Modifier.padding(start = style.space(Dim.gapLg)).widthIn(max = 280.dp), maxLines = Int.MAX_VALUE)
             }
-            Mono(
-                right, p.ink2, Type.dataSm,
-                Modifier.padding(start = style.space(Dim.gapLg)).widthIn(max = 280.dp),
-            )
         }
     }
 }
@@ -234,7 +227,9 @@ fun Console(
                 .background(p.plane)
                 .padding(style.space(2.dp))
                 .background(p.surface)
-                .padding(horizontal = style.space(Dim.consolePadH), vertical = style.space(Dim.consolePadV))
+                .padding(horizontal = style.space(
+                    if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 12.dp else Dim.consolePadH),
+                    vertical = style.space(if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 6.dp else Dim.consolePadV))
                 // The play bar owns this deliberate upward reveal. Stage drags remain
                 // gain/orbit gestures, and horizontal seek scrubs keep their lane.
                 .playBarSwipeUp(onSettingsSwipe, settingsPullHost),
@@ -260,7 +255,9 @@ fun Console(
                 SeekRule(p, state.positionMs, state.durationMs, onSeek)
                 Spacer(Modifier.height(style.space(Dim.gap)))
             }
-            Row(verticalAlignment = Alignment.CenterVertically) {
+            if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport) && state.appearanceValue != null) {
+                TactileConsoleKeybed(state, onMode, onSrc, onPlay, onMore, moreActive, overflowPullHost)
+            } else Row(verticalAlignment = Alignment.CenterVertically) {
                 if (hasTransport && (!capture || state.captureCanPrevious)) {
                     FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
                     Spacer(Modifier.width(style.space(Dim.gap)))

@@ -31,8 +31,10 @@ data class AppearanceValue(
     val monoProse: Boolean = false,
     val designators: Boolean = false,
     val panelAlphaScale: Float = 1f,
+    val lookVersion: Int = 1,
 ) {
     init {
+        require(lookVersion in 1..2) { "Appearance look version must be 1 or 2" }
         require(durationScale.isFinite() && durationScale in .25f..2f) { "Appearance duration must be 0.25..2" }
         require(densityScale.isFinite() && densityScale in .85f..1.25f) { "Appearance density must be 0.85..1.25" }
         require(radiusDp in 0..64) { "Appearance radius must be 0..64 dp" }

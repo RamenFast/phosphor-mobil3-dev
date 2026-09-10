@@ -216,3 +216,12 @@ Root-manager consent cannot be fabricated or promised away. Optional ungranted m
 Blocked work states the exact bottleneck, evidence, alternatives tested, useful verified result, and smallest next step. Continue independent work without claiming the missing outcome.
 
 Ben's04:56:09 fallback permits an encouraging root-ready surface if full-fidelity low-latency capture remains unresolved after bounded experiments. Its working action may verify actual root authorization, but must not pretend to start accepted stereo capture. Keep ordinary standard capture usable, preserve root-off inertness, name the remaining limitation, and retain the implementation evidence for future work. Continue the remaining expansion. This fallback is not evidence that stereo, SoundCloud or latency acceptance passed.
+
+
+### U1 opt-in tactile console
+
+Source contract: `docs/plans/mobile-expansion/visual-u1-contract.md`.
+Implement an authored optional look_version=2 and console-only no-track key bed.
+Version1 omits the field exactly. Saved looks, transport truth and gestures remain unchanged.
+Fresh tactile default is deferred until a preinit meaningful-settings baseline is proven.
+Parent owns full builds, device evidence and acceptance. No visual acceptance is implied.

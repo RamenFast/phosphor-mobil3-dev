@@ -47,6 +47,7 @@ data class RoomStyle(
     val designators: Boolean = false,
     /** Multiplies sheet/console surface alpha (glass runs far more translucent). */
     val panelAlphaScale: Float = 1f,
+    val lookVersion: Int = 1,
 )
 
 val CarvedStyle = RoomStyle()
@@ -113,6 +114,7 @@ fun RoomStyle.overridden(o: StyleOverride): RoomStyle {
         null -> this
     }
     return base.copy(
+        lookVersion = lookVersion,
         motion = o.motion ?: base.motion,
         durationScale = when (o.motion) {
             MotionFeel.Cut -> VoidStyle.durationScale

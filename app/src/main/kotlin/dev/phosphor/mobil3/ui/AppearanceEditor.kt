@@ -117,6 +117,10 @@ internal fun AppearanceEditor(state: ScopeUiState, actions: AppearanceActions) {
             AppearanceField("$key · ${if (argb) "ARGB32 AARRGGBB" else "RGB24 RRGGBB"}",
                 colorFields.getValue(key), p, enabled) { colorFields = colorFields + (key to it) }
         }
+        AppearanceButton("CONSOLE KEYS · ${if (draft.lookVersion == 2) "TACTILE" else "LEGACY"}", p, enabled) {
+            draft = draft.copy(lookVersion = if (draft.lookVersion == 2) 1 else 2)
+        }
+        EditorText("Tactile keys change only the no-track console. PREVIEW to try them. APPLY or SAVE to keep this look.", p)
         AppearanceButton("DARK PALETTE · ${draft.dark}", p, enabled) { draft = draft.copy(dark = !draft.dark) }
         AppearanceButton("ACCENT FOLLOWS MEASURED BEAM · ${draft.accentFollowsBeam}", p, enabled) {
             draft = draft.copy(accentFollowsBeam = !draft.accentFollowsBeam)

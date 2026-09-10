@@ -172,3 +172,9 @@ R06 source review attempt2 scored8/10 and passes; attempt1 remains build-blocked
 Jcode maintainer_feedback was invoked once with sanitized facts. Tool reports queued, not confirmed delivery/read. Isolated sender cleaned up. Exact-source null-bool candidate passes4 added regressions; full BashTool module tests continue with existing test-environment issues isolated. Live channels unchanged.
 
 -23:36 R06 implemented and bounded-tested; final921 tests,Grok8,ASUS SAF on/off passed after deterministic checksum repair. Restored preferences,pin off,no services. Full baseline acceptance remains active; next tactile U1 console.
+
+-2026-09-10 00:06 Jcode null-bool repair activated and verified: current/shared-server exact immutable d4b6aab0 binary,stable/config preserved.38BashTool tests,Grok8then9,default native text+tool and public fresh run passed with actual notify:null,wake:null. Original huge-history transport stalls remain unproven; old chats untouched. Receipt in Mass storage Jcode prime-null-bool-receipts-20260909/ACTIVATION-RECEIPT.json.
+
+-2026-09-10 00:22 U1 correction2 build929 tests/Grok8 passed. Muse visual history5->7FAIL; DeepSeek first rendered assessment8 bounded. Actual all4themes,font1/1.3/2,Glasspress/focus/HOLD-LIVE captures retained. Astra correction3 active: Light plot-text contrast, large-font status reflow/placement, focus-ring clearance/contrast, centered designator labels. ASUS original prefs restored exactly,font1,no services. U1 not visually accepted yet; full baseline goal remains active.
+
+-2026-09-10 00:49 U1 bounded visualPASS: Muse8/DeepSeek8 after preserved failed rounds,full933tests,Grok8. Finalcandidate installed/readback and actual theme/largefont/focus/narrowwindow checks; ASUS restored exactly. Next R09; whole polished baseline not complete.

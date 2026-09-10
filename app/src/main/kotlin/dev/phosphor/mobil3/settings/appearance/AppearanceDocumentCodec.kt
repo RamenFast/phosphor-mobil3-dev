@@ -86,12 +86,18 @@ object AppearanceDocumentCodec {
         "dark" to v.dark, "accent_follows_beam" to v.accentFollowsBeam, "character" to v.character.name,
         "motion" to v.motion.name, "duration_scale" to v.durationScale, "density_scale" to v.densityScale,
         "radius_dp" to v.radiusDp, "mono_prose" to v.monoProse, "designators" to v.designators,
-        "panel_alpha_scale" to v.panelAlphaScale)
+        "panel_alpha_scale" to v.panelAlphaScale) +
+        if (v.lookVersion == 2) mapOf("look_version" to 2) else emptyMap()
 
     private fun value(raw: Any): AppearanceValue {
         val v = raw.obj("value")
-        v.exact("colors", "dark", "accent_follows_beam", "character", "motion", "duration_scale", "density_scale",
+        (v - "look_version").exact("colors", "dark", "accent_follows_beam", "character", "motion", "duration_scale", "density_scale",
             "radius_dp", "mono_prose", "designators", "panel_alpha_scale")
+        val lookVersion = if ("look_version" in v) {
+            appearanceRequire(v.int("look_version") == 2, "invalid_value",
+                "Optional look_version must be integer 2", "Omit look_version for legacy appearance or use integer 2")
+            2
+        } else 1
         val c = v.getValue("colors").obj("colors")
         c.exact("plane", "surface", "surface2", "ink", "ink2", "muted", "line", "line_strong", "accent", "on_accent",
             "stone", "stone_hi", "stone_lo")
@@ -100,7 +106,7 @@ object AppearanceDocumentCodec {
             c.int("stone"), c.int("stone_hi"), c.int("stone_lo")), v.bool("dark"), v.bool("accent_follows_beam"),
             enumValueOf<AppearanceCharacter>(v.text("character")), enumValueOf<AppearanceMotion>(v.text("motion")),
             v.float("duration_scale", "0.25", "2"), v.float("density_scale", "0.85", "1.25"), v.int("radius_dp"),
-            v.bool("mono_prose"), v.bool("designators"), v.float("panel_alpha_scale", "0.2", "1"))
+            v.bool("mono_prose"), v.bool("designators"), v.float("panel_alpha_scale", "0.2", "1"), lookVersion)
     }
 
     private fun bounded(text: String): String {

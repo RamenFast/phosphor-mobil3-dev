@@ -497,3 +497,116 @@ incompatible host fixtures remain unchanged for the regression record.
 ## Prime R06 ASUS checkpoint,23:36 UTC
 
 Final921-test/lint/dualAPK gate and Grok attempt3=8 passed, preserving attempt2=8 and blocked attempt1. Deterministic Android checksum repair passed actual SAF on/off imports. Brightness lifecycle,PiP/HUD and restoration observed on ASUS. Final preferences restored exactly, app idle,pin off,MUSIC1/30. See [receipt and remaining limits](brightness-asus-checkpoint.md). Next U1 tactile console; full remaining baseline remains active.
+
+
+### U1 opt-in tactile console
+
+Source contract: `docs/plans/mobile-expansion/visual-u1-contract.md`.
+Implement an authored optional look_version=2 and console-only no-track key bed.
+Version1 omits the field exactly. Saved looks, transport truth and gestures remain unchanged.
+Fresh tactile default is deferred until a preinit meaningful-settings baseline is proven.
+Parent owns full builds, device evidence and acceptance. No visual acceptance is implied.
+
+
+U1 implementation receipt (2026-09-09): authored lookVersion defaults1. Only integer2
+is accepted as the optional look_version wire field. Legacy omitted-field output matches
+four hashes captured from the prior compiled codec and the existing independent vectors.
+Curated/legacy records and fresh defaults remain unchanged. The AppearanceEditor draft
+has a CONSOLE KEYS toggle, using the existing preview/apply/save owners.
+
+RoomStyle retains the choice through coupled FEEL edits. No-track-only Console branching
+leaves the original row and transport callbacks intact. The separate TactileConsole surface
+has opaque authored-only tokens, fixed Canvas glyphs, state-truth selection, press sink,
+focus ring and disabled rendering. Capture-unavailable controls remain omitted under the
+original gate; no extra unavailable action was invented. S9 keeps overflowHandleGesture.
+It gains semantic/keyboard activation without adding another pointer handler.
+
+The well and faces are opaque, including Glass, so token ratios use their actual backgrounds.
+The author's ink remains unchanged when it passes. The shared contrast palette is not rewritten.
+AMOLED well is0 and raised face141414. There is no edge flash, timer, beam sampler or new
+visibility writer. Existing burn-in walk and the original console swipe remain in their owners.
+
+Focused native compilation uses the cached Kotlin Compose plugin and Android36 APIs.
+The broader208-case native run passed before the final narrow wrapping/import assertions.
+Early test harness repairs used AppearanceException.code and added the cached AndroidX
+collection-jvm dependency. Original failing logs remain. Current-source final test results
+and dependency/source hashes live under `dev/scratch/visual-u1-20260909/`.
+The existing ManualNavigation constructor-copy warning remains unchanged.
+
+R06 brightness manual wording now names the bounded ASUS focus/Home/PiP/HUD/restart/import
+checks and leaves other devices and physical luminance unverified. No R06 runtime changed.
+Fresh tactile default remains an explicit deferred seam, not inferred from missing appearance_state.
+No Gradle, Git, device, engine, title, seek, sheet or source-authority action ran in U1.
+Parent owns full compilation, screenshots, real layout/gestures and independent acceptance.
+
+Final focused U1 run:208 tests passed, including the final width policy and legacy-import
+preservation assertions. Exact command: visual-u1-20260909/tests-command-r4.txt.
+Logs: test-compile-r4.log and tests-r4.log. Source is released for the parent full gate.
+
+
+U1 visual round1 correction: Muse5/10 remains unchanged, separate from Grok source8.
+The compactness defect came from applying340dp to the inner well rather than screen width.
+Current ASUS inner306dp now selects one56/64/56/48dp row. A320dp window's inner234dp
+selects two rows. Font2 selects full-width rows with no height ceiling.
+Fixed expected row/width vectors cover306/234dp at font1/1.3/2 and HOLD text at1.3.
+
+Source inspection found no app density override. The old internal4dp focus gutters explain
+why48dp layout targets looked40dp tall. The corrected silhouette fills its measured hit layout.
+New-keybed density comes from the Android view resources. The existing font-scale converter
+is preserved, including Android14 nonlinear scaling. No global/legacy density changes occur.
+At440dpi,48dp is132px and56dp is154px, independently asserted through native Compose units.
+Only tactile-console vertical padding changes to8dp, yielding a nominal86dp compact card.
+This is a geometry prediction; parent device evidence must verify actual bounds.
+
+Raised keys now have a continuous1dp outer contrast-safe silhouette and no uniformly bright
+inner border. Top/left get the high step and bottom/right the low step. The high step exceeds
+the AMOLED outline. Press/selection intentionally reverse polarity; labels and authored colors
+remain unchanged. Exterior focus rings have a1dp gap and reserved well/inter-key space.
+
+Baseline TODO: font2 shared status-band overlap/truncation remains outside U1. Muse's addendum
+records the src/mode collision. Confirm against a baseline font2 shot before a later correction.
+Do not infer a gain bug from temporary gesture-driven screenshot state.
+Evidence remains in visual-u1-20260909/visual-r2-correction. Prior screenshots/logs/freeze unchanged.
+
+Final native correction run:210 tests passed, including actual Compose source compilation.
+Exact command/log: visual-r2-correction/command-r2.txt, compile-r2.log, tests-r2.log.
+The shared status TODO is also indexed in docs/SERIOUS-TODOS.md. Parent owns re-shoot/acceptance.
+
+
+U1 next visual correction batch: Muse round2 remains7FAIL; DeepSeek independent round2
+remains8 bounded/provisional. AddendaC/D and DeepSeek D2/D3 informed this batch only.
+The four resting key geometries and glyphs remain approved evidence, not a new acceptance.
+
+SIGNAL CHECK now resolves a local ink against native black rather than a light room's ink.
+All four family colors pass4.5 against that plot in unit checks, without changing stored colors.
+The shared status band measures actual heading widths using TextMeasurer, the current font
+resolver and scale. Overwide headings stack; data wraps rather than disappears. The stage
+SIGNAL CHECK action is placed below the measured band height with8dp clearance. Data selection,
+source actions, band/HUD visibility and audio state are unchanged. Font2 status screenshots are
+still required: pure measured-width tests are not Android font or pixel evidence.
+
+Focus now keeps the authored accent when it passes4.6 against the well; otherwise it derives
+a local color. The2dp source ring had met the old3dp gutter and tray stroke, explaining partial
+overpaint. The gutter is5dp; new-only exterior console padding shrinks2dp on each axis to retain
+key positions and card footprint. The ring has room for its full stroke and a distinct plane gap.
+No change was made to hit bounds, core outlines, glyphs or the approved resting bevel.
+
+Designators move to the3dp top-left corner. A custom measured layout centers the main legend
+independently. It grows a key only when measured designator/main boxes would overlap; full-width
+font2 rows therefore do not grow merely because a small designator exists. Normal/1.3/2 box
+vectors test centering and separation. Actual Light screenshots remain parent-owned evidence.
+
+D4 inherited loud outer frame is deferred as a baseline hierarchy issue. D1 dark/glass mean
+brightness concerns the metric definition, not permission to repaint authored families.
+Minor D5-D9 received no speculative polishing. Source/visual scores and prior freezes remain intact.
+
+Final focused batch:214 tests passed with actual modified Compose sources, including
+PhosphorScreen and measured key/status layouts. Evidence: visual-r3-correction/command-r3.txt,
+compile-r3.log, tests-r3.log. Earlier failures were stale supplementary source-string assertions,
+updated to assert the new wrapping and unchanged visibility/padding fallbacks. Logs remain intact.
+Source is released for parent full gate and visual round3 of4. No device acceptance is claimed.
+
+
+## U1 bounded visual acceptance,2026-09-10 00:49UTC
+
+Code8/8/8, Muse5/7/8 and DeepSeekround2/3=8/8 preserve history.933-test/lint/dualAPK gate and real ASUS four-theme/focus/Lightlargefont/320dp evidence pass boundedU1. Exact prefs restored,app idle,font1,wmreset,owned Downloadfixtures removed. [Receipt and still-open full-baseline gates](visual-u1-asus-checkpoint.md). Next R09 microphone/service/composite vertical unit.

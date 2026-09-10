@@ -86,7 +86,7 @@ internal object AppearancePalette {
         },
         durationScale = value.durationScale, densityScale = value.densityScale,
         cornerRadius = value.radiusDp.dp, monoProse = value.monoProse,
-        designators = value.designators, panelAlphaScale = value.panelAlphaScale,
+        designators = value.designators, panelAlphaScale = value.panelAlphaScale, lookVersion = value.lookVersion,
     )
 
     /** ROOM sends one field, never a saved record or stale legacy override tuple. */

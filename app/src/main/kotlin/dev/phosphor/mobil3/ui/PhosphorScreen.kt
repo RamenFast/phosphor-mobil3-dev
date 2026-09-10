@@ -1,5 +1,7 @@
 package dev.phosphor.mobil3.ui
 
+import androidx.compose.ui.graphics.toArgb
+
 import android.content.res.Configuration
 import android.os.SystemClock
 import android.view.SurfaceView
@@ -291,6 +293,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     // so its pull travel is measured across the screen rather than up it.
     var rootWidthPx by remember { mutableIntStateOf(0) }
     var consoleHeightPx by remember { mutableIntStateOf(0) }
+    var statusBandHeightPx by remember { mutableIntStateOf(0) }
     val ribbon = remember { RibbonState() }
     val stageGeometry = remember { StageGeometry() }
     val currentActions by rememberUpdatedState(actions)
@@ -671,12 +674,16 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 )
             }
 
+            val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)
             // The gesture readout ribbon rides above the stage.
             GestureRibbon(ribbon, p)
             if (sheet == Sheet.NONE && !overflowComposed && !state.pip &&
                 (state.noSignal || state.sourceLabel == "no source" || (!state.live && state.captureStatus.isNotBlank()) || state.remoteFailure.isNotBlank())) {
-                Box(Modifier.align(Alignment.TopCenter).padding(top = 88.dp)) {
-                    SignalCheckAction("SIGNAL CHECK", p) { sheet = Sheet.SIGNAL_CHECK }
+                val signalTop = StageReadability.signalTopDp(bandShown, with(density) { statusBandHeightPx.toDp().value }).dp
+                val plotPalette = p.copy(ink = androidx.compose.ui.graphics.Color(
+                    StageReadability.plotInk(p.ink.toArgb() and 0xffffff) or 0xff000000.toInt()))
+                Box(Modifier.align(Alignment.TopCenter).padding(top = signalTop)) {
+                    SignalCheckAction("SIGNAL CHECK", plotPalette) { sheet = Sheet.SIGNAL_CHECK }
                 }
             }
             if (state.displayPaused || state.displayPresentPending) {
@@ -688,12 +695,13 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 1a: read-only status band.
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.
-            if (state.bandMode == 0 || (state.bandMode == 1 && consoleShown)) {
+            if (bandShown) {
                 StatusBand(
                     state, p, reduced,
                     hudVisible = state.hudMode == 0 ||
                         (state.hudMode == 1 && consoleShown),
                     chromeVisible = sheet == Sheet.NONE && !overflowComposed,
+                    onHeightChanged = { statusBandHeightPx = it },
                 )
             }
 

@@ -193,3 +193,22 @@ No Spotify play,pause or route-transfer command was sent. Do not take over exclu
 Repeat captured transport only when the source is local to ASUS without disturbing that route.
 Forced whole-result regression and fresh slow-pinch,VIEW LOCK,listener-retirement,default-off and fixture CLI checks passed.
 The [atomic receipt](dev/receipts/pre-v2-b1-b21/phase-16-asus-atomic-traceability-2026-09-07.md) distinguishes each fresh result from revalidated prior evidence.
+
+
+## 2026-09-10: shared status band at font scale2
+
+Muse U1 visual round1 addendum reports src/mode overlap or truncation in the shared
+status band. This is a pre-existing baseline TODO, outside the tactile key-bed unit.
+Confirm against a baseline font2 capture before changing shared layout.
+Evidence: `dev/scratch/visual-u1-20260909/muse-visual-round-01.md`, Addendum A.
+Temporary gain changes from coordinator gestures do not establish a source defect.
+
+
+## U1 visual round2 follow-up boundaries
+
+The shared font2 status issue now has measured-width reflow and measured band clearance
+for SIGNAL CHECK. Source tests pass only after their command is recorded in the U1 ledger.
+Actual font2/landscape captures remain required; this is not device closure of the TODO.
+DeepSeek D4 identifies the inherited outer console frame as brighter than essential key edges.
+Keep that baseline hierarchy issue deferred. Do not repaint authored Dark/Glass backgrounds
+to meet an absolute AMOLED-only mean-brightness metric.
