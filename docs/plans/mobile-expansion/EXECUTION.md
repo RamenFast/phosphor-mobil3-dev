@@ -619,3 +619,8 @@ Coordinator assigned sole app writer after U1 commit7204b91. [R09 contract](sect
 ## R09 parent gate, 2026-09-10 ~02:35UTC
 
 Dirty unreleased tree: 945 JVM tests, 0 fail/error/skip; lintDebug; assembleDebug; assembleDebugAndroidTest; checkEngine. APK SHA256 `d466bd0e471ae942d20efbdd6b571d83de8056ce1aa6521f5fed15b3c27b587f`. Independent Grok OAuth code review attempt 1 running. Not committed, not device-accepted. Mix offer uses pre-read epoch. HUD pending-only. Manual mix chapter is route-dependent, not Planned.
+
+
+## Lifecycle cycle 1, 2026-09-10 ~04:32UTC
+
+APK `4de177797c38cbcda07f3a4c9ab4696eb77b241f0262e7f1cd9fcff7726409bd` (HEAD 1921b38) on NAAIB70036673ZC. Start, Home, return, `am start -S` recreate, force-stop. PlaybackService bound while visible. No Phosphor services after stop. Prefs restored byte-for-byte. MUSIC 1/30. Not five cycles. Not a 30-minute soak.
