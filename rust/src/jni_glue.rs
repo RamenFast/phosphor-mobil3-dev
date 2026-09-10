@@ -946,6 +946,17 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setPauseBlack(
 }
 
 #[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_hdrObservation(
+    env: JNIEnv,
+    _class: JClass,
+) -> jstring {
+    match env.new_string(crate::render::hdr_report()) {
+        Ok(s) => s.into_raw(),
+        Err(_) => std::ptr::null_mut(),
+    }
+}
+
+#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setHdrRequested(
     _env: JNIEnv,
     _class: JClass,

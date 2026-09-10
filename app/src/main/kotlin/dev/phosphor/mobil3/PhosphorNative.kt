@@ -30,6 +30,7 @@ object PhosphorNative {
     external fun displayPauseState(): Int
     external fun setPauseBlack(black: Boolean)
     external fun setHdrRequested(requested: Boolean, api: Int)
+    external fun hdrObservation(): String
     external fun inspectHeld(dx: Float, dy: Float, scale: Float, reset: Boolean)
 
 

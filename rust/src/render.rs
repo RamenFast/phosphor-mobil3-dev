@@ -7,6 +7,7 @@
 //! its decay textures survive across surface loss (the beam remembers backgrounding).
 
 use std::sync::OnceLock;
+use std::sync::Mutex;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::mpsc;
 
@@ -168,9 +169,27 @@ static SENDER: OnceLock<mpsc::Sender<Cmd>> = OnceLock::new();
 static HDR_REQUESTED: AtomicBool = AtomicBool::new(false);
 static HDR_API: AtomicI32 = AtomicI32::new(29);
 
+fn hdr_report_slot() -> &'static Mutex<String> {
+    static SLOT: OnceLock<Mutex<String>> = OnceLock::new();
+    SLOT.get_or_init(|| Mutex::new("SDR · HDR off".into()))
+}
+
+pub fn hdr_report() -> String {
+    hdr_report_slot().lock().unwrap().clone()
+}
+
+fn set_hdr_report(text: &str) {
+    *hdr_report_slot().lock().unwrap() = text.to_string();
+}
+
 pub fn set_hdr_requested(requested: bool, api: i32) {
     HDR_REQUESTED.store(requested, Ordering::Relaxed);
     HDR_API.store(api, Ordering::Relaxed);
+    if !requested {
+        set_hdr_report("SDR · HDR off");
+    } else {
+        set_hdr_report("HDR requested · waiting for surface report");
+    }
     let _ = sender().send(Cmd::HdrChanged);
 }
 
@@ -1053,6 +1072,20 @@ fn configure(
         HDR_API.load(Ordering::Relaxed),
         has_fp16,
     );
+    let backend = format!("{:?}", g.adapter.get_info().backend);
+    set_hdr_report(&format!(
+        "{} · {} · {}",
+        match choice.reason {
+            "hdr_off" => "SDR · HDR off",
+            "non_vulkan" => "SDR · adapter is not Vulkan",
+            "no_fp16_pair" => "SDR · no FP16 scRGB pair",
+            "metadata_api" => "SDR · HDR metadata needs API 34",
+            "attempt_linear" => "attempt linear HDR · not dataspace-proven",
+            other => other,
+        },
+        backend,
+        if choice.use_fp16 { "Rgba16Float" } else { "SDR format" }
+    ));
     let format = if choice.use_fp16 {
         wgpu::TextureFormat::Rgba16Float
     } else if let Some(format) = g.format.filter(|format| *format != wgpu::TextureFormat::Rgba16Float)

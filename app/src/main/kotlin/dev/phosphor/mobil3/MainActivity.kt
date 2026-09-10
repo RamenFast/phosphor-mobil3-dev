@@ -1130,6 +1130,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 ui.positionMs = c.currentPosition.coerceAtLeast(0L)
             }
             ui.noSignal = PhosphorNative.scopeSilent()
+            ui.hdrStatus = runCatching { PhosphorNative.hdrObservation() }.getOrNull()
+                ?.takeIf { it.isNotBlank() }
+                ?: ui.hdrStatus
             val rs = if (ui.remote) runCatching {
                 org.json.JSONObject(PhosphorNative.remoteStatus())
             }.getOrNull() else null
