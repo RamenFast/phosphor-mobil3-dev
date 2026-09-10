@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~10:15 UTC
+
+Edge flash source-accepted: Muse code **9/10**. 80ms lit-edge pulse on tactile HIGH bevel. Device pixels open (80ms is hard to still-frame). See [edge-flash muse code](docs/plans/mobile-expansion/critiques/edge-flash-muse-code.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~10:00 UTC
 
 ChipCell latch Muse visual **8/10 PASS**. AUTO-GAIN vs VIEW LOCK. Surface2 lift is subtle. Prefs restored. Next: event-driven edge flash.

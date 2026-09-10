@@ -1,5 +1,7 @@
 package dev.phosphor.mobil3.ui
 
+import androidx.compose.animation.core.Animatable
+import androidx.compose.animation.core.tween
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -22,6 +24,7 @@ import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
 import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
+import androidx.compose.ui.graphics.luminance
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalDensity
 import androidx.compose.ui.platform.LocalView
@@ -77,6 +80,30 @@ private fun DisplayDensityKeybed(
     val hasTransport = state.trackTitle != null || state.remote
     val showPrev = hasTransport && (!capture || state.captureCanPrevious)
     val showNext = hasTransport && (!capture || state.captureCanNext)
+    val edgeFlash = remember { Animatable(0f) }
+    val pulseGen = remember { mutableIntStateOf(0) }
+    val flashAllowed = !reduced && state.presentationVisible && !state.pip
+    val allowedNow = rememberUpdatedState(flashAllowed)
+    val pulse = remember {
+        {
+            if (allowedNow.value) pulseGen.intValue += 1
+        }
+    }
+    LaunchedEffect(pulseGen.intValue) {
+        if (pulseGen.intValue == 0 || !allowedNow.value) {
+            edgeFlash.snapTo(0f)
+            return@LaunchedEffect
+        }
+        edgeFlash.snapTo(1f)
+        edgeFlash.animateTo(0f, tween(Motion.press, easing = Motion.standard))
+    }
+    LaunchedEffect(flashAllowed) { if (!flashAllowed) edgeFlash.snapTo(0f) }
+    var eventsPrimed by remember { mutableStateOf(false) }
+    LaunchedEffect(state.modeIndex, state.sourceLabel, state.room.id) {
+        if (!eventsPrimed) { eventsPrimed = true; return@LaunchedEffect }
+        pulse()
+    }
+    CompositionLocalProvider(LocalEdgeFlash provides EdgeFlash(edgeFlash.value, flashAllowed, pulse)) {
     BoxWithConstraints(Modifier.fillMaxWidth().background(rgb(tokens.well))
         .border(1.dp, rgb(tokens.edgeQuiet)).padding(5.dp)) {
         val layout = ConsoleKeybedPolicy.layout(maxWidth.value, fontScale, displayOnly, hasTransport)
@@ -185,6 +212,7 @@ private fun DisplayDensityKeybed(
             keys()
         }
     }
+    }
 }
 
 internal enum class ConsoleVector { PLAY, PAUSE, OVERFLOW, PREV, NEXT }
@@ -237,6 +265,9 @@ private fun TactileKeyFace(tokens: ConsoleTactileTokens, primary: Boolean, press
     val sunk = enabled && (pressed || selected)
     val colors = if (sunk) tokens.sunk else tokens.raised
     val radius = LocalRoomStyle.current.cornerRadius
+    val flash = LocalEdgeFlash.current
+    val onPulse = rememberUpdatedState(flash.pulse)
+    LaunchedEffect(pressed) { if (pressed) onPulse.value() }
     Box(modifier.heightIn(min = if (primary) 56.dp else 48.dp).widthIn(min = 48.dp)
         .drawWithContent {
             val gap = 0f
@@ -256,15 +287,19 @@ private fun TactileKeyFace(tokens: ConsoleTactileTokens, primary: Boolean, press
                 // Short of curved corners. Authored shape remains unchanged in every state.
                 val left = gap + corner.x + 2.dp.toPx()
                 val right = size.width - left
+                val high = if (!sunk && flash.allowed && flash.amount > 0f)
+                    flashedEdge(colors.high, flash.amount)
+                else rgb(if (sunk) colors.low else colors.high)
+                val low = rgb(if (sunk) colors.high else colors.low)
                 if (right > left) {
-                    drawLine(rgb(if (sunk) colors.low else colors.high), Offset(left, gap + bevelInset), Offset(right, gap + bevelInset), depth)
-                    drawLine(rgb(if (sunk) colors.high else colors.low), Offset(left, size.height - gap - bevelInset), Offset(right, size.height - gap - bevelInset), depth)
+                    drawLine(high, Offset(left, gap + bevelInset), Offset(right, gap + bevelInset), depth)
+                    drawLine(low, Offset(left, size.height - gap - bevelInset), Offset(right, size.height - gap - bevelInset), depth)
                 }
                 val top = gap + corner.y + 2.dp.toPx()
                 val bottom = size.height - top
                 if (bottom > top) {
-                    drawLine(rgb(if (sunk) colors.low else colors.high), Offset(gap + bevelInset, top), Offset(gap + bevelInset, bottom), depth)
-                    drawLine(rgb(if (sunk) colors.high else colors.low), Offset(size.width - gap - bevelInset, top), Offset(size.width - gap - bevelInset, bottom), depth)
+                    drawLine(high, Offset(gap + bevelInset, top), Offset(gap + bevelInset, bottom), depth)
+                    drawLine(low, Offset(size.width - gap - bevelInset, top), Offset(size.width - gap - bevelInset, bottom), depth)
                 }
             }
             if (selected && enabled) {
@@ -361,3 +396,36 @@ private fun DrawScope.drawConsoleVector(glyph: ConsoleVector, ink: Color, origin
 }
 
 private fun rgb(value: Int) = Color(value or 0xff000000.toInt())
+
+private class EdgeFlash(val amount: Float = 0f, val allowed: Boolean = false, val pulse: () -> Unit = {})
+private val LocalEdgeFlash = compositionLocalOf { EdgeFlash() }
+
+/** Mix the raised high bevel toward white, then keep relative luminance under the chrome cap. */
+private fun flashedEdge(high: Int, flash: Float): Color {
+    val amount = flash.coerceIn(0f, 1f)
+    if (amount <= 0f) return rgb(high)
+    val cap = Dim.chromeLuminanceCap
+    if (relativeLuminance(high) >= cap) return rgb(high)
+    var lo = 0f
+    var hi = amount
+    var best = high
+    repeat(8) {
+        val mid = (lo + hi) * 0.5f
+        val mixed = mixTowardWhite(high, mid)
+        if (relativeLuminance(mixed) <= cap) {
+            best = mixed
+            lo = mid
+        } else hi = mid
+    }
+    return rgb(best)
+}
+
+private fun mixTowardWhite(packed: Int, t: Float): Int {
+    fun ch(shift: Int): Int {
+        val c = (packed ushr shift) and 255
+        return (c + (255 - c) * t).toInt().coerceIn(0, 255)
+    }
+    return (ch(16) shl 16) or (ch(8) shl 8) or ch(0)
+}
+
+private fun relativeLuminance(packed: Int): Float = Color(packed or 0xff000000.toInt()).luminance()
