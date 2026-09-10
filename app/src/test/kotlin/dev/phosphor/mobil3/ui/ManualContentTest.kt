@@ -210,7 +210,7 @@ class ManualContentTest {
         val screen = source("ui/PhosphorScreen.kt")
         assertTrue(screen.contains("override fun gainLocked() = state.viewLock"))
         assertTrue(screen.contains("val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)"))
-        assertTrue(screen.contains("if (bandShown)"))
+        assertTrue(screen.contains("if (bandShown && sheet == Sheet.NONE)"))
         assertTrue(screen.contains("onHeightChanged = { statusBandHeightPx = it }"))
         assertTrue(screen.contains("hudVisible = state.hudMode == 0 ||"))
         assertTrue(source("ui/Console.kt").contains("if (state.gridData)"))

@@ -713,7 +713,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 1a: read-only status band.
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.
-            if (bandShown) {
+            if (bandShown && sheet == Sheet.NONE) {
                 StatusBand(
                     state, p, reduced,
                     hudVisible = state.hudMode == 0 ||

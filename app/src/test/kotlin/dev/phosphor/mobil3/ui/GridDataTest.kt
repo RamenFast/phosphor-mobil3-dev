@@ -94,7 +94,7 @@ class GridDataTest {
         val screen = File(base, "ui/PhosphorScreen.kt").readText()
         assertTrue(screen.contains("override fun setGridData(on: Boolean) = actions.setGridData(on)"))
         val bandCondition = screen.indexOf("val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)")
-        val bandVisibility = screen.indexOf("if (bandShown)")
+        val bandVisibility = screen.indexOf("if (bandShown && sheet == Sheet.NONE)")
         assertTrue(bandCondition >= 0 && bandVisibility > bandCondition)
         assertTrue(screen.substring(bandVisibility).substringBefore("// The service-bench POST").contains("StatusBand("))
         val band = File(base, "ui/Console.kt").readText().substringAfter("fun StatusBand(")

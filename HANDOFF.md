@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~08:50 UTC
+
+Sheet B2b source-accepted: Muse code **9/10**. StatusBand hidden while a sheet is open. AMOLED B2 pixels still ghosted status in the header; this is the other overnight option. 956 tests. Device reshoot open. See [sheet-b2b muse code](docs/plans/mobile-expansion/critiques/sheet-b2b-muse-code.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~08:35 UTC
 
 Sheet B2 source-accepted: Muse code **9/10**. Opaque non-Glass plates; Glass dual layer unchanged; LinkCard prose `open`. 956 tests. Device pixels not yet shot. Prefs still baseline. See [sheet-b2 muse code](docs/plans/mobile-expansion/critiques/sheet-b2-muse-code.md).
