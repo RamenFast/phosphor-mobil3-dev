@@ -15,7 +15,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] U1 tactile no-track console `7204b91` (Grok 8/8/8, Muse 5/7/8, DeepSeek 8/8; 933 tests; bounded ASUS).
 - [x] Jcode fresh-path null-bool activation `d4b6aab0` (Grok 8 then 9). Huge-history transport remains open.
 - [x] R09 source: service-owned mic, route proof, visualization mixer. 946 tests, Grok code 7 then 8. Not device-accepted.
-- [ ] R09 ASUS built-in and available-accessory evidence. Mixed PCM never reaches speakers. Root stays inert.
+- [x] R09 ASUS bounded built-in start/stop at 48 kHz mono on NAAIB70036673ZC. Prefs restored, RECORD_AUDIO revoked.
+- [ ] R09 remaining device matrix: accessory routes, playback-plus-mic mix, PiP/HUD/linger identity, duplicate built-in row honesty.
 - [ ] Implement genuine Vulkan FP16 linear HDR with truthful SDR fallback from `dev/scratch/r05-current-handoff.md`. Enable existing ndk `nativewindow` feature only as part of that unit. No luminance claim from screenshots.
 - [ ] Default-source startup coordinator (R14), consent-chain rules, inert imports. Root auto-start stays deferred.
 - [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
