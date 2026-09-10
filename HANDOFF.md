@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~09:50 UTC
+
+ChipCell latch source-accepted: Muse code **9/10**. Active cells get surface2 + 1dp sink, not hue alone. Device pixels open. See [chip-latch muse code](docs/plans/mobile-expansion/critiques/chip-latch-muse-code.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~09:35 UTC
 
 Sheet B2c Muse visual **9/10 PASS**. ASUS density 440 makes the SOURCE column <340dp, so `manual…`/`grant…` drop below prose. Prefs restored. Next: ChipCell latch non-hue, then edge flash.

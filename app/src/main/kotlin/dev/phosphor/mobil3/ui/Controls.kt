@@ -471,6 +471,7 @@ fun ChipCell(
     val accessible = LocalSettingsControlAccess.current
     val p = p.readableOn()
     val style = LocalRoomStyle.current
+    val latched = active && enabled
     Box(
         Modifier
             .padding(style.space(3.dp))
@@ -478,7 +479,8 @@ fun ChipCell(
             .heightIn(min = 48.dp).widthIn(min = 48.dp)
             .then(if (accessible) Modifier.settingsChoice(active) else Modifier)
             .background(p.surface)
-            .border(Dim.hairline, if (active && enabled) p.accent else p.line)
+            .then(if (latched) Modifier.background(p.surface2) else Modifier)
+            .border(Dim.hairline, if (latched) p.accent else p.line)
             .clickable(enabled = enabled, onClick = onClick)
             .padding(style.space(6.dp)),
         contentAlignment = Alignment.Center,
@@ -491,6 +493,7 @@ fun ChipCell(
                 else -> p.ink2
             },
             if (small) Type.dataSm else Type.data,
+            if (latched) Modifier.offset(y = 1.dp) else Modifier,
         )
     }
 }
