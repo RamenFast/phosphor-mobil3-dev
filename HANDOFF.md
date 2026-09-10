@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~09:05 UTC
+
+Sheet B2/B2b Muse visual **9/10 PASS**. Opaque plates + StatusBand hidden while a sheet is open. LinkCard prose `open`. AMOLED ghost gone even at 8x header boost. Installed `7ad2304d…`. Prefs restored. See [sheet-b2 pixels](docs/plans/mobile-expansion/sheet-b2-asus-checkpoint.md). Next: right-rail then animation/theming.
+
 ## Latest Prime checkpoint, 2026-09-10 ~08:50 UTC
 
 Sheet B2b source-accepted: Muse code **9/10**. StatusBand hidden while a sheet is open. AMOLED B2 pixels still ghosted status in the header; this is the other overnight option. 956 tests. Device reshoot open. See [sheet-b2b muse code](docs/plans/mobile-expansion/critiques/sheet-b2b-muse-code.md).

@@ -33,7 +33,9 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Muse visual of flattened chrome: 8/10. Idle SIGNAL CHECK overlay accepted as quiet on that shot.
 - [x] Muse pixel score of a real track: look 2 **9/10**.
 - [x] Sheet B1 source: vector close, checked-row tick, manual inline clear. Muse code 9. Device pixels open.
-- [x] Sheet B2 source: opaque non-Glass plates, LinkCard prose `open`. Muse code 9. Device pixels open.
+- [x] Sheet B2 source: opaque non-Glass plates, LinkCard prose `open`. Muse code 9.
+- [x] Sheet B2b: hide StatusBand while a sheet is open. Muse code 9.
+- [x] Muse visual of sheet plates + LinkCard: **9/10**. Prefs restored.
 - [ ] Remaining visual: right-rail, animation/theming polish.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
