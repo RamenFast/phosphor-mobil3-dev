@@ -14,6 +14,13 @@ internal object MicrophoneRoutePolicy {
     fun select(choices: List<MicrophoneChoice>, key: String?): MicrophoneChoice? =
         if (key.isNullOrEmpty()) choices.filter { it.type == 15 }.minByOrNull { it.id }
         else choices.filter { it.key == key }.singleOrNull()
+    fun disambiguate(choices: List<MicrophoneChoice>): List<MicrophoneChoice> {
+        val counts = choices.groupingBy { it.key }.eachCount()
+        return choices.map { choice ->
+            if ((counts[choice.key] ?: 0) > 1) choice.copy(name = "${choice.name} (${choice.id})")
+            else choice
+        }
+    }
     fun routed(selected: Int, actual: List<Int>): Boolean = actual.isNotEmpty() && actual.all { it == selected }
     data class Format(val rate: Int, val channels: Int, val floating: Boolean)
     fun candidates(rates: IntArray, channels: IntArray, encodings: IntArray): List<Format> {

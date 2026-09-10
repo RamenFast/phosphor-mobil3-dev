@@ -1,6 +1,10 @@
 # Handoff: mobile expansion execution
 
-## Latest Prime checkpoint, 2026-09-10 ~03:37 UTC
+## Latest Prime checkpoint, 2026-09-10 ~04:17 UTC
+
+R14 startup source-accepted: Grok OAuth 7 then 8. Default none. Last-used is not a default. See [R14 checkpoint](docs/plans/mobile-expansion/r14-source-checkpoint.md). Device launch matrix unproven.
+
+## Previous Prime checkpoint, 2026-09-10 ~03:37 UTC
 
 HDR request path source-accepted: Grok OAuth 7 then 8. Request default off. Format change rebuilds composite/HOLD. No active-HDR claim. Sibling render-gpu `3171e0f`. See [R05 source checkpoint](docs/plans/mobile-expansion/r05-source-checkpoint.md). Device dataspace/nits unproven.
 

@@ -18,7 +18,7 @@ internal object MicrophoneRoutes {
     fun devices(context: Context): List<AudioDeviceInfo> = context.getSystemService(AudioManager::class.java)
         .getDevices(AudioManager.GET_DEVICES_INPUTS).filter { MicrophoneRoutePolicy.supported(it.isSource, it.type, Build.VERSION.SDK_INT) }
     fun choice(device: AudioDeviceInfo) = MicrophoneChoice(device.id, device.type, device.productName.toString(), device.address)
-    fun choices(context: Context): List<MicrophoneChoice> = runCatching { devices(context).map(::choice) }.getOrDefault(emptyList())
+    fun choices(context: Context): List<MicrophoneChoice> = runCatching { MicrophoneRoutePolicy.disambiguate(devices(context).map(::choice)) }.getOrDefault(emptyList())
     fun selected(context: Context): AudioDeviceInfo? {
         val devices = devices(context)
         val key = context.getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, Context.MODE_PRIVATE)

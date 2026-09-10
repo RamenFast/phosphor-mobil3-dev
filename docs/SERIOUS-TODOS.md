@@ -19,7 +19,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [ ] R09 remaining device matrix: accessory routes, playback-plus-mic mix, PiP/HUD/linger identity, duplicate built-in row honesty.
 - [x] HDR request path source: `hdr_requested` off by default, selector, pipeline rebuild, HOLD transfer 2.0. Grok 7 then 8. Sibling `3171e0f`.
 - [ ] HDR device proof: Vulkan identity, dataspace after present, matching metadata, honest SDR fallback on ASUS. Screenshots are not nits.
-- [ ] Default-source startup coordinator (R14), consent-chain rules, inert imports. Root auto-start stays deferred.
+- [x] R14 startup source: default none, process-death fresh, import unconfirmed. Grok 7 then 8.
+- [ ] R14 ASUS fresh-launch and process-death matrix. Root auto-start stays deferred.
 - [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
 - [ ] Proven fresh-install tactile default that does not rewrite existing saved looks.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.

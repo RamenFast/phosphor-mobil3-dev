@@ -1184,6 +1184,17 @@ internal fun SettingsSheet(
             SettingsGlyphRow("source · ${state.sourceLabel}", SettingsGlyph.Signal, p) {
                 state.showSourcePicker = true
             }
+            Prose("DEFAULT SOURCE on a fresh launch. None keeps SRC manual. Last-used is not a default.", p.muted)
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
+                listOf("none" to "none", "mic" to "mic", "capture" to "capture").forEach { (id, label) ->
+                    ChipCell("DEFAULT · $label", active = state.defaultSource == id, p = p, small = true) {
+                        actions.setDefaultSource(id)
+                    }
+                }
+            }
+            ChipCell("AUTOMATIC PERMISSION POPUP · " + if (state.automaticPermissionPopup) "on" else "off",
+                active = state.automaticPermissionPopup, p = p, small = true,
+            ) { actions.setAutomaticPermissionPopup(!state.automaticPermissionPopup) }
             SignalCheckEntry(state, p)
             DragRule(
                 "GAIN", state.gain, 0.1f, 7.0f, p, { "×%.2f".format(it) },
@@ -1558,6 +1569,8 @@ interface SheetActions : AppearanceActions {
     fun setControlsAlwaysVisible(on: Boolean)
     fun setPinScreenBrightness(on: Boolean)
     fun setHdrRequested(on: Boolean)
+    fun setDefaultSource(kind: String)
+    fun setAutomaticPermissionPopup(on: Boolean)
     fun setPipAutoEnter(on: Boolean)
     fun enterPictureInPicture()
     fun setDoubleTapPlayback(on: Boolean)

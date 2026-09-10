@@ -30,6 +30,15 @@ class CaptureMixPolicyTest {
         assertFalse(MicrophoneRoutePolicy.routed(7, emptyList()))
         assertTrue(MicrophoneRoutePolicy.routed(7, listOf(7)))
     }
+    @Test fun duplicateBuiltInNamesKeepDistinctIds() {
+        val a = MicrophoneChoice(3, 15, "ASUS_AI2202")
+        val b = MicrophoneChoice(9, 15, "ASUS_AI2202")
+        val out = MicrophoneRoutePolicy.disambiguate(listOf(a, b))
+        assertEquals(2, out.map { it.label }.toSet().size)
+        assertEquals(setOf(3, 9), out.map { it.id }.toSet())
+        assertNull(MicrophoneRoutePolicy.select(out, a.key))
+        assertEquals(3, MicrophoneRoutePolicy.select(out, null)?.id)
+    }
     @Test fun candidateTrialsAreFiniteAndKeepMonoPcm16() {
         val any = MicrophoneRoutePolicy.candidates(intArrayOf(), intArrayOf(), intArrayOf())
         assertTrue(any.size <= 12)

@@ -148,7 +148,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var lockedUiOrientation = ActivityInfo.SCREEN_ORIENTATION_UNSPECIFIED
     // Route gravity to the beam, individual elements, or the whole chrome for the four lock combinations.
     private var gravityListener: android.hardware.SensorEventListener? = null
-    private var lastSourceReopened = false
+    private var pendingFreshStartup = false
+    companion object {
+        @Volatile private var processStartupConsumed = false
+    }
     private var sourceSelection = 0L
     private var signalSelected = SignalKind.UNKNOWN
     private var signalDenied: String? = null
@@ -844,6 +847,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     override fun onCreate(savedInstanceState: Bundle?) {
         super.onCreate(savedInstanceState)
+        pendingFreshStartup = StartupCoordinatorPolicy.processFreshLaunch(processStartupConsumed)
+        processStartupConsumed = true
         taskRevision = BackgroundLifecycle.policy.enterActivity(taskId)
         activityRevision = BackgroundLifecycle.policy.activityRevision
         ui = ScopeUiState()
@@ -887,16 +892,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (FloatingHudService.active) FloatingHudService.hide(this)
         refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
-        // Resume only passive live sources once per process. Files and relays remain explicit choices.
-        if (taskIsCurrent() && !lastSourceReopened) {
-            lastSourceReopened = true
-            if (!ui.live && ui.sourceLabel == "no source") {
-                when (runtimePrefs().getString("last_source", "none")) {
-                    "capture" -> if (!captureConsentNeeded()) startCapture()
-                    "mic" -> if (mic.established()) { ui.sourceLabel = "mic"; ui.live = true }
-                        else ui.microphoneStatus = "Microphone stopped. Choose the input to start again"
-                }
-            }
+        if (taskIsCurrent() && pendingFreshStartup) {
+            pendingFreshStartup = false
+            maybeStartConfiguredDefault()
         }
     }
 
@@ -1515,6 +1513,20 @@ class MainActivity : ComponentActivity(), ScopeActions {
             "Brightness choice applies now but saving failed. Toggle it again to retry before closing Phosphor."
     }
 
+    override fun setDefaultSource(kind: String) {
+        if (!taskIsCurrent()) return
+        val value = kind.takeIf { it in StartupCoordinatorPolicy.allowed } ?: "none"
+        ui.defaultSource = value
+        runCatching { prefs().edit().putString(StartupCoordinatorPolicy.DEFAULT, value).commit() }
+        if (taskIsCurrent()) runtimePrefs().edit { putBoolean(StartupCoordinatorPolicy.CONFIRMED, value != "none") }
+    }
+
+    override fun setAutomaticPermissionPopup(on: Boolean) {
+        if (!taskIsCurrent()) return
+        ui.automaticPermissionPopup = on
+        runCatching { prefs().edit().putBoolean(StartupCoordinatorPolicy.POPUP, on).commit() }
+    }
+
     override fun setHdrRequested(on: Boolean) {
         if (!taskIsCurrent()) return
         ui.hdrRequested = on
@@ -1683,6 +1695,23 @@ class MainActivity : ComponentActivity(), ScopeActions {
             pendingAppearanceImport = null
             owner.cancelSettingsImport(ticket)
             reportImportFailure(it)
+        }
+    }
+
+    private fun maybeStartConfiguredDefault() {
+        val surviving = mic.established() || CaptureService.hasLiveWakeSource() || PlaybackService.hasLiveWakeSource()
+        val confirmed = runtimePrefs().getBoolean(StartupCoordinatorPolicy.CONFIRMED, false)
+        if (!StartupCoordinatorPolicy.shouldAutoStart(ui.defaultSource, ui.live, surviving, confirmed)) return
+        when (ui.defaultSource) {
+            "mic" -> {
+                val granted = ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) == PackageManager.PERMISSION_GRANTED
+                if (StartupCoordinatorPolicy.promptFreeMic(granted) || ui.automaticPermissionPopup) startMic()
+                else ui.microphoneStatus = "Default microphone is waiting. Open SRC to grant and start."
+            }
+            "capture" -> {
+                if (ui.automaticPermissionPopup) startCapture()
+                else ui.captureStatus = "Default capture is waiting. Open SRC to approve Android consent."
+            }
         }
     }
 
@@ -2081,6 +2110,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.hdrRequested = HdrPresentationPolicy.requested(p.all)
         ui.hdrStatus = HdrPresentationPolicy.reason(ui.hdrRequested, false, android.os.Build.VERSION.SDK_INT, false)
         PhosphorNative.setHdrRequested(ui.hdrRequested, android.os.Build.VERSION.SDK_INT)
+        ui.defaultSource = StartupCoordinatorPolicy.defaultOf(p.all)
+        ui.automaticPermissionPopup = StartupCoordinatorPolicy.popup(p.all)
         PhosphorNative.setPauseBlack(dev.phosphor.mobil3.ui.PauseDisplayPolicy.black(p.all))
         refreshDisplayPause()
         val hud = HudPolicy.read(p.all)

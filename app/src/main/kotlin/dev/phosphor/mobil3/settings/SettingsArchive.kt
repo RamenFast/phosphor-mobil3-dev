@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.settings
 
+import dev.phosphor.mobil3.StartupCoordinatorPolicy
 import dev.phosphor.mobil3.ui.LightSettings
 import dev.phosphor.mobil3.settings.appearance.AppearanceDocumentCodec
 import dev.phosphor.mobil3.settings.appearance.AppearanceException
@@ -97,6 +98,8 @@ object SettingsArchive {
         "fullscreen" to Spec(Kind.BOOLEAN),
         "pin_screen_brightness" to Spec(Kind.BOOLEAN),
         "hdr_requested" to Spec(Kind.BOOLEAN),
+        "default_source" to string(16) { it in StartupCoordinatorPolicy.allowed },
+        "automatic_permission_popup" to Spec(Kind.BOOLEAN),
         "linger_background" to Spec(Kind.BOOLEAN),
         "double_tap_playback" to Spec(Kind.BOOLEAN),
         "controls_always_visible" to Spec(Kind.BOOLEAN),
@@ -134,7 +137,7 @@ object SettingsArchive {
         "cycle_per_track" to Spec(Kind.BOOLEAN),
     )
 
-    private val v2Only = setOf("pin_screen_brightness", "hdr_requested", "appearance_state", "custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
+    private val v2Only = setOf("pin_screen_brightness", "hdr_requested", "default_source", "automatic_permission_popup", "appearance_state", "custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
         "cycle_random_interval", "cycle_interval_min", "cycle_interval_max")
 
     private fun validAppearance(text: String): Boolean = try {
