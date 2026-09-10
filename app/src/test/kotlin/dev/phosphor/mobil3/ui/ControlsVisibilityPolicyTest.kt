@@ -96,7 +96,9 @@ class ControlsVisibilityPolicyTest {
         assertEquals(3, Regex("tick.post\\(uiTick\\)").findAll(activity).count())
         assertEquals(4, Regex("tick.removeCallbacks\\(uiTick\\)").findAll(activity).count())
         assertEquals(2, Regex("tick.removeCallbacks\\(uiTick\\)\\s+if \\(ui.presentationVisible\\) tick.post\\(uiTick\\)").findAll(activity).count())
-        assertTrue("tick.removeCallbacks(uiTick)\n        if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)" in activity)
+        assertTrue("tick.removeCallbacks(uiTick)" in activity)
+        assertTrue("if (PictureInPicturePolicy.shouldRebindSurface(leaving, activityStarted))" in activity)
+        assertTrue("if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)" in activity)
     }
 
     @Test fun viewportUsesRemainingSafeHeightWithoutShrinkingSliderLanes() {

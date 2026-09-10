@@ -9,4 +9,7 @@ internal object PictureInPicturePolicy {
     fun enterOnLeave(sdk: Int, autoEnter: Boolean, alreadyInPip: Boolean): Boolean =
         sdk in 29..30 && autoEnter && !alreadyInPip
     fun enterManually(alreadyInPip: Boolean): Boolean = !alreadyInPip
+    fun shouldRebindSurface(leavingPip: Boolean, activityStarted: Boolean): Boolean =
+        leavingPip && activityStarted
 }
+

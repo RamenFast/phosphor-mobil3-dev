@@ -911,10 +911,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         newConfig: android.content.res.Configuration,
     ) {
         super.onPictureInPictureModeChanged(isInPictureInPictureMode, newConfig)
+        val leaving = ui.pip && !isInPictureInPictureMode
         ui.pip = isInPictureInPictureMode
         applyBrightnessPin()
         if (ui.pip) appearanceWorkflow?.cancel()
         tick.removeCallbacks(uiTick)
+        if (PictureInPicturePolicy.shouldRebindSurface(leaving, activityStarted)) {
+            SurfaceHost.rebindActivity()
+            ui.presentationVisible = true
+        }
         if (!ui.pip && activityStarted && ui.presentationVisible) tick.post(uiTick)
         updateOrientationSensor()
     }

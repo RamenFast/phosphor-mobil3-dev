@@ -24,6 +24,18 @@ class PictureInPicturePolicyTest {
         }
     }
 
+    @Test fun leavingPipRebindsStartedActivitySurfaceOnly() {
+        assertTrue(PictureInPicturePolicy.shouldRebindSurface(true, true))
+        assertFalse(PictureInPicturePolicy.shouldRebindSurface(true, false))
+        assertFalse(PictureInPicturePolicy.shouldRebindSurface(false, true))
+        val activity = phase9Source("MainActivity.kt")
+        val pip = activity.substringAfter("override fun onPictureInPictureModeChanged").substringBefore("override fun onConfigurationChanged")
+        assertTrue("PictureInPicturePolicy.shouldRebindSurface(leaving, activityStarted)" in pip)
+        assertTrue("SurfaceHost.rebindActivity()" in pip)
+        assertTrue("val leaving = ui.pip && !isInPictureInPictureMode" in pip)
+        assertTrue("fun rebindActivity()" in phase9Source("SurfaceHost.kt"))
+    }
+
     @Test fun manualEntryIgnoresAutoLingerAndControlsAndAvoidsDuplicateEntry() {
         val state = ScopeUiState()
         for (auto in listOf(false, true)) for (linger in listOf(false, true)) for (controls in listOf(false, true)) {

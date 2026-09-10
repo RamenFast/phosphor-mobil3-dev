@@ -127,6 +127,13 @@ internal class SurfaceHost(
             if (!visible) activity?.retire()
             preferred()?.present()
         }
+        fun rebindActivity() {
+            activityVisible = true
+            activity?.let { host ->
+                host.retire()
+                host.present()
+            }
+        }
         fun hud(host: SurfaceHost) { hud = host; hudVisible = true; host.present() }
         fun hudVisible(host: SurfaceHost, visible: Boolean) {
             if (hud !== host) return
