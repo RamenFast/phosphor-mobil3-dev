@@ -659,3 +659,8 @@ See [tactile-empty-asus-checkpoint.md](tactile-empty-asus-checkpoint.md). Empty 
 ## ASUS chrome regression slice, 2026-09-10 ~05:45UTC
 
 HEAD af10694. MODE sheet opened (xy/3D/helix faces). HOLD latched `display held`. SRC sheet did not open from SRC key this run. Play-bar swipe did not show Settings. Prefs restored. MUSIC 1/30. Not a full regression matrix.
+
+
+## ASUS SRC and Settings, 2026-09-10 ~05:48UTC
+
+SRC sheet opened. Settings opened via play-bar swipe. Duplicate built-in mic labels observed (same string, two rows). Prefs restored. MUSIC 1/30.
