@@ -58,17 +58,19 @@ internal object ConsoleKeybedPolicy {
     data class Layout(val rows: Int, val primaryWidth: Float, val modeWidth: Float, val sourceWidth: Float,
         val overflowWidth: Float = 48f)
 
-    fun tactile(lookVersion: Int, hasTransport: Boolean) = lookVersion == 2 && !hasTransport
+    fun tactile(lookVersion: Int, hasTransport: Boolean) = lookVersion == 2
 
     /** Width is the actual inner well, in Android display dp, not the screen width. */
-    fun layout(widthDp: Float, fontScale: Float, displayOnly: Boolean = false): Layout {
+    fun layout(widthDp: Float, fontScale: Float, displayOnly: Boolean = false,
+        hasTransport: Boolean = false): Layout {
         fun label(chars: Int) = kotlin.math.ceil(20f + chars * 9f * fontScale)
         val primary = if (displayOnly) maxOf(56f, label(4)) else 56f
         val mode = maxOf(64f, label(4))
         val source = maxOf(56f, label(3))
+        val skip = if (hasTransport) 112f else 0f
         val rows = when {
             fontScale >= 1.8f || widthDp < mode + source + 48f + 16f -> 4
-            widthDp < primary + mode + source + 48f + 28f -> 2
+            widthDp < primary + skip + mode + source + 48f + 28f -> 2
             else -> 1
         }
         return when (rows) {

@@ -1,6 +1,7 @@
 package dev.phosphor.mobil3.ui
 
 import androidx.compose.foundation.Canvas
+import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
 import androidx.compose.foundation.clickable
@@ -35,7 +36,9 @@ import dev.phosphor.mobil3.AcceptanceTrace
 /** No timers, transient palette, transport dispatch or pointer ownership changes. */
 @Composable
 internal fun TactileConsoleKeybed(
-    state: ScopeUiState, onMode: () -> Unit, onSrc: () -> Unit, onPlay: () -> Unit,
+    state: ScopeUiState, p: Palette, reduced: Boolean,
+    onMode: () -> Unit, onSrc: () -> Unit, onPlay: () -> Unit,
+    onPrev: () -> Unit, onNext: () -> Unit, onSeek: (Long) -> Unit,
     onMore: () -> Unit, moreActive: Boolean, overflowPullHost: PullGestureHost,
 ) {
     val inheritedUnits = LocalDensity.current
@@ -49,13 +52,15 @@ internal fun TactileConsoleKeybed(
         }
     }
     CompositionLocalProvider(LocalDensity provides displayUnits) {
-        DisplayDensityKeybed(state, onMode, onSrc, onPlay, onMore, moreActive, overflowPullHost)
+        DisplayDensityKeybed(state, p, reduced, onMode, onSrc, onPlay, onPrev, onNext, onSeek, onMore, moreActive, overflowPullHost)
     }
 }
 
 @Composable
 private fun DisplayDensityKeybed(
-    state: ScopeUiState, onMode: () -> Unit, onSrc: () -> Unit, onPlay: () -> Unit,
+    state: ScopeUiState, p: Palette, reduced: Boolean,
+    onMode: () -> Unit, onSrc: () -> Unit, onPlay: () -> Unit,
+    onPrev: () -> Unit, onNext: () -> Unit, onSeek: (Long) -> Unit,
     onMore: () -> Unit, moreActive: Boolean, overflowPullHost: PullGestureHost,
 ) {
     val value = state.appearanceValue ?: return
@@ -69,9 +74,12 @@ private fun DisplayDensityKeybed(
     val drawnLabel = PauseDisplayPolicy.controlLabel(displayOnly, drawnPlaying, drawnPaused)
     val style = LocalRoomStyle.current
     val fontScale = LocalDensity.current.fontScale
+    val hasTransport = state.trackTitle != null || state.remote
+    val showPrev = hasTransport && (!capture || state.captureCanPrevious)
+    val showNext = hasTransport && (!capture || state.captureCanNext)
     BoxWithConstraints(Modifier.fillMaxWidth().background(rgb(tokens.well))
         .border(1.dp, rgb(tokens.edgeQuiet)).padding(5.dp)) {
-        val layout = ConsoleKeybedPolicy.layout(maxWidth.value, fontScale, displayOnly)
+        val layout = ConsoleKeybedPolicy.layout(maxWidth.value, fontScale, displayOnly, hasTransport)
         val primary: @Composable (Modifier) -> Unit = { modifier ->
             if (showPlay) TactileConsoleKey(
                 label = if (displayOnly) drawnLabel else "",
@@ -101,6 +109,16 @@ private fun DisplayDensityKeybed(
         val overflow: @Composable (Modifier) -> Unit = { modifier ->
             TactileOverflowKey(tokens, moreActive, overflowPullHost, modifier, onMore)
         }
+        val prev: @Composable (Modifier) -> Unit = { modifier ->
+            TactileConsoleKey("", "Previous track", tokens, modifier = modifier,
+                enabled = showPrev, disabledReason = "Previous is unavailable for this source",
+                glyph = ConsoleVector.PREV) { Haptics.light(view); onPrev() }
+        }
+        val next: @Composable (Modifier) -> Unit = { modifier ->
+            TactileConsoleKey("", "Next track", tokens, modifier = modifier,
+                enabled = showNext, disabledReason = "Next is unavailable for this source",
+                glyph = ConsoleVector.NEXT) { Haptics.light(view); onNext() }
+        }
         val secondary: @Composable () -> Unit = {
             Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
                 mode(Modifier.width(layout.modeWidth.dp))
@@ -111,31 +129,65 @@ private fun DisplayDensityKeybed(
                 overflow(Modifier.width(layout.overflowWidth.dp))
             }
         }
-        when (layout.rows) {
-            4 -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                primary(Modifier.width(layout.primaryWidth.dp))
-                mode(Modifier.width(layout.modeWidth.dp)); source(Modifier.width(layout.sourceWidth.dp))
-                overflow(Modifier.width(layout.overflowWidth.dp))
+        val keys: @Composable () -> Unit = {
+            when (layout.rows) {
+                4 -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (hasTransport) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        prev(Modifier.width(48.dp)); Spacer(Modifier.width(8.dp))
+                        primary(Modifier.weight(1f)); Spacer(Modifier.width(8.dp))
+                        next(Modifier.width(48.dp))
+                    } else primary(Modifier.width(layout.primaryWidth.dp))
+                    mode(Modifier.width(layout.modeWidth.dp)); source(Modifier.width(layout.sourceWidth.dp))
+                    overflow(Modifier.width(layout.overflowWidth.dp))
+                }
+                2 -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                    if (hasTransport) Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                        prev(Modifier.width(48.dp)); Spacer(Modifier.width(8.dp))
+                        primary(Modifier.weight(1f)); Spacer(Modifier.width(8.dp))
+                        next(Modifier.width(48.dp))
+                    } else primary(Modifier.width(layout.primaryWidth.dp))
+                    secondary()
+                }
+                else -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+                    if (hasTransport) {
+                        prev(Modifier.width(48.dp)); Spacer(Modifier.width(8.dp))
+                    }
+                    primary(Modifier.width(layout.primaryWidth.dp))
+                    if (hasTransport) {
+                        Spacer(Modifier.width(8.dp)); next(Modifier.width(48.dp))
+                    }
+                    if (showPlay || hasTransport) Spacer(Modifier.width(12.dp))
+                    mode(Modifier.width(layout.modeWidth.dp))
+                    Spacer(Modifier.width(8.dp))
+                    source(Modifier.width(layout.sourceWidth.dp))
+                    Spacer(Modifier.width(8.dp))
+                    Spacer(Modifier.weight(1f))
+                    overflow(Modifier.width(layout.overflowWidth.dp))
+                }
             }
-            2 -> Column(verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                primary(Modifier.width(layout.primaryWidth.dp))
-                secondary()
+        }
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            state.trackTitle?.let { title ->
+                Box(Modifier.fillMaxWidth().height(20.dp), contentAlignment = Alignment.CenterStart) {
+                    val line = buildString {
+                        append(title)
+                        state.trackArtist?.let {
+                            if (it.isNotBlank() && it != "null") append("  —  $it")
+                        }
+                    }
+                    Mono(line, p.ink, Type.dataLg,
+                        if (!reduced && state.presentationVisible && !state.pip) Modifier.basicMarquee(
+                            iterations = Int.MAX_VALUE, initialDelayMillis = 2200, velocity = 24.dp,
+                        ) else Modifier)
+                }
             }
-            else -> Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
-                primary(Modifier.width(layout.primaryWidth.dp))
-                if (showPlay) Spacer(Modifier.width(12.dp))
-                mode(Modifier.width(layout.modeWidth.dp))
-                Spacer(Modifier.width(8.dp))
-                source(Modifier.width(layout.sourceWidth.dp))
-                Spacer(Modifier.width(8.dp))
-                Spacer(Modifier.weight(1f))
-                overflow(Modifier.width(layout.overflowWidth.dp))
-            }
+            if (state.seekable && state.durationMs > 0) SeekRule(p, state.positionMs, state.durationMs, onSeek)
+            keys()
         }
     }
 }
 
-internal enum class ConsoleVector { PLAY, PAUSE, OVERFLOW }
+internal enum class ConsoleVector { PLAY, PAUSE, OVERFLOW, PREV, NEXT }
 
 @Composable
 internal fun TactileConsoleKey(
@@ -278,6 +330,16 @@ private fun ConsoleVectorGlyph(glyph: ConsoleVector, ink: Color) {
                     drawRect(ink, point(x - .045f, .615f), Size(size.width * .09f, size.height * .09f))
                 }
             }
+            ConsoleVector.PREV -> drawPath(Path().apply {
+                moveTo(size.width * .78f, size.height * .18f)
+                lineTo(size.width * .28f, size.height * .5f)
+                lineTo(size.width * .78f, size.height * .82f); close()
+            }, ink)
+            ConsoleVector.NEXT -> drawPath(Path().apply {
+                moveTo(size.width * .22f, size.height * .18f)
+                lineTo(size.width * .72f, size.height * .5f)
+                lineTo(size.width * .22f, size.height * .82f); close()
+            }, ink)
         }
     }
 }

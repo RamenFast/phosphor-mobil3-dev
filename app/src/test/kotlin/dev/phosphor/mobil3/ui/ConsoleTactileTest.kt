@@ -41,7 +41,7 @@ class ConsoleTactileTest {
 
     @Test fun deviceAndNarrowWindowLayoutsHaveFixedPhysicalWidthVectors() {
         assertFalse(ConsoleKeybedPolicy.tactile(1, false))
-        assertFalse(ConsoleKeybedPolicy.tactile(2, true))
+        assertTrue(ConsoleKeybedPolicy.tactile(2, true))
         assertTrue(ConsoleKeybedPolicy.tactile(2, false))
         // Actual ASUS348dp card leaves about306dp after its frame/padding.
         // A320dp window with the same insets leaves about234dp. These are inner widths.
@@ -61,6 +61,15 @@ class ConsoleTactileTest {
             if (actual.rows == 2) assertTrue(actual.modeWidth + actual.sourceWidth + actual.overflowWidth + 16f <= width)
         }
         assertEquals(ConsoleKeybedPolicy.Layout(1, 67f, 67f, 56f, 48f), ConsoleKeybedPolicy.layout(306f, 1.3f, true))
+        assertEquals(ConsoleKeybedPolicy.Layout(2, 306f, 64f, 56f, 48f),
+            ConsoleKeybedPolicy.layout(306f, 1f, hasTransport = true))
+        assertEquals(ConsoleKeybedPolicy.Layout(1, 56f, 64f, 56f, 48f),
+            ConsoleKeybedPolicy.layout(380f, 1f, hasTransport = true))
+        val source = phase9Source("ui/TactileConsole.kt")
+        assertTrue("ConsoleVector.PREV" in source)
+        assertTrue("ConsoleVector.NEXT" in source)
+        assertTrue("fun tactile(lookVersion: Int, hasTransport: Boolean) = lookVersion == 2" in
+            phase9Source("ui/ConsoleTactileTokens.kt"))
     }
 
     @Test fun androidDisplayDensityKeepsPhysicalMinimumsAtEveryFontScale() {

@@ -234,29 +234,33 @@ fun Console(
                 // gain/orbit gestures, and horizontal seek scrubs keep their lane.
                 .playBarSwipeUp(onSettingsSwipe, settingsPullHost),
         ) {
-            state.trackTitle?.let { title ->
-                Mono(
-                    buildString {
-                        append(title)
-                        state.trackArtist?.let {
-                            if (it.isNotBlank() && it != "null") append("  —  $it")
-                        }
-                    },
-                    p.ink, Type.dataLg,
-                    if (!reduced && chromeVisible && state.presentationVisible && !state.pip) Modifier.basicMarquee(
-                        iterations = Int.MAX_VALUE,
-                        initialDelayMillis = 2200,
-                        velocity = 24.dp,
-                    ) else Modifier,
-                )
-                Spacer(Modifier.height(style.space(Dim.gap)))
+            val tactile = ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport) && state.appearanceValue != null
+            if (!tactile) {
+                state.trackTitle?.let { title ->
+                    Mono(
+                        buildString {
+                            append(title)
+                            state.trackArtist?.let {
+                                if (it.isNotBlank() && it != "null") append("  —  $it")
+                            }
+                        },
+                        p.ink, Type.dataLg,
+                        if (!reduced && chromeVisible && state.presentationVisible && !state.pip) Modifier.basicMarquee(
+                            iterations = Int.MAX_VALUE,
+                            initialDelayMillis = 2200,
+                            velocity = 24.dp,
+                        ) else Modifier,
+                    )
+                    Spacer(Modifier.height(style.space(Dim.gap)))
+                }
+                if (state.seekable && state.durationMs > 0) {
+                    SeekRule(p, state.positionMs, state.durationMs, onSeek)
+                    Spacer(Modifier.height(style.space(Dim.gap)))
+                }
             }
-            if (state.seekable && state.durationMs > 0) {
-                SeekRule(p, state.positionMs, state.durationMs, onSeek)
-                Spacer(Modifier.height(style.space(Dim.gap)))
-            }
-            if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport) && state.appearanceValue != null) {
-                TactileConsoleKeybed(state, onMode, onSrc, onPlay, onMore, moreActive, overflowPullHost)
+            if (tactile) {
+                TactileConsoleKeybed(state, p, reduced, onMode, onSrc, onPlay, onPrev, onNext, onSeek,
+                    onMore, moreActive, overflowPullHost)
             } else Row(verticalAlignment = Alignment.CenterVertically) {
                 if (hasTransport && (!capture || state.captureCanPrevious)) {
                     FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
