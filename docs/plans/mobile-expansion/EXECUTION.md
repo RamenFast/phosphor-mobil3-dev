@@ -664,3 +664,8 @@ HEAD af10694. MODE sheet opened (xy/3D/helix faces). HOLD latched `display held`
 ## ASUS SRC and Settings, 2026-09-10 ~05:48UTC
 
 SRC sheet opened. Settings opened via play-bar swipe. Duplicate built-in mic labels observed (same string, two rows). Prefs restored. MUSIC 1/30.
+
+## Mic-label ASUS SRC honesty, 2026-09-10
+
+See [mic-label-asus-checkpoint.md](mic-label-asus-checkpoint.md). Distinct `(19)`/`(21)` labels. Both start. Prefs restored. MUSIC 1/30.
+

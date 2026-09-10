@@ -18,7 +18,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] R09 ASUS bounded built-in start/stop at 48 kHz mono on NAAIB70036673ZC. Prefs restored, RECORD_AUDIO revoked.
 - [x] R09 ASUS PiP identity: same pid and MicCaptureService across HOME PiP. Prefs restored.
 - [x] R09 PiP return: native segs resume after surface rebind 9ff96bd (Grok 8). Prefs restored.
-- [ ] R09 remaining: accessory USB/BT (none connected), playback+mic mix (needs MediaProjection consent), HUD overlay (no SYSTEM_ALERT_WINDOW), linger, duplicate built-in SRC rows.
+- [x] Duplicate built-in SRC rows: distinct `(id)` labels; both ASUS bottom/back start. Muse 9. Prefs restored.
+- [ ] R09 remaining: accessory USB/BT (none connected; bonded but disconnected, not taken over), playback+mic mix (needs MediaProjection consent), HUD overlay (SYSTEM_ALERT_WINDOW false), linger.
 - [x] HDR request path source: `hdr_requested` off by default, selector, pipeline rebuild, HOLD transfer 2.0. Grok 7 then 8. Sibling `3171e0f`.
 - [ ] HDR device proof: Vulkan identity, dataspace after present, matching metadata, honest SDR fallback on ASUS. Screenshots are not nits.
 - [x] R14 startup source: default none, process-death fresh, import unconfirmed. Grok 7 then 8.

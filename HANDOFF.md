@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~07:40 UTC
+
+Mic-label source+ASUS: colliding built-in SRC rows suffix `(id)` on display only. Grok 7 then Muse 9. 956 JVM tests, lint, dual APK. Installed `08923e33…`. Bottom (19) and back (21) both start `MicCaptureService` at 48 kHz mono. Stored key unsuffixed. Prefs restored, RECORD_AUDIO revoked. See [mic-label ASUS checkpoint](docs/plans/mobile-expansion/mic-label-asus-checkpoint.md). Accessories/mix/HUD/linger still open. Do not soak.
+
 ## Latest Prime checkpoint, 2026-09-10 ~04:45 UTC
 
 R14 ASUS matrix: last-used is not default. Unconfirmed default mic inert. Confirmed mic + RECORD_AUDIO auto-starts on fresh launch and process-death. Capture with popup off does not start MediaProjection. Prefs restored, RECORD_AUDIO revoked. CLEAR_TASK in-process is not rotation and stopped mic. See [R14 ASUS checkpoint](docs/plans/mobile-expansion/r14-asus-checkpoint.md). Soak cancelled. Do not soak.

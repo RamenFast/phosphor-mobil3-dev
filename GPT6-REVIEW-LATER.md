@@ -226,6 +226,8 @@ At this note: app services not listed, font_scale 1.0, wm physical 1080x2400.
 If GPT-6 is still unavailable, leave this file in place and keep Grok inside the same laws.
 
 ## Later units after this brief was first written
+- Mic-label `14dac99` Grok 7 then Muse 9. ASUS SRC `(19)`/`(21)` both start. Prefs restored.
+
 
 - HDR dataspace observe `bb3044d` and ASUS REQUEST HDR vs SDR dataspace (not nits).
 - R14 source `ca0c63d` Grok 7 then 8, then ASUS matrix receipt `docs/plans/mobile-expansion/r14-asus-checkpoint.md`.
