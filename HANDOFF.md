@@ -1,6 +1,10 @@
 # Handoff: mobile expansion execution
 
-## Latest Prime checkpoint, 2026-09-10 ~07:10 UTC
+## Latest Prime checkpoint, 2026-09-10 ~07:25 UTC
+
+Muse track visual 7/10 was look 1 FlatKey skip marks, not tactile vectors. Baseline omits `look_version`. Key-face `drawConsoleVector` is in source for look 2. Device F1 needs a look-2 shot. Prefs restored. See [F1 checkpoint](docs/plans/mobile-expansion/tactile-track-f1-asus-checkpoint.md).
+
+## Previous Prime checkpoint, 2026-09-10 ~07:10 UTC
 
 Tactile track Muse visual round 1 **7/10** (F1 prev/next weight). Skip-pair source `15742d2`/`4bb2c0f`. ASUS pixels still tiny skip marks after install; PREV label probe did not appear. F1 not closed. Prefs restored. See [F1 checkpoint](docs/plans/mobile-expansion/tactile-track-f1-asus-checkpoint.md). Do not soak.
 

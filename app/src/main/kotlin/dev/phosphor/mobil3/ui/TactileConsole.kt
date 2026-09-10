@@ -1,6 +1,5 @@
 package dev.phosphor.mobil3.ui
 
-import androidx.compose.foundation.Canvas
 import androidx.compose.foundation.basicMarquee
 import androidx.compose.foundation.background
 import androidx.compose.foundation.border
@@ -21,6 +20,7 @@ import androidx.compose.ui.geometry.Size
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Path
 import androidx.compose.ui.graphics.PathEffect
+import androidx.compose.ui.graphics.drawscope.DrawScope
 import androidx.compose.ui.graphics.drawscope.Stroke
 import androidx.compose.ui.input.key.*
 import androidx.compose.ui.platform.LocalDensity
@@ -274,6 +274,12 @@ private fun TactileKeyFace(tokens: ConsoleTactileTokens, primary: Boolean, press
                     Offset(gap + 3.dp.toPx(), gap + 16.dp.toPx()), 1.dp.toPx())
             }
             drawContent()
+            if (glyph != null) {
+                val box = 26.dp.toPx()
+                val origin = Offset((size.width - box) / 2f,
+                    (size.height - box) / 2f + if (sunk) 1.dp.toPx() else 0f)
+                drawConsoleVector(glyph, rgb(if (enabled) colors.ink else colors.disabledInk), origin, box)
+            }
             if (focused) drawRoundRect(rgb(tokens.focusRing), Offset(-2.dp.toPx(), -2.dp.toPx()),
                 Size(size.width + 4.dp.toPx(), size.height + 4.dp.toPx()), corner, style = Stroke(2.dp.toPx()))
         }, contentAlignment = Alignment.Center, propagateMinConstraints = true) {
@@ -281,7 +287,6 @@ private fun TactileKeyFace(tokens: ConsoleTactileTokens, primary: Boolean, press
         androidx.compose.ui.layout.Layout(content = {
             UprightCell {
                 Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                    if (glyph != null) ConsoleVectorGlyph(glyph, ink)
                     if (label.isNotEmpty()) KeyText(label, ink)
                 }
             }
@@ -310,50 +315,47 @@ private fun KeyText(label: String, ink: Color, small: Boolean = false) {
 }
 
 /** Closed transport silhouettes and square overflow contacts, independent of installed fonts. */
-@Composable
-private fun ConsoleVectorGlyph(glyph: ConsoleVector, ink: Color) {
-    Canvas(Modifier.requiredSize(26.dp)) {
-        fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
-        when (glyph) {
-            ConsoleVector.PLAY -> drawPath(Path().apply {
-                moveTo(size.width * .28f, size.height * .18f)
-                lineTo(size.width * .78f, size.height * .5f)
-                lineTo(size.width * .28f, size.height * .82f); close()
+private fun DrawScope.drawConsoleVector(glyph: ConsoleVector, ink: Color, origin: Offset, box: Float) {
+    fun px(x: Float, y: Float) = Offset(origin.x + box * x, origin.y + box * y)
+    when (glyph) {
+        ConsoleVector.PLAY -> drawPath(Path().apply {
+            moveTo(origin.x + box * .28f, origin.y + box * .18f)
+            lineTo(origin.x + box * .78f, origin.y + box * .5f)
+            lineTo(origin.x + box * .28f, origin.y + box * .82f); close()
+        }, ink)
+        ConsoleVector.PAUSE -> listOf(.25f, .58f).forEach { x ->
+            drawRect(ink, px(x, .2f), Size(box * .17f, box * .6f))
+        }
+        ConsoleVector.OVERFLOW -> {
+            drawLine(ink, px(.24f, .34f), px(.76f, .34f), 1.dp.toPx())
+            drawLine(ink, px(.5f, .34f), px(.5f, .17f), 1.dp.toPx())
+            listOf(.31f, .5f, .69f).forEach { x ->
+                drawRect(ink, px(x - .045f, .615f), Size(box * .09f, box * .09f))
+            }
+        }
+        ConsoleVector.PREV -> {
+            drawPath(Path().apply {
+                moveTo(origin.x + box * .47f, origin.y + box * .18f)
+                lineTo(origin.x + box * .22f, origin.y + box * .5f)
+                lineTo(origin.x + box * .47f, origin.y + box * .82f); close()
             }, ink)
-            ConsoleVector.PAUSE -> listOf(.25f, .58f).forEach { x ->
-                drawRect(ink, point(x, .2f), Size(size.width * .17f, size.height * .6f))
-            }
-            ConsoleVector.OVERFLOW -> {
-                drawLine(ink, point(.24f, .34f), point(.76f, .34f), 1.dp.toPx())
-                drawLine(ink, point(.5f, .34f), point(.5f, .17f), 1.dp.toPx())
-                listOf(.31f, .5f, .69f).forEach { x ->
-                    drawRect(ink, point(x - .045f, .615f), Size(size.width * .09f, size.height * .09f))
-                }
-            }
-            ConsoleVector.PREV -> {
-                drawPath(Path().apply {
-                    moveTo(size.width * .47f, size.height * .18f)
-                    lineTo(size.width * .22f, size.height * .5f)
-                    lineTo(size.width * .47f, size.height * .82f); close()
-                }, ink)
-                drawPath(Path().apply {
-                    moveTo(size.width * .78f, size.height * .18f)
-                    lineTo(size.width * .53f, size.height * .5f)
-                    lineTo(size.width * .78f, size.height * .82f); close()
-                }, ink)
-            }
-            ConsoleVector.NEXT -> {
-                drawPath(Path().apply {
-                    moveTo(size.width * .22f, size.height * .18f)
-                    lineTo(size.width * .47f, size.height * .5f)
-                    lineTo(size.width * .22f, size.height * .82f); close()
-                }, ink)
-                drawPath(Path().apply {
-                    moveTo(size.width * .53f, size.height * .18f)
-                    lineTo(size.width * .78f, size.height * .5f)
-                    lineTo(size.width * .53f, size.height * .82f); close()
-                }, ink)
-            }
+            drawPath(Path().apply {
+                moveTo(origin.x + box * .78f, origin.y + box * .18f)
+                lineTo(origin.x + box * .53f, origin.y + box * .5f)
+                lineTo(origin.x + box * .78f, origin.y + box * .82f); close()
+            }, ink)
+        }
+        ConsoleVector.NEXT -> {
+            drawPath(Path().apply {
+                moveTo(origin.x + box * .22f, origin.y + box * .18f)
+                lineTo(origin.x + box * .47f, origin.y + box * .5f)
+                lineTo(origin.x + box * .22f, origin.y + box * .82f); close()
+            }, ink)
+            drawPath(Path().apply {
+                moveTo(origin.x + box * .53f, origin.y + box * .18f)
+                lineTo(origin.x + box * .78f, origin.y + box * .5f)
+                lineTo(origin.x + box * .53f, origin.y + box * .82f); close()
+            }, ink)
         }
     }
 }
