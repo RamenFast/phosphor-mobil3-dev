@@ -26,7 +26,7 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [ ] R14 remaining: rotation/same-process recreate (configChanges skips orientation; CLEAR_TASK stopped mic). Root auto-start stays deferred.
 - [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
-- [ ] ASUS proof of empty-install tactile default vs upgrade-like prefs.
+- [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
 - [x] Five ASUS lifecycle cycles (start/Home/return/recreate/stop). Prefs restored.
 - [ ] ~~30-minute soak~~ Ben 2026-09-10: do not soak. Idle soak cancelled. Prefs restored after ~4.5 min. Do not resume.

@@ -649,3 +649,8 @@ See [r09-asus-pip-checkpoint.md](r09-asus-pip-checkpoint.md). MicCaptureService 
 ## R09 PiP segs rebind, 2026-09-10 ~05:07UTC
 
 See [r09-asus-pip-rebind-checkpoint.md](r09-asus-pip-rebind-checkpoint.md). Native 480 segs after PiP return. Prefs restored. Mix/accessories still open.
+
+
+## Tactile empty-install ASUS, 2026-09-10 ~05:12UTC
+
+See [tactile-empty-asus-checkpoint.md](tactile-empty-asus-checkpoint.md). Empty prefs look 2. Baseline gain-without-appearance stays look 1. Prefs restored.
