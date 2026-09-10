@@ -644,3 +644,8 @@ See [r14-asus-checkpoint.md](r14-asus-checkpoint.md). Last-used is not default. 
 ## R09 ASUS PiP identity, 2026-09-10 ~04:47UTC
 
 See [r09-asus-pip-checkpoint.md](r09-asus-pip-checkpoint.md). MicCaptureService identity held in PiP. Mix/accessories/HUD/linger/SRC-row honesty not proven. Prefs restored.
+
+
+## R09 PiP segs rebind, 2026-09-10 ~05:07UTC
+
+See [r09-asus-pip-rebind-checkpoint.md](r09-asus-pip-rebind-checkpoint.md). Native 480 segs after PiP return. Prefs restored. Mix/accessories still open.
