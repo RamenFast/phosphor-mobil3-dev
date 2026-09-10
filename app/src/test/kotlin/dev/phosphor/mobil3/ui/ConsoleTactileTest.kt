@@ -68,6 +68,12 @@ class ConsoleTactileTest {
         val source = phase9Source("ui/TactileConsole.kt")
         assertTrue("ConsoleVector.PREV" in source)
         assertTrue("ConsoleVector.NEXT" in source)
+        assertTrue("size.width * .47f, size.height * .18f" in source)
+        assertTrue("size.width * .53f, size.height * .18f" in source)
+        assertTrue("size.width * .47f, size.height * .82f" in source)
+        assertTrue("size.width * .53f, size.height * .82f" in source)
+        assertFalse("◂◂" in source)
+        assertFalse("▸▸" in source)
         assertTrue("fun tactile(lookVersion: Int, hasTransport: Boolean) = lookVersion == 2" in
             phase9Source("ui/ConsoleTactileTokens.kt"))
     }

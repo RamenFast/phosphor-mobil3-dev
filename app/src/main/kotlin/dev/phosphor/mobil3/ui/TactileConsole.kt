@@ -330,16 +330,30 @@ private fun ConsoleVectorGlyph(glyph: ConsoleVector, ink: Color) {
                     drawRect(ink, point(x - .045f, .615f), Size(size.width * .09f, size.height * .09f))
                 }
             }
-            ConsoleVector.PREV -> drawPath(Path().apply {
-                moveTo(size.width * .78f, size.height * .18f)
-                lineTo(size.width * .28f, size.height * .5f)
-                lineTo(size.width * .78f, size.height * .82f); close()
-            }, ink)
-            ConsoleVector.NEXT -> drawPath(Path().apply {
-                moveTo(size.width * .22f, size.height * .18f)
-                lineTo(size.width * .72f, size.height * .5f)
-                lineTo(size.width * .22f, size.height * .82f); close()
-            }, ink)
+            ConsoleVector.PREV -> {
+                drawPath(Path().apply {
+                    moveTo(size.width * .47f, size.height * .18f)
+                    lineTo(size.width * .22f, size.height * .5f)
+                    lineTo(size.width * .47f, size.height * .82f); close()
+                }, ink)
+                drawPath(Path().apply {
+                    moveTo(size.width * .78f, size.height * .18f)
+                    lineTo(size.width * .53f, size.height * .5f)
+                    lineTo(size.width * .78f, size.height * .82f); close()
+                }, ink)
+            }
+            ConsoleVector.NEXT -> {
+                drawPath(Path().apply {
+                    moveTo(size.width * .22f, size.height * .18f)
+                    lineTo(size.width * .47f, size.height * .5f)
+                    lineTo(size.width * .22f, size.height * .82f); close()
+                }, ink)
+                drawPath(Path().apply {
+                    moveTo(size.width * .53f, size.height * .18f)
+                    lineTo(size.width * .78f, size.height * .5f)
+                    lineTo(size.width * .53f, size.height * .82f); close()
+                }, ink)
+            }
         }
     }
 }
