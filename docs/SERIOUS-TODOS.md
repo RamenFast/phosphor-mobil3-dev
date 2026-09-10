@@ -44,7 +44,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] Look 2 tactile rest on ASUS via temp appearance_state. Prefs restored.
 - [ ] Edge flash 80ms still-frame: not readable (pressed key sunk; sibling +0.16 grey). Code Muse 9 stands.
 - [x] Glass recipe ASUS pixels: Muse visual **9/10**. Prefs restored.
-- [ ] Remaining visual: Light/Dark recipes unshot; two press languages on look 1 StoneKey (accepted watch).
+- [x] Light + Dark recipe ASUS pixels: Muse visual **9/10**. Prefs restored.
+- [ ] Remaining visual: two press languages on look 1 StoneKey (accepted watch).
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
 - [x] Partial ASUS regressions 2026-09-10: SIGNAL CHECK, LIGHT preset latch, HOLD pause/return, settings, SRC, ChipCell, HUD, linger. Prefs restored.
