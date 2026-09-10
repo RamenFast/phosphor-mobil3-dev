@@ -2,7 +2,7 @@
 
 ## Latest Prime checkpoint, 2026-09-10 ~11:55 UTC
 
-Dashed disabled tactile PLAY source-accepted: Muse code **10/10**. Device pixels open (needs capture !canPlay). See [disabled-play muse code](docs/plans/mobile-expansion/critiques/disabled-play-muse-code.md).
+Dashed disabled tactile PLAY source-accepted: Muse code **10/10**. ASUS pixels blocked: reaching capture !canPlay needs CONTINUE into MediaProjection. Stopped at NOT NOW (`capture-consent-not-now.png`). Prefs restored. See [disabled-play muse code](docs/plans/mobile-expansion/critiques/disabled-play-muse-code.md).
 
 ## Latest Prime checkpoint, 2026-09-10 ~11:40 UTC
 
