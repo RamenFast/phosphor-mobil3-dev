@@ -226,6 +226,8 @@ At this note: app services not listed, font_scale 1.0, wm physical 1080x2400.
 If GPT-6 is still unavailable, leave this file in place and keep Grok inside the same laws.
 
 ## Later units after this brief was first written
+- Tactile track look 2 Muse visual 9/10. Round 1 7 was look 1.
+
 - Mic-label `14dac99` Grok 7 then Muse 9. ASUS SRC `(19)`/`(21)` both start. Prefs restored.
 
 

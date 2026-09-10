@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~07:40 UTC
+
+Tactile track console look 2 Muse visual **9/10 PASS**. Round 1 7 was look 1 FlatKey. Skip vectors at PLAY weight. Prefs restored. See [round 2](docs/plans/mobile-expansion/critiques/tactile-track-muse-visual-round-02.md). Next: sheet/manual hierarchy.
+
 ## Latest Prime checkpoint, 2026-09-10 ~07:25 UTC
 
 Muse track visual 7/10 was look 1 FlatKey skip marks, not tactile vectors. Baseline omits `look_version`. Key-face `drawConsoleVector` is in source for look 2. Device F1 needs a look-2 shot. Prefs restored. See [F1 checkpoint](docs/plans/mobile-expansion/tactile-track-f1-asus-checkpoint.md).

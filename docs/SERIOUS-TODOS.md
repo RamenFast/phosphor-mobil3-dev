@@ -26,7 +26,7 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] R14 ASUS matrix: last-used is not default; unconfirmed mic inert; confirmed mic auto-starts; process-death fresh; capture not prompt-free. Prefs restored.
 - [ ] R14 remaining: rotation/same-process recreate (configChanges skips orientation; CLEAR_TASK stopped mic). Root auto-start stays deferred.
 - [x] Tactile track well source: look 2 stays tactile with transport. Grok 7 then 8. `0d9d751`.
-- [ ] Muse visual of tactile track console with a real track: round 1 **7/10** (F1 prev/next weight). Source skip-pair landed; device pixels unchanged. See tactile-track-f1-asus-checkpoint.md.
+- [x] Muse visual of tactile track console with a real track: look 1 was 7; look 2 **9/10 PASS**. Prefs restored.
 - [x] Console/status loud-frame flatten source: Grok 8. `bd35b08`. ASUS no-track shot taken.
 - [x] Muse visual of flattened chrome: 8/10. Idle SIGNAL CHECK overlay accepted as quiet on that shot.
 - [ ] Remaining visual: sheet/manual hierarchy, animation/theming polish, Muse pixel score of a real track. 3D still Grok.
