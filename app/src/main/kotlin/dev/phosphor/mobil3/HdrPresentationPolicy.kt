@@ -8,7 +8,7 @@ internal object HdrPresentationPolicy {
         requested && vulkan && api >= 34 && hasFp16
     fun reason(requested: Boolean, vulkan: Boolean, api: Int, hasFp16: Boolean): String = when {
         !requested -> "SDR · HDR off"
-        !vulkan -> "SDR · non-Vulkan adapter"
+        !vulkan -> "HDR requested · waiting for surface report"
         !hasFp16 -> "SDR · no FP16 scRGB pair"
         api < 34 -> "SDR · HDR metadata needs API 34"
         else -> "attempt linear HDR"

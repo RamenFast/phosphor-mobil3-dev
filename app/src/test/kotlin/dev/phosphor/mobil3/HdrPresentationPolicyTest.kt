@@ -20,6 +20,7 @@ class HdrPresentationPolicyTest {
         assertFalse(HdrPresentationPolicy.attemptLinear(true, true, 33, true))
         assertEquals("SDR · HDR metadata needs API 34", HdrPresentationPolicy.reason(true, true, 33, true))
         assertFalse(HdrPresentationPolicy.attemptLinear(true, false, 34, true))
+        assertEquals("HDR requested · waiting for surface report", HdrPresentationPolicy.reason(true, false, 34, true))
         assertFalse(HdrPresentationPolicy.attemptLinear(true, true, 34, false))
     }
 }
