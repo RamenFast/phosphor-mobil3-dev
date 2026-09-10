@@ -20,6 +20,15 @@ class AppearanceMigrationTest {
         catch (_: AppearanceException) { }
     }
 
+    @Test fun emptyInstallSeedsTactileAmoledWithoutRewritingUpgradePrefs() {
+        val empty = AppearanceMigration.initial(emptyMap<String, Any>())
+        assertEquals(2, empty.active.lookVersion)
+        assertEquals("curated:amoled", empty.activeId)
+        val upgrade = AppearanceMigration.initial(mapOf("gain" to 2f))
+        assertEquals(1, upgrade.active.lookVersion)
+        assertEquals(CuratedAppearances.amoled, upgrade.active)
+    }
+
     @Test fun cleanInstallUsesCuratedAmoledAndRetainsAllActualLegacyRows() {
         val result = AppearanceMigration.initial(mapOf("gain" to 2f))
         assertEquals(CuratedAppearances.amoled, result.active)

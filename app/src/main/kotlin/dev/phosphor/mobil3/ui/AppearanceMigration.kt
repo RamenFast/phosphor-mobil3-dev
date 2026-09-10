@@ -11,6 +11,7 @@ import dev.phosphor.mobil3.settings.appearance.CuratedAppearances
 internal object AppearanceMigration {
     const val KEY = "appearance_state"
     val legacyKeys: Set<String> = setOf("room", "ov_char", "ov_motion", "ov_radius", "ov_desig")
+    private val userSettingKeys = setOf("mode", "gain", "fps", "oversample", "auto_gain", "default_source")
 
     fun stored(values: Map<String, *>): AppearanceDocument? {
         if (KEY !in values) return null
@@ -26,7 +27,10 @@ internal object AppearanceMigration {
                 AppearancePalette.legacy(LegacyAppearanceInput(room.id)).value)
         }
         if (values.keys.none(legacyKeys::contains)) {
-            return AppearanceDocument.of(active = CuratedAppearances.amoled,
+            val tactile = values.keys.none { it in userSettingKeys }
+            val active = if (tactile) CuratedAppearances.amoled.copy(lookVersion = 2)
+                else CuratedAppearances.amoled
+            return AppearanceDocument.of(active = active,
                 activeId = "curated:amoled", legacy = rows)
         }
         val resolved = try { AppearancePalette.legacy(input) } catch (error: IllegalArgumentException) {

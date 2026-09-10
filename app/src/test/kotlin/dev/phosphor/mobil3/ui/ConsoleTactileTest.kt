@@ -141,13 +141,13 @@ class ConsoleTactileTest {
         val importedLegacy = AppearanceMigration.stored(merged)!!
         assertEquals(1, importedLegacy.active.lookVersion)
         assertEquals(saved, importedLegacy.users.single())
-        assertEquals(1, AppearanceMigration.initial(emptyMap<String, Any>()).active.lookVersion)
+        assertEquals(2, AppearanceMigration.initial(emptyMap<String, Any>()).active.lookVersion)
         assertEquals(1, AppearanceMigration.initial(mapOf("gain" to 1f)).active.lookVersion)
         assertEquals(1, AppearanceMigration.initial(mapOf("room" to "glass")).active.lookVersion)
     }
 
     @Test fun workflowPreviewCancelApplySaveResetAndRestartAreLossless() {
-        val values = mutableMapOf<String, Any>()
+        val values = mutableMapOf<String, Any>("gain" to 1f)
         val preferences = AppearancePreferences(SettingsWriteOwner(), { values.toMap() },
             { values[AppearancePreferences.KEY] = it; true }, { true })
         val owner = AppearanceWorkflow(preferences, AppearanceMigration::initial)

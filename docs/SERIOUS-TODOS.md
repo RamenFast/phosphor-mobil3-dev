@@ -22,7 +22,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] R14 startup source: default none, process-death fresh, import unconfirmed. Grok 7 then 8.
 - [ ] R14 ASUS fresh-launch and process-death matrix. Root auto-start stays deferred.
 - [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
-- [ ] Proven fresh-install tactile default that does not rewrite existing saved looks.
+- [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
+- [ ] ASUS proof of empty-install tactile default vs upgrade-like prefs.
 - [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
 - [ ] Five lifecycle cycles and 30-minute soak on the exact accepted APK, then restore original preferences.
 - [ ] Keep `GPT6-REVIEW-LATER.md` current when a unit lands so Astra can review after GPT-6 usage resets.

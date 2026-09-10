@@ -1,6 +1,10 @@
 # Handoff: mobile expansion execution
 
-## Latest Prime checkpoint, 2026-09-10 ~04:17 UTC
+## Latest Prime checkpoint, 2026-09-10 ~04:27 UTC
+
+Fresh tactile default source-accepted: empty install AMOLED look_version 2. Upgrade-like prefs stay look 1. Grok OAuth 8/10. Existing appearance bytes unchanged.
+
+## Previous Prime checkpoint, 2026-09-10 ~04:17 UTC
 
 R14 startup source-accepted: Grok OAuth 7 then 8. Default none. Last-used is not a default. See [R14 checkpoint](docs/plans/mobile-expansion/r14-source-checkpoint.md). Device launch matrix unproven.
 

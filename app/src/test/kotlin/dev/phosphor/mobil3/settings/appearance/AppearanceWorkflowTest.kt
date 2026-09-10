@@ -52,7 +52,7 @@ class AppearanceWorkflowTest {
         val r = Rig()
         r.load()
         assertEquals("commit", r.trace.first())
-        assertEquals(CuratedAppearances.amoled, r.owner.committed!!.active)
+        assertEquals(CuratedAppearances.amoled.copy(lookVersion = 2), r.owner.committed!!.active)
         assertEquals(13, r.owner.committed!!.legacy.size)
         Rooms.forEach { room ->
             assertEquals(AppearancePalette.legacy(LegacyAppearanceInput(room.id)).value,
