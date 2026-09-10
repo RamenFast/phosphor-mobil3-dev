@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~11:25 UTC
+
+Glass recipe Muse visual **9/10 PASS**. 12dp sheet, dual-layer prose. Light/Dark still unshot. Prefs restored. See [glass muse visual](docs/plans/mobile-expansion/critiques/glass-muse-visual.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~11:10 UTC
 
 Look 2 tactile rest proven via temp `appearance_state` inject. 80ms edge flash still-frame not readable: pressed key is sunk so HIGH flash is skipped. Prefs restored. See [edge-flash ASUS](docs/plans/mobile-expansion/edge-flash-asus-checkpoint.md).

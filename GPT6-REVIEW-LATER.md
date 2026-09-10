@@ -235,3 +235,5 @@ If GPT-6 is still unavailable, leave this file in place and keep Grok inside the
 - R14 source `ca0c63d` Grok 7 then 8, then ASUS matrix receipt `docs/plans/mobile-expansion/r14-asus-checkpoint.md`.
 - Fresh tactile default source `1921b38` Grok 8. Device empty-install proof still open.
 - Idle 30-minute soak aborted by Ben 2026-09-10. Do not resume.
+
+- 2026-09-10 overnight: sheet B2/B2c, ChipCell latch, edge-flash source, Glass pixels Muse 9. Mix/USB still blocked. Do not soak.
