@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~10:00 UTC
+
+ChipCell latch Muse visual **8/10 PASS**. AUTO-GAIN vs VIEW LOCK. Surface2 lift is subtle. Prefs restored. Next: event-driven edge flash.
+
 ## Latest Prime checkpoint, 2026-09-10 ~09:50 UTC
 
 ChipCell latch source-accepted: Muse code **9/10**. Active cells get surface2 + 1dp sink, not hue alone. Device pixels open. See [chip-latch muse code](docs/plans/mobile-expansion/critiques/chip-latch-muse-code.md).
