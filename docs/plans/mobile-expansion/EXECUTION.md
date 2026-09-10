@@ -634,3 +634,8 @@ Same installed APK as cycle 1 on NAAIB70036673ZC. Each cycle: start, Home, retur
 ## Soak aborted, 2026-09-10 ~04:41UTC
 
 Ben: do not soak. Stopped after ~4.5 min wall-clock. Force-stop. Prefs restored. MUSIC 1/30. Do not resume idle soak.
+
+
+## R14 ASUS matrix, 2026-09-10 ~04:45UTC
+
+See [r14-asus-checkpoint.md](r14-asus-checkpoint.md). Last-used is not default. Confirmed mic auto-starts. Capture not prompt-free. Prefs restored. Rotation analogue not proven. Soak cancelled.

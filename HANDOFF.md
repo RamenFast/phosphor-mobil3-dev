@@ -1,6 +1,10 @@
 # Handoff: mobile expansion execution
 
-## Latest Prime checkpoint, 2026-09-10 ~04:27 UTC
+## Latest Prime checkpoint, 2026-09-10 ~04:45 UTC
+
+R14 ASUS matrix: last-used is not default. Unconfirmed default mic inert. Confirmed mic + RECORD_AUDIO auto-starts on fresh launch and process-death. Capture with popup off does not start MediaProjection. Prefs restored, RECORD_AUDIO revoked. CLEAR_TASK in-process is not rotation and stopped mic. See [R14 ASUS checkpoint](docs/plans/mobile-expansion/r14-asus-checkpoint.md). Soak cancelled. Do not soak.
+
+## Previous Prime checkpoint, 2026-09-10 ~04:27 UTC
 
 Fresh tactile default source-accepted: empty install AMOLED look_version 2. Upgrade-like prefs stay look 1. Grok OAuth 8/10. Existing appearance bytes unchanged.
 

@@ -224,3 +224,10 @@ At this note: app services not listed, font_scale 1.0, wm physical 1080x2400.
 6. If Astra then authors a correction, Grok still does the independent code-quality score.
 
 If GPT-6 is still unavailable, leave this file in place and keep Grok inside the same laws.
+
+## Later units after this brief was first written
+
+- HDR dataspace observe `bb3044d` and ASUS REQUEST HDR vs SDR dataspace (not nits).
+- R14 source `ca0c63d` Grok 7 then 8, then ASUS matrix receipt `docs/plans/mobile-expansion/r14-asus-checkpoint.md`.
+- Fresh tactile default source `1921b38` Grok 8. Device empty-install proof still open.
+- Idle 30-minute soak aborted by Ben 2026-09-10. Do not resume.

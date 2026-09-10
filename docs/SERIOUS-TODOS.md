@@ -20,7 +20,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] HDR request path source: `hdr_requested` off by default, selector, pipeline rebuild, HOLD transfer 2.0. Grok 7 then 8. Sibling `3171e0f`.
 - [ ] HDR device proof: Vulkan identity, dataspace after present, matching metadata, honest SDR fallback on ASUS. Screenshots are not nits.
 - [x] R14 startup source: default none, process-death fresh, import unconfirmed. Grok 7 then 8.
-- [ ] R14 ASUS fresh-launch and process-death matrix. Root auto-start stays deferred.
+- [x] R14 ASUS matrix: last-used is not default; unconfirmed mic inert; confirmed mic auto-starts; process-death fresh; capture not prompt-free. Prefs restored.
+- [ ] R14 remaining: rotation/same-process recreate (configChanges skips orientation; CLEAR_TASK stopped mic). Root auto-start stays deferred.
 - [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [ ] ASUS proof of empty-install tactile default vs upgrade-like prefs.
