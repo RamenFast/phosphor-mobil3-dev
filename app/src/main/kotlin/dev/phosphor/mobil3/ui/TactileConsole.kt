@@ -108,11 +108,13 @@ private fun DisplayDensityKeybed(
         .border(1.dp, rgb(tokens.edgeQuiet)).padding(5.dp)) {
         val layout = ConsoleKeybedPolicy.layout(maxWidth.value, fontScale, displayOnly, hasTransport)
         val primary: @Composable (Modifier) -> Unit = { modifier ->
-            if (showPlay) TactileConsoleKey(
+            TactileConsoleKey(
                 label = if (displayOnly) drawnLabel else "",
                 description = if (displayOnly) "$drawnLabel · display only" else if (drawnPlaying) "Pause playback" else "Play playback",
                 tokens = tokens, primary = true,
                 selected = if (displayOnly) drawnPaused else drawnPlaying,
+                enabled = showPlay,
+                disabledReason = "Play is unavailable until this source can play",
                 designator = if (style.designators) "S1" else "",
                 glyph = if (displayOnly) null else if (drawnPlaying) ConsoleVector.PAUSE else ConsoleVector.PLAY,
                 modifier = modifier.drawWithContent {
@@ -183,7 +185,7 @@ private fun DisplayDensityKeybed(
                     if (hasTransport) {
                         Spacer(Modifier.width(8.dp)); next(Modifier.width(48.dp))
                     }
-                    if (showPlay || hasTransport) Spacer(Modifier.width(12.dp))
+                    Spacer(Modifier.width(12.dp))
                     mode(Modifier.width(layout.modeWidth.dp))
                     Spacer(Modifier.width(8.dp))
                     source(Modifier.width(layout.sourceWidth.dp))

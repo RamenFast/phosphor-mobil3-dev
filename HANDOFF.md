@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~11:55 UTC
+
+Dashed disabled tactile PLAY source-accepted: Muse code **10/10**. Device pixels open (needs capture !canPlay). See [disabled-play muse code](docs/plans/mobile-expansion/critiques/disabled-play-muse-code.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~11:40 UTC
 
 Light + Dark recipes Muse visual **9/10 PASS**. Four families now shot (AMOLED, Glass, Light, Dark). Prefs restored. See [light-dark muse visual](docs/plans/mobile-expansion/critiques/light-dark-muse-visual.md).

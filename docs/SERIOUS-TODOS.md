@@ -50,7 +50,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
 - [x] Partial ASUS regressions 2026-09-10: SIGNAL CHECK, LIGHT preset latch, HOLD pause/return, settings, SRC, ChipCell, HUD, linger. Prefs restored.
 - [x] ASUS landscape: 2400x1080 layout, then `wm user-rotation lock 0`. Prefs restored.
-- [ ] ASUS regressions still open: TalkBack (not toggled), dashed disabled play, named saved-look APPLY.
+- [x] Dashed disabled tactile PLAY source: always compose, enabled=showPlay. Muse code 10. Device pixels open.
+- [ ] ASUS regressions still open: TalkBack (not toggled), named saved-look APPLY, dashed PLAY pixels (needs capture !canPlay).
 - [x] Five ASUS lifecycle cycles (start/Home/return/recreate/stop). Prefs restored.
 - [ ] ~~30-minute soak~~ Ben 2026-09-10: do not soak. Idle soak cancelled. Prefs restored after ~4.5 min. Do not resume.
 - [ ] Keep `GPT6-REVIEW-LATER.md` current when a unit lands so Astra can review after GPT-6 usage resets.
