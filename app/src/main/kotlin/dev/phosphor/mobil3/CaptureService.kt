@@ -30,6 +30,7 @@ open class CaptureService : Service() {
     @Volatile private var rootSession: RootCaptureSession? = null
     private var rootCheck: RootCaptureCheck? = null
 
+    private var mix: CaptureMixSession? = null
     private var projection: MediaProjection? = null
     private var record: AudioRecord? = null
     @Volatile private var running = false
@@ -255,9 +256,16 @@ open class CaptureService : Service() {
             ))
             return START_NOT_STICKY
         }
-        PhosphorNative.deckSetPaused(true) // capture takes the beam; deck resumes on stop
-        val readOwner = PhosphorNative.setRingActive(true)
-        signalNativeOwner = readOwner
+        val mixer = try {
+            CaptureMixSession(false, CaptureMixSettings.read(getSharedPreferences(PhosphorApplication.PREFERENCES_NAME, MODE_PRIVATE).all)) { message ->
+                main.post { if (owner === this && !cleanedUp) finishCapture("mixer failed", CaptureStatus.error("capture visualization ended", message)) }
+            }
+        } catch (error: RuntimeException) {
+            finishCapture("mixer start failed", CaptureStatus.error("capture visualization could not start", "${error.message}. Stop capture and retry"))
+            return START_NOT_STICKY
+        }
+        mix = mixer
+        signalNativeOwner = mixer.nativeOwner
         signalDescriptor = observeSignalRecorder(rec)
         val meter = signalDescriptor.format?.takeIf { it.channels in 1..2 && it.encoding == "float PCM" }
             ?.let { SignalAggregate(captureOwnerId, it.channels) }
@@ -273,12 +281,18 @@ open class CaptureService : Service() {
         try {
             reader = Thread {
                 var routeAt = android.os.SystemClock.elapsedRealtime()
+                var inputFrame = 0L
                 val chunk = FloatArray(48_000 / 100 * 2) // 10 ms stereo
                 readSourceSamples(
                     running = { running },
                     readEpoch = { PhosphorNative.captureReadEpoch() },
                     read = { rec.read(chunk, 0, chunk.size, AudioRecord.READ_BLOCKING) },
-                    push = { n, epoch -> PhosphorNative.pushCaptureRead(chunk, n, readOwner, epoch) },
+                    push = { n, epoch ->
+                        check(n % 2 == 0) { "Playback capture returned an incomplete stereo frame" }
+                        mixer.offer(false, chunk, n, CapturePcm(48_000, 2), inputFrame, captureClock(rec),
+                            android.os.SystemClock.elapsedRealtimeNanos(), 0, epoch)
+                        inputFrame += n / 2
+                    },
                     observed = { n ->
                         if (owner === this && !cleanedUp && record === rec && running) {
                             val now = android.os.SystemClock.elapsedRealtime()
@@ -402,11 +416,14 @@ open class CaptureService : Service() {
     private fun finishCapture(reason: String, status: CaptureStatus, retry: Boolean = false) {
         sourceWake.stop()
         if (cleanedUp) {
-            if (retry && stopCompletion.result.isDone && stopCompletion.result.getNow(null) == ReaderStop.TIMEOUT) {
+            if (retry && stopCompletion.result.isDone && stopCompletion.result.getNow(null) != null) {
                 val completion = stopCompletion.retry()
                 retirement.add(this, completion.result)
                 Thread({
-                    val error = ReaderStop.finish(reader, {}, {}, {})
+                    val readerError = ReaderStop.finish(reader, {}, {}, {})
+                    val microphoneError = mix?.let { MicCaptureService.stopForSession(it).get() }
+                    val mixerError = if (readerError == null && microphoneError == null) mix?.finish() else null
+                    val error = readerError ?: microphoneError ?: mixerError
                     main.post {
                         publishStatus(if (error == null) status else CaptureStatus.error("capture stop failed", error))
                         completion.cleanupFinished(error)
@@ -421,7 +438,9 @@ open class CaptureService : Service() {
         retirement.add(this, stopCompletion.result)
         if (running) Log.i(TAG, "capture stopped: $reason")
         // An idle STOP service never activated the ring and must not darken an old local deck.
-        val ownedRing = running
+        val ownedRing = running && mix == null
+        mix?.invalidate()
+        val micStop = mix?.let { MicCaptureService.stopForSession(it) }
         running = false
         val oldRecord = record
         val oldReader = reader
@@ -446,7 +465,9 @@ open class CaptureService : Service() {
                     }
                 },
             )
-            val error = rootError ?: readerError
+            val microphoneError = micStop?.get()
+            val mixerError = if (readerError == null && microphoneError == null) mix?.finish() else null
+            val error = rootError ?: readerError ?: microphoneError ?: mixerError
             main.post {
                 rootCheck?.finished(oldRoot?.generation, oldRoot?.completion?.getNow(null), error)
                 rootCheck = null
@@ -542,6 +563,8 @@ open class CaptureService : Service() {
             return result.takeIf { owner === current && lastStatus === status &&
                 current?.signalRetirement === retiring && current?.stopCompletion?.result === cleanup && status.ownerId > 0 }
         }
+        internal fun mixSession(): CaptureMixSession? = owner?.takeIf { it.backend == CaptureBackend.STANDARD && !it.cleanedUp }?.mix?.takeIf { it.live }
+        internal fun mixDescription(): String? = mixSession()?.core?.describe()
         @Volatile private var owner: CaptureService? = null
         internal fun stopIntent(context: android.content.Context) = Intent(context, owner?.javaClass ?: CaptureService::class.java).setAction(ACTION_STOP)
         internal fun rootOwned() = owner?.backend == CaptureBackend.ROOT

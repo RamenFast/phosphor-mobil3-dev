@@ -83,7 +83,8 @@ class ManualContentTest {
     }
 
     @Test fun pendingFeaturesAndRootEvidenceStayExplicit() {
-        listOf("mix", "hdr", "startup").forEach {
+        assertEquals("Route-dependent", ManualContent.chapter("mix").availability)
+        listOf("hdr", "startup").forEach {
             assertEquals("Planned", ManualContent.chapter(it).availability)
         }
         val root = ManualContent.chapter("root")
@@ -108,7 +109,7 @@ class ManualContentTest {
         answer("rotation lock", "rotation", "UI PLACEMENT", "takes precedence", "Enable system auto-rotate")
         answer("auto pip", "hud", "ENTER PiP", "Turn it off", "without removing ENTER PiP")
         answer("floating hud", "hud", "SHOW FLOATING HUD", "HIDE FLOATING HUD", "TRANSPARENT or SOLID", "overlay access")
-        answer("linger", "background", "removal from recents", "existing service-owned", "microphone input stops", "SRC > LIVE")
+        answer("linger", "background", "removal from recents", "existing service-owned", "Established service-owned microphone", "SRC > LIVE")
         answer("pause display", "hold", "Settings > DISPLAY & HUD", "HOLD FRAME", "BLACK", "PAUSE DISPLAY ONLY", "RETURN DISPLAY TO LIVE")
         answer("reset inspection", "inspect", "pan or pinch", "Settings > DISPLAY & HUD > RESET INSPECTION", "no held frame", "return LIVE")
         answer("signal check", "signal", "OPEN SOURCES", "grant, retry or picker", "Unavailable is not zero")
@@ -129,7 +130,7 @@ class ManualContentTest {
     }
 
     @Test fun plannedFeaturesProvideExistingAlternatives() {
-        answer("accessory mix", "mix", "pending", "choose one existing input in SRC", "never speaker output", "Bluetooth")
+        answer("accessory mix", "mix", "INCLUDE MIC", "visualization", "not speaker volume", "Bluetooth")
         answer("hdr", "hdr", "ordinary SDR remains the working output", "not HDR", "own combined proof")
         answer("screen brightness", "brightness", "DISPLAY & HUD > PIN SCREEN BRIGHTNESS", "off by default",
             "use Android's brightness control", "thermal", "focused full app", "checked on ASUS Zenfone 9", "physical luminance remain unverified")

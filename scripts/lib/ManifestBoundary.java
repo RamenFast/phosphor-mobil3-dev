@@ -22,7 +22,7 @@ class ManifestBoundary {
     static final Set<String> PERMISSIONS = Set.of(
         "INTERNET", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "FOREGROUND_SERVICE_MEDIA_PROJECTION", "RECORD_AUDIO", "WAKE_LOCK",
-        "SYSTEM_ALERT_WINDOW", "FOREGROUND_SERVICE_MICROPHONE",
+        "SYSTEM_ALERT_WINDOW", "FOREGROUND_SERVICE_MICROPHONE", "MODIFY_AUDIO_SETTINGS",
         "FOREGROUND_SERVICE_SPECIAL_USE", "POST_NOTIFICATIONS", "BLUETOOTH_CONNECT", "BLUETOOTH"
     );
     static final Set<String> INITIALIZERS = Set.of(
@@ -192,7 +192,8 @@ class ManifestBoundary {
         if (components.containsKey(APP + ".FloatingHudService"))
             require(permissions.contains(PERMISSION + "SYSTEM_ALERT_WINDOW"), "HUD owner requires overlay permission");
         if (permissions.contains(PERMISSION + "FOREGROUND_SERVICE_MICROPHONE")
-                || permissions.contains(PERMISSION + "BLUETOOTH_CONNECT") || permissions.contains(PERMISSION + "BLUETOOTH"))
+                || permissions.contains(PERMISSION + "BLUETOOTH_CONNECT") || permissions.contains(PERMISSION + "BLUETOOTH")
+                || permissions.contains(PERMISSION + "MODIFY_AUDIO_SETTINGS"))
             require(components.containsKey(APP + ".MicCaptureService"), "Microphone route permissions require the private mic service");
         if (components.containsKey(APP + ".MicCaptureService"))
             require(permissions.contains(PERMISSION + "RECORD_AUDIO"), "Mic service requires RECORD_AUDIO");

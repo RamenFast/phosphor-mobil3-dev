@@ -119,7 +119,10 @@ class BackgroundLifecyclePolicyTest {
     @Test fun lifecycleSourceWiringStopsOnlyTheOwnedActivityMicAndDoesNotReplaceTerminalWork() {
         val activity = source("MainActivity.kt")
         val destroy = activity.substringAfter("override fun onDestroy()").substringBefore("\n    }")
-        assertTrue(destroy.indexOf("selectSource()") in 0 until destroy.indexOf("mic.stop()"))
+        assertTrue(destroy.contains("selectSource()"))
+        assertFalse(destroy.contains("mic.stop()"))
+        assertTrue(destroy.contains("MicCaptureService.unobserve(micChanged)"))
+        assertTrue(source("MicCaptureService.kt").contains("completion.ownerDestroyed()"))
         assertFalse(destroy.contains("MicController.stopForLocal"))
         val stop = activity.substringAfter("override fun onStop()").substringBefore("\n    }")
         assertFalse(stop.contains("mic.stop()"))

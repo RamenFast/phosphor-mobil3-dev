@@ -8,7 +8,7 @@ import java.util.concurrent.CompletableFuture
 
 /** A removed task retires its callbacks, even when an existing service source lingers. */
 internal class BackgroundLifecyclePolicy {
-    data class Removal(val keepPlayback: Boolean, val keepCapture: Boolean)
+    data class Removal(val keepPlayback: Boolean, val keepCapture: Boolean, val keepMicrophone: Boolean = false)
 
     var revision = 0L
         private set
@@ -42,11 +42,11 @@ internal class BackgroundLifecyclePolicy {
         else -> null
     }
 
-    fun remove(request: Long, linger: Boolean, local: Boolean, relay: Boolean, capture: Boolean): Removal? {
+    fun remove(request: Long, linger: Boolean, local: Boolean, relay: Boolean, capture: Boolean, microphone: Boolean = false): Removal? {
         if (!accepts(request)) return null
         removed = true
         revision++
-        return Removal(linger && (local || relay || capture), linger && capture)
+        return Removal(linger && (local || relay || capture), linger && capture, linger && microphone)
     }
 
     companion object {
@@ -142,17 +142,14 @@ internal object BackgroundLifecycle {
         val removal = policy.remove(
             removedRevision,
             BackgroundLifecyclePolicy.linger(prefs.all),
-            PlaybackService.ownsLocal(), PlaybackService.ownsRelay(), CaptureService.ownsCapture(),
+            PlaybackService.ownsLocal(), PlaybackService.ownsRelay(), CaptureService.ownsCapture(), MicCaptureService.established(),
         ) ?: return
         PlaybackService.localSourcePublication.selected()
         context.getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, Context.MODE_PRIVATE).edit {
-            putString("last_source", if (removal.keepCapture) "capture" else "none")
+            putString("last_source", if (removal.keepCapture) "capture" else if (removal.keepMicrophone) "mic" else "none")
             if (!removal.keepCapture) remove("consent_seen")
         }
-        // This reaches an existing Activity controller without moving its start authority.
-        MicController.stopForLocal(policy.revision) { _, error, _ ->
-            if (error != null) android.util.Log.e("PhosphorPlayback", "Task microphone stop: $error")
-        }
+        MicCaptureService.removeTask(removal.keepMicrophone)
         CaptureService.removeTask(removal.keepCapture)
         PlaybackService.removeTask(removal.keepPlayback)
     }

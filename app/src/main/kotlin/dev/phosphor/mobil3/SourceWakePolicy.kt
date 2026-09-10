@@ -12,7 +12,7 @@ internal object SourceWakePolicy {
 
     fun root(recording: Boolean, helper: Boolean): Boolean = recording && helper
 
-    fun microphone(recording: Boolean, activityDestroyed: Boolean): Boolean = recording && !activityDestroyed
+    fun microphone(recording: Boolean, serviceDestroyed: Boolean): Boolean = recording && !serviceDestroyed
 
     fun visible(started: Boolean, sourceLive: Boolean): Boolean = started && sourceLive
 }

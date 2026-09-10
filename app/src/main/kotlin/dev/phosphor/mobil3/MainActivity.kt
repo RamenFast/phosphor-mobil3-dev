@@ -72,11 +72,13 @@ import java.util.UUID
 class MainActivity : ComponentActivity(), ScopeActions {
 
     private lateinit var ui: ScopeUiState
-    private val micWake = SourceWakeLock.forOwner(this, "microphone")
-    private val mic = MicController { recording ->
-        micWake.microphoneChanged(recording, activityDestroyed)
-        if (activityStarted && !activityDestroyed) reassertSourceWake()
-    }
+    private val mic = MicCaptureService
+    private var micUiRevision = 0L
+    private var micRefreshAt = 0L
+    private var mixStartPending = false
+    private var lastMixAttempt = -1L
+    private var bluetoothForMix = false
+    private val micChanged: () -> Unit = { if (::ui.isInitialized && !activityDestroyed) refreshMicrophone() }
     private var taskRevision = -1L
     private var activityRevision = -1L
     private var activityDestroyed = false
@@ -122,12 +124,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         start = { done ->
             if (micRequestIsCurrent()) {
                 applyLocalGainPolicy()
-                mic.start(done, ::micRequestIsCurrent) { error ->
-                    publishMicReaderFailure(ui, { taskIsCurrent() && !isDestroyed }) {
-                        runtimePrefs().edit { putString("last_source", "none") }
-                        Toast.makeText(this, error, Toast.LENGTH_LONG).show()
-                    }
-                }
+                mic.request(this, null, CaptureMixSettings.read(prefs().all),
+                    { micRequestIsCurrent() && micStartEligible() }, done)
             } else {
                 micHandoffCancel()
             }
@@ -191,6 +189,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private enum class AudioPermissionPurpose {
         NONE,
         MICROPHONE,
+        MIX_MICROPHONE,
         PLAYBACK_CAPTURE,
     }
 
@@ -804,6 +803,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             withSourcesReleased {
                 applyLocalGainPolicy()
                 applyCaptureStatus(CaptureService.CaptureStatus.starting())
+                mixStartPending = CaptureMixSettings.read(prefs().all).include
                 runCatching {
                     startCaptureService(
                         Intent(this, CaptureService::class.java).putExtra(CaptureService.EXTRA_RESULT, data)
@@ -836,6 +836,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
             when (purpose) {
                 AudioPermissionPurpose.MICROPHONE -> startMic()
+                AudioPermissionPurpose.MIX_MICROPHONE -> startMixMicrophone()
                 AudioPermissionPurpose.PLAYBACK_CAPTURE -> launchCaptureConsent()
                 AudioPermissionPurpose.NONE -> Unit
             }
@@ -847,6 +848,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         activityRevision = BackgroundLifecycle.policy.activityRevision
         ui = ScopeUiState()
         FloatingHudService.observe(hudChanged)
+        MicCaptureService.observe(micChanged)
         enableEdgeToEdge()
         // Visible flags mirror actual source owners. Idle chrome must remain sleep-eligible.
         reassertSourceWake()
@@ -879,6 +881,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
         PhosphorNative.setReducedMotion(reduced)
         signalResumed = true
         activityResumed = true
+        refreshMicrophone()
+        maybeStartMixMicrophone()
         applyBrightnessPin()
         if (FloatingHudService.active) FloatingHudService.hide(this)
         refreshRotationAuthority(force = true)
@@ -889,7 +893,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             if (!ui.live && ui.sourceLabel == "no source") {
                 when (runtimePrefs().getString("last_source", "none")) {
                     "capture" -> if (!captureConsentNeeded()) startCapture()
-                    "mic" -> startMic()
+                    "mic" -> if (mic.established()) { ui.sourceLabel = "mic"; ui.live = true }
+                        else ui.microphoneStatus = "Microphone stopped. Choose the input to start again"
                 }
             }
         }
@@ -1085,9 +1090,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         instrumentWorkflow?.close()
         instrumentDocuments.close()
         tick.removeCallbacks(persistGain)
-        if (taskIsCurrent() && mic.ownsSource() && runtimePrefs().getString("last_source", "none") == "mic") {
-            runtimePrefs().edit { putString("last_source", "none") }
-        }
         activityDestroyed = true
         activityResumed = false
         applyBrightnessPin()
@@ -1099,14 +1101,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
         retiredGravityListener?.let {
             getSystemService(android.hardware.SensorManager::class.java)?.unregisterListener(it)
         }
-        micWake.destroy()
+        MicCaptureService.unobserve(micChanged)
         activityStarted = false
         reassertSourceWake()
         scopeSurface = null
         controllerBinding.cancel()
         selectSource()
         BackgroundLifecycle.policy.leaveActivity(activityRevision)
-        mic.stop()
         super.onDestroy()
     }
 
@@ -1120,6 +1121,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             refreshRotationAuthority()
             reassertSourceWake()
             refreshRootState()
+            if (android.os.SystemClock.elapsedRealtime() - micRefreshAt >= 500) refreshMicrophone()
             controller?.let { c ->
                 val dur = c.duration
                 ui.seekable = !ui.remote && dur > 0 &&
@@ -1372,6 +1374,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
         val current = selection == sourceSelection && PlaybackService.localSourcePublication.accepts(publication) && ownerCurrent
         val detail = signalNative.details(native, input, playback, now).toMutableList()
         detail += "Selection revision" to "$selection · service source revision $publication"
+        CaptureService.mixDescription()?.let { detail += "Visualization mixer" to it }
+        if (selected == SignalKind.CAPTURE && microphone != null) {
+            detail += "Microphone contribution" to if (microphone.contributing) "Included" else "Unavailable or off · playback remains independent"
+            detail += "Microphone health" to SignalPresentation.primary(SignalKind.MIC, microphone, now)
+            detail += "Microphone route / device" to MicCaptureService.status()
+            microphone.descriptor.format?.let { detail += "Microphone client format" to it.label() }
+            microphone.descriptor.route?.let { detail += "Microphone actual route" to it }
+        }
+        if (selected == SignalKind.MIC) detail += "Microphone route / device" to MicCaptureService.status()
         detail += "Scope tap peak" to "Unavailable · the existing display tap has no owner and measurement-age receipt. No second tap is consumed."
         ui.signalCheck = SignalPresentation.present(selected, input, now,
             SignalDisplay(ui.displayPaused, ui.pauseBlack, ui.heldFrameAvailable, ui.displayPresentPending),
@@ -1382,6 +1393,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         signalSelected = signalKind
         signalDenied = null
         signalCaptureStatus = null
+        mixStartPending = false
+        ++micUiRevision
+        ui.micBluetoothExplain = false
         instrumentWorkflow?.settle("Source changed. Pending apply cancelled.")
         micHandoffCancel()
         pendingAudioPermission = AudioPermissionPurpose.NONE
@@ -1418,7 +1432,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun showFloatingHud() {
         val access = Settings.canDrawOverlays(this)
         val locked = getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
-        val microphone = mic.ownsSource() || micHandoff.isPending || pendingAudioPermission == AudioPermissionPurpose.MICROPHONE
+        val microphone = (mic.ownsSource() && !mic.established()) || micHandoff.isPending ||
+            pendingAudioPermission in setOf(AudioPermissionPurpose.MICROPHONE, AudioPermissionPurpose.MIX_MICROPHONE)
         val refusal = HudPolicy.refusal(true, activityStarted && taskIsCurrent() && !isInPictureInPictureMode,
             access, locked, microphone)
         if (refusal != null) {
@@ -1500,7 +1515,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun reassertSourceWake() {
         val sourceAwake = SourceWakePolicy.visible(
             started = activityStarted && !activityDestroyed,
-            sourceLive = micWake.live || PlaybackService.hasLiveWakeSource() || CaptureService.hasLiveWakeSource(),
+            sourceLive = MicCaptureService.hasLiveWakeSource() || PlaybackService.hasLiveWakeSource() || CaptureService.hasLiveWakeSource(),
         )
         val awake = ForegroundBrightnessPolicy.awake(sourceAwake, brightnessPinActive())
         scopeSurface?.keepScreenOn = awake
@@ -1661,8 +1676,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun startMic() {
-        if (!taskIsCurrent()) return
+        if (!micStartEligible()) { ui.microphoneStatus = "Start microphone from the visible app"; return }
+        if (mic.established() && mic.standalone()) { ui.live = true; ui.sourceLabel = "mic"; return }
         val selection = selectSource(SignalKind.MIC)
+        if (!explainMicrophone(false)) return
         if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO)
             == PackageManager.PERMISSION_GRANTED
         ) {
@@ -1678,6 +1695,121 @@ class MainActivity : ComponentActivity(), ScopeActions {
         else {
             pendingAudioPermission = AudioPermissionPurpose.MICROPHONE
             micPermission.launch(Manifest.permission.RECORD_AUDIO)
+        }
+    }
+
+    private fun micStartEligible(): Boolean = taskIsCurrent() && activityStarted && !isInPictureInPictureMode &&
+        !getSystemService(android.app.KeyguardManager::class.java).isKeyguardLocked
+
+    private fun refreshMicrophone() {
+        micRefreshAt = android.os.SystemClock.elapsedRealtime()
+        ui.microphoneInputs = MicrophoneRoutes.choices(this)
+        val key = runtimePrefs().getString(MicrophoneRoutePolicy.SELECTED, null)
+        ui.selectedMicrophone = MicrophoneRoutePolicy.select(ui.microphoneInputs, key)?.id ?: -1
+        ui.microphoneStatus = if (ui.selectedMicrophone < 0) "Selected microphone unavailable. Connect it or choose an input" else MicCaptureService.status()
+        ui.microphoneActive = mic.established()
+        if (mic.standalone() && mic.established() && !micHandoff.isPending) { ui.sourceLabel = "mic"; ui.live = true }
+        if (ui.sourceLabel == "mic" && !mic.isRecording() && !micHandoff.isPending) {
+            ui.live = false
+            if (taskIsCurrent()) runtimePrefs().edit { putString("last_source", "none") }
+        }
+        if (activityStarted) reassertSourceWake()
+    }
+
+    private fun explainMicrophone(forMix: Boolean): Boolean {
+        val selected = runCatching { MicrophoneRoutes.selected(this) }.getOrNull()
+        if (selected == null) { ui.microphoneStatus = "Selected microphone unavailable. Connect it or choose an input"; return false }
+        if (MicrophoneRoutes.choice(selected).bluetooth && !runtimePrefs().getBoolean(MicrophoneRoutePolicy.BLUETOOTH_ACK, false)) {
+            bluetoothForMix = forMix; ui.micBluetoothExplain = true; return false
+        }
+        return true
+    }
+
+    override fun confirmMicrophoneBluetooth(accept: Boolean) {
+        if (!ui.micBluetoothExplain || !micStartEligible()) return
+        ui.micBluetoothExplain = false
+        if (!accept) { ui.microphoneStatus = "Bluetooth microphone not started"; return }
+        runtimePrefs().edit { putBoolean(MicrophoneRoutePolicy.BLUETOOTH_ACK, true) }
+        if (bluetoothForMix) startMixMicrophone() else startMic()
+    }
+
+    override fun chooseMicrophone(id: Int) {
+        if (!micStartEligible()) return
+        val choice = MicrophoneRoutes.choices(this).singleOrNull { it.id == id } ?: run {
+            ui.microphoneStatus = "Input disconnected. Refresh the input list"; return
+        }
+        val wasStandalone = mic.standalone()
+        val wasMixing = CaptureService.mixSession() != null && ui.includeMicrophone
+        val revision = ++micUiRevision
+        runtimePrefs().edit { putString(MicrophoneRoutePolicy.SELECTED, choice.key) }
+        refreshMicrophone()
+        mic.stopForLocal(revision) { returned, error, _ -> tick.post {
+            if (returned != micUiRevision || !micStartEligible()) return@post
+            if (error != null) ui.microphoneStatus = error
+            else if (wasStandalone) startMic()
+            else if (wasMixing) startMixMicrophone()
+        } }
+    }
+
+    override fun setIncludeMicrophone(on: Boolean) {
+        if (!taskIsCurrent()) return
+        if (!saveMixPreferences(CaptureMixSettings(on, ui.playbackMixLevel, ui.microphoneMixLevel))) return
+        if (on) startMixMicrophone() else {
+            ++micUiRevision
+            if (!mic.standalone()) mic.stop()
+            ui.micBluetoothExplain = false
+        }
+    }
+
+    override fun setMicrophoneMixLevel(microphone: Boolean, value: Float) {
+        if (!taskIsCurrent() || !value.isFinite() || value !in 0f..1f) return
+        val settings = CaptureMixSettings(ui.includeMicrophone, if (microphone) ui.playbackMixLevel else value,
+            if (microphone) value else ui.microphoneMixLevel)
+        if (saveMixPreferences(settings)) CaptureService.mixSession()?.settings(settings)
+    }
+
+    private fun saveMixPreferences(settings: CaptureMixSettings): Boolean {
+        val saved = settingsWriteOwner.write { prefs().edit().putBoolean(CaptureMixSettings.INCLUDE, settings.include)
+            .putFloat(CaptureMixSettings.PLAYBACK, settings.playback).putFloat(CaptureMixSettings.MICROPHONE, settings.microphone).commit() }
+        if (!saved) { ui.microphoneStatus = "Mix settings could not be saved. Retry"; return false }
+        ui.includeMicrophone = settings.include; ui.playbackMixLevel = settings.playback; ui.microphoneMixLevel = settings.microphone
+        return true
+    }
+
+    override fun retryMicrophone() {
+        if (!micStartEligible()) return
+        val forMix = CaptureService.mixSession() != null && ui.includeMicrophone
+        val revision = ++micUiRevision
+        mic.stopForLocal(revision) { _, error, _ -> tick.post {
+            if (revision != micUiRevision || !micStartEligible()) return@post
+            if (error != null) ui.microphoneStatus = error
+            else if (forMix) startMixMicrophone() else startMic()
+        } }
+    }
+
+    override fun stopMicrophone() { ++micUiRevision; mic.stop(); ui.micBluetoothExplain = false }
+
+    private fun maybeStartMixMicrophone() {
+        val target = CaptureService.mixSession() ?: return
+        if (!mixStartPending || lastMixAttempt == target.id || !activityResumed || !micStartEligible()) return
+        mixStartPending = false; lastMixAttempt = target.id
+        startMixMicrophone()
+    }
+
+    private fun startMixMicrophone() {
+        if (!micStartEligible()) { ui.microphoneStatus = "Return to the visible app to include microphone"; return }
+        val target = CaptureService.mixSession() ?: run { ui.microphoneStatus = "Choose everything playing, then include microphone"; return }
+        if (!ui.includeMicrophone || mic.established()) return
+        if (!explainMicrophone(true)) return
+        if (ContextCompat.checkSelfPermission(this, Manifest.permission.RECORD_AUDIO) != PackageManager.PERMISSION_GRANTED) {
+            pendingAudioPermission = AudioPermissionPurpose.MIX_MICROPHONE
+            micPermission.launch(Manifest.permission.RECORD_AUDIO)
+            return
+        }
+        val revision = ++micUiRevision
+        mic.request(this, target, CaptureMixSettings.read(prefs().all),
+            { revision == micUiRevision && micStartEligible() && CaptureService.mixSession() === target && ui.includeMicrophone }) { error ->
+            if (revision == micUiRevision && taskIsCurrent()) { ui.microphoneStatus = error ?: "Microphone included"; refreshMicrophone() }
         }
     }
 
@@ -1812,6 +1944,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             CaptureService.STATE_FLOWING -> {
                 ui.sourceLabel = "capture"
                 ui.live = true
+                maybeStartMixMicrophone()
             }
             else -> if (wasCapture) {
                 ui.sourceLabel = "no source"
@@ -1940,6 +2073,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.floatingHudEnabled = hud.enabled
         ui.floatingHudTransparent = hud.background == HudPolicy.Background.TRANSPARENT
         ui.lingerBackground = BackgroundLifecyclePolicy.linger(p.all)
+        CaptureMixSettings.read(p.all).let {
+            ui.includeMicrophone = it.include; ui.playbackMixLevel = it.playback; ui.microphoneMixLevel = it.microphone
+        }
         ui.doubleTapPlayback = p.getBoolean("double_tap_playback", true)
         ui.controlsAlwaysVisible = dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(p.all)
         ui.pipAutoEnter = PictureInPicturePolicy.autoEnter(p.all)

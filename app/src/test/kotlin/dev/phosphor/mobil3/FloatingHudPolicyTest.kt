@@ -253,7 +253,7 @@ class FloatingHudPolicyTest {
         val restore = activity.substringAfter("private fun restoreTuning()").substringBefore("override fun")
         assertFalse("FloatingHudService.show" in restore)
         assertFalse("ACTION_MANAGE_OVERLAY_PERMISSION" in restore)
-        assertTrue("mic.ownsSource() || micHandoff.isPending" in activity)
+        assertTrue("(mic.ownsSource() && !mic.established()) || micHandoff.isPending" in activity)
         assertFalse("PhosphorNative.setRenderPaused" in activity)
         assertFalse("PhosphorNative.surfaceDestroyed" in activity)
         assertTrue("SurfaceHost.activityVisible(false)" in activity)

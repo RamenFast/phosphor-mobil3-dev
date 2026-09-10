@@ -111,7 +111,7 @@ With `linger_background=true`, only an already service-owned source may continue
 
 Task removal retires queued source starts, consent results and runtime-state saves from that task. A late callback must not stop or republish a newer task's source. A retained service must also handle a later removal after the app reopens and linger is disabled.
 
-Activity destruction stops that activity's microphone owner in either linger mode. Ordinary backgrounding and document-picker navigation must not be treated as destruction. Portable tuning settings remain unchanged by source teardown.
+Activity destruction unbinds its microphone observations and cancels pending starts. The established MicCaptureService owns the recorder independently. Task removal follows linger policy. Ordinary backgrounding and document-picker navigation do not retire the source. Portable tuning settings remain unchanged by source teardown.
 
 The service owns native source teardown. Releasing a Media3 player face must complete immediately without a second native disconnect or external playback command. Capture-stop notification must reach only an existing matching playback owner and must not recreate the service.
 

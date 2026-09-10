@@ -1,5 +1,33 @@
 # Serious todos
 
+## Current complete-baseline campaign, 2026-09-10
+
+Goal: tested, stable, fully featured, polished Phosphor mobile baseline in
+`/home/ben/Dev/ClaudeWorkspace/phosphor-mobil3`. Root capture stays deferred.
+GPT-6/Astra later review: top-level `GPT6-REVIEW-LATER.md`.
+
+Temporary routing until GPT-6 usage resets: Grok 4.6 high implements and does 3D.
+Muse/DeepSeek own UI design and visual critique. Grok still scores code only.
+Pass >=8/10, max four attempts, old scores immutable.
+
+- [x] Deferred-root stub `b222818` (Grok 8 then 9; bounded ASUS).
+- [x] R06 brightness + Android-compatible archive checksum `b74beb2` (Grok blocked/8/8; 921 tests; bounded ASUS).
+- [x] U1 tactile no-track console `7204b91` (Grok 8/8/8, Muse 5/7/8, DeepSeek 8/8; 933 tests; bounded ASUS).
+- [x] Jcode fresh-path null-bool activation `d4b6aab0` (Grok 8 then 9). Huge-history transport remains open.
+- [x] R09 source: service-owned mic, route proof, visualization mixer. 946 tests, Grok code 7 then 8. Not device-accepted.
+- [ ] R09 ASUS built-in and available-accessory evidence. Mixed PCM never reaches speakers. Root stays inert.
+- [ ] Implement genuine Vulkan FP16 linear HDR with truthful SDR fallback from `dev/scratch/r05-current-handoff.md`. Enable existing ndk `nativewindow` feature only as part of that unit. No luminance claim from screenshots.
+- [ ] Default-source startup coordinator (R14), consent-chain rules, inert imports. Root auto-start stays deferred.
+- [ ] Remaining visual craft beyond bounded U1: track/title/seek, sheet/manual hierarchy, inherited loud frame, animation, theming polish. Muse/DeepSeek design; Grok may implement 3D wireframes.
+- [ ] Proven fresh-install tactile default that does not rewrite existing saved looks.
+- [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
+- [ ] Five lifecycle cycles and 30-minute soak on the exact accepted APK, then restore original preferences.
+- [ ] Keep `GPT6-REVIEW-LATER.md` current when a unit lands so Astra can review after GPT-6 usage resets.
+
+Heartbeat `eae54bc2-7c95-4bd5-94f2-4745e05d2a78` stays on until the list above is
+genuinely complete or honestly blocked. Historical items below are not the live
+baseline order.
+
 ## Active mobile expansion, 2026-09-08
 
 - [ ] Finish section 1's exact artifact boundary after [independent round 1, 7/10](plans/mobile-expansion/critiques/section-01-round-01.md). The original 91 parser checks passed, but real debug APK plus unrelated production XML escaped the archive gate. Correct actual packaged-manifest binding and two error contracts, then independently review round 2.

@@ -63,6 +63,9 @@ object SettingsArchive {
         }
 
     private val specs: Map<String, Spec> = mapOf(
+        "capture_include_mic" to Spec(Kind.BOOLEAN),
+        "capture_playback_level" to floatRange(0f, 1f),
+        "capture_mic_level" to floatRange(0f, 1f),
         "pause_display" to string(5) { it in setOf("HOLD", "BLACK") },
         "mode" to intRange(0, 10),
         "random_mode_armed" to Spec(Kind.BOOLEAN),

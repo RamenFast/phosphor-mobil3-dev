@@ -20,7 +20,7 @@ internal object HudPolicy {
     )
     fun refusal(explicit: Boolean, visible: Boolean, access: Boolean, locked: Boolean, microphone: Boolean): String? = when {
         !explicit || !visible -> "Show the HUD from the visible app"
-        microphone -> "Microphone HUD needs a service-owned input. Keep this microphone in the app until that support is available"
+        microphone -> "Microphone HUD needs an established service-owned input. Keep a pending start in the app"
         locked -> "Unlock the display before showing the HUD"
         !access -> "Allow display over other apps, then tap SHOW FLOATING HUD"
         else -> null

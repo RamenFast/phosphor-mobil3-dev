@@ -31,8 +31,8 @@ internal class SourceWakeLock(
 
     fun rootChanged(recording: Boolean, helper: Boolean) = update(SourceWakePolicy.root(recording, helper))
 
-    fun microphoneChanged(recording: Boolean, activityDestroyed: Boolean) =
-        update(SourceWakePolicy.microphone(recording, activityDestroyed))
+    fun microphoneChanged(recording: Boolean, serviceDestroyed: Boolean) =
+        update(SourceWakePolicy.microphone(recording, serviceDestroyed))
 
     fun stop() = update(false)
 

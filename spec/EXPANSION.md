@@ -115,6 +115,8 @@ The target's measured standard-su failure permits a separate debug-only `dev.pho
 
 ## Microphone and mixing [R09]
 
+The standard-only implementation contract is [section-03-r09-contract.md](../docs/plans/mobile-expansion/section-03-r09-contract.md). It defines service, route, clock, epoch, settings and failure ownership. Root remains deferred.
+
 Enumerate available built-in, wired, USB, SCO, and BLE inputs. Negotiate supported formats and convert mono/rates to the native stereo contract. Verify the actual routed device after start. Contextual Bluetooth permissions and communication routing cannot become unconditional startup actions.
 
 Explain quality/output changes before initial Bluetooth activation. Restore temporary audio mode/routes after stop. Losing an explicitly selected device reports that device unavailable, not a silent switch to a different microphone.

@@ -740,6 +740,7 @@ fun SourceSheet(
             if (actions.captureConsentNeeded()) consentCard = true
             else { actions.startCapture(); onDismiss() }
         }
+        MicrophoneMixControls(state, p, actions)
         if (dev.phosphor.mobil3.RootCapturePolicy.PRODUCT_AVAILABLE && (state.rootCaptureEnabled || state.captureRoot)) {
             Prose("Root input: 16 kHz mono · duplicated mono. Protected or NO_SYSTEM_CAPTURE sources remain excluded.", p.muted)
             SheetRow("use standard capture · Android consent", p, checked = state.live && state.sourceLabel == "capture" && !state.captureRoot) {
@@ -794,10 +795,11 @@ fun SourceSheet(
         }
         SectionHeading("MICROPHONE", p)
         SheetRow(
-            "built-in mic", p,
-            checked = state.sourceLabel == "mic",
+            "start selected microphone", p,
+            checked = state.sourceLabel == "mic" && state.live,
             glyph = SettingsGlyph.Mic,
-        ) { actions.startMic(); onDismiss() }
+        ) { actions.startMic() }
+        MicrophoneInputControls(state, p, actions)
         SectionHeading("REMOTE", p)
         RemoteFlow(state, p, actions, onDismiss)
         Prose(
@@ -1285,7 +1287,7 @@ internal fun SettingsSheet(
             ) { actions.setLingerBackground(!state.lingerBackground) }
             Prose(
                 "After removal from recents, keep only existing service-owned local or relay playback and capture. " +
-                    "Microphone stops with its Activity. Off stops sources when the task is removed.",
+                    "Established service-owned microphone input can continue too. Off stops sources when the task is removed.",
                 p.muted, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
             )
             Spacer(Modifier.height(6.dp))
@@ -1565,6 +1567,12 @@ interface SheetActions : AppearanceActions {
     fun exportSettings()
     fun importSettings()
     fun startMic()
+    fun chooseMicrophone(id: Int)
+    fun confirmMicrophoneBluetooth(accept: Boolean)
+    fun setIncludeMicrophone(on: Boolean)
+    fun setMicrophoneMixLevel(microphone: Boolean, value: Float)
+    fun retryMicrophone()
+    fun stopMicrophone()
     fun startCapture()
     fun startStandardCapture() {}
     fun setRootCapture(enabled: Boolean) {}

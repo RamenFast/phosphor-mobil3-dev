@@ -610,3 +610,12 @@ Source is released for parent full gate and visual round3 of4. No device accepta
 ## U1 bounded visual acceptance,2026-09-10 00:49UTC
 
 Code8/8/8, Muse5/7/8 and DeepSeekround2/3=8/8 preserve history.933-test/lint/dualAPK gate and real ASUS four-theme/focus/Lightlargefont/320dp evidence pass boundedU1. Exact prefs restored,app idle,font1,wmreset,owned Downloadfixtures removed. [Receipt and still-open full-baseline gates](visual-u1-asus-checkpoint.md). Next R09 microphone/service/composite vertical unit.
+
+## R09 standard-only implementation admission, 2026-09-10
+
+Coordinator assigned sole app writer after U1 commit7204b91. [R09 contract](section-03-r09-contract.md) ratifies service-owned mic, explicit routes and one bounded standard-only visualization mixer. Source implementation and focused tests are in progress. No Gradle, Git or device actions by the writer. Coordinator owns full gates, review and ASUS acceptance. S25 excluded, root deferred. No R09 acceptance claimed.
+
+
+## R09 parent gate, 2026-09-10 ~02:35UTC
+
+Dirty unreleased tree: 945 JVM tests, 0 fail/error/skip; lintDebug; assembleDebug; assembleDebugAndroidTest; checkEngine. APK SHA256 `d466bd0e471ae942d20efbdd6b571d83de8056ce1aa6521f5fed15b3c27b587f`. Independent Grok OAuth code review attempt 1 running. Not committed, not device-accepted. Mix offer uses pre-read epoch. HUD pending-only. Manual mix chapter is route-dependent, not Planned.

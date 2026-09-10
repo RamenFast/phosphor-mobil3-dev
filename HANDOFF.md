@@ -1,6 +1,28 @@
 # Handoff: mobile expansion execution
 
-## Latest Prime checkpoint,2026-09-10 00:49UTC
+## Latest Prime checkpoint, 2026-09-10 ~02:58 UTC
+
+R09 source accepted: 946 JVM tests, lint, dual APK, checkEngine. Grok OAuth code 7 then 8. F1 epoch rewind closed. APK `4e436e263443c1d9b4f4ef572b7f08251b7f93b6e1971ad60708e6008debcfd8`. See [R09 source checkpoint](docs/plans/mobile-expansion/r09-source-checkpoint.md). Not device-accepted. Next: bounded ASUS mic/route/mix evidence, then HDR from `dev/scratch/r05-current-handoff.md`.
+
+GPT-6 later review remains `GPT6-REVIEW-LATER.md`. Grok only via grok-oauth, never OpenRouter.
+
+## Previous Prime checkpoint, 2026-09-10 ~02:10 UTC
+
+GPT-6 usage exhausted mid-R09. Later Astra review brief is top-level
+`GPT6-REVIEW-LATER.md`. Temporary implementation/3D owner is Grok 4.6 high.
+Muse/DeepSeek still own UI. Grok still scores code only.
+
+HEAD remains `7204b91` (accepted bounded U1). R09 is dirty, unreleased, and
+not accepted. Astra writer `astra-r09-grounding` went idle mid-edit. HDR
+research is released at `dev/scratch/r05-current-handoff.md` and must wait for
+R09 source release. ASUS `NAAIB70036673ZC` is idle: font 1.0, physical
+1080x2400, MUSIC 1/30, no Phosphor services listed.
+
+Live remaining work: finish R09, HDR, startup, remaining visual/3D,
+fresh tactile default, full ASUS regression and soak. Root stays deferred.
+Heartbeat stays on.
+
+## Previous Prime checkpoint,2026-09-10 00:49UTC
 
 U1 tactile no-track console now has bounded source and visual acceptance:933 JVM tests/lint/dualAPK pass; Grokcode8/8/8,Musevisual5/7/8,DeepSeekvisualround2/3=8/8. FinalAPK installed/readback tested on ASUS; four themes/focus/largefont/narrow-window evidence retained. Original preferences restored exactly,app idle,font1,wmreset,owned fixtures removed. See [U1 receipt and remaining full-baseline work](docs/plans/mobile-expansion/visual-u1-asus-checkpoint.md). R06+checksum is b74beb2 and rootstub b222818.
 

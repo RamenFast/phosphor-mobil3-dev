@@ -70,7 +70,7 @@ class ForegroundBrightnessPolicyTest {
         val wake = activity.substringAfter("private fun reassertSourceWake()").substringBefore("// The transport law")
         assertTrue(wake.contains("SourceWakePolicy.visible("))
         assertTrue(wake.contains("started = activityStarted && !activityDestroyed"))
-        assertTrue(wake.contains("sourceLive = micWake.live || PlaybackService.hasLiveWakeSource() || CaptureService.hasLiveWakeSource()"))
+        assertTrue(wake.contains("sourceLive = MicCaptureService.hasLiveWakeSource() || PlaybackService.hasLiveWakeSource() || CaptureService.hasLiveWakeSource()"))
         assertTrue(wake.contains("ForegroundBrightnessPolicy.awake(sourceAwake, brightnessPinActive())"))
         assertFalse(wake.contains("screenBrightness"))
         assertFalse(wake.contains("applyBrightnessPin()"))
