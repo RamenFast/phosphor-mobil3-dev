@@ -23,7 +23,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [x] R09 HUD overlay: appops SYSTEM_ALERT_WINDOW allow + SHOW FLOATING HUD presents TYPE_APPLICATION_OVERLAY over home (`hud-over-home.png`). Revoke ignore closes HUD. Restored appops default. dumpsys permission still granted=false; appops is the live gate.
 - [ ] R09 remaining: accessory USB/BT (none connected; bonded but disconnected, not taken over), playback+mic mix (needs MediaProjection consent).
 - [x] HDR request path source: `hdr_requested` off by default, selector, pipeline rebuild, HOLD transfer 2.0. Grok 7 then 8. Sibling `3171e0f`.
-- [ ] HDR device proof: Vulkan identity, dataspace after present, matching metadata, honest SDR fallback on ASUS. Screenshots are not nits.
+- [x] Partial HDR device: REQUEST HDR off, app dataspace SDR Bt709 Full, honest SDR fallback. gfxinfo Skia OpenGL vs settings Vulkan. Screenshots not nits. Prefs restored.
+- [ ] HDR remaining: reconcile Vulkan present vs Skia OpenGL gfxinfo; no nits claim.
 - [x] R14 startup source: default none, process-death fresh, import unconfirmed. Grok 7 then 8.
 - [x] R14 ASUS matrix: last-used is not default; unconfirmed mic inert; confirmed mic auto-starts; process-death fresh; capture not prompt-free. Prefs restored.
 - [ ] R14 remaining: rotation/same-process recreate (configChanges skips orientation; CLEAR_TASK stopped mic). Root auto-start stays deferred.

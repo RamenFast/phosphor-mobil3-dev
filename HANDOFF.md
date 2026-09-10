@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~12:10 UTC
+
+HDR device: REQUEST HDR off. App reports Vulkan SDR Bt709 Full. gfxinfo pipeline is Skia OpenGL. Not nits. Prefs restored. See [hdr-asus-sdr](docs/plans/mobile-expansion/hdr-asus-sdr-checkpoint.md).
+
 ## Latest Prime checkpoint, 2026-09-10 ~11:55 UTC
 
 Dashed disabled tactile PLAY source-accepted: Muse code **10/10**. ASUS pixels blocked: reaching capture !canPlay needs CONTINUE into MediaProjection. Stopped at NOT NOW (`capture-consent-not-now.png`). Prefs restored. See [disabled-play muse code](docs/plans/mobile-expansion/critiques/disabled-play-muse-code.md).
