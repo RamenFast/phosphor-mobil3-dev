@@ -1,5 +1,9 @@
 # Handoff: mobile expansion execution
 
+## Latest Prime checkpoint, 2026-09-10 ~12:25 UTC
+
+Named saved-look APPLY still blocked: appearance editor put `NightLook0` then `1.0` into a numeric field; SAVE refused (`named-look-blocked.png`). USB `audio_accessory_connected=false`. BT Connections 0. Prefs restored.
+
 ## Latest Prime checkpoint, 2026-09-10 ~12:10 UTC
 
 HDR device: REQUEST HDR off. App reports Vulkan SDR Bt709 Full. gfxinfo pipeline is Skia OpenGL. Not nits. Prefs restored. See [hdr-asus-sdr](docs/plans/mobile-expansion/hdr-asus-sdr-checkpoint.md).
