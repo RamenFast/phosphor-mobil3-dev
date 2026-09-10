@@ -45,8 +45,8 @@ Pass >=8/10, max four attempts, old scores immutable.
 - [ ] Remaining visual: non-AMOLED recipes unshot; two press languages on look 1 StoneKey (accepted watch).
 - [x] Fresh-install tactile default: empty prefs seed AMOLED look 2. Upgrade-like prefs stay look 1. Grok 8.
 - [x] ASUS empty-install tactile default look 2 vs upgrade-like prefs stay look 1. Prefs restored.
-- [ ] Requirement-linked ASUS regressions: settings, appearance/manual, HUD, HOLD, colors, presets, signal check, landscape, TalkBack, disabled state, saved-look round trip.
-- [x] Partial: MODE sheet faces + HOLD latch on ASUS. SRC/settings not proven this slice.
+- [x] Partial ASUS regressions 2026-09-10: SIGNAL CHECK, LIGHT preset latch, HOLD pause/return, settings, SRC, ChipCell, HUD, linger. Prefs restored.
+- [ ] ASUS regressions still open: landscape (rotation lock), TalkBack (not toggled), dashed disabled play, named saved-look APPLY.
 - [x] Five ASUS lifecycle cycles (start/Home/return/recreate/stop). Prefs restored.
 - [ ] ~~30-minute soak~~ Ben 2026-09-10: do not soak. Idle soak cancelled. Prefs restored after ~4.5 min. Do not resume.
 - [ ] Keep `GPT6-REVIEW-LATER.md` current when a unit lands so Astra can review after GPT-6 usage resets.
