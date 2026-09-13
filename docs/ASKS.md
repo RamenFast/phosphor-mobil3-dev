@@ -180,3 +180,52 @@ Jcode maintainer_feedback was invoked once with sanitized facts. Tool reports qu
 -2026-09-10 00:49 U1 bounded visualPASS: Muse8/DeepSeek8 after preserved failed rounds,full933tests,Grok8. Finalcandidate installed/readback and actual theme/largefont/focus/narrowwindow checks; ASUS restored exactly. Next R09; whole polished baseline not complete.
 
 - 2026-09-10 ~02:10 GPT-6 usage exhausted. Prime wrote top-level GPT6-REVIEW-LATER.md for Astra later review. Temporary implementation and 3D: Grok 4.6 high. UI design/critique remain Muse/DeepSeek. Code critique remains Grok. R09 still dirty/unreleased after Astra interruption. Continue complete baseline; heartbeat on.
+
+
+## 2026-09-12 recovery-only planning
+
+Ben requests recovery, a complete original-plus-expansion checklist, and a collaboratively
+chosen game plan before further implementation. Ordinary playback-plus-mic mixing on ASUS
+is provisional first work, not permission to start during this recovery pass.
+Atomic current UI/behavior feedback and the read-only S25 build identity live in
+[the recovery feedback](FEEDBACK.md#2026-09-12-recovery-feedback-plan-before-implementation).
+Compare the preferred S25 checkpoint with the current ASUS development build and explain
+consolidated change trajectories. Do not build, install, reset, publish or resume a soak.
+
+- 2026-09-12: Write a dated Ben + Prime direction-recovery brief and propose clarifying
+  questions. [Brief created](2026-09-12-ben-prime-direction-recovery.md). ASUS confirmed
+  as recovery target; implementation and later-session prompt remain pending discussion.
+
+- 2026-09-12: Preserve Chapel's raw ASUS field feedback, prioritize direct microphone
+  usability and first-class pinch, retain Ben's S25 alignment/Glass/color anchors,
+  and clarify recording, zoom, tutorial, three-band scopes, stereo mic and demo needs.
+  [Recorded with open scope questions](2026-09-12-ben-prime-direction-recovery.md#chapel-field-feedback-and-bens-answers-2026-09-12).
+  Planning only; no implementation or purchase authorized by this entry.
+
+- 2026-09-12: Recording scope clarified as efficient compressed audio only, with a
+  Captures entry under Sources near file/folder choices. Modern-phone codec/hardware
+  assumptions apply to format research, not a silent app compatibility change.
+  [Decisions and remaining questions](2026-09-12-ben-prime-direction-recovery.md#recording-and-gain-clarification-2026-09-12).
+
+- 2026-09-12: Record any selected supported source to a dedicated folder, with simple
+  recording control, optional estimated-size disclosure/dismissal memory, custom
+  file-size limit and red HUD warning. Default stop on screen-off; nearby opt-in
+  allows screen-off recording. Visible HUD/PiP recording continues and both need
+  quick-settings controls. Auto-enabled pinch changes preferred framing, persisted
+  across restarts. [Full decisions and unresolved edges](2026-09-12-ben-prime-direction-recovery.md#recording-controls-and-remembered-auto-framing-2026-09-12).
+
+- 2026-09-12: Offer mutually exclusive stop/save or new-file actions at the recording
+  size limit. Source switch stops/saves by default, with continue-REC opt-in. Screen
+  off obeys its checkbox even after HUD/PiP use. Prioritize normal recording controls
+  visually; deeper settings remain discoverable. [Clarification](2026-09-12-ben-prime-direction-recovery.md#recording-limits-source-changes-and-control-hierarchy-2026-09-12).
+
+- 2026-09-12: Continue-on-source-switch keeps the same recording file. Default toggle-off still stops and saves; size-limit behavior remains separate. Recorded in the recovery brief.
+
+- 2026-09-12: Ben chooses current-player following, delegates quiet-signal auto-framing
+  tuning with slight breathing room, and confirms visual zoom must not affect saved
+  audio levels. [Convergence decisions](2026-09-12-ben-prime-direction-recovery.md#convergence-decisions-2026-09-12).
+
+- 2026-09-12: Ben requests consolidation with a clear style and next-session handoff.
+  [Bring the instrument home](plans/ben-prime-recovery/README.md) is the forward work
+  map; its prompt executes Unit 1 only when later invoked. Conversation preserved,
+  engineering defaults labeled, independent document review requested. No app changes.

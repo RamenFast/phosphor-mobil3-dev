@@ -574,3 +574,63 @@ Actual gain settled1.15 for loud and6.00 for quiet. Silence held6.00 through adv
 Actual slow3D pinches changed perspective and reversed at fixed gain1.83. Both disabled rotation controls rejected taps.
 Five landscape settings imported while portrait remained held. Android unlock produced landscape. Both original preferences and all URI grants were restored exactly.
 No production code changed. Spotify remained remote and was not controlled. Drift stays21.
+
+
+## 2026-09-12 recovery feedback: plan before implementation
+
+Source: Ben's direct messages in Prime session `01a097bf-7afe-766a-8686-5d48ad63cbb1`.
+This session is recovery and planning only. These reports are not permission to implement,
+reset a tree, replace an installed build, or start autonomous backlog execution.
+Earlier receipts remain historical. A reviewer score does not override Ben's lived feedback.
+
+| ID | Feedback | Status / next evidence |
+|---|---|---|
+| REC01 | Expanded settings sections are comprehensive. Smaller dropdowns are appropriate. Keep that useful structure. | User-approved direction; not blanket behavior acceptance |
+| REC02 | Controls inside expanded sections need cleanup and easier interaction. Put frequently changed settings near the top. | Open design requirement; choose ordering together |
+| REC03 | Accidental dismissal protection works, but after scrolling Ben cannot pull down to dismiss and must use X. | Reported regression; reproduce before assigning cause |
+| REC04 | Check consistency across every screen/drawer that previously supported swipe dismissal. | Open inventory and interaction check |
+| REC05 | Add liquid-glass-like visual feedback for pull resistance and the cards' weight/gravity. | Open design direction; no chosen implementation |
+| REC06 | Theme settings are confusing and may not work correctly. Debug, test and verify their effects. | Open; related to earlier B10, not proof of the same root cause |
+| REC07 | Manual is liked, but lacks a clear Back button/swipe-back flow. System Back closes it instead of navigating within it. | Reported navigation problem; verify current source and device behavior |
+| REC08 | Everyday manual should focus on reading/using the scope, basics and fun architecture facts, with less information overload. | New content direction supersedes maximal everyday detail |
+| REC09 | Put the deeper manual behind a secret developer setting unlocked by repeated app-build-number taps. | Open design requirement; tap count not specified |
+| REC10 | Restore the old visible, selectable colors and interactive visual design, then extend it. Do not replace it with uniform colorless controls. | Open recovery requirement; related to earlier beam-color/UI preservation requests |
+| REC11 | Features exist but feel undercooked; UI/UX direction drifted and more bugs may exist. | User assessment; compare complete workflows, not isolated scores |
+| REC12 | Use the currently installed S25 version as the preferred comparison reference and explain what changed afterward. | Live APK SHA256 matches retained source 06f84e2; no launch or mutation |
+
+Read-only identity: S25 debug package reports `2.0.0-debug`, code `2000000`.
+Installed APK SHA256: `4a370170cda5410caf8abc82d8cd9a997fd0777c718cbd1ba31c2cd3aa9127fa`.
+This matches `docs/plans/mobile-expansion/section-02-stereo-trials.md` and source
+`06f84e2eb7da46c758e9f8b388c3537e6c67905d`. Current mobile HEAD before this note
+is `591e2bb`, 117 descendant commits later. It is a debug checkpoint, not a new release.
+Ordinary playback-plus-microphone mixing remains the provisional first implementation
+unit only after the recovery discussion. Preserve the S25 reference build.
+
+2026-09-12 clarification: Ben confirms the reported recovery problems concern the latest
+ASUS build. He used/tested it live and received direct user feedback today. The S25
+remains the preferred design reference. He requests detailed questions before a later
+implementation session and will ask for its prompt afterward. Consolidated situation,
+feedback and open questions: [Ben + Prime direction recovery](2026-09-12-ben-prime-direction-recovery.md).
+
+## 2026-09-12 Chapel field report follow-up
+
+Ben supplied direct field feedback from today's ASUS use and clarified his frequent
+actions and S25 design anchors. The verbatim report and atomic issue map are preserved
+in [the dated recovery brief](2026-09-12-ben-prime-direction-recovery.md#chapel-field-feedback-and-bens-answers-2026-09-12).
+B5 brightness, B20 auto-gain, B6/B7/B8 transport truth and B11/B21 lifecycle symptom
+families are repeated signals, not proof of repeated root causes. Their current
+reported behavior remains open; historical receipts do not close these reports.
+New recording, tutorial, three-band scope, mic recommendation and demo-material
+requests remain planning input. No runtime change or new acceptance is claimed.
+
+2026-09-12 gain clarification: Chapel's trace was simply too small. Auto-gain stays
+too zoomed out as sound becomes subtle, despite visible shape/structure. This
+refines today's B20-related report, not a separate reproduced bug or diagnosed
+root cause. Audio-only recording and Captures navigation are recorded in the
+[recovery brief](2026-09-12-ben-prime-direction-recovery.md#recording-and-gain-clarification-2026-09-12).
+
+2026-09-12: Ben confirms auto-gain pinch must adjust remembered preferred framing,
+not disable auto-gain. This supersedes the older manual-takeover gesture direction
+for this recovery. All-source recording, screen-off choice, size limit and HUD/PiP
+controls are captured in the dated brief. They remain design requirements, not
+implemented capabilities or authority to begin building.

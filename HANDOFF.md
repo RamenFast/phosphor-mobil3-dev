@@ -1,5 +1,16 @@
 # Handoff: mobile expansion execution
 
+## Recovery direction, 2026-09-12
+
+Ben stopped autonomous implementation to recover bearings and agree the ASUS UI/UX
+direction. Start with [Bring the instrument home](docs/plans/ben-prime-recovery/README.md)
+and its dated feedback source. [The next-session prompt](docs/plans/ben-prime-recovery/NEXT-SESSION.md)
+is prepared, not executed. No build/install/device mutation occurred in this recovery.
+Older completion/heartbeat/soak instructions below are historical, not current authority.
+Preserve the S25 reference. Unit 1 is mic/pinch/remembered auto-framing when Ben invokes
+implementation; stop for his test feedback afterward.
+
+
 ## Latest Prime checkpoint, 2026-09-10 ~12:35 UTC
 
 Complete-baseline remaining is blocked. USB accessory false, BT connections 0, mix needs MediaProjection, named APPLY editor steal, TalkBack not toggled. Prefs baseline. See [remaining](docs/plans/mobile-expansion/complete-baseline-remaining-20260910.md).
