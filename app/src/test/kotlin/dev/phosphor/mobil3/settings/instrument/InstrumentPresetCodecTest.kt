@@ -77,7 +77,7 @@ class InstrumentPresetCodecTest {
         }
         listOf("source", "source_file", "endpoint", "token", "authorization", "root", "timestamp", "listening_history",
             "fps", "rotation", "appearance", "brightness", "pause_display", "hud_mode", "volume", "mic_mix",
-            "capture_grant", "measured_gain", "remote_gain", "remote_auto_gain", "startup", "rng", "history").forEach { key ->
+            "capture_grant", "measured_gain", "remote_gain", "remote_auto_gain", "auto_frame_scale", "startup", "rng", "history").forEach { key ->
             reject { InstrumentPresetCodec.decodeSetup(JSONObject(setupJson).put(key, "excluded").toString()) }
             reject { InstrumentPresetCodec.decode(JSONObject(json).put(key, "excluded").toString()) }
             reject { InstrumentPresetCodec.decode(JSONObject(json).also { it.getJSONArray("records").getJSONObject(0).put(key, "excluded") }.toString()) }

@@ -1,5 +1,12 @@
 # Handoff: mobile expansion execution
 
+## Unit 1 in progress, 2026-09-13
+
+Ben approved the bounded microphone/pinch/remembered AUTO framing implementation and Git/GitHub work.
+[Current checkpoint](docs/plans/ben-prime-recovery/UNIT1-CHECKPOINT.md) records source, rollback and ownership.
+[Active contract](spec/UNIT1-AUTO-FRAMING.md) replaces old AUTO constants and manual-takeover stage gestures.
+Stop after the verified ASUS test card for Ben. No later feature, release or S25 operation is authorized.
+
 ## Recovery direction, 2026-09-12
 
 Ben stopped autonomous implementation to recover bearings and agree the ASUS UI/UX

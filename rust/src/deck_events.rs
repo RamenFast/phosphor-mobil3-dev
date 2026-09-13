@@ -125,7 +125,7 @@ mod tests {
         let mut old = LocalOpen::new(false);
         let mut gain = crate::engine::AutoGain::new(1.0);
         gain.set_auto(true, 1.0);
-        gain.update(0.8);
+        gain.update(&[0.8, 0.8, 0.8, 0.8, 0.8, 0.8], 1.0 / 60.0);
         assert!(!old.accepts(old.id));
         old.publish(); // Paused publication also has a real identity, without claiming output flow.
         assert!(old.accepts(old.id));
@@ -145,7 +145,7 @@ mod tests {
             panic!("retired proof accepted");
         }
         gain.new_local_item(replacement.id, replacement.id);
-        let next = gain.update(0.02).unwrap();
+        let next = gain.update(&[0.005; 64], 1.0 / 60.0).unwrap();
         assert!(next > 1.0); // New quiet item uses its own target rather than the retired loud peak.
         let deck = include_str!("deck.rs");
         let guarded = deck

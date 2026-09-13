@@ -34,7 +34,7 @@ The stage recognizer owns scope gain and orbit arbitration. It must map the cons
 The existing 0.001 relative pinch threshold rejects jitter, not slow deliberate movement.
 Retain the last applied distance while individual samples stay below that threshold so their movement accumulates.
 Blocked and rebase events replace the reference distance. Movement made during exclusion never applies later as a jump.
-Zero or invalid distances reset the reference without publishing a scale. Keep gain limits and view-lock behavior unchanged.
+Zero or invalid distances reset the reference without publishing a scale. Preserve view-lock behavior. `UNIT1-AUTO-FRAMING.md` supersedes the old AUTO gesture meaning and automatic gain bounds.
 
 If any pointer enters the existing 88dp Android bottom-edge band, scope gain and orbit must not change. The one-finger armed upward console pull remains available from that band.
 
@@ -180,9 +180,9 @@ Each remote connection attempt owns a distinct scope lease, including reconnects
 
 Grid angle follows the render thread's actual mode after its tube-flip switch, not a requested UI label. While remote geometry owns the trace, the current native session's existing K scope mode owns the angle. Unknown mode and retired sessions use angle zero. Protocol v2 does not pair K and G with a common mode revision, so this is the latest known remote mode, not a claim of frame-exact K/G ordering.
 
-Auto-gain must hold its effective gain through raw peaks below 0.02 and release only on sounding frames. Only a proven new local item may reset the tracked peak. Metadata refresh, capture, and microphone input must not invent track boundaries. The 6.0 clamp, 0.92 headroom, and 0.05 glide remain unchanged.
+The recovery contract in [Unit 1](UNIT1-AUTO-FRAMING.md) supersedes the former 0.02 quiet gate, 6.0 automatic ceiling and frame-count adaptation constants. AUTO follows quiet structure while pinch and one-finger zoom adjust remembered preferred framing. Explicit manual gain remains separate.
 
-The same single raw stereo drain feeds GRID DATA, the geometry envelope and auto-gain's `max(L,R)`. Malformed non-finite stereo pairs and orphan samples do not create measurements or enter DSP. The ring retains an incomplete trailing frame until its partner arrives. Valid complete all-zero frames remain measured silence. Auto-gain holds both tracked peak and effective gain below 0.02, including empty frames. Sounding frames retain the 0.999 tracked-peak release. Auto toggles do not reset tracked peak. A proven new item resets only tracked peak and keeps the current gain as its glide origin. Automatic target remains 0.1 through 6.0. Manual gain still reaches 7, including its held landing during silence.
+The same single raw stereo drain feeds GRID DATA, the geometry envelope and automatic framing. Malformed non-finite stereo pairs and orphan samples do not create measurements or enter DSP. The ring retains an incomplete trailing frame until its partner arrives. Valid complete all-zero frames remain measured silence. Only proven new-local-item identity can confirm a track reset. Metadata refresh, capture and microphone input do not invent track boundaries. Visual framing never changes PCM or audible levels.
 
 Beam energy must remain stable through chrome motion, settings cycles, and surface recreation. Intentional modal scrim dimming is not a beam-energy change.
 

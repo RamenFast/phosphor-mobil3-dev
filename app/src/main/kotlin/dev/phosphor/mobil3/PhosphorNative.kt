@@ -46,6 +46,7 @@ object PhosphorNative {
     // The instrument feel (Act I): gain/glow/camera verbs + envelope control.
     external fun setGain(gain: Float)
     external fun setGainAuto(on: Boolean)
+    external fun setAutoFrameScale(scale: Float)
     /** Beam focus px (0.3..3.0, desktop slider) — smaller = sharper. */
     external fun setFocus(focus: Float)
     /** Beam brightness budget (1.0..30.0, desktop "Beam" slider). */

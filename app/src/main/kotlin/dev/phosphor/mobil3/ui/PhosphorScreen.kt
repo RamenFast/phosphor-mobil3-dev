@@ -184,6 +184,9 @@ interface ScopeActions : InstrumentPresetActions, AppearanceActions {
     fun setGrid(on: Boolean)
     fun setGridData(on: Boolean)
     fun setGainAuto(on: Boolean)
+    fun setAutoFrameScale(scale: Float)
+    fun resetAutoFrameScale()
+    fun finishAutoFrameScale() {}
     fun setViewLock(on: Boolean)
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
@@ -392,6 +395,9 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun setOversample(n: Int) = actions.setOversample(n)
             override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
             override fun setGainAuto(on: Boolean) = actions.setGainAuto(on)
+            override fun setAutoFrameScale(scale: Float) = actions.setAutoFrameScale(scale)
+            override fun resetAutoFrameScale() = actions.resetAutoFrameScale()
+            override fun finishAutoFrameScale() = actions.finishAutoFrameScale()
             override fun setViewLock(on: Boolean) = actions.setViewLock(on)
             override fun setBeamEnergy(e: Float) = actions.setBeamEnergy(e)
             override fun setGlow(g: Float) = actions.setGlow(g)
@@ -611,12 +617,14 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                         PhosphorNative.inspectHeld(dx, dy, scale, false)
                                     override fun currentGain() = state.gain
                                     override fun setGainAbsolute(g: Float) = actions.setGainAbsolute(g)
-                                    // Only the explicit VIEW LOCK refuses gestures. A pinch
-                                    // while AUTO-GAIN is armed is a manual takeover — the
-                                    // setGainAbsolute path below disarms auto, same as the
-                                    // Auto-gain owns the viewport and blocks manual gain gestures.
+                                    override fun finishAutoFrameScale() = actions.finishAutoFrameScale()
+                                    override fun currentAutoFrameScale() = state.autoFrameScale
+                                    override fun setAutoFrameScale(scale: Float) = actions.setAutoFrameScale(scale)
                                     override fun gainLocked() = state.viewLock
                                     override fun gainAutoArmed() = state.autoGain
+                                    // Desktop-rendered geometry keeps its existing gain owner.
+                                    override fun autoFrameArmed() = state.localAutoGain &&
+                                        !(state.remote && state.remoteGeometry)
                                     override fun orbitBy(dyaw: Float, dpitch: Float) =
                                         actions.orbitBy(dyaw, dpitch)
                                     override fun dollyBy(delta: Float) = actions.dollyBy(delta)

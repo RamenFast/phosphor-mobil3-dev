@@ -14,6 +14,9 @@ internal class SignalAggregate(val owner: Long, private val channels: Int) {
     private var ingress = 0L
     private var valid = 0L
     private var invalid = 0L
+    private var nonSilentPairs = 0L
+    private var identicalPairs = 0L
+    private var differenceSquares = 0.0
     private val squares = DoubleArray(channels)
     private val peaks = DoubleArray(channels)
     private val rails = LongArray(channels)
@@ -26,6 +29,9 @@ internal class SignalAggregate(val owner: Long, private val channels: Int) {
             measured = null
             valid = 0
             invalid = 0
+            nonSilentPairs = 0
+            identicalPairs = 0
+            differenceSquares = 0.0
             squares.fill(0.0)
             peaks.fill(0.0)
             rails.fill(0)
@@ -51,6 +57,15 @@ internal class SignalAggregate(val owner: Long, private val channels: Int) {
             valid = signalAdd(valid, 1)
             measured = now
             for (c in 0 until channels) add(c, samples[offset + c].toDouble(), abs(samples[offset + c]) >= 1f)
+            if (channels == 2) {
+                val left = samples[offset].toDouble()
+                val right = samples[offset + 1].toDouble()
+                differenceSquares += (left - right) * (left - right)
+                if (left != 0.0 || right != 0.0) {
+                    nonSilentPairs = signalAdd(nonSilentPairs, 1)
+                    if (left == right) identicalPairs = signalAdd(identicalPairs, 1)
+                }
+            }
         }
         latest = snapshot()
     }
@@ -78,7 +93,8 @@ internal class SignalAggregate(val owner: Long, private val channels: Int) {
     }
 
     private fun snapshot() = SignalWindow(owner, start, measured, readAt, positiveAt, reads, ingress, valid, invalid,
-        if (valid == 0L) emptyList() else List(channels) { SignalChannel(valid, sqrt(squares[it] / valid), peaks[it], rails[it]) })
+        if (valid == 0L) emptyList() else List(channels) { SignalChannel(valid, sqrt(squares[it] / valid), peaks[it], rails[it]) },
+        if (channels == 2 && valid > 0) SignalStereo(nonSilentPairs, identicalPairs, sqrt(differenceSquares / valid)) else null)
 
     companion object { const val WINDOW_MS = 500L }
 }

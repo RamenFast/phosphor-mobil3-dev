@@ -504,6 +504,43 @@ class SettingsArchiveTest {
         }
     }
 
+    @Test
+    fun autoFrameScaleRoundTripsAndOldArchivesPreserveDestination() {
+        val key = dev.phosphor.mobil3.ui.AutoFramePreference.KEY
+        for (value in listOf(0.25f, 1f, 1.125f)) {
+            val decoded = SettingsArchive.decode(export(mapOf(key to value)).json)
+            assertEquals(mapOf(key to value), decoded.values)
+        }
+        val old = SettingsArchive.decode(export(mapOf("gain" to 2f)).json)
+        assertFalse(key in old.values)
+        val destination = mutableMapOf<String, Any>(key to 1.1f)
+        destination.putAll(SettingsArchive.merge(old, destination))
+        assertEquals(1.1f, destination[key])
+        val legacy = SettingsArchive.decode(legacyFixture(mapOf(key to 0.5f)))
+        assertFalse(key in legacy.values)
+        assertEquals(listOf(key), legacy.skippedKeys)
+    }
+
+    @Test
+    fun autoFrameScaleRejectsInvalidArchivesBeforeDestinationMutation() {
+        val key = dev.phosphor.mobil3.ui.AutoFramePreference.KEY
+        val destination = mutableMapOf<String, Any>(key to 0.75f, "gain" to 2f)
+        val before = destination.toMap()
+        for (invalid in listOf<Any>(
+            0.249f, 1.126f, Float.NaN, Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, "1.0", true,
+        )) {
+            val error = assertFailsWith<SettingsArchive.ArchiveException> {
+                if (invalid is Number && !invalid.toDouble().isFinite()) export(mapOf(key to invalid))
+                else {
+                    val decoded = SettingsArchive.decode(singleSettingFixture(key, invalid, SettingsArchive.SCHEMA))
+                    destination.putAll(SettingsArchive.merge(decoded, destination))
+                }
+            }
+            assertTrue(error.error in setOf("invalid_setting_type", "invalid_setting_value"))
+            assertEquals(before, destination)
+        }
+    }
+
     private val metadata = arrayOf(
         "dev.phosphor.mobil3",
         "2.0.0",

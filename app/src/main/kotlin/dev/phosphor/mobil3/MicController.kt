@@ -24,10 +24,10 @@ internal class MicController(private val context: Context, private val session: 
     @Volatile private var worker: Thread? = null
     @Volatile private var lost = false
     @Volatile private var verified = false
-    @Volatile private var descriptor = SignalDescriptor()
+    private val signalWindow = SignalRecorderWindow(id)
+    @Volatile private var requestedRoute: String? = null
     @Volatile private var status = "Microphone starting"
     @Volatile private var life = SignalLife.STARTING
-    @Volatile private var meter: SignalAggregate? = null
     @Volatile private var silenced = false
     @Volatile private var muted = false
     @Volatile private var platformDetail = "Device format unavailable"
@@ -38,9 +38,14 @@ internal class MicController(private val context: Context, private val session: 
     private var devicesCallback: AudioDeviceCallback? = null
 
     fun isRecording() = active && running && verified && !lost
-    fun observation() = SignalInput(SignalKind.MIC, id, nativeOwner = session.nativeOwner,
-        life = life, reason = status, descriptor = descriptor, window = meter?.latest,
-        contributing = isRecording() && !silenced && !muted && session.accepts(attachment))
+    fun observation(): SignalInput {
+        val (descriptor, window) = signalWindow.snapshot()
+        return SignalInput(SignalKind.MIC, id, nativeOwner = session.nativeOwner,
+            life = life, reason = status, descriptor = descriptor, window = window,
+            contributing = isRecording() && !silenced && !muted && session.accepts(attachment),
+            normalized = if (descriptor.format?.channels == 1) "48,000 Hz · mono client duplicated to L/R by Phosphor"
+                else "48,000 Hz · two-channel scope transport; physical independence unproven")
+    }
     fun detail() = "$status · $platformDetail${if (silenced) " · silenced by Android input policy" else ""}${if (muted) " · system microphone muted" else ""}"
     private fun current() = active && session.accepts(attachment)
     fun start(started: (String?) -> Unit) {
@@ -50,6 +55,7 @@ internal class MicController(private val context: Context, private val session: 
             try {
                 val device = MicrophoneRoutes.selected(context) ?: error("Selected microphone is unavailable. Connect it or choose an input")
                 check(current()) { "Microphone request cancelled" }
+                requestedRoute = MicrophoneRoutes.choice(device).label
                 val choices = MicrophoneRoutePolicy.candidates(device.sampleRates, device.channelCounts, device.encodings)
                 check(choices.isNotEmpty()) { "This microphone has no supported mono/stereo PCM format. Select another input" }
                 var reason = "Microphone format unavailable"
@@ -75,6 +81,7 @@ internal class MicController(private val context: Context, private val session: 
                         check(route) { "Requested microphone did not become the actual recording route" }
                         check(candidate.sampleRate in 8_000..192_000 && candidate.channelCount in 1..2 &&
                             candidate.audioFormat in setOf(AudioFormat.ENCODING_PCM_FLOAT, AudioFormat.ENCODING_PCM_16BIT)) { "Actual microphone client format is unsupported" }
+                        check(candidate.channelCount == format.channels) { "Android changed the requested channel count. Trying the next format" }
                         opened = candidate; break
                     } catch (error: SecurityException) { throw error }
                     catch (error: RuntimeException) {
@@ -86,7 +93,6 @@ internal class MicController(private val context: Context, private val session: 
                 check(current()) { "Microphone request cancelled" }
                 verified = true; running = true; life = SignalLife.RUNNING
                 val fmt = CapturePcm(rec.sampleRate, rec.channelCount)
-                meter = SignalAggregate(id, fmt.channels)
                 observe(rec)
                 status = "Microphone active · ${MicrophoneRoutes.choice(device).label}"
                 handler.post { if (current()) { changed(); started(null) } else started("Microphone request cancelled") }
@@ -155,7 +161,7 @@ internal class MicController(private val context: Context, private val session: 
         }.also { manager.registerAudioDeviceCallback(it, handler) }
     }
     private fun observe(rec: AudioRecord) {
-        descriptor = observeSignalRecorder(rec)
+        signalWindow.observe(observeSignalRecorder(rec).copy(requestedRoute = requestedRoute))
         runCatching {
             val config = rec.activeRecordingConfiguration
             val nextSilenced = config?.isClientSilenced == true
@@ -178,6 +184,7 @@ internal class MicController(private val context: Context, private val session: 
             check(!lost && MicrophoneRoutes.routed(rec, device)) { lost = true; "Selected microphone route was lost. Connect it and retry" }
             val epoch = PhosphorNative.captureReadEpoch()
             if (tailEpoch != epoch) tail = 0
+            val signalToken = signalWindow.token()
             val count = if (rec.audioFormat == AudioFormat.ENCODING_PCM_FLOAT) {
                 rec.read(chunk, tail, chunk.size - fmt.channels, AudioRecord.READ_BLOCKING)
             } else {
@@ -192,7 +199,7 @@ internal class MicController(private val context: Context, private val session: 
             val complete = total - total % fmt.channels
             val now = SystemClock.elapsedRealtime()
             if (now - observedAt >= 250) { observe(rec); observedAt = now }
-            meter?.floats(chunk, complete, now)
+            signalWindow.floats(signalToken, chunk, complete, now)
             if (complete > 0) {
                 if (!silenced && !muted) session.offer(true, chunk, complete, fmt, frames, captureClock(rec),
                     SystemClock.elapsedRealtimeNanos(), attachment, epoch)
@@ -246,7 +253,14 @@ internal fun observeSignalRecorder(rec: AudioRecord): SignalDescriptor = runCatc
     }
     val format = if (rec.sampleRate > 0 && rec.channelCount > 0) SignalFormat(rec.sampleRate, rec.channelCount, encoding) else null
     val route = rec.routedDevice?.let { "${it.productName} · type ${it.type} · device ${it.id}" }
-    SignalDescriptor(format, route, android.os.SystemClock.elapsedRealtime())
+    val device = rec.activeRecordingConfiguration?.format?.let {
+        SignalFormat(it.sampleRate, it.channelCount, when (it.encoding) {
+            AudioFormat.ENCODING_PCM_FLOAT -> "float PCM"
+            AudioFormat.ENCODING_PCM_16BIT -> "PCM16"
+            else -> "encoding ${it.encoding}"
+        })
+    }
+    SignalDescriptor(format, route, android.os.SystemClock.elapsedRealtime(), deviceFormat = device)
 }.getOrElse { SignalDescriptor(unavailable = "Recorder observation unavailable: ${it.javaClass.simpleName}") }
 
 /** Called on the owner's main thread after a reader reports failure. */

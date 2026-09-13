@@ -259,8 +259,8 @@ fun Modifier.consoleSeekGesture(
 // The gesture arbiter (UX-SPEC §1.2/§1.3, core map): each pointer sequence is classified
 // ONCE and owned by exactly one verb. This layer owns drags and pinches on the stage;
 // taps fall through to the tap layer beneath it (which never sees moved sequences).
-//   1-finger drag  → GAIN (2D modes) / ORBIT (3D modes)
-//   2-finger pinch → GAIN, coarse (2D) / DOLLY (3D)
+//   1-finger drag  → AUTO FRAME or manual GAIN (2D) / ORBIT (3D)
+//   2-finger pinch → AUTO FRAME or manual GAIN (2D) / DOLLY (3D)
 // The mono readout ribbon etches beside the thumb; a light tick marks crossing ×1.00.
 
 class RibbonState {
@@ -278,9 +278,13 @@ interface StageGestureHost {
     fun chromeBlocks(points: List<Offset>, now: Long): Boolean
     fun currentGain(): Float
     fun setGainAbsolute(g: Float)
-    /** AUTO-GAIN or VIEW LOCK armed: gain gestures inform, never move. */
+    fun currentAutoFrameScale(): Float
+    fun setAutoFrameScale(scale: Float)
+    fun finishAutoFrameScale() {}
+    /** VIEW LOCK blocks both local 2D framing meanings after other owners settle. */
     fun gainLocked(): Boolean
     fun gainAutoArmed(): Boolean
+    fun autoFrameArmed(): Boolean
     fun orbitBy(dyaw: Float, dpitch: Float)
     fun dollyBy(delta: Float)
     fun is3d(): Boolean
@@ -316,6 +320,8 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
             // 6 bottom chrome door · 7 retired. Pull deltas use physical coordinates.
             var mode = 0
             var gain = host.currentGain()
+            var autoFrameScale = host.currentAutoFrameScale()
+            var frameEdited = false
             var glow = host.currentGlow()
             val pinchScale = StagePinchScale()
             var origin = first.position
@@ -370,7 +376,8 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                 )
                 AcceptanceTrace.record("gesture") {
                     "evaluated_ms=$evaluatedAt input_ms=${pressed.first().uptimeMillis} pointers=${pressed.size} " +
-                        "decision=$scopeFrame gain=${host.currentGain()} locked=${host.gainLocked()} mode=$mode"
+                        "decision=$scopeFrame gain=${host.currentGain()} frame_scale=${host.currentAutoFrameScale()} " +
+                            "locked=${host.gainLocked()} mode=$mode"
                 }
 
                 // This existing door is an exception to scope rejection, not a second owner.
@@ -410,6 +417,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                 if (scopeFrame != StageGesturePolicy.ScopeFrame.Apply) {
                     // Blocked travel never becomes a deferred pinch, swipe or drag.
                     gain = host.currentGain()
+                    autoFrameScale = host.currentAutoFrameScale()
                     glow = host.currentGlow()
                     origin = pressed[0].position
                     if (pressed.size >= 2) {
@@ -475,16 +483,24 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             if (host.is3d()) {
                                 host.dollyBy((1f - zoom) * 2.2f)
                             } else if (host.gainLocked()) {
-                                // Auto-gain owns the viewport, so explain the lock instead of changing gain.
-                                ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
-                            } else {
-                                val old = gain
-                                gain = (gain * zoom).coerceIn(0.1f, 7f)
-                                host.setGainAbsolute(gain)
-                                if ((old - 1f) * (gain - 1f) <= 0f && old != gain) {
-                                    Haptics.light(host.view())
+                                ribbon.text = when {
+                                    host.autoFrameArmed() -> "auto frame · view locked"
+                                    host.gainAutoArmed() -> "desktop auto · view locked"
+                                    else -> "view locked"
                                 }
-                                ribbon.text = "× %.2f".format(gain)
+                            } else {
+                                val adjusted = StageZoomPolicy.adjust(gain, autoFrameScale, host.autoFrameArmed(), zoom)
+                                if (adjusted.owner == StageZoomOwner.AUTO_FRAME) {
+                                    autoFrameScale = adjusted.value
+                                    host.setAutoFrameScale(autoFrameScale)
+                                    frameEdited = true
+                                    ribbon.text = "auto frame × %.3f".format(autoFrameScale)
+                                } else {
+                                    gain = adjusted.value
+                                    host.setGainAbsolute(gain)
+                                    ribbon.text = "manual gain × %.2f".format(gain)
+                                }
+                                if (adjusted.crossedNeutral) Haptics.light(host.view())
                             }
                             ribbon.at = Offset((a.x + b.x) / 2f, (a.y + b.y) / 2f)
                             ribbon.visible = true
@@ -504,18 +520,29 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         if (host.is3d()) {
                             host.orbitBy(d.x * 0.006f, d.y * 0.006f)
                         } else if (host.gainLocked()) {
-                            ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
+                            ribbon.text = when {
+                                host.autoFrameArmed() -> "auto frame · view locked"
+                                host.gainAutoArmed() -> "desktop auto · view locked"
+                                else -> "view locked"
+                            }
                             ribbon.at = ch.position
                             ribbon.visible = true
                             ribbon.lastTouchMs = System.currentTimeMillis()
                         } else {
-                            val old = gain
-                            gain = (gain * exp(-d.y * 0.0042f)).coerceIn(0.1f, 7f)
-                            host.setGainAbsolute(gain)
-                            if ((old - 1f) * (gain - 1f) <= 0f && old != gain) {
-                                Haptics.light(host.view())
+                            val adjusted = StageZoomPolicy.adjust(
+                                gain, autoFrameScale, host.autoFrameArmed(), exp(-d.y * 0.0042f),
+                            )
+                            if (adjusted.owner == StageZoomOwner.AUTO_FRAME) {
+                                autoFrameScale = adjusted.value
+                                host.setAutoFrameScale(autoFrameScale)
+                                frameEdited = true
+                                ribbon.text = "auto frame × %.3f".format(autoFrameScale)
+                            } else {
+                                gain = adjusted.value
+                                host.setGainAbsolute(gain)
+                                ribbon.text = "manual gain × %.2f".format(gain)
                             }
-                            ribbon.text = "× %.2f".format(gain)
+                            if (adjusted.crossedNeutral) Haptics.light(host.view())
                             ribbon.at = ch.position
                             ribbon.visible = true
                             ribbon.lastTouchMs = System.currentTimeMillis()
@@ -525,6 +552,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                 }
               }
             } finally {
+                if (frameEdited) host.finishAutoFrameScale()
                 if (bottomChromeActive) {
                     if (finishedNormally) {
                         host.releaseBottomChromePull(velocity.calculateVelocity().y)

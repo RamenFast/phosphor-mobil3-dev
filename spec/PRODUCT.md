@@ -55,6 +55,7 @@ The portable settings contract includes these keys and defaults:
 | `grid_data` | `false` | Full settings |
 | `double_tap_playback` | `true` | Full settings |
 | `linger_background` | `false` | Full settings |
+| `auto_frame_scale` | `1.0` | AUTO stage zoom and framing reset |
 
 These keys must survive same-package updates and settings archive round trips. Picture-in-picture auto-entry and background linger are independent behaviors.
 

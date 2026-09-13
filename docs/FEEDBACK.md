@@ -634,3 +634,7 @@ not disable auto-gain. This supersedes the older manual-takeover gesture directi
 for this recovery. All-source recording, screen-off choice, size limit and HUD/PiP
 controls are captured in the dated brief. They remain design requirements, not
 implemented capabilities or authority to begin building.
+
+## 2026-09-13 stereo-first correction
+
+Ben clarified that mono input is not the desired Phosphor development default. Distinct left/right sound supplies the intended scope shape. [Stereo-first input](../decisions/2026-09-13-stereo-first-input.md) owns this requirement and its honest hardware-fallback boundary. The baseline ASUS 48 kHz mono observation remains a limitation, not accepted stereo.

@@ -61,13 +61,29 @@ internal object SignalPresentation {
             "Actual owner" to (source?.let { if (it.owner > 0) "${it.kind.label} · owner ${it.owner} · session ${it.session}" else "Unavailable · selection has no installed native/recorder owner" } ?: "Unavailable · no matched current owner"),
             "Input health" to (source?.let { "${it.life.name.lowercase()}${if (it.reason.isBlank()) "" else " · ${it.reason}"}" } ?: "Unavailable"),
             "Contribution" to (source?.let { if (it.contributing) "Single installed input · not R09 mixing" else "Not currently admitted as an active input" } ?: "Unavailable"),
-            "Observed input" to (descriptor?.format?.label() ?: descriptor?.unavailable ?: "Unavailable · no current recorder observation"),
+            (if (selected == SignalKind.MIC || selected == SignalKind.CAPTURE) "Recorder client format" else "Observed input") to
+                (descriptor?.format?.label() ?: descriptor?.unavailable ?: "Unavailable · no current recorder observation"),
             "Normalized transport" to (source?.normalized ?: "Unavailable · no owner"),
         )
         if (selected == SignalKind.MIC) {
-            rows += "Requested mic route" to "System default (no explicit R09 route selection)"
+            rows += "Requested mic route" to (descriptor?.requestedRoute ?: "Unavailable · no current selected-route observation")
             rows += "Actual mic route" to (descriptor?.route ?: "Unavailable · current recorder has not reported a routed device")
             rows += "Route observation age" to age(now, descriptor?.observedAt)
+        }
+        if (selected == SignalKind.MIC || selected == SignalKind.CAPTURE) {
+            rows += "Platform device format" to (descriptor?.deviceFormat?.label() ?: "Unavailable · Android has not reported the device format")
+            rows += "Channel origin" to when {
+                descriptor?.format?.channels == 1 -> "Mono client · duplicated to L/R by Phosphor"
+                descriptor?.format?.channels == 2 && descriptor.deviceFormat?.channels == 1 ->
+                    "Two-channel client from a mono device format · platform duplication possible"
+                descriptor?.format?.channels == 2 -> "Two-channel client · physical L/R independence unproven"
+                else -> "Unavailable · no current client format"
+            }
+            if (selected == SignalKind.MIC) rows += "Measured L/R" to if (fresh && w?.stereo != null) {
+                val pair = w.stereo
+                if (pair.nonSilentPairs == 0L) "Digital silence · no channel relationship established"
+                else "${pair.identicalPairs}/${pair.nonSilentPairs} identical non-silent pairs · difference RMS ${number(pair.differenceRms)} · not physical independence proof"
+            } else "Unavailable · no fresh paired window"
         }
         rows += "Input receipt" to (source?.receiptCount?.let { "$it ${source.receiptUnit}" }
             ?: w?.let { "${it.ingressFrames} input frames · ${it.reads} ${source.readUnit}" } ?: "Unavailable · no owner input counter")

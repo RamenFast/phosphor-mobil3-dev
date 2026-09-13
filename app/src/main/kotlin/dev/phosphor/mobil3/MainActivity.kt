@@ -60,6 +60,8 @@ import dev.phosphor.mobil3.settings.SettingsArchive
 import dev.phosphor.mobil3.settings.appearance.*
 import dev.phosphor.mobil3.ui.AppearanceMigration
 import dev.phosphor.mobil3.ui.AppearancePalette
+import dev.phosphor.mobil3.ui.AutoFramePreference
+import dev.phosphor.mobil3.ui.AutoFrameSave
 import dev.phosphor.mobil3.ui.style
 import dev.phosphor.mobil3.ui.overridden
 import dev.phosphor.mobil3.settings.instrument.*
@@ -140,6 +142,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var controller: MediaController? = null
     private var reduced by mutableStateOf(false)
     private var gainValue = 1.8332275f
+    private var autoFrameScale = AutoFramePreference.DEFAULT
     private var lastRandomTrackTitle: String? = null
     private var scopeRotationLockState by mutableStateOf(true)
     private var uiPlacementLockState by mutableStateOf(false)
@@ -150,6 +153,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private var gravityListener: android.hardware.SensorEventListener? = null
     private var pendingFreshStartup = false
     companion object {
+        private val autoFrameSave = AutoFrameSave()
         @Volatile private var processStartupConsumed = false
     }
     private var sourceSelection = 0L
@@ -178,6 +182,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private val persistGain = Runnable {
         persistAutomaticGain()
     }
+    private val persistAutoFrame = Runnable { finishAutoFrameScale() }
     private val captureStatusReceiver = object : BroadcastReceiver() {
         override fun onReceive(context: Context?, intent: Intent?) {
             if (intent?.action == CaptureService.ACTION_STATUS) {
@@ -282,6 +287,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.geomAmount = setup.geomAmount
         gainValue = setup.gain
         ui.gain = setup.gain
+        ui.manualGain = setup.gain
         ui.localAutoGain = setup.autoGain
         ui.autoGain = setup.autoGain
         ui.focus = setup.focus
@@ -701,6 +707,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
             if (AppearanceMigration.KEY in imported.values) {
                 appearanceWorkflow?.imported(checkNotNull(AppearanceMigration.stored(imported.values)))
             }
+            if (AutoFramePreference.KEY in imported.values) autoFrameSave.restored()
             restoreTuning(lightPublished)
             if (ForegroundBrightnessPolicy.KEY in imported.values) ui.brightnessPinError = ""
             instrumentWorkflow?.externalRestoreSaved()
@@ -1071,6 +1078,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         SurfaceHost.activityVisible(false)
         reassertSourceWake()
         controllerBinding.cancel()
+        finishAutoFrameScale()
         saveTuning()
         tick.removeCallbacks(uiTick)
         if (captureStatusReceiverRegistered) {
@@ -1093,6 +1101,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         instrumentWorkflow?.close()
         instrumentDocuments.close()
         tick.removeCallbacks(persistGain)
+        tick.removeCallbacks(persistAutoFrame)
         activityDestroyed = true
         activityResumed = false
         applyBrightnessPin()
@@ -1168,6 +1177,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
                 }.getOrNull()
             } else null
             ui.gridReading = dev.phosphor.mobil3.ui.GridData.read(stats)
+            AcceptanceTrace.record("framing_sample") {
+                val raw = ui.gridReading
+                "source_revision=$sourceSelection auto=${ui.autoGain} frame_scale=$autoFrameScale " +
+                    "effective_gain=${ui.gain} raw_left=${raw?.left} raw_right=${raw?.right} " +
+                    "mode=${ui.modeIndex} remote_geometry=${ui.remoteGeometry}"
+            }
             if (signalRefresh.take(android.os.SystemClock.elapsedRealtime(), ui.signalCheckVisible,
                     signalResumed && activityStarted && !activityDestroyed, signalFocused,
                     ui.presentationVisible && !hudConsentOpen, ui.pip)) refreshSignalCheck()
@@ -2061,8 +2076,9 @@ class MainActivity : ComponentActivity(), ScopeActions {
             // Light has its own validated, synchronous snapshot save.
             putInt("fps", ui.fpsValue)
             putInt("oversample", ui.oversample)
-            // AUTO-GAIN breathes ui.gain; the manual landing remains the saved knob.
+            // AUTO framing breathes ui.gain; the manual landing remains the saved knob.
             putFloat("gain", gainValue)
+            if (autoFrameSave.pending == null) putFloat(AutoFramePreference.KEY, autoFrameScale)
             putFloat("beam_energy", ui.beamEnergy)
             putFloat("glow", ui.glow)
             putBoolean("beam_random_armed", ui.beamRandomArmed)
@@ -2142,7 +2158,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
         gainValue = p.getFloat("gain", 1.8332275f)
         ui.gain = gainValue
+        ui.manualGain = gainValue
         PhosphorNative.setGain(gainValue)
+        tick.removeCallbacks(persistAutoFrame)
+        autoFrameScale = autoFrameSave.pending ?: AutoFramePreference.read(p.all)
+        ui.autoFrameSaveStatus = if (autoFrameSave.pending == null) "" else
+            "Framing save failed. Free storage, then retry."
+        ui.autoFrameScale = autoFrameScale
+        PhosphorNative.setAutoFrameScale(autoFrameScale)
         val autoGain = p.getBoolean("auto_gain", true)
         PhosphorNative.setGainAuto(autoGain)
         ui.autoGain = autoGain
@@ -2369,6 +2392,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         gainValue = g.coerceIn(0.1f, 7f)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
+        ui.manualGain = gainValue
         ui.autoGain = false
         ui.localAutoGain = false
         prefs().edit { putBoolean("auto_gain", false) }
@@ -2385,6 +2409,35 @@ class MainActivity : ComponentActivity(), ScopeActions {
         }
     }
     private var lastRemoteGainMs = 0L
+
+    override fun setAutoFrameScale(scale: Float) {
+        if (!taskIsCurrent() || activityDestroyed) return
+        autoFrameScale = AutoFramePreference.normalize(scale)
+        autoFrameSave.stage(autoFrameScale)
+        ui.autoFrameSaveStatus = "Saving framing…"
+        ui.autoFrameScale = autoFrameScale
+        PhosphorNative.setAutoFrameScale(autoFrameScale)
+        tick.removeCallbacks(persistAutoFrame)
+        tick.postDelayed(persistAutoFrame, 250)
+        AcceptanceTrace.record("auto_frame") {
+            "scale=$autoFrameScale effective_gain=${PhosphorNative.gainNow()}"
+        }
+    }
+
+    override fun finishAutoFrameScale() {
+        tick.removeCallbacks(persistAutoFrame)
+        if (activityDestroyed || !taskIsCurrent()) return
+        val saved = autoFrameSave.flush { value ->
+            prefs().edit().putFloat(AutoFramePreference.KEY, value).commit()
+        }
+        ui.autoFrameSaveStatus = if (saved) "" else "Framing save failed. Free storage, then retry."
+        if (!saved) android.widget.Toast.makeText(this, ui.autoFrameSaveStatus, android.widget.Toast.LENGTH_LONG).show()
+    }
+
+    override fun resetAutoFrameScale() {
+        setAutoFrameScale(AutoFramePreference.DEFAULT)
+        finishAutoFrameScale()
+    }
 
     override fun setGainAuto(on: Boolean) = instrumentEdit {
         prefs().edit { putBoolean("auto_gain", on) }
@@ -2466,8 +2519,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
         instrumentWorkflow?.settle("Source gain policy changed. Pending apply cancelled.")
         val on = if (instrumentWorkflow?.unsaved == true) ui.localAutoGain else prefs().getBoolean("auto_gain", true)
         PhosphorNative.setGain(gainValue) // restores the remembered manual landing
+        PhosphorNative.setAutoFrameScale(autoFrameScale)
         PhosphorNative.setGainAuto(on)
         ui.gain = gainValue
+        ui.manualGain = gainValue
         ui.autoGain = on
         ui.localAutoGain = on
         refreshInstrumentState()

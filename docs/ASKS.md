@@ -229,3 +229,7 @@ consolidated change trajectories. Do not build, install, reset, publish or resum
   [Bring the instrument home](plans/ben-prime-recovery/README.md) is the forward work
   map; its prompt executes Unit 1 only when later invoked. Conversation preserved,
   engineering defaults labeled, independent document review requested. No app changes.
+
+- 2026-09-13: Ben approves Unit 1 through ASUS verification and his feedback test card, with Git/GitHub work included. Scope remains microphone, pinch and remembered AUTO framing. [Active contract](../spec/UNIT1-AUTO-FRAMING.md). No later unit or public release follows from this approval.
+
+- 2026-09-13: Ben requires stereo-first input defaults across Phosphor development devices. Preserve independent left/right content and label mono limitations honestly. [Decision](../decisions/2026-09-13-stereo-first-input.md). Included in Unit 1 negotiation and verification.

@@ -71,6 +71,9 @@ class ScopeUiState {
     var durationMs by mutableLongStateOf(0L)
 
     var gain by mutableFloatStateOf(1.8332275f)
+    var manualGain by mutableFloatStateOf(1.8332275f)
+    var autoFrameScale by mutableFloatStateOf(AutoFramePreference.DEFAULT)
+    var autoFrameSaveStatus by mutableStateOf("")
     var focus by mutableFloatStateOf(0.3f)
     var beamEnergy by mutableFloatStateOf(8.0f)
     var glow by mutableFloatStateOf(0.7f)

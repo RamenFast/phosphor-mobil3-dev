@@ -29,9 +29,13 @@ internal data class SignalDescriptor(
     val route: String? = null,
     val observedAt: Long? = null,
     val unavailable: String = "Recorder has not reported its format or route",
+    val deviceFormat: SignalFormat? = null,
+    val requestedRoute: String? = null,
 )
 
 internal data class SignalChannel(val samples: Long, val rms: Double, val peak: Double, val fullScale: Long)
+
+internal data class SignalStereo(val nonSilentPairs: Long, val identicalPairs: Long, val differenceRms: Double)
 
 internal data class SignalWindow(
     val owner: Long,
@@ -44,6 +48,7 @@ internal data class SignalWindow(
     val validFrames: Long,
     val invalidSamples: Long,
     val channels: List<SignalChannel>,
+    val stereo: SignalStereo? = null,
 )
 
 internal data class SignalInput(

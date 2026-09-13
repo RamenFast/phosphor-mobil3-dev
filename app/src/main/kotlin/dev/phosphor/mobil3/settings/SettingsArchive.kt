@@ -2,6 +2,7 @@ package dev.phosphor.mobil3.settings
 
 import dev.phosphor.mobil3.StartupCoordinatorPolicy
 import dev.phosphor.mobil3.ui.LightSettings
+import dev.phosphor.mobil3.ui.AutoFramePreference
 import dev.phosphor.mobil3.settings.appearance.AppearanceDocumentCodec
 import dev.phosphor.mobil3.settings.appearance.AppearanceException
 import org.json.JSONArray
@@ -79,6 +80,7 @@ object SettingsArchive {
         "fps" to Spec(Kind.INT) { it as Int in setOf(-1, 0, 60, 90, 120) },
         "oversample" to Spec(Kind.INT) { it as Int in setOf(1, 2, 4) },
         "gain" to floatRange(0.1f, 7f),
+        AutoFramePreference.KEY to floatRange(AutoFramePreference.MIN, AutoFramePreference.MAX),
         "beam_energy" to floatRange(1f, 30f),
         "glow" to floatRange(0f, 0.98f),
         "beam_random_armed" to Spec(Kind.BOOLEAN),
@@ -138,7 +140,7 @@ object SettingsArchive {
     )
 
     private val v2Only = setOf("pin_screen_brightness", "hdr_requested", "default_source", "automatic_permission_popup", "appearance_state", "custom_slot_count", "custom_selected_mask", "color_generated_auto", "color_shuffle",
-        "cycle_random_interval", "cycle_interval_min", "cycle_interval_max")
+        "cycle_random_interval", "cycle_interval_min", "cycle_interval_max", AutoFramePreference.KEY)
 
     private fun validAppearance(text: String): Boolean = try {
         AppearanceDocumentCodec.decode(text)

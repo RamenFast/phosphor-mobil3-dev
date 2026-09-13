@@ -22,16 +22,34 @@ fn instrument_outcome(outcome: crate::instrument::Outcome) -> jni::sys::jint {
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_requestInstrument(
-    mut env: JNIEnv, _class: JClass, json: jni::objects::JString,
+    mut env: JNIEnv,
+    _class: JClass,
+    json: jni::objects::JString,
 ) -> jni::sys::jlong {
-    let Ok(length) = env.call_method(&json, "length", "()I", &[]).and_then(|v| v.i()) else { return -1; };
-    if length < 0 || length as usize > crate::instrument::MAX_SETUP_BYTES { return -1; }
-    let Ok(text) = env.get_string(&json) else { return -1; };
+    let Ok(length) = env
+        .call_method(&json, "length", "()I", &[])
+        .and_then(|v| v.i())
+    else {
+        return -1;
+    };
+    if length < 0 || length as usize > crate::instrument::MAX_SETUP_BYTES {
+        return -1;
+    }
+    let Ok(text) = env.get_string(&json) else {
+        return -1;
+    };
     let text: String = text.into();
-    let Ok(setup) = crate::instrument::Setup::decode(&text) else { return -1; };
+    let Ok(setup) = crate::instrument::Setup::decode(&text) else {
+        return -1;
+    };
     let deadline = std::time::Instant::now() + std::time::Duration::from_millis(750);
-    let Ok((id, request)) = INSTRUMENT_REQUESTS.lock().unwrap().reserve(setup, deadline) else { return -2; };
-    if crate::render::sender().send(crate::render::Cmd::ApplyInstrument(request)).is_err() {
+    let Ok((id, request)) = INSTRUMENT_REQUESTS.lock().unwrap().reserve(setup, deadline) else {
+        return -2;
+    };
+    if crate::render::sender()
+        .send(crate::render::Cmd::ApplyInstrument(request))
+        .is_err()
+    {
         INSTRUMENT_REQUESTS.lock().unwrap().release(id);
         return -3;
     }
@@ -40,30 +58,42 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_requestInstrument
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_awaitInstrument(
-    _env: JNIEnv, _class: JClass, id: jni::sys::jlong,
+    _env: JNIEnv,
+    _class: JClass,
+    id: jni::sys::jlong,
 ) -> jni::sys::jint {
     let request = INSTRUMENT_REQUESTS.lock().unwrap().get(id as u64);
-    request.map(|request| instrument_outcome(request.wait())).unwrap_or(4)
+    request
+        .map(|request| instrument_outcome(request.wait()))
+        .unwrap_or(4)
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_cancelInstrument(
-    _env: JNIEnv, _class: JClass, id: jni::sys::jlong,
+    _env: JNIEnv,
+    _class: JClass,
+    id: jni::sys::jlong,
 ) -> jni::sys::jint {
     let request = INSTRUMENT_REQUESTS.lock().unwrap().get(id as u64);
-    request.map(|request| instrument_outcome(request.cancel())).unwrap_or(4)
+    request
+        .map(|request| instrument_outcome(request.cancel()))
+        .unwrap_or(4)
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_releaseInstrument(
-    _env: JNIEnv, _class: JClass, id: jni::sys::jlong,
+    _env: JNIEnv,
+    _class: JClass,
+    id: jni::sys::jlong,
 ) -> jni::sys::jboolean {
     INSTRUMENT_REQUESTS.lock().unwrap().release(id as u64) as jni::sys::jboolean
 }
 
 fn retire_surface() -> bool {
     let mut retirements = std::mem::take(&mut *WINDOWS.lock().unwrap());
-    for life in &retirements { life.cancel(); }
+    for life in &retirements {
+        life.cancel();
+    }
     let (ack, result) = std::sync::mpsc::sync_channel(0);
     let sent = crate::render::sender()
         .send(crate::render::Cmd::SurfaceDestroyed { ack })
@@ -73,7 +103,9 @@ fn retire_surface() -> bool {
         Some(life) => life.barrier(result),
         None => result.recv().is_ok(),
     };
-    for life in retirements { life.wait(); }
+    for life in retirements {
+        life.wait();
+    }
     sent && clean
 }
 
@@ -425,14 +457,22 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_pushCaptureRead(
     owner: jni::sys::jlong,
     read_epoch: jni::sys::jlong,
 ) {
-    let Ok(length) = env.get_array_length(&samples) else { return; };
-    if count <= 0 || count > length { return; }
+    let Ok(length) = env.get_array_length(&samples) else {
+        return;
+    };
+    if count <= 0 || count > length {
+        return;
+    }
     let mut buf = vec![0f32; count as usize];
     if env.get_float_array_region(&samples, 0, &mut buf).is_ok() {
         crate::engine::publish_capture_read(
-            crate::deck::scope_ring(), &crate::render::RAW_STEREO,
-            &crate::deck::DECK_ACTIVE, &crate::pause::VISUAL_EPOCH,
-            owner as u64, read_epoch as u64, &buf,
+            crate::deck::scope_ring(),
+            &crate::render::RAW_STEREO,
+            &crate::deck::DECK_ACTIVE,
+            &crate::pause::VISUAL_EPOCH,
+            owner as u64,
+            read_epoch as u64,
+            &buf,
         );
     }
 }
@@ -464,7 +504,9 @@ pub extern "system" fn Java_dev_phosphor_mobil3_RootCaptureChecks_nativeSnapshot
     let summary = root_signal::summarize(&history);
     let json = serde_json::json!({"sample_rate":rate, "frames":summary.frames, "rms":summary.rms,
         "frequency_hz":summary.frequency, "duplicated_mono":summary.duplicated});
-    env.new_string(json.to_string()).map(|s|s.into_raw()).unwrap_or(std::ptr::null_mut())
+    env.new_string(json.to_string())
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
@@ -519,6 +561,15 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGainAuto(
     on: jni::sys::jboolean,
 ) {
     let _ = crate::render::sender().send(crate::render::Cmd::SetGainAuto(on != 0));
+}
+
+#[unsafe(no_mangle)]
+pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setAutoFrameScale(
+    _env: JNIEnv,
+    _class: JClass,
+    scale: jni::sys::jfloat,
+) {
+    let _ = crate::render::sender().send(crate::render::Cmd::SetAutoFrameScale(scale));
 }
 
 #[unsafe(no_mangle)]
@@ -593,35 +644,63 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setFocus(
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setLight(
-    env: JNIEnv, _class: JClass, rgb: jni::objects::JFloatArray,
-    mask: jni::sys::jint, preset: jni::sys::jint, seconds: jni::sys::jfloat,
-    track: jni::sys::jboolean, generated: jni::sys::jboolean,
-    shuffle: jni::sys::jboolean, random: jni::sys::jboolean,
-    min: jni::sys::jfloat, max: jni::sys::jfloat,
+    env: JNIEnv,
+    _class: JClass,
+    rgb: jni::objects::JFloatArray,
+    mask: jni::sys::jint,
+    preset: jni::sys::jint,
+    seconds: jni::sys::jfloat,
+    track: jni::sys::jboolean,
+    generated: jni::sys::jboolean,
+    shuffle: jni::sys::jboolean,
+    random: jni::sys::jboolean,
+    min: jni::sys::jfloat,
+    max: jni::sys::jfloat,
     deleted: jni::sys::jint,
 ) -> jni::sys::jboolean {
-    let Ok(len) = env.get_array_length(&rgb) else { return 0; };
-    if !(0..=18).contains(&len) || len % 3 != 0 || !(0..=63).contains(&mask) || !(0..=8).contains(&preset) {
+    let Ok(len) = env.get_array_length(&rgb) else {
+        return 0;
+    };
+    if !(0..=18).contains(&len)
+        || len % 3 != 0
+        || !(0..=63).contains(&mask)
+        || !(0..=8).contains(&preset)
+    {
         return 0;
     }
     let mut buf = vec![0f32; len as usize];
-    if env.get_float_array_region(&rgb, 0, &mut buf).is_err() { return 0; }
+    if env.get_float_array_region(&rgb, 0, &mut buf).is_err() {
+        return 0;
+    }
     let settings = crate::light_cycle::LightSettings {
         colors: buf.chunks_exact(3).map(|v| [v[0], v[1], v[2]]).collect(),
-        selected_mask: mask as u8, preset: preset as u8, seconds, per_track: track != 0,
-        generated_auto: generated != 0, shuffle: shuffle != 0, random_interval: random != 0,
-        interval_min: min, interval_max: max,
+        selected_mask: mask as u8,
+        preset: preset as u8,
+        seconds,
+        per_track: track != 0,
+        generated_auto: generated != 0,
+        shuffle: shuffle != 0,
+        random_interval: random != 0,
+        interval_min: min,
+        interval_max: max,
     };
-    if !settings.valid() || !(-1..=5).contains(&deleted) { return 0; }
+    if !settings.valid() || !(-1..=5).contains(&deleted) {
+        return 0;
+    }
     let deleted = (deleted >= 0).then_some(deleted as usize);
-    crate::render::sender().send(crate::render::Cmd::SetLight(settings, deleted)).is_ok() as jni::sys::jboolean
+    crate::render::sender()
+        .send(crate::render::Cmd::SetLight(settings, deleted))
+        .is_ok() as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_rollLight(
-    _env: JNIEnv, _class: JClass,
+    _env: JNIEnv,
+    _class: JClass,
 ) -> jni::sys::jboolean {
-    crate::render::sender().send(crate::render::Cmd::RollLight).is_ok() as jni::sys::jboolean
+    crate::render::sender()
+        .send(crate::render::Cmd::RollLight)
+        .is_ok() as jni::sys::jboolean
 }
 
 #[unsafe(no_mangle)]
@@ -902,10 +981,15 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_signalObservation
     env: JNIEnv,
     _cls: JClass,
 ) -> jstring {
-    let scope = crate::render::RAW_STEREO.try_lock().ok().map(|meter| meter.signal_snapshot());
+    let scope = crate::render::RAW_STEREO
+        .try_lock()
+        .ok()
+        .map(|meter| meter.signal_snapshot());
     let value = serde_json::json!({"scope": scope, "local": crate::deck::signal_json(),
         "relay": crate::remote::signal_json()});
-    env.new_string(value.to_string()).map(|s| s.into_raw()).unwrap_or(std::ptr::null_mut())
+    env.new_string(value.to_string())
+        .map(|s| s.into_raw())
+        .unwrap_or(std::ptr::null_mut())
 }
 
 #[unsafe(no_mangle)]
@@ -931,7 +1015,9 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_displayPauseState
     _class: JClass,
 ) -> jni::sys::jint {
     let s = crate::pause::DISPLAY.lock().unwrap();
-    i32::from(s.paused) | (i32::from(s.black) << 1) | (i32::from(s.pinned.is_some()) << 2)
+    i32::from(s.paused)
+        | (i32::from(s.black) << 1)
+        | (i32::from(s.pinned.is_some()) << 2)
         | (i32::from(s.present_pending()) << 3)
 }
 

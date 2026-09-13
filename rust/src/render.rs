@@ -6,8 +6,8 @@
 //! Android invalidates the window the moment the callback returns. The GpuRenderer and
 //! its decay textures survive across surface loss (the beam remembers backgrounding).
 
-use std::sync::OnceLock;
 use std::sync::Mutex;
+use std::sync::OnceLock;
 use std::sync::atomic::{AtomicBool, AtomicI32, AtomicU32, Ordering};
 use std::sync::mpsc;
 
@@ -42,8 +42,9 @@ pub enum Cmd {
     SetOversample(u8),
     /// Manual deflection gain (the figure swelling under a thumb). Clamped 0.1..7.
     SetGain(f32),
-    /// Desktop-parity autosize. Manual SetGain always disarms it.
+    /// Mobile-local automatic visual framing. Manual SetGain always disarms it.
     SetGainAuto(bool),
+    SetAutoFrameScale(f32),
     NewLocalItem(u64),
     /// Phosphor persistence 0..0.98 (glow / trail length).
     SetGlow(f32),
@@ -188,7 +189,11 @@ fn append_dataspace(window: &NativeWindow) {
         .map(|space| format!("{space:?}"))
         .unwrap_or_else(|error| format!("unread ({error})"));
     let mut report = hdr_report_slot().lock().unwrap();
-    let base = report.split(" · dataspace ").next().unwrap_or(&report).to_string();
+    let base = report
+        .split(" · dataspace ")
+        .next()
+        .unwrap_or(&report)
+        .to_string();
     *report = format!("{base} · dataspace {space}");
 }
 
@@ -286,6 +291,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut manual_gain = defaults.gain.clamp(0.1, 7.0);
     computer.gain = manual_gain;
     let mut auto_gain = crate::engine::AutoGain::new(manual_gain);
+    let mut auto_gain_last = std::time::Instant::now();
     let mut fps_frames: u32 = 0;
     let mut fps_t0 = std::time::Instant::now();
     let mut beam_color: usize = 0;
@@ -324,8 +330,10 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut geom_frame: Option<GeomFrame> = None;
 
     let light_clock = std::time::Instant::now();
-    let seed = std::time::SystemTime::now().duration_since(std::time::UNIX_EPOCH)
-        .map(|d| d.as_nanos() as u64).unwrap_or(1);
+    let seed = std::time::SystemTime::now()
+        .duration_since(std::time::UNIX_EPOCH)
+        .map(|d| d.as_nanos() as u64)
+        .unwrap_or(1);
     let mut light = crate::light_cycle::LightCycle::new(seed);
 
     loop {
@@ -333,7 +341,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // commands then draw — 60 fps geometry frames must never back-queue behind vsync.
         let mut cmds: Vec<Cmd> = Vec::new();
         let display_paused = crate::pause::DISPLAY.lock().unwrap().paused;
-        if active.is_none() || paused || display_paused { light.suspend(); }
+        if active.is_none() || paused || display_paused {
+            auto_gain.rebase_time();
+            auto_gain_last = std::time::Instant::now();
+            light.suspend();
+        }
         if active.is_none() || paused || (display_paused && !display_dirty) {
             match rx.recv() {
                 Ok(c) => cmds.push(c),
@@ -372,7 +384,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     match bring_up(&mut gpu, window, width, height, target_fps, transparent) {
                         Ok(a) => {
                             let g = gpu.as_ref().unwrap();
-                            let same = renderer.as_ref().is_some_and(|r| r.output_format == a.config.format);
+                            let same = renderer
+                                .as_ref()
+                                .is_some_and(|r| r.output_format == a.config.format);
                             if same {
                                 if let Err(e) = renderer.as_mut().unwrap().resize(width, height) {
                                     log::error!("renderer resize: {e}");
@@ -384,7 +398,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                                 renderer = None;
                             }
                             if renderer.is_none() {
-                            match phosphor_render_gpu::GpuRenderer::new_for_surface(
+                                match phosphor_render_gpu::GpuRenderer::new_for_surface(
                                     &g.adapter,
                                     g.device.clone(),
                                     g.queue.clone(),
@@ -550,7 +564,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     log::info!("view rotation: {}°", view_rotation * 90);
                 }
                 Cmd::SetGain(g) => {
-                    // Manual gain reaches 7. Automatic gain stays within the desktop 0.1..6 range.
                     manual_gain = g.clamp(0.1, 7.0);
                     computer.gain = auto_gain.set_manual(manual_gain);
                     GAIN_AUTO.store(false, Ordering::Relaxed);
@@ -560,7 +573,11 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     computer.gain = auto_gain.set_auto(on, manual_gain);
                     GAIN_AUTO.store(on, Ordering::Relaxed);
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
-                    log::info!("auto gain: {on}");
+                    log::info!("auto framing: {on}");
+                }
+                Cmd::SetAutoFrameScale(scale) => {
+                    let scale = auto_gain.set_frame_scale(scale);
+                    log::info!("auto frame scale: {scale:.3}");
                 }
                 Cmd::NewLocalItem(id) => {
                     crate::deck::with_published_open(id, || auto_gain.new_local_item(id, id));
@@ -619,8 +636,12 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                         glow_persistence = setup.glow;
                         focus_px = setup.focus;
                         grid_on = setup.grid;
-                        oversample = crate::engine::set_reconstruction_rate(&mut computer, setup.oversample as u32);
-                        let accepted = light.apply(setup.light.settings(), light_clock.elapsed().as_secs_f64());
+                        oversample = crate::engine::set_reconstruction_rate(
+                            &mut computer,
+                            setup.oversample as u32,
+                        );
+                        let accepted = light
+                            .apply(setup.light.settings(), light_clock.elapsed().as_secs_f64());
                         debug_assert!(accepted);
                         beam_color = setup.light.preset as usize;
                         if let Some(r) = renderer.as_mut() {
@@ -681,6 +702,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             retained_generation = frame_token.generation;
         }
         if display_paused {
+            auto_gain.rebase_time();
+            auto_gain_last = std::time::Instant::now();
             if !display_dirty {
                 continue;
             }
@@ -739,6 +762,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             continue;
         }
         if energy_epoch.needs_clear(frame_token) {
+            auto_gain.rebase_time();
+            auto_gain_last = std::time::Instant::now();
             r.clear_energy();
             geom_frame = None;
             computer.reset();
@@ -767,7 +792,9 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             };
             let raw_peak = crate::engine::StereoPeak::prepare(&mut samples);
             if source_active {
-                meter.consumed_frames = meter.consumed_frames.saturating_add((samples.len() / 2) as u64);
+                meter.consumed_frames = meter
+                    .consumed_frames
+                    .saturating_add((samples.len() / 2) as u64);
             }
             meter.observe(raw_peak, meter_ms());
             (source_active, samples, raw_peak)
@@ -777,12 +804,17 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         let frame_peak = raw_peak.map_or(0.0, crate::engine::StereoPeak::max);
         geom_env = frame_peak.max(geom_env * 0.92);
 
-        // Empty and sub-threshold frames hold gain. Remote geometry bypasses local DSP.
+        // Remote geometry keeps desktop gain ownership. Local framing observes this raw window.
+        let auto_gain_now = std::time::Instant::now();
+        let auto_gain_elapsed = auto_gain_now.duration_since(auto_gain_last).as_secs_f32();
+        auto_gain_last = auto_gain_now;
         if source_active && !geometry_active && auto_gain.enabled() {
-            if let Some(gain) = auto_gain.update(frame_peak) {
+            if let Some(gain) = auto_gain.update(&samples, auto_gain_elapsed) {
                 computer.gain = gain;
                 GAIN_MILLI.store((gain * 1000.0) as u32, Ordering::Relaxed);
             }
+        } else {
+            auto_gain.rebase_time();
         }
 
         // Resting-beam bookkeeping: an idle stage (no source) rests immediately; an
@@ -1095,11 +1127,17 @@ fn configure(
             other => other,
         },
         backend,
-        if choice.use_fp16 { "Rgba16Float" } else { "SDR format" }
+        if choice.use_fp16 {
+            "Rgba16Float"
+        } else {
+            "SDR format"
+        }
     ));
     let format = if choice.use_fp16 {
         wgpu::TextureFormat::Rgba16Float
-    } else if let Some(format) = g.format.filter(|format| *format != wgpu::TextureFormat::Rgba16Float)
+    } else if let Some(format) = g
+        .format
+        .filter(|format| *format != wgpu::TextureFormat::Rgba16Float)
     {
         if !caps.formats.contains(&format) {
             return Err("surface does not support retained renderer format".into());

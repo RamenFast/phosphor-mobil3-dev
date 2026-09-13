@@ -105,9 +105,13 @@ impl StereoWindow {
     }
 
     pub(crate) fn signal_snapshot(&self) -> SignalPathSnapshot {
-        SignalPathSnapshot { capture_owner: self.capture_owner, local_owner: self.local_owner,
-            admitted_stereo_frames: self.admitted_frames, rejected_epoch_stereo_frames: self.rejected_epoch_frames,
-            consumed_stereo_frames: self.consumed_frames }
+        SignalPathSnapshot {
+            capture_owner: self.capture_owner,
+            local_owner: self.local_owner,
+            admitted_stereo_frames: self.admitted_frames,
+            rejected_epoch_stereo_frames: self.rejected_epoch_frames,
+            consumed_stereo_frames: self.consumed_frames,
+        }
     }
 
     pub(crate) fn observe(&mut self, peak: Option<StereoPeak>, now_ms: u64) {
@@ -165,11 +169,15 @@ pub(crate) fn publish_capture_read(
             return false;
         }
         if epoch.load(Ordering::Acquire) != read_epoch {
-            meter.rejected_epoch_frames = meter.rejected_epoch_frames.saturating_add((samples.len() / 2) as u64);
+            meter.rejected_epoch_frames = meter
+                .rejected_epoch_frames
+                .saturating_add((samples.len() / 2) as u64);
             return false;
         }
         ring.push_interleaved(samples);
-        meter.admitted_frames = meter.admitted_frames.saturating_add((samples.len() / 2) as u64);
+        meter.admitted_frames = meter
+            .admitted_frames
+            .saturating_add((samples.len() / 2) as u64);
         true
     })
 }
@@ -190,12 +198,21 @@ mod capture_fence_tests {
         let (finish_tx, finish_rx) = mpsc::sync_channel(1);
         let wait = Duration::from_secs(2);
         let producer = {
-            let (ring, meter, active, epoch) = (ring.clone(), meter.clone(), active.clone(), epoch.clone());
+            let (ring, meter, active, epoch) =
+                (ring.clone(), meter.clone(), active.clone(), epoch.clone());
             std::thread::spawn(move || {
                 let read_epoch = epoch.load(Ordering::Acquire);
                 began_tx.send(read_epoch).unwrap();
                 finish_rx.recv_timeout(wait).unwrap();
-                publish_capture_read(&ring, &meter, &active, &epoch, owner, read_epoch, &[0.9, -0.9])
+                publish_capture_read(
+                    &ring,
+                    &meter,
+                    &active,
+                    &epoch,
+                    owner,
+                    read_epoch,
+                    &[0.9, -0.9],
+                )
             })
         };
         assert_eq!(began_rx.recv_timeout(wait).unwrap(), 4);
@@ -214,16 +231,27 @@ mod capture_fence_tests {
         finish_tx.send(()).unwrap();
         assert!(!producer.join().unwrap());
         assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
-        assert!(publish_capture_read(&ring, &meter, &active, &epoch, current_owner,
-            epoch.load(Ordering::Acquire), &[0.25, -0.5]));
+        assert!(publish_capture_read(
+            &ring,
+            &meter,
+            &active,
+            &epoch,
+            current_owner,
+            epoch.load(Ordering::Acquire),
+            &[0.25, -0.5]
+        ));
         assert_eq!(ring.lock().unwrap().take_stereo_samples(), vec![0.25, -0.5]);
     }
 
     #[test]
-    fn held_epoch4_read_cannot_publish_after_resume_epoch5() { held_read(false); }
+    fn held_epoch4_read_cannot_publish_after_resume_epoch5() {
+        held_read(false);
+    }
 
     #[test]
-    fn held_read_cannot_publish_to_replacement_even_at_same_epoch() { held_read(true); }
+    fn held_read_cannot_publish_to_replacement_even_at_same_epoch() {
+        held_read(true);
+    }
 
     #[test]
     fn current_epoch_cannot_resurrect_inactive_or_non_capture_source() {
@@ -232,14 +260,30 @@ mod capture_fence_tests {
         let active = AtomicBool::new(false);
         let epoch = AtomicU64::new(5);
         let owner = with_stereo_window(&ring, &meter, |_, meter| meter.activate_capture());
-        assert!(!publish_capture_read(&ring, &meter, &active, &epoch, owner, 5, &[1.0, 1.0]));
+        assert!(!publish_capture_read(
+            &ring,
+            &meter,
+            &active,
+            &epoch,
+            owner,
+            5,
+            &[1.0, 1.0]
+        ));
         assert!(!active.load(Ordering::Relaxed));
         with_stereo_window(&ring, &meter, |_, meter| {
             *meter = StereoWindow::new();
             active.store(true, Ordering::Relaxed);
         });
         for candidate in [0, owner] {
-            assert!(!publish_capture_read(&ring, &meter, &active, &epoch, candidate, 5, &[1.0, 1.0]));
+            assert!(!publish_capture_read(
+                &ring,
+                &meter,
+                &active,
+                &epoch,
+                candidate,
+                5,
+                &[1.0, 1.0]
+            ));
         }
         assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
     }
@@ -254,7 +298,8 @@ mod capture_fence_tests {
         let mut guard = ring.lock().unwrap();
         let (started_tx, started_rx) = mpsc::sync_channel(1);
         let producer = {
-            let (ring, meter, active, epoch) = (ring.clone(), meter.clone(), active.clone(), epoch.clone());
+            let (ring, meter, active, epoch) =
+                (ring.clone(), meter.clone(), active.clone(), epoch.clone());
             std::thread::spawn(move || {
                 started_tx.send(()).unwrap();
                 publish_capture_read(&ring, &meter, &active, &epoch, owner, 4, &[1.0, 1.0])
@@ -330,7 +375,9 @@ impl RemoteScopeLease {
                 return false;
             }
             ring.push_interleaved(samples);
-            meter.admitted_frames = meter.admitted_frames.saturating_add((samples.len() / 2) as u64);
+            meter.admitted_frames = meter
+                .admitted_frames
+                .saturating_add((samples.len() / 2) as u64);
             true
         })
     }
@@ -387,7 +434,10 @@ impl SignalAggregate {
     }
 
     fn observe_with_rail(&mut self, samples: &[f32], now: u64, positive_rail: f64) {
-        if self.start.is_none_or(|start| now < start || now - start >= 500) {
+        if self
+            .start
+            .is_none_or(|start| now < start || now - start >= 500)
+        {
             self.start = Some(now);
             self.measured = None;
             self.valid = 0;
@@ -396,7 +446,9 @@ impl SignalAggregate {
             self.peaks = [0.0; 2];
             self.rails = [0; 2];
         }
-        if !samples.is_empty() { self.positive = Some(now); }
+        if !samples.is_empty() {
+            self.positive = Some(now);
+        }
         self.frames = self.frames.saturating_add((samples.len() / 2) as u64);
         self.invalid = self.invalid.saturating_add((samples.len() % 2) as u64);
         for frame in samples.chunks_exact(2) {
@@ -410,7 +462,9 @@ impl SignalAggregate {
                 let value = f64::from(*value);
                 self.squares[channel] += value * value;
                 self.peaks[channel] = self.peaks[channel].max(value.abs());
-                if value >= positive_rail || value <= -1.0 { self.rails[channel] = self.rails[channel].saturating_add(1); }
+                if value >= positive_rail || value <= -1.0 {
+                    self.rails[channel] = self.rails[channel].saturating_add(1);
+                }
             }
         }
     }
@@ -445,7 +499,9 @@ mod signal_tests {
         let media = crate::bridge_core::SessionMedia::default();
         let samples = [i16::MAX, i16::MIN, i16::MAX - 1, i16::MIN + 1, 0, 0];
         let payload: Vec<u8> = samples.into_iter().flat_map(i16::to_le_bytes).collect();
-        let crate::bridge_core::RemoteMedia::Audio(decoded) = media.accept(b'A', &payload, 100).unwrap() else {
+        let crate::bridge_core::RemoteMedia::Audio(decoded) =
+            media.accept(b'A', &payload, 100).unwrap()
+        else {
             panic!("Valid stereo PCM16 must decode as audio");
         };
         assert!(decoded[0] < 1.0);
@@ -496,8 +552,24 @@ mod signal_tests {
         let active = AtomicBool::new(true);
         let epoch = AtomicU64::new(2);
         let owner = meter.lock().unwrap().activate_capture();
-        assert!(!publish_capture_read(&ring, &meter, &active, &epoch, owner, 1, &[1.0, 1.0]));
-        assert!(publish_capture_read(&ring, &meter, &active, &epoch, owner, 2, &[0.0, 0.0]));
+        assert!(!publish_capture_read(
+            &ring,
+            &meter,
+            &active,
+            &epoch,
+            owner,
+            1,
+            &[1.0, 1.0]
+        ));
+        assert!(publish_capture_read(
+            &ring,
+            &meter,
+            &active,
+            &epoch,
+            owner,
+            2,
+            &[0.0, 0.0]
+        ));
         let first = meter.lock().unwrap().signal_json();
         assert_eq!(first["admitted_stereo_frames"], 1);
         assert_eq!(first["rejected_epoch_stereo_frames"], 1);
@@ -507,8 +579,19 @@ mod signal_tests {
         *meter.lock().unwrap() = StereoWindow::new();
         let next = meter.lock().unwrap().activate_capture();
         assert_ne!(owner, next);
-        assert!(!publish_capture_read(&ring, &meter, &active, &epoch, owner, 2, &[1.0, 1.0]));
-        assert_eq!(meter.lock().unwrap().signal_json()["admitted_stereo_frames"], 0);
+        assert!(!publish_capture_read(
+            &ring,
+            &meter,
+            &active,
+            &epoch,
+            owner,
+            2,
+            &[1.0, 1.0]
+        ));
+        assert_eq!(
+            meter.lock().unwrap().signal_json()["admitted_stereo_frames"],
+            0
+        );
     }
 
     #[test]
@@ -528,20 +611,28 @@ mod signal_tests {
 impl SignalOutput {
     pub(crate) fn observe(&self, popped: usize, finalized: usize) {
         self.sequence.fetch_add(1, Ordering::AcqRel);
-        for (counter, count) in [(&self.popped, popped), (&self.finalized, finalized),
-            (&self.zero_filled, finalized.saturating_sub(popped))] {
-            let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed,
-                |n| Some(n.saturating_add(count as u64)));
+        for (counter, count) in [
+            (&self.popped, popped),
+            (&self.finalized, finalized),
+            (&self.zero_filled, finalized.saturating_sub(popped)),
+        ] {
+            let _ = counter.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                Some(n.saturating_add(count as u64))
+            });
         }
         self.sequence.fetch_add(1, Ordering::Release);
     }
     pub(crate) fn json(&self) -> serde_json::Value {
         let before = self.sequence.load(Ordering::Acquire);
-        if before & 1 != 0 { return serde_json::Value::Null; }
+        if before & 1 != 0 {
+            return serde_json::Value::Null;
+        }
         let popped = self.popped.load(Ordering::Relaxed);
         let finalized = self.finalized.load(Ordering::Relaxed);
         let zero_filled = self.zero_filled.load(Ordering::Relaxed);
-        if before != self.sequence.load(Ordering::Acquire) { return serde_json::Value::Null; }
+        if before != self.sequence.load(Ordering::Acquire) {
+            return serde_json::Value::Null;
+        }
         serde_json::json!({"popped_stereo_frames": popped, "finalized_stereo_frames": finalized,
             "zero_filled_stereo_frames": zero_filled})
     }
@@ -561,14 +652,69 @@ pub(crate) fn grid_angle(mode: Mode, remote_geometry: bool, remote_mode: Option<
     }
 }
 
-/// Autosize holds through silence. Sounding frames retain the desktop constants:
-/// instant peak attack, 0.999 release, 0.92 headroom, 0.01 floor, 0.1..6 target,
-/// and a 0.05 effective-gain glide.
+const AUTO_GAIN_MIN: f32 = 0.1;
+const AUTO_GAIN_MAX: f32 = 256.0;
+const AUTO_FRAME_MIN: f32 = 0.25;
+const AUTO_FRAME_MAX: f32 = 1.125;
+const AUTO_FRAME_FILL: f32 = 0.80;
+const STRUCTURE_PEAK_MIN: f32 = 0.0005;
+const STRUCTURE_CORRELATION_MIN: f32 = 0.20;
+const GAIN_RISE_SECONDS: f32 = 0.35;
+const PROTECTION_RELEASE_SECONDS: f32 = 0.75;
+const MAX_UPDATE_SECONDS: f32 = 0.1;
+
+#[derive(Clone, Copy, Debug)]
+struct FrameActivity {
+    peak: f32,
+    correlation: f32,
+}
+
+impl FrameActivity {
+    fn measure(samples: &[f32]) -> Option<Self> {
+        if samples.len() < 2 || samples.len() % 2 != 0 || samples.iter().any(|v| !v.is_finite()) {
+            return None;
+        }
+        let peak = samples
+            .iter()
+            .fold(0.0_f32, |p, sample| p.max(sample.abs()));
+        let mut correlation = 0.0_f32;
+        if samples.len() < 64 {
+            return Some(Self { peak, correlation });
+        }
+        for channel in 0..2 {
+            for lag in 1..=2 {
+                let mut product = 0.0_f64;
+                let mut earlier_energy = 0.0_f64;
+                let mut later_energy = 0.0_f64;
+                for frame in lag..(samples.len() / 2) {
+                    let earlier = samples[(frame - lag) * 2 + channel] as f64;
+                    let later = samples[frame * 2 + channel] as f64;
+                    product += earlier * later;
+                    earlier_energy += earlier * earlier;
+                    later_energy += later * later;
+                }
+                let scale = (earlier_energy * later_energy).sqrt();
+                if scale > f64::EPSILON {
+                    correlation = correlation.max((product.abs() / scale).min(1.0) as f32);
+                }
+            }
+        }
+        Some(Self { peak, correlation })
+    }
+
+    fn structured(self) -> bool {
+        self.peak >= STRUCTURE_PEAK_MIN && self.correlation >= STRUCTURE_CORRELATION_MIN
+    }
+}
+
+/// Mobile-local automatic visual framing. It observes raw samples but never rewrites PCM.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub(crate) struct AutoGain {
     enabled: bool,
     peak: f32,
     effective: f32,
+    frame_scale: f32,
+    pending_seconds: f32,
     reset_open: u64,
 }
 
@@ -579,11 +725,18 @@ impl AutoGain {
             enabled: false,
             peak: 0.0,
             effective: manual_gain.clamp(0.1, 7.0),
+            frame_scale: 1.0,
+            pending_seconds: 0.0,
             reset_open: 0,
         }
     }
 
+    pub(crate) fn rebase_time(&mut self) {
+        self.pending_seconds = 0.0;
+    }
+
     pub(crate) fn set_auto(&mut self, on: bool, manual_gain: f32) -> f32 {
+        self.rebase_time();
         self.enabled = on;
         if !on {
             self.effective = manual_gain.clamp(0.1, 7.0);
@@ -592,10 +745,19 @@ impl AutoGain {
     }
 
     pub(crate) fn set_manual(&mut self, gain: f32) -> f32 {
+        self.rebase_time();
         self.enabled = false;
-        // Manual gain reaches 7 while automatic gain stays within the desktop 0.1..6 range.
         self.effective = gain.clamp(0.1, 7.0);
         self.effective
+    }
+
+    pub(crate) fn set_frame_scale(&mut self, scale: f32) -> f32 {
+        self.frame_scale = if scale.is_finite() {
+            scale.clamp(AUTO_FRAME_MIN, AUTO_FRAME_MAX)
+        } else {
+            1.0
+        };
+        self.frame_scale
     }
 
     pub(crate) fn enabled(&self) -> bool {
@@ -609,16 +771,48 @@ impl AutoGain {
         }
     }
 
-    pub(crate) fn update(&mut self, peak: f32) -> Option<f32> {
+    pub(crate) fn update(&mut self, samples: &[f32], elapsed_seconds: f32) -> Option<f32> {
         if !self.enabled {
             return None;
         }
-        if !peak.is_finite() || peak < 0.02 {
-            return Some(self.effective);
+        let dt = if elapsed_seconds.is_finite() {
+            elapsed_seconds.clamp(0.0, MAX_UPDATE_SECONDS)
+        } else {
+            0.0
+        };
+        let release = (-dt / PROTECTION_RELEASE_SECONDS).exp();
+        // Empty presentation drains do not discard time between actual input batches.
+        self.pending_seconds = (self.pending_seconds + dt).min(MAX_UPDATE_SECONDS);
+        let input_elapsed = if samples.is_empty() {
+            0.0
+        } else {
+            let pending = std::mem::take(&mut self.pending_seconds);
+            if pending >= MAX_UPDATE_SECONDS {
+                0.0
+            } else {
+                pending
+            }
+        };
+        let activity = FrameActivity::measure(samples);
+        self.peak *= release;
+        if let Some(frame) = activity {
+            self.peak = self.peak.max(frame.peak);
         }
-        self.peak = peak.max(self.peak * 0.999);
-        let target = (0.92 / self.peak.max(0.01)).clamp(0.1, 6.0);
-        self.effective += (target - self.effective) * 0.05;
+
+        let fill = AUTO_FRAME_FILL * self.frame_scale;
+        let target = if self.peak > 0.0 {
+            (fill / self.peak).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX)
+        } else {
+            AUTO_GAIN_MAX
+        };
+        if target < self.effective {
+            // The current peak is already in the envelope, so this protects the same frame.
+            self.effective = target;
+        } else if activity.is_some_and(FrameActivity::structured) && input_elapsed > 0.0 {
+            let amount = 1.0 - (-input_elapsed / GAIN_RISE_SECONDS).exp();
+            self.effective += (target - self.effective) * amount;
+        }
+        self.effective = self.effective.clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX);
         Some(self.effective)
     }
 }
@@ -984,29 +1178,133 @@ mod tests {
         );
     }
 
-    #[test]
-    fn auto_gain_uses_desktop_attack_and_glide_constants() {
-        let mut ag = super::AutoGain::new(1.0);
-        ag.set_auto(true, 1.0);
-        let effective = ag.update(0.5).unwrap();
-        // target = 0.92 / 0.5 = 1.84; glide = 1 + (1.84 - 1) * 0.05.
-        assert!((effective - 1.042).abs() < 1e-6, "effective={effective}");
+    fn stereo_tone(peak: f32) -> Vec<f32> {
+        (0..480)
+            .flat_map(|n| {
+                let phase = std::f32::consts::TAU * 440.0 * n as f32 / 48_000.0;
+                [phase.sin() * peak, phase.cos() * peak]
+            })
+            .collect()
+    }
+
+    fn stationary_noise(peak: f32) -> Vec<f32> {
+        let mut state = 0x1234_5678_u32;
+        (0..960)
+            .map(|_| {
+                state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                ((state as f64 / u32::MAX as f64) as f32 * 2.0 - 1.0) * peak
+            })
+            .collect()
+    }
+
+    fn run_for(gain: &mut super::AutoGain, samples: &[f32], seconds: f32, hz: u32) -> f32 {
+        for _ in 0..(seconds * hz as f32).round() as usize {
+            gain.update(samples, 1.0 / hz as f32);
+        }
+        gain.effective
     }
 
     #[test]
-    fn auto_gain_releases_peak_slowly_and_clamps_target() {
-        let mut ag = super::AutoGain::new(1.0);
-        ag.set_auto(true, 1.0);
-        let loud = ag.update(20.0).unwrap(); // target clamps to 0.1
-        assert!((loud - 0.955).abs() < 1e-6, "loud={loud}");
-        let released = ag.update(0.02).unwrap(); // Only sounding frames release the tracked peak.
-        let expected_target = (0.92_f32 / (20.0_f32 * 0.999)).clamp(0.1, 6.0);
-        let expected = loud + (expected_target - loud) * 0.05;
-        assert!((released - expected).abs() < 1e-6, "released={released}");
+    fn auto_framing_quiet_structure_is_useful_and_time_rate_equivalent() {
+        for peak in [0.001, 0.005, 0.015] {
+            let tone = stereo_tone(peak);
+            let mut results = Vec::new();
+            for hz in [60, 90, 120] {
+                let mut gain = super::AutoGain::new(1.0);
+                gain.set_auto(true, 1.0);
+                results.push(run_for(&mut gain, &tone, 1.0, hz));
+            }
+            assert!(
+                results.iter().all(|gain| gain.is_finite() && *gain > 20.0),
+                "peak={peak} {results:?}"
+            );
+            let spread = results.iter().copied().fold(f32::MIN, f32::max)
+                - results.iter().copied().fold(f32::MAX, f32::min);
+            assert!(
+                spread < 0.02,
+                "peak={peak} rate spread={spread} {results:?}"
+            );
+        }
+    }
 
-        ag.new_local_item(1, 1);
-        let quiet = ag.update(0.02).unwrap(); // New quiet track's target clamps to 6.
-        assert!((quiet - (released + (6.0 - released) * 0.05)).abs() < 1e-6);
+    #[test]
+    fn auto_framing_empty_render_drains_keep_time_between_100hz_input_batches() {
+        let tone = stereo_tone(0.005);
+        let mut results = Vec::new();
+        for hz in [60, 90, 120, 240, 1_000] {
+            let mut gain = super::AutoGain::new(1.0);
+            gain.set_auto(true, 1.0);
+            let mut published = 0;
+            for frame in 1..=hz {
+                let batches = frame * 100 / hz;
+                let input = if batches > published { &tone[..] } else { &[] };
+                gain.update(input, 1.0 / hz as f32);
+                published = batches;
+            }
+            results.push(gain.effective);
+        }
+        let spread = results.iter().copied().fold(f32::MIN, f32::max)
+            - results.iter().copied().fold(f32::MAX, f32::min);
+        assert!(
+            spread < 0.05,
+            "empty-drain cadence spread={spread} {results:?}"
+        );
+        assert!(results.iter().all(|value| *value > 140.0));
+    }
+
+    #[test]
+    fn auto_framing_silence_invalid_and_stationary_noise_never_raise_gain() {
+        let noise = stationary_noise(0.001);
+        let measured = super::FrameActivity::measure(&noise).unwrap();
+        assert!(measured.peak >= super::STRUCTURE_PEAK_MIN);
+        assert!(
+            measured.correlation < super::STRUCTURE_CORRELATION_MIN,
+            "{measured:?}"
+        );
+        for samples in [
+            Vec::new(),
+            vec![f32::NAN, 0.0, 0.0, 0.0, 0.0, 0.0],
+            vec![0.0; 960],
+            noise,
+        ] {
+            let mut gain = super::AutoGain::new(1.0);
+            gain.set_auto(true, 1.0);
+            assert_eq!(run_for(&mut gain, &samples, 10.0, 120), 1.0);
+        }
+    }
+
+    #[test]
+    fn auto_framing_pulses_ordinary_sound_and_loud_protection_stay_bounded() {
+        let quiet = stereo_tone(0.005);
+        let ordinary = stereo_tone(0.2);
+        let loud = stereo_tone(0.8);
+        let silence = vec![0.0; quiet.len()];
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        for step in 0..120 {
+            gain.update(if step % 12 < 6 { &quiet } else { &silence }, 1.0 / 120.0);
+        }
+        assert!(gain.effective > 20.0, "pulsed={}", gain.effective);
+        let mut impulse = vec![0.0; quiet.len()];
+        impulse[240 * 2] = 0.8;
+        let impulse_protected = gain.update(&impulse, 1.0 / 120.0).unwrap();
+        assert!(
+            (impulse_protected - 1.0).abs() < 0.001,
+            "impulse frame={impulse_protected}"
+        );
+        run_for(&mut gain, &quiet, 4.0, 120);
+        let protected = gain.update(&loud, 1.0 / 120.0).unwrap();
+        assert!(
+            (protected - 1.0).abs() < 0.001,
+            "first loud frame={protected}"
+        );
+        assert!((run_for(&mut gain, &loud, 1.0, 90) - 1.0).abs() < 0.001);
+        assert!((run_for(&mut gain, &ordinary, 4.0, 60) - 4.0).abs() < 0.05);
+        run_for(&mut gain, &silence, 1.0, 120);
+        let recovered = run_for(&mut gain, &quiet, 4.0, 120);
+        assert!(recovered > 20.0, "quiet-loud-quiet recovery={recovered}");
+        assert!(gain.peak.is_finite() && gain.effective.is_finite());
+        assert!(gain.effective >= super::AUTO_GAIN_MIN && gain.effective <= super::AUTO_GAIN_MAX);
     }
 
     #[test]
@@ -1034,7 +1332,7 @@ mod tests {
                     );
                 }
             }
-            for gain in [0.1, 1.0, 6.0, 7.0] {
+            for gain in [0.1, 1.0, 7.0, 64.0, 256.0] {
                 let mut computer = Computer::new();
                 computer.gain = gain;
                 super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
@@ -1045,9 +1343,120 @@ mod tests {
         let render = include_str!("render.rs");
         assert_eq!(render.matches("take_stereo_samples()").count(), 1);
         assert!(render.contains("StereoPeak::prepare(&mut samples)"));
-        assert!(render.contains("raw_peak.map_or(0.0, crate::engine::StereoPeak::max)"));
+        assert!(render.contains("auto_gain.update(&samples"));
         assert!(render.contains("compute_scope_frame(&mut computer, &samples"));
         assert!(!include_str!("jni_glue.rs").contains("take_stereo_samples"));
+    }
+
+    #[test]
+    fn every_shared_dsp_mode_is_finite_and_count_bounded_at_auto_ceiling() {
+        let samples = stereo_tone(0.005);
+        for mode in Mode::ALL {
+            let mut computer = Computer::new();
+            computer.mode = mode;
+            computer.gain = super::AUTO_GAIN_MAX;
+            // Spectrum modes need a full FFT window and at least two compute calls.
+            for _ in 0..20 {
+                super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
+            }
+            let segments = super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
+            assert!(!segments.is_empty(), "{} produced no geometry", mode.name());
+            assert!(
+                segments.len() <= 200_000,
+                "{} produced {} segments",
+                mode.name(),
+                segments.len()
+            );
+            assert!(
+                segments.iter().flatten().all(|value| value.is_finite()),
+                "{} produced nonfinite geometry",
+                mode.name()
+            );
+        }
+    }
+
+    #[test]
+    fn quiet_controller_changes_actual_xy_and_waveform_extents_with_loud_headroom() {
+        fn extent(segments: &[[f32; 5]], axis: usize) -> f32 {
+            let coordinates: Vec<f32> = segments
+                .iter()
+                .flat_map(|s| [s[axis], s[axis + 2]])
+                .collect();
+            coordinates.iter().copied().fold(f32::MIN, f32::max)
+                - coordinates.iter().copied().fold(f32::MAX, f32::min)
+        }
+        let quiet = stereo_tone(0.005);
+        let loud = stereo_tone(0.8);
+        for scale in [0.25, 1.0, 1.125] {
+            let mut gain = super::AutoGain::new(1.0);
+            gain.set_frame_scale(scale);
+            gain.set_auto(true, 1.0);
+            let effective = run_for(&mut gain, &quiet, 3.0, 120);
+            for mode in [Mode::Xy, Mode::Waveform] {
+                let mut computer = Computer::new();
+                computer.mode = mode;
+                computer.gain = 1.0;
+                let small = super::compute_scope_frame(&mut computer, &quiet, 1080.0, 1920.0);
+                computer.gain = effective;
+                let large = super::compute_scope_frame(&mut computer, &quiet, 1080.0, 1920.0);
+                let axis = if mode == Mode::Xy { 0 } else { 1 };
+                assert!(
+                    extent(&large, axis) > extent(&small, axis) + 90.0,
+                    "mode={} scale={scale} small={} large={}",
+                    mode.name(),
+                    extent(&small, axis),
+                    extent(&large, axis)
+                );
+                computer.gain = gain.update(&loud, 1.0 / 120.0).unwrap();
+                let protected = super::compute_scope_frame(&mut computer, &loud, 1080.0, 1920.0);
+                assert!(
+                    protected.iter().all(|s| s[0] >= 0.0
+                        && s[0] <= 1080.0
+                        && s[2] >= 0.0
+                        && s[2] <= 1080.0
+                        && s[1] >= 0.0
+                        && s[1] <= 1920.0
+                        && s[3] >= 0.0
+                        && s[3] <= 1920.0),
+                    "mode={} scale={scale} loud frame outside viewport",
+                    mode.name()
+                );
+                run_for(&mut gain, &quiet, 5.0, 120);
+            }
+        }
+    }
+
+    #[test]
+    fn short_and_changing_noise_windows_do_not_cause_unbounded_rise() {
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        for count in 1..32 {
+            gain.update(&vec![0.001; count * 2], 1.0 / 120.0);
+            assert_eq!(gain.effective, 1.0);
+        }
+        let noise = stationary_noise(0.001);
+        for shift in 0..120 {
+            let mut next = noise.clone();
+            next.rotate_left((shift * 2) % noise.len());
+            gain.update(&next, 1.0 / 120.0);
+        }
+        assert_eq!(gain.effective, 1.0);
+        for peak in [0.00049, 0.0005, 0.01999, 0.02, 0.02001] {
+            let mut current = super::AutoGain::new(1.0);
+            current.set_auto(true, 1.0);
+            let result = run_for(&mut current, &stereo_tone(peak), 1.0, 120);
+            assert_eq!(
+                result > 1.0,
+                peak >= super::STRUCTURE_PEAK_MIN,
+                "peak={peak} result={result}"
+            );
+        }
+        run_for(&mut gain, &[], 10.0, 120);
+        assert_eq!(
+            gain.update(&stereo_tone(0.005), 1.0 / 120.0),
+            Some(1.0),
+            "starvation cannot be borrowed into one frame"
+        );
     }
 
     #[test]
@@ -1466,57 +1875,54 @@ mod tests {
     }
 
     #[test]
-    fn auto_gain_holds_dead_space_and_releases_only_sounding_frames() {
+    fn auto_framing_only_current_new_item_resets_protection_without_jumping_gain() {
+        let loud = stereo_tone(0.8);
+        let quiet = stereo_tone(0.005);
         let mut gain = super::AutoGain::new(1.0);
         gain.set_auto(true, 1.0);
-        for _ in 0..100 {
-            gain.update(0.8);
-        }
-        let (peak, effective) = (gain.peak, gain.effective);
-        for _ in 0..10_000 {
-            for silent in [0.0, 0.019999, -1.0, f32::NAN, f32::INFINITY] {
-                assert_eq!(gain.update(silent), Some(effective));
-                assert_eq!(gain.peak, peak);
-            }
-        }
-        gain.update(0.02);
-        assert_eq!(gain.peak, peak * 0.999);
-        let expected = effective + ((0.92 / (peak * 0.999)) - effective) * 0.05;
-        assert!((gain.effective - expected).abs() < 1e-6);
-        gain.update(0.8);
-        assert_eq!(gain.peak, 0.8);
-    }
-
-    #[test]
-    fn auto_gain_only_current_new_item_resets_peak_without_jumping_gain() {
-        let mut gain = super::AutoGain::new(1.0);
-        gain.set_auto(true, 1.0);
-        gain.update(0.8);
+        gain.update(&loud, 1.0 / 60.0);
         let effective = gain.effective;
         for (proof, current) in [(0, 0), (1, 2), (1, 0)] {
             gain.new_local_item(proof, current);
             assert_eq!(gain.peak, 0.8);
         }
-        gain.set_auto(true, 1.0); // Repeated restore is not a track.
+        gain.set_auto(true, 1.0);
         assert_eq!(gain.peak, 0.8);
         gain.new_local_item(2, 2);
         assert_eq!(gain.peak, 0.0);
         assert_eq!(gain.effective, effective);
-        gain.update(0.25);
-        gain.new_local_item(2, 2); // Duplicate TrackStarted cannot re-reset.
-        assert_eq!(gain.peak, 0.25);
-        gain.new_local_item(2, 3); // Delayed old render command cannot reset a newer item.
-        assert_eq!(gain.peak, 0.25);
+        gain.update(&quiet, 1.0 / 60.0);
+        let quiet_peak = gain.peak;
+        gain.new_local_item(2, 2);
+        assert_eq!(gain.peak, quiet_peak);
+        gain.new_local_item(2, 3);
+        assert_eq!(gain.peak, quiet_peak);
         gain.new_local_item(3, 3);
         assert_eq!(gain.peak, 0.0);
-        assert_eq!(gain.set_manual(7.0), 7.0);
-        gain.set_auto(true, 7.0);
-        gain.update(0.0);
-        assert_eq!(gain.effective, 7.0); // Silence still holds the manual landing.
-        for _ in 0..10_000 {
-            gain.update(0.02);
+    }
+
+    #[test]
+    fn auto_frame_scale_has_exact_bounds_and_changes_target_fill() {
+        let tone = stereo_tone(0.005);
+        for (requested, expected) in [
+            (f32::NAN, 1.0),
+            (0.0, super::AUTO_FRAME_MIN),
+            (0.25, 0.25),
+            (1.0, 1.0),
+            (1.125, 1.125),
+            (9.0, super::AUTO_FRAME_MAX),
+        ] {
+            let mut gain = super::AutoGain::new(1.0);
+            assert_eq!(gain.set_frame_scale(requested), expected);
+            gain.set_auto(true, 1.0);
+            let settled = run_for(&mut gain, &tone, 5.0, 120);
+            let expected_gain = (super::AUTO_FRAME_FILL * expected / 0.005)
+                .clamp(super::AUTO_GAIN_MIN, super::AUTO_GAIN_MAX);
+            assert!(
+                (settled - expected_gain).abs() < 0.2,
+                "requested={requested} settled={settled}"
+            );
         }
-        assert!((gain.effective - 6.0).abs() < 0.0001);
     }
 
     #[test]
@@ -1578,11 +1984,11 @@ mod tests {
     fn manual_gain_disarms_auto_and_lands_exactly() {
         let mut ag = super::AutoGain::new(1.0);
         ag.set_auto(true, 1.0);
-        ag.update(0.25);
+        ag.update(&stereo_tone(0.25), 1.0 / 60.0);
         assert!(ag.enabled());
         assert_eq!(ag.set_manual(2.4), 2.4);
         assert!(!ag.enabled());
-        assert_eq!(ag.update(0.01), None);
+        assert_eq!(ag.update(&stereo_tone(0.01), 1.0 / 60.0), None);
     }
 
     // ---- geometry FX stage ----

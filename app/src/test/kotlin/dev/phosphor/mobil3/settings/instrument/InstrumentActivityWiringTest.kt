@@ -24,6 +24,7 @@ class InstrumentActivityWiringTest {
         assertTrue(capture.contains("gainValue, ui.localAutoGain, ui.focus"))
         assertFalse(capture.contains("ui.gain,"))
         assertFalse(capture.contains("ui.autoGain"))
+        assertFalse(capture.contains("autoFrameScale"))
         assertTrue(capture.contains("ui.light"))
         val tick = section("private val uiTick", "override fun onNewIntent")
         assertFalse(tick.contains("ui.localAutoGain ="))
@@ -34,6 +35,7 @@ class InstrumentActivityWiringTest {
     @Test fun completePresetPublicationHasNoNativeSetterSourceOrHoldSideEffect() {
         val publication = section("private fun publishInstrument(", "private fun persistInstrument(")
         assertFalse(publication.contains("PhosphorNative"))
+        assertFalse(publication.contains("autoFrameScale ="))
         assertFalse(publication.contains("startSource"))
         assertFalse(publication.contains("displayPaused ="))
         assertFalse(publication.contains("remote ="))

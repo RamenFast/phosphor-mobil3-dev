@@ -7,8 +7,9 @@ A release passes only when every applicable must-level check below has evidence.
 Debug builds may emit opt-in `PhosphorAcceptance` logcat observations for B1 and B8.
 The default is off. Release uses a no-op source-set implementation with no logger.
 Record monotonic uptime, controller identity, numeric playback state, drawn glyph choice,
-chrome timestamps and geometry, and gesture decisions. Do not record metadata, audio,
-account identifiers or relay endpoints. This adds no receiver, command or runtime administration API.
+chrome timestamps and geometry, and gesture decisions. Unit 1 also permits numeric raw peaks,
+framing preference, effective gain, AUTO state and source-selection revision on the existing foreground tick.
+Do not record metadata, PCM, account identifiers or relay endpoints. This adds no receiver, command or runtime administration API.
 Correlate a glyph draw with screenshots or recordings. A draw callback is not proof of panel scanout.
 Judge gesture timing from actual Compose evaluation timestamps, not requested shell delays.
 Restore the log property after testing. Instrumented timing must disclose measurement overhead.
@@ -131,7 +132,7 @@ Each row requires its named automated gate and an honest live receipt. A visual 
 | [ ] | B17 | Same-package updates preserve edits, the settings archive round-trips all legal values and five new keys, and a clean install gets the accepted defaults with `custom_count=0`. |
 | [ ] | B18 | With always-visible controls off, disabling double tap removes playback toggling and single-tap delay. Enabling it restores double-tap playback. |
 | [ ] | B19 | An Android bottom-edge swipe or pinch with any pointer in the 88dp band never changes scope gain or orbit. The armed one-finger upward console pull still works. |
-| [ ] | B20 | Loud, silent, then loud audio keeps stable framing. Only a proven new local item resets peak tracking; metadata refresh does not. The 6.0 clamp, 0.92 headroom, and 0.05 glide remain unchanged. |
+| [ ] | B20 | Quiet, silent, loud and returning quiet input satisfy [Unit 1](UNIT1-AUTO-FRAMING.md). AUTO gestures preserve AUTO and remembered framing. Only proven new-local-item identity confirms track reset. Source tests and ASUS evidence remain separate from Ben acceptance. |
 | [ ] | B21 | With `linger_background=false`, recents removal stops local, relay, capture, and microphone sources and clears capture consent. Linger preserves only sources with a real service owner and never claims unsupported microphone survival. |
 
 ### B21 regression conditions

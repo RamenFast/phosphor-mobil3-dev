@@ -1229,29 +1229,48 @@ internal fun SettingsSheet(
                 active = state.automaticPermissionPopup, p = p, small = true,
             ) { actions.setAutomaticPermissionPopup(!state.automaticPermissionPopup) }
             SignalCheckEntry(state, p)
+            val remoteGeometry = state.remote && state.remoteGeometry
             DragRule(
-                "GAIN", state.gain, 0.1f, 7.0f, p, { "×%.2f".format(it) },
+                "MANUAL GAIN · TAKES OVER AUTO",
+                if (remoteGeometry) state.gain else state.manualGain,
+                0.1f, 7.0f, p, { "×%.2f".format(it) },
             ) { actions.setGainAbsolute(it) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell(
-                        "AUTO-GAIN · " + if (state.autoGain) "on" else "off",
+                        (if (remoteGeometry) "DESKTOP AUTO-GAIN · " else "AUTO-FRAMING · ") +
+                            if (state.autoGain) "on" else "off",
                         active = state.autoGain, p = p, small = true,
                     ) { actions.setGainAuto(!state.autoGain) }
                 }
                 Box(Modifier.weight(1f)) {
-                    // View lock preserves the chosen zoom; gestures report the lock without moving it.
                     ChipCell(
                         "VIEW LOCK · " + if (state.viewLock) "on" else "off",
                         active = state.viewLock, p = p, small = true,
                     ) { actions.setViewLock(!state.viewLock) }
                 }
-                Spacer(Modifier.weight(1f))
             }
             Prose(
-                "Local light glides with the desktop autosize law. Remote sends the same " +
-                    "gain command to the source machine. Auto or VIEW LOCK pin the " +
-                    "viewport — gain gestures just say so; this GAIN rule is the manual takeover.",
+                "LOCAL AUTO FRAMING · ×%.3f%s".format(
+                    state.autoFrameScale,
+                    if (remoteGeometry) " · saved, not applied to desktop geometry" else "",
+                ),
+                p.muted, modifier = Modifier.padding(top = 6.dp),
+            )
+            FlatKey("RESET AUTO FRAMING · ×1.000", p) { actions.resetAutoFrameScale() }
+            if (state.autoFrameSaveStatus.isNotEmpty()) {
+                Prose(state.autoFrameSaveStatus, p.muted)
+                if (state.autoFrameSaveStatus.contains("failed")) {
+                    FlatKey("RETRY FRAMING SAVE", p) { actions.finishAutoFrameScale() }
+                }
+            }
+            Prose(
+                if (remoteGeometry) {
+                    "Remote geometry keeps desktop gain ownership. The manual rule and AUTO command go to the source machine."
+                } else {
+                    "With AUTO on, stage pinch and upward drag bring local structure closer and keep AUTO on. " +
+                        "The manual rule turns AUTO off. VIEW LOCK blocks both stage zoom gestures."
+                },
                 p.muted, modifier = Modifier.padding(top = 6.dp),
             )
         }
@@ -1552,7 +1571,11 @@ internal fun SettingsSheet(
                 .settingsAnchorLayout(presentation, anchorRequest, scope)
         ) {
             SettingsExpandableSection(SettingsSectionId.SIGNAL, "SIGNAL & STARTUP",
-                "${state.sourceLabel} · gain ×${"%.2f".format(state.gain)} · auto-gain ${if (state.autoGain) "on" else "off"}",
+                if (state.remote && state.remoteGeometry) {
+                    "${state.sourceLabel} · desktop gain ×${"%.2f".format(state.gain)} · auto ${if (state.autoGain) "on" else "off"}"
+                } else {
+                    "${state.sourceLabel} · manual ×${"%.2f".format(state.manualGain)} · auto frame ×${"%.3f".format(state.autoFrameScale)}"
+                },
                 SettingsGlyph.Signal, p, presentation) {
                 signal()
                 remote()
@@ -1636,6 +1659,9 @@ interface SheetActions : AppearanceActions {
     fun setOversample(n: Int)
     fun setGainAbsolute(g: Float)
     fun setGainAuto(on: Boolean)
+    fun setAutoFrameScale(scale: Float)
+    fun resetAutoFrameScale()
+    fun finishAutoFrameScale()
     fun setBeamEnergy(e: Float)
     fun setGlow(g: Float)
     fun tapBeamRandom()

@@ -30,12 +30,12 @@ internal object MicrophoneRoutePolicy {
     data class Format(val rate: Int, val channels: Int, val floating: Boolean)
     fun candidates(rates: IntArray, channels: IntArray, encodings: IntArray): List<Format> {
         val rr = (listOf(48_000, 44_100, 16_000, 8_000) + rates.toList()).distinct()
-            .filter { it in 8_000..192_000 && (rates.isEmpty() || it in rates) }
+            .filter { it in 8_000..192_000 && (rates.isEmpty() || it in rates) }.take(4)
         val cc = listOf(2, 1).filter { channels.isEmpty() || it in channels }
         val ee = listOf(true, false).filter { encodings.isEmpty() || (if (it) 4 else 2) in encodings }
-        // Mono PCM16 gets an early trial, even when the first stereo tuple fails.
-        return rr.flatMap { rate -> listOf(false, true).flatMap { monoFirst ->
-            cc.filter { (it == 1) == !monoFirst }.flatMap { count -> ee.map { Format(rate, count, it) } }
-        } }.take(12)
+        // Try every bounded stereo format first, while retaining mono recovery slots.
+        return cc.flatMap { count ->
+            rr.flatMap { rate -> ee.map { Format(rate, count, it) } }
+        }.take(12)
     }
 }

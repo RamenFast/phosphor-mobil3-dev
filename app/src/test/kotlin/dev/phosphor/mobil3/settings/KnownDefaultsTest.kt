@@ -221,7 +221,7 @@ class KnownDefaultsTest {
         // Source wiring only. Native policy tests separately exercise the real resolver.
         val native = repoFile("rust/src/jni_glue.rs").readText()
         assertTrue(native.contains("Java_dev_phosphor_mobil3_PhosphorNative_setLight"))
-        assertTrue(native.contains("if !settings.valid() || !(-1..=5).contains(&deleted) { return 0; }"))
+        assertTrue(native.replace(Regex("\\s+"), " ").contains("if !settings.valid() || !(-1..=5).contains(&deleted) { return 0; }"))
         assertTrue(native.contains("len % 3 != 0"))
         val render = repoFile("rust/src/render.rs").readText()
         assertTrue(render.contains("Cmd::SetLight(settings, deleted)"))
