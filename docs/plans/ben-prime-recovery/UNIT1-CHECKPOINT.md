@@ -72,3 +72,7 @@ Installed source583f4af APK SHA256d312c99130a829bafa3bcc423e514967d0eef2645d67c1
 ## Physical framing margin correction
 
 On exact23541ca, raw0.005 stereo fixture grew from14x14px to1054x1054px in XY45 at about160x. This proved enlargement but left insufficient rotation margin. Root added1/sqrt2 AUTO headroom for actual XY45/swirl only. The independent runtime review caught update-before-animated-mode-landing order. The single AUTO update now follows actual mode landing and precedes grid/DSP. A first-switched-frame regression checks ordering, margin and upward return glide. Native tests rerun before the final APK. Manual gain, PCM and shared engine remain unchanged.
+
+## Final checkpoint
+
+Unit1 is installed for Ben. [Exact receipt](UNIT1-RECEIPT.md) and [test card](UNIT1-TEST-CARD.md) own current state. Earlier checkpoints remain history. No live worker owns implementation. Stop for Ben feedback, not Unit2.

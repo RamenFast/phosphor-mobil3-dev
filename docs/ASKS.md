@@ -233,3 +233,5 @@ consolidated change trajectories. Do not build, install, reset, publish or resum
 - 2026-09-13: Ben approves Unit 1 through ASUS verification and his feedback test card, with Git/GitHub work included. Scope remains microphone, pinch and remembered AUTO framing. [Active contract](../spec/UNIT1-AUTO-FRAMING.md). No later unit or public release follows from this approval.
 
 - 2026-09-13: Ben requires stereo-first input defaults across Phosphor development devices. Preserve independent left/right content and label mono limitations honestly. [Decision](../decisions/2026-09-13-stereo-first-input.md). Included in Unit 1 negotiation and verification.
+
+- 2026-09-13: Unit1 implemented, reviewed, installed and restored for Ben’s feedback. Stereo-first correction included. [Test card](plans/ben-prime-recovery/UNIT1-TEST-CARD.md). GitHub source/receipts handled in the private repository. No next unit or public release started.

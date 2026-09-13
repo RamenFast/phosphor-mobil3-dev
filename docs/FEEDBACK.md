@@ -1,7 +1,7 @@
 # FEEDBACK — Ben's live feedback ledger (phosphor-mobil3)
 
 spec-version: pre-v2-b1-b21
-drift: 21
+drift: 22
 
 *One row per unique piece of feedback. `×N` = times Ben has raised it (a repeat means
 the fix missed or the receipt never reached him — treat repeats as priority signals).
@@ -638,3 +638,7 @@ implemented capabilities or authority to begin building.
 ## 2026-09-13 stereo-first correction
 
 Ben clarified that mono input is not the desired Phosphor development default. Distinct left/right sound supplies the intended scope shape. [Stereo-first input](../decisions/2026-09-13-stereo-first-input.md) owns this requirement and its honest hardware-fallback boundary. The baseline ASUS 48 kHz mono observation remains a limitation, not accepted stereo.
+
+## 2026-09-13 Unit 1 delivered for feedback
+
+Status: **verify**, not user-accepted shipped. Source `9d5d77e` is installed on ASUS. Stereo-first input, fresh microphone diagnostics, quiet AUTO framing, remembered stage zoom and rotation margin have source and device evidence. [Receipt](plans/ben-prime-recovery/UNIT1-RECEIPT.md). Ben tests the three-action card before any next slice. Earlier recovery feedback and inherited gaps remain open.

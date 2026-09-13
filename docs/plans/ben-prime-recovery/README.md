@@ -3,7 +3,8 @@
 
 > Pick a sound. See its shape. Bring it closer. Keep a moment.
 
-**Status: consolidated direction, not implementation started.**
+**Status: Unit 1 is installed for Ben’s feedback. Later units have not started.**
+[Unit 1 test card](UNIT1-TEST-CARD.md) · [Exact verification receipt](UNIT1-RECEIPT.md)
 The ASUS is our recovery target. The S25 is our interaction reference.
 We keep useful new machinery and recover direct, colorful, orderly interaction.
 
@@ -261,8 +262,8 @@ engineering checklist or continue the whole roadmap on an old autonomy instructi
 
 ## Boundaries and honest stopping
 
-Current session: documents only. Future session: execute only its explicitly invoked
-unit. No release/signing/store push, uninstall/data clear, system/vendor/boot/vbmeta
+The original consolidation session was documents only. Ben later approved Unit 1, now installed for feedback.
+Future work executes only its explicitly agreed slice. No release/signing/store push, uninstall/data clear, system/vendor/boot/vbmeta
 writes, root configuration changes, S25 operation or cancelled soak. Preserve protected
 archives and other sessions. Use the ASUS explicit serial; never default adb to a device.
 

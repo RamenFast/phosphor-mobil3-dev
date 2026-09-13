@@ -1494,32 +1494,38 @@ mod tests {
         );
         assert_eq!(render.matches("auto_gain.update(&samples").count(), 1);
         let tone = stereo_tone(0.005);
-        let extrema = vec![0.005; 960];
-        for rotated in [Mode::Xy45, Mode::XySwirl] {
-            let mut gain = super::AutoGain::new(1.0);
-            gain.set_frame_scale(super::AUTO_FRAME_MAX);
-            gain.set_auto(true, 1.0);
-            let unrotated = run_for(&mut gain, &tone, 5.0, 120);
-            assert!(unrotated > 179.0);
-            let mut computer = Computer::new();
-            computer.mode = rotated; // Actual tube-flip landing precedes the one AUTO update.
-            gain.set_mode(computer.mode);
-            computer.gain = gain.update(&extrema, 1.0 / 120.0).unwrap();
-            assert!(computer.gain < 128.0);
-            let segments = super::compute_scope_frame(&mut computer, &extrema, 1080.0, 1920.0);
-            assert!(!segments.is_empty());
-            assert!(
-                segments
-                    .iter()
-                    .all(|s| s[0] >= 65.0 && s[0] <= 1015.0 && s[2] >= 65.0 && s[2] <= 1015.0)
-            );
-            let protected = computer.gain;
-            gain.set_mode(Mode::Xy);
-            let returning = gain.update(&tone, 1.0 / 120.0).unwrap();
-            assert!(
-                returning > protected && returning < unrotated,
-                "return glides upward"
-            );
+        for extrema in [
+            vec![0.005; 960],
+            (0..960)
+                .map(|i| if i % 2 == 0 { 0.005 } else { -0.005 })
+                .collect::<Vec<_>>(),
+        ] {
+            for rotated in [Mode::Xy45, Mode::XySwirl] {
+                let mut gain = super::AutoGain::new(1.0);
+                gain.set_frame_scale(super::AUTO_FRAME_MAX);
+                gain.set_auto(true, 1.0);
+                let unrotated = run_for(&mut gain, &tone, 5.0, 120);
+                assert!(unrotated > 179.0);
+                let mut computer = Computer::new();
+                computer.mode = rotated; // Actual tube-flip landing precedes the one AUTO update.
+                gain.set_mode(computer.mode);
+                computer.gain = gain.update(&extrema, 1.0 / 120.0).unwrap();
+                assert!(computer.gain < 128.0);
+                let segments = super::compute_scope_frame(&mut computer, &extrema, 1080.0, 1920.0);
+                assert!(!segments.is_empty());
+                assert!(
+                    segments
+                        .iter()
+                        .all(|s| s[0] >= 65.0 && s[0] <= 1015.0 && s[2] >= 65.0 && s[2] <= 1015.0)
+                );
+                let protected = computer.gain;
+                gain.set_mode(Mode::Xy);
+                let returning = gain.update(&tone, 1.0 / 120.0).unwrap();
+                assert!(
+                    returning > protected && returning < unrotated,
+                    "return glides upward"
+                );
+            }
         }
     }
 

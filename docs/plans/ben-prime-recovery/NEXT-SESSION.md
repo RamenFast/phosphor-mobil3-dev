@@ -1,7 +1,8 @@
 # Next session: bring the instrument home
 
-Use this prompt when Ben is ready to begin the first recovery implementation slice.
-Preparing this file did not authorize execution in the recovery conversation.
+Unit 1 was executed on 2026-09-13 and is installed for [Ben’s feedback](UNIT1-TEST-CARD.md).
+The prompt below is historical, not authority to repeat the work or start Unit 2.
+Preparing this file did not authorize execution in the original recovery conversation.
 
 ---
 
