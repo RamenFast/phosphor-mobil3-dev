@@ -4,6 +4,16 @@ import org.junit.Test
 import kotlin.test.*
 
 class StereoFirstInputTest {
+    @Test fun serviceGetterReadsTheLiveRecorderAndKeepsRetirementSnapshots() {
+        val path = "src/main/kotlin/dev/phosphor/mobil3/MicCaptureService.kt"
+        val source = listOf(java.io.File(path), java.io.File("app/$path")).first { it.isFile }.readText()
+        val getter = source.substringAfter("internal fun signalObservation(): SignalInput?").substringBefore("internal fun status()")
+        assertTrue(getter.contains("val fresh = recorder.observation()"))
+        assertTrue(getter.contains("current.stopping || current.destroyed"))
+        assertTrue(getter.contains("owner === current && current.recorder === recorder"))
+        assertFalse(getter.contains("publish()"))
+        assertFalse(getter.contains("start("))
+    }
     @Test fun sameOwnerFormatChangesRetireQueuedDiagnosticReads() {
         val owner = SignalRecorderWindow(7)
         val first = SignalDescriptor(SignalFormat(48_000, 2, "PCM16"), "route", 100,

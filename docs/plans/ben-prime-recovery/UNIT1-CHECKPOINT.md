@@ -64,3 +64,7 @@ Review found lost rise time on empty render drains, unchecked delayed preference
 ## Source gate cleared
 
 Final Android run4:980tests, zero failures/errors/skips; debug lint passed. Native run4:132tests passed. Relay:43passed. Independent [source](reviews/unit1-source-review.md), [correction](reviews/unit1-corrections-review.md), and [final persistence](reviews/unit1-persistence-review.md) reviews are retained. Final R2 is source-clear. A pure cache/disk model and wiring tests do not replace actual ASUS restart proof. Root now seals source and builds the exact debug artifact. Phone acceptance and Ben feedback remain pending.
+
+## First exact ASUS candidate
+
+Installed source583f4af APK SHA256d312c99130a829bafa3bcc423e514967d0eef2645d67c153cd9517754319b05e through pm3. Installed readback and signer matched. Actual built-in19 opened device48000Hz stereo PCM16. Live mic trace showed about45x at119fps. Signal Check exposed a pre-existing startup-only cached MicCaptureService getter: zero reads and old route timestamp while the trace moved. Root is correcting only this read path to fetch the current recorder snapshot while preserving terminal/retirement evidence. This candidate is not final acceptance.

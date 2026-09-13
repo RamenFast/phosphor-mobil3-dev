@@ -157,7 +157,14 @@ class MicCaptureService : Service() {
         private val observers = linkedSetOf<() -> Unit>()
         internal fun observe(callback: () -> Unit) { observers += callback; callback() }
         internal fun unobserve(callback: () -> Unit) { observers -= callback }
-        internal fun signalObservation(): SignalInput? = observation
+        internal fun signalObservation(): SignalInput? {
+            val current = owner ?: return observation
+            if (current.stopping || current.destroyed) return observation
+            val recorder = current.recorder ?: return null
+            val fresh = recorder.observation()
+            return if (owner === current && current.recorder === recorder && !current.stopping && !current.destroyed) fresh
+                else observation
+        }
         internal fun status(): String = owner?.takeIf { !it.stopping }?.recorder?.detail() ?: detail
         internal fun isRecording() = owner?.recorder?.isRecording() == true
         internal fun ownsSource() = owner?.session != null || !retirement.pending.isDone
