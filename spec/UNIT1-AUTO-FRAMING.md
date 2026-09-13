@@ -61,7 +61,9 @@ No measurement changes or filters PCM.
 The raw protection envelope attacks at once and releases exponentially with a `0.75 s` time
 constant. Every update clamps elapsed time to `0..0.1 s`. The neutral target is `0.80` times
 `auto_frame_scale`, so the allowed preference range `0.25..1.125` gives `0.20..0.90` target
-fill. Automatic effective gain is bounded to `0.1..256.0`. A current nonzero peak clamps gain
+fill. XY45 and rotating XY multiply the target by `1/sqrt(2)` because rotation can combine both channel peaks.
+This retains breathing room at every allowed preference without changing raw PCM or manual gain.
+Automatic effective gain is bounded to `0.1..256.0`. A current nonzero peak clamps gain
 down to its target before that frame renders. Eligible quiet structure raises gain toward the
 envelope target with a `0.35 s` exponential time constant. Empty presentation drains retain
 bounded elapsed time for the next real input batch. A gap reaching 100 ms discards that rise budget.

@@ -714,6 +714,7 @@ pub(crate) struct AutoGain {
     peak: f32,
     effective: f32,
     frame_scale: f32,
+    view_scale: f32,
     pending_seconds: f32,
     reset_open: u64,
 }
@@ -726,6 +727,7 @@ impl AutoGain {
             peak: 0.0,
             effective: manual_gain.clamp(0.1, 7.0),
             frame_scale: 1.0,
+            view_scale: 1.0,
             pending_seconds: 0.0,
             reset_open: 0,
         }
@@ -758,6 +760,14 @@ impl AutoGain {
             1.0
         };
         self.frame_scale
+    }
+
+    pub(crate) fn set_mode(&mut self, mode: Mode) {
+        self.view_scale = if matches!(mode, Mode::Xy45 | Mode::XySwirl) {
+            std::f32::consts::FRAC_1_SQRT_2
+        } else {
+            1.0
+        };
     }
 
     pub(crate) fn enabled(&self) -> bool {
@@ -799,7 +809,7 @@ impl AutoGain {
             self.peak = self.peak.max(frame.peak);
         }
 
-        let fill = AUTO_FRAME_FILL * self.frame_scale;
+        let fill = AUTO_FRAME_FILL * self.frame_scale * self.view_scale;
         let target = if self.peak > 0.0 {
             (fill / self.peak).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX)
         } else {
@@ -1423,6 +1433,93 @@ mod tests {
                 );
                 run_for(&mut gain, &quiet, 5.0, 120);
             }
+        }
+    }
+
+    #[test]
+    fn rotated_xy_framing_keeps_both_channel_corners_inside_with_margin() {
+        // Equal/anti-equal extrema exercise the full sqrt(2) rotation expansion.
+        let samples: Vec<f32> = (0..480)
+            .flat_map(|n| {
+                let left = if n % 4 < 2 { 0.005 } else { -0.005 };
+                let right = if n % 2 == 0 { 0.005 } else { -0.005 };
+                [left, right]
+            })
+            .collect();
+        for mode in [Mode::Xy45, Mode::XySwirl] {
+            for factor in [1, 2, 4, 8] {
+                let mut gain = super::AutoGain::new(1.0);
+                gain.set_mode(mode);
+                gain.set_frame_scale(super::AUTO_FRAME_MAX);
+                gain.set_auto(true, 1.0);
+                run_for(&mut gain, &stereo_tone(0.005), 5.0, 120);
+                let mut computer = Computer::new();
+                computer.mode = mode;
+                super::set_reconstruction_rate(&mut computer, factor);
+                computer.gain = gain.effective;
+                for _ in 0..20 {
+                    let segments =
+                        super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
+                    assert!(
+                        segments.iter().all(|s| s[0] >= 65.0
+                            && s[0] <= 1015.0
+                            && s[2] >= 65.0
+                            && s[2] <= 1015.0
+                            && s[1] >= 400.0
+                            && s[1] <= 1520.0
+                            && s[3] >= 400.0
+                            && s[3] <= 1520.0),
+                        "mode={} factor={factor} lost rotation margin",
+                        mode.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn animated_mode_landing_selects_safe_gain_before_first_rotated_compute() {
+        let render = include_str!("render.rs");
+        assert!(
+            render
+                .find("computer.mode = mode_from_index(f.pending_mode)")
+                .unwrap()
+                < render.find("auto_gain.set_mode(computer.mode)").unwrap()
+        );
+        assert!(
+            render.find("auto_gain.set_mode(computer.mode)").unwrap()
+                < render
+                    .find("compute_scope_frame(&mut computer, &samples")
+                    .unwrap()
+        );
+        assert_eq!(render.matches("auto_gain.update(&samples").count(), 1);
+        let tone = stereo_tone(0.005);
+        let extrema = vec![0.005; 960];
+        for rotated in [Mode::Xy45, Mode::XySwirl] {
+            let mut gain = super::AutoGain::new(1.0);
+            gain.set_frame_scale(super::AUTO_FRAME_MAX);
+            gain.set_auto(true, 1.0);
+            let unrotated = run_for(&mut gain, &tone, 5.0, 120);
+            assert!(unrotated > 179.0);
+            let mut computer = Computer::new();
+            computer.mode = rotated; // Actual tube-flip landing precedes the one AUTO update.
+            gain.set_mode(computer.mode);
+            computer.gain = gain.update(&extrema, 1.0 / 120.0).unwrap();
+            assert!(computer.gain < 128.0);
+            let segments = super::compute_scope_frame(&mut computer, &extrema, 1080.0, 1920.0);
+            assert!(!segments.is_empty());
+            assert!(
+                segments
+                    .iter()
+                    .all(|s| s[0] >= 65.0 && s[0] <= 1015.0 && s[2] >= 65.0 && s[2] <= 1015.0)
+            );
+            let protected = computer.gain;
+            gain.set_mode(Mode::Xy);
+            let returning = gain.update(&tone, 1.0 / 120.0).unwrap();
+            assert!(
+                returning > protected && returning < unrotated,
+                "return glides upward"
+            );
         }
     }
 

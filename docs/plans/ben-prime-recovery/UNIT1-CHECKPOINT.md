@@ -68,3 +68,7 @@ Final Android run4:980tests, zero failures/errors/skips; debug lint passed. Nati
 ## First exact ASUS candidate
 
 Installed source583f4af APK SHA256d312c99130a829bafa3bcc423e514967d0eef2645d67c153cd9517754319b05e through pm3. Installed readback and signer matched. Actual built-in19 opened device48000Hz stereo PCM16. Live mic trace showed about45x at119fps. Signal Check exposed a pre-existing startup-only cached MicCaptureService getter: zero reads and old route timestamp while the trace moved. Root is correcting only this read path to fetch the current recorder snapshot while preserving terminal/retirement evidence. This candidate is not final acceptance.
+
+## Physical framing margin correction
+
+On exact23541ca, raw0.005 stereo fixture grew from14x14px to1054x1054px in XY45 at about160x. This proved enlargement but left insufficient rotation margin. Root added1/sqrt2 AUTO headroom for actual XY45/swirl only. The independent runtime review caught update-before-animated-mode-landing order. The single AUTO update now follows actual mode landing and precedes grid/DSP. A first-switched-frame regression checks ordering, margin and upward return glide. Native tests rerun before the final APK. Manual gain, PCM and shared engine remain unchanged.

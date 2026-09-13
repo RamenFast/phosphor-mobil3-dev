@@ -804,19 +804,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         let frame_peak = raw_peak.map_or(0.0, crate::engine::StereoPeak::max);
         geom_env = frame_peak.max(geom_env * 0.92);
 
-        // Remote geometry keeps desktop gain ownership. Local framing observes this raw window.
-        let auto_gain_now = std::time::Instant::now();
-        let auto_gain_elapsed = auto_gain_now.duration_since(auto_gain_last).as_secs_f32();
-        auto_gain_last = auto_gain_now;
-        if source_active && !geometry_active && auto_gain.enabled() {
-            if let Some(gain) = auto_gain.update(&samples, auto_gain_elapsed) {
-                computer.gain = gain;
-                GAIN_MILLI.store((gain * 1000.0) as u32, Ordering::Relaxed);
-            }
-        } else {
-            auto_gain.rebase_time();
-        }
-
         // Resting-beam bookkeeping: an idle stage (no source) rests immediately; an
         // active-but-silent source rests after the sleep window. Geometry mode IS the
         // signal — the local ring rests by design, never the display.
@@ -884,6 +871,20 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         } else {
             r.theme = phosphor_beam::THEME_PRESETS[beam_color].1;
             BEAM_RGB.store(pack_rgb(r.theme.beam_color), Ordering::Relaxed);
+        }
+
+        // Remote geometry keeps desktop gain ownership. Local framing observes this raw window.
+        let auto_gain_now = std::time::Instant::now();
+        let auto_gain_elapsed = auto_gain_now.duration_since(auto_gain_last).as_secs_f32();
+        auto_gain_last = auto_gain_now;
+        if source_active && !geometry_active && auto_gain.enabled() {
+            auto_gain.set_mode(computer.mode);
+            if let Some(gain) = auto_gain.update(&samples, auto_gain_elapsed) {
+                computer.gain = gain;
+                GAIN_MILLI.store((gain * 1000.0) as u32, Ordering::Relaxed);
+            }
+        } else {
+            auto_gain.rebase_time();
         }
 
         // The graticule follows effective gain so a pinch zooms the scene instead of only
