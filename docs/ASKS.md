@@ -235,3 +235,5 @@ consolidated change trajectories. Do not build, install, reset, publish or resum
 - 2026-09-13: Ben requires stereo-first input defaults across Phosphor development devices. Preserve independent left/right content and label mono limitations honestly. [Decision](../decisions/2026-09-13-stereo-first-input.md). Included in Unit 1 negotiation and verification.
 
 - 2026-09-13: Unit1 implemented, reviewed, installed and restored for Ben’s feedback. Stereo-first correction included. [Test card](plans/ben-prime-recovery/UNIT1-TEST-CARD.md). GitHub source/receipts handled in the private repository. No next unit or public release started.
+
+- 2026-09-24: Ben keeps building on current source and asks Prime to take creative direction: creatively transpose the S25 UI, keep the live instrument vibe, make it accessible, cut bloat, port all post-S25 work, max 3 Opus 5.5 subagents. [Transpose plan](plans/transpose/README.md). S25 APK installed on test-bed ASUS NAAIB700B7373PZ for comparison.

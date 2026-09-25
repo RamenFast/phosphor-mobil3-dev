@@ -1,6 +1,12 @@
 # Handoff: mobile expansion execution
 
-## Unit 1 installed, waiting for Ben · 2026-09-13
+## Transpose plan active · 2026-09-24
+
+Unit 1 failed Ben's lived test. Ben chose to keep building on current source and transpose the S25 UI spirit.
+[Transpose plan](docs/plans/transpose/README.md) owns direction, anti-bloat laws, acceptance and phases.
+Test bed: second ASUS `NAAIB700B7373PZ` (S25 build installed for comparison). Ben's ASUS keeps its data.
+
+## Unit 1 installed, waiting for Ben · 2026-09-13 (superseded)
 
 ASUS has application source `9d5d77e`, APK `4a3b5928f2d4…`.
 [Ben’s test card](docs/plans/ben-prime-recovery/UNIT1-TEST-CARD.md) is the next action.
