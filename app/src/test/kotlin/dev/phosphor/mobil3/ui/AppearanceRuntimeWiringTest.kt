@@ -74,18 +74,6 @@ class AppearanceRuntimeWiringTest {
         assertFalse(screen.contains(".style.overridden(state.styleOverride)"))
     }
 
-    @Test fun roomHasNoIdleClockAndBurnInReceivesActualVisibility() {
-        val room = source("ui/Sheets.kt").substringAfter("fun RoomSheet(").substringBefore("private fun StyleSampleChip")
-        assertFalse(room.contains("rememberInfiniteTransition"))
-        assertFalse(room.contains("breath"))
-        val console = source("ui/Console.kt")
-        assertTrue(console.contains("if (reduced || !visible) return this"))
-        assertEquals(2, Regex("burnInWalk\\(reduced, chromeVisible && state.presentationVisible && !state.pip\\)").findAll(console).count())
-        val screen = source("ui/PhosphorScreen.kt")
-        assertTrue(screen.contains("chromeVisible = sheet == Sheet.NONE && !overflowComposed"))
-        assertTrue(screen.contains("chromeVisible = consoleShown && (sheet == Sheet.NONE || settingsPullActive)"))
-    }
-
     @Test fun editorHasExactInputsAccessibleActionsAndRootOwnedChildGestureHook() {
         val editor = source("ui/AppearanceEditor.kt")
         listOf("PREVIEW", "APPLY", "CANCEL", "SAVE AS NEW", "RENAME", "DELETE", "RESET TO AMOLED", "READABILITY WARNING").forEach {

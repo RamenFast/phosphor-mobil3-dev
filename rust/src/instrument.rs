@@ -89,7 +89,7 @@ impl Setup {
             && self.random_ban_modes.windows(2).all(|w| w[0] < w[1])
             && (!self.random_mode_armed || self.random_ban_modes.len() <= 9)
             && in_range(self.geom_amount, 0.0, 1.0)
-            && in_range(self.gain, 0.1, 7.0)
+            && in_range(self.gain, 0.1, crate::engine::GAIN_MAX)
             && in_range(self.focus, 0.3, 3.0)
             && in_range(self.beam_energy, 1.0, 30.0)
             && in_range(self.glow, 0.0, 0.98)
@@ -303,7 +303,7 @@ mod tests {
     fn numeric_ranges_and_mode_eligibility() {
         for (key, lo, hi) in [
             ("geom_amount", 0.0, 1.0),
-            ("gain", 0.1, 7.0),
+            ("gain", 0.1, crate::engine::GAIN_MAX),
             ("focus", 0.3, 3.0),
             ("beam_energy", 1.0, 30.0),
             ("glow", 0.0, 0.98),

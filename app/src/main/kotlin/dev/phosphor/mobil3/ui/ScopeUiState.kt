@@ -89,6 +89,8 @@ class ScopeUiState {
     var geomFx by mutableIntStateOf(0)
     var geomAmount by mutableFloatStateOf(0.6f)
     var autoGain by mutableStateOf(true)
+    /** Engineering readouts (fps, gain, signal internals) appear only in the developer view. */
+    var developerView by mutableStateOf(false)
     var localAutoGain by mutableStateOf(true)
     var noSignal by mutableStateOf(false)
     var hudMode by mutableIntStateOf(1)

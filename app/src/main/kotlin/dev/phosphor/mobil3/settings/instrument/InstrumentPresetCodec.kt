@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.settings.instrument
 
+import dev.phosphor.mobil3.ui.GainScale
 import dev.phosphor.mobil3.ui.LightRgb
 import dev.phosphor.mobil3.ui.LightSettings
 import java.math.BigDecimal
@@ -97,7 +98,7 @@ object InstrumentPresetCodec {
         val bans = s.array("random_ban_modes")
         presetRequire(bans.size <= 11, "invalid_setup", "Banned modes must fit within 0..10")
         return InstrumentSetup(s.int("mode"), s.bool("random_mode_armed"), bans.map { int(it, "random_ban_modes[]") },
-            s.int("geom_fx"), s.float("geom_amount", 0f, 1f), s.float("gain", 0.1f, 7f), s.bool("auto_gain"),
+            s.int("geom_fx"), s.float("geom_amount", 0f, 1f), s.float("gain", GainScale.MIN, GainScale.MAX), s.bool("auto_gain"),
             s.float("focus", 0.3f, 3f), s.float("beam_energy", 1f, 30f), s.float("glow", 0f, 0.98f),
             s.bool("beam_random_armed"), s.float("beam_random_min", 1f, 30f), s.float("beam_random_max", 1f, 30f),
             s.bool("glow_random_armed"), s.float("glow_random_min", 0f, 0.98f), s.float("glow_random_max", 0f, 0.98f),

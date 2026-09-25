@@ -1,11 +1,33 @@
 package dev.phosphor.mobil3.ui
 
-/** One global authored multiplier for mobile-local automatic visual framing. */
+/** One size scale for AUTO and manual gain. Must match rust `engine::GAIN_MAX`. */
+object GainScale {
+    const val MIN = 0.1f
+    const val MAX = 64f
+    fun clamp(value: Float): Float = if (value.isFinite()) value.coerceIn(MIN, MAX) else 1f
+}
+
+/** Size words and a logarithmic slider position for the shared gain scale. No raw multipliers. */
+object GainWords {
+    private val lo = kotlin.math.ln(GainScale.MIN)
+    private val hi = kotlin.math.ln(GainScale.MAX)
+    fun toSlider(gain: Float): Float = ((kotlin.math.ln(GainScale.clamp(gain)) - lo) / (hi - lo)).coerceIn(0f, 1f)
+    fun fromSlider(position: Float): Float =
+        GainScale.clamp(kotlin.math.exp(lo + position.coerceIn(0f, 1f) * (hi - lo)))
+    fun word(gain: Float): String = when {
+        gain < 0.7f -> "far"
+        gain < 3f -> "normal"
+        gain < 12f -> "close"
+        else -> "very close"
+    }
+}
+
+/** One global "closer / farther" multiplier around AUTO's choice. Must match rust AUTO_FRAME_*. */
 object AutoFramePreference {
     const val KEY = "auto_frame_scale"
     const val DEFAULT = 1f
     const val MIN = 0.25f
-    const val MAX = 1.125f
+    const val MAX = 4f
 
     fun normalize(value: Float): Float =
         if (value.isFinite()) value.coerceIn(MIN, MAX) else DEFAULT
@@ -29,11 +51,11 @@ internal object StageZoomPolicy {
     fun adjust(manualGain: Float, autoFrameScale: Float, autoFrameArmed: Boolean, factor: Float): StageZoomAdjustment {
         val owner = if (autoFrameArmed) StageZoomOwner.AUTO_FRAME else StageZoomOwner.MANUAL_GAIN
         val old = if (autoFrameArmed) AutoFramePreference.normalize(autoFrameScale)
-            else manualGain.takeIf { it.isFinite() }?.coerceIn(0.1f, 7f) ?: 1f
+            else GainScale.clamp(manualGain)
         val next = if (!factor.isFinite() || factor <= 0f) old else if (autoFrameArmed) {
             (old * factor).coerceIn(AutoFramePreference.MIN, AutoFramePreference.MAX)
         } else {
-            (old * factor).coerceIn(0.1f, 7f)
+            GainScale.clamp(old * factor)
         }
         return StageZoomAdjustment(owner, next, (old - 1f) * (next - 1f) <= 0f && old != next)
     }

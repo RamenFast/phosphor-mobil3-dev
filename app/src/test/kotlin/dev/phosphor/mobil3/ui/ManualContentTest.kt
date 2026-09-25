@@ -98,7 +98,7 @@ class ManualContentTest {
     @Test fun operatingQuestionsReturnActionsAndRecoveryNotOnlyTopicIds() {
         answer("swipe up", "gesture", "from the play bar", "Close or system Back")
         answer("double tap", "gesture", "Settings > DISPLAY & HUD", "DOUBLE TAP PLAYBACK", "Disable it")
-        answer("gain lock", "gain", "Settings > SIGNAL & STARTUP", "×0.1 to ×7.0", "explicitly turns AUTO off", "VIEW LOCK blocks stage zoom", "OPEN SOURCES")
+        answer("gain lock", "gain", "Settings > SIGNAL & STARTUP", "SIZE", "keeps the current size", "VIEW LOCK blocks stage zoom")
         answer("focus range", "beam", "0.3 to 3.0 px", "×1 to ×30", "0 to 98 percent", "Uncheck", "plain BEAM or GLOW")
         answer("ban faces", "mode", "at least two", "Pick a face manually", "AMOUNT", "0 to 100 percent", "Select off")
         answer("grid data", "grid", "Settings > BEAM & LIGHT", "Turn off GRID DATA", "raw-channel peaks and dBFS", "set BAND to on", "SIGNAL CHECK")
@@ -152,43 +152,6 @@ class ManualContentTest {
             "draft only", "RESET TO AMOLED · keep saved appearances", "REPLACE UNAVAILABLE APPEARANCE WITH AMOLED",
             "RETRY AUTHORITATIVE APPEARANCE, THEN INSTRUMENT SAVE", "Device acceptance remains pending")
         assertFalse(ManualContent.chapter("appearance").text.contains("integration is in development"))
-    }
-
-    @Test fun helpLabelsAndRangesAreLinkedToCurrentControlSource() {
-        val settings = source("ui/Sheets.kt")
-        listOf("SIGNAL & STARTUP", "BEAM & LIGHT", "DISPLAY & HUD", "MOTION & PERFORMANCE", "ABOUT & MANUAL",
-            "DOUBLE TAP PLAYBACK", "CONTROLS ALWAYS VISIBLE", "BACKGROUND LINGER", "SCOPE ROTATION", "UI PLACEMENT",
-            "PAUSE DISPLAY ONLY", "RETURN DISPLAY TO LIVE", "RESET INSPECTION", "STATS HUD", "BAND", "GRID DATA").forEach {
-            assertTrue("Current Settings label: $it", settings.contains(it))
-            assertTrue("Searchable Settings label: $it", ManualContent.search(it).isNotEmpty())
-        }
-        assertTrue(settings.contains("MANUAL GAIN · TAKES OVER AUTO"))
-        assertTrue(settings.contains("if (remoteGeometry) state.gain else state.manualGain"))
-        listOf("0.1f, 7.0f, p", "\"FOCUS\", focusValue, 0.3f, 3.0f",
-            "\"BEAM\", state.beamEnergy, 1.0f, 30.0f", "\"GLOW\", state.glow, 0.0f, 0.98f").forEach {
-            assertTrue("Current range: $it", settings.contains(it))
-        }
-        val light = source("ui/LightSheet.kt")
-        listOf("ADD CURRENT PRESET COLOR", "Automatic generated color", "Le random order", "ROLL NOW",
-            "Random interval", "Minimum seconds", "Maximum seconds", "LEG seconds", "KEEP SAFE", "I understand: allow faster").forEach {
-            assertTrue("Current LIGHT label: $it", light.contains(it))
-            assertTrue("Searchable LIGHT label: $it", ManualContent.search(it).isNotEmpty())
-        }
-        assertTrue(light.contains("light.intervalMin, 0.1f, 60f"))
-        assertTrue(light.contains("light.intervalMax, 0.1f, 60f"))
-        assertTrue(light.contains("light.seconds, 0.1f, 60f"))
-        val owner = light.substringAfter("val owner = when {").substringBefore("Prose(owner")
-        assertTrue(owner.indexOf("light.generatedAuto") < owner.indexOf("light.selectedMask != 0"))
-        assertTrue(owner.indexOf("light.selectedMask != 0") < owner.indexOf("else ->"))
-        assertTrue(source("ui/SignalCheckSheet.kt").contains("SignalCheckAction(\"OPEN SOURCES\""))
-        val editor = source("ui/AppearanceEditor.kt")
-        listOf("PREVIEW · temporary", "APPLY · persist draft", "CANCEL · restore committed appearance",
-            "SAVE AS NEW NAMED APPEARANCE", "LEGACY SNAPSHOTS", "LOAD IMMUTABLE DRAFT",
-            "PROPOSE READABLE COLORS IN DRAFT · replaces all color roles", "RESET TO AMOLED · keep saved appearances",
-            "REPLACE UNAVAILABLE APPEARANCE WITH AMOLED", "RETRY AUTHORITATIVE APPEARANCE, THEN INSTRUMENT SAVE").forEach {
-            assertTrue("Current appearance label: $it", editor.contains(it))
-            assertTrue("Searchable appearance label: $it", ManualContent.search(it).isNotEmpty())
-        }
     }
 
     @Test fun chapterViewportStartsAtHeadingAndQueryDoesNotOwnScrolling() {

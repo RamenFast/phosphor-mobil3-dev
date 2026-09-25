@@ -1,15 +1,16 @@
 package dev.phosphor.mobil3.settings
 
 import dev.phosphor.mobil3.StartupCoordinatorPolicy
-import dev.phosphor.mobil3.ui.LightSettings
-import dev.phosphor.mobil3.ui.AutoFramePreference
 import dev.phosphor.mobil3.settings.appearance.AppearanceDocumentCodec
 import dev.phosphor.mobil3.settings.appearance.AppearanceException
-import org.json.JSONArray
-import org.json.JSONObject
+import dev.phosphor.mobil3.ui.AutoFramePreference
+import dev.phosphor.mobil3.ui.GainScale
+import dev.phosphor.mobil3.ui.LightSettings
 import java.math.BigDecimal
 import java.security.MessageDigest
 import java.time.Instant
+import org.json.JSONArray
+import org.json.JSONObject
 
 /**
  * Portable, inert Phosphor settings archive.
@@ -79,7 +80,7 @@ object SettingsArchive {
         "beam" to intRange(0, 8),
         "fps" to Spec(Kind.INT) { it as Int in setOf(-1, 0, 60, 90, 120) },
         "oversample" to Spec(Kind.INT) { it as Int in setOf(1, 2, 4) },
-        "gain" to floatRange(0.1f, 7f),
+        "gain" to floatRange(GainScale.MIN, GainScale.MAX),
         AutoFramePreference.KEY to floatRange(AutoFramePreference.MIN, AutoFramePreference.MAX),
         "beam_energy" to floatRange(1f, 30f),
         "glow" to floatRange(0f, 0.98f),

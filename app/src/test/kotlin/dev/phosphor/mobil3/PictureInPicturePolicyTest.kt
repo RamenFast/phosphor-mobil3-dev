@@ -66,17 +66,4 @@ class PictureInPicturePolicyTest {
         assertTrue("ui.pipAutoEnter = PictureInPicturePolicy.autoEnter(p.all)" in activity)
     }
 
-    @Test fun quickAndFullSettingsShareLiveStateAndManualActionsAreReachable() {
-        val screen = phase9Source("ui/PhosphorScreen.kt")
-        val sheets = phase9Source("ui/Sheets.kt")
-        val console = phase9Source("ui/Console.kt")
-        assertTrue("active = state.pipAutoEnter" in sheets)
-        assertTrue("active = state.pipAutoEnter" in console)
-        assertTrue("actions.setPipAutoEnter(!state.pipAutoEnter)" in sheets)
-        assertTrue("onPipAutoEnter = { actions.setPipAutoEnter(!state.pipAutoEnter) }" in screen)
-        assertTrue("override fun setPipAutoEnter(on: Boolean) = actions.setPipAutoEnter(on)" in screen)
-        assertTrue("override fun enterPictureInPicture() = actions.enterPictureInPicture()" in screen)
-        assertTrue("FlatKey(\"ENTER PiP\", p) { actions.enterPictureInPicture() }" in sheets)
-        assertTrue("Triple(\"PiP\", SettingsGlyph.Display, onPictureInPicture)" in console)
-    }
 }

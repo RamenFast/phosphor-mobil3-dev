@@ -40,3 +40,14 @@ Captures: `build/transpose/captures/s25/` and `build/transpose/captures/current/
 - Manual gain maxes at ×7, while AUTO climbs to ×63. Turning AUTO off drops the view from ×63 to ×1.83.
   One gain scale must serve both modes.
 - Limit: one quiet room, one phone, video-based measurement. A host test on recorded mic PCM should confirm.
+
+## Phase 1 AUTO controller · first device check (same room, 15 s, gain log at 2 Hz)
+
+| Build | Gain min / median / max | CV |
+|---|---|---|
+| Old `9d5d77e` | 20.3 / 28.0 / 32.4 | 0.109 |
+| New controller | 28.2 / 32.2 / 37.0 | 0.065 |
+
+- The new 20 s screen recording had no collapse runs (old: 0.4-0.5 s collapses).
+- The 2 Hz log can miss sub-second collapses. Host tests cover clicks, speech-like sound and loud entrances.
+- Remaining size variation on screen is the room noise itself, not the controller.

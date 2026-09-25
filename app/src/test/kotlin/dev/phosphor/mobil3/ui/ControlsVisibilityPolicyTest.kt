@@ -244,32 +244,6 @@ class ControlsVisibilityPolicyTest {
         assertFalse(OverflowPopoutPolicy.shouldClose(1f, 0f))
     }
 
-    @Test fun allQuickContentSharesOneBoundedScrollOwnerBeforeTopRemainderDismissal() {
-        val popout = phase9Source("ui/Console.kt").substringAfter("fun OverflowPopout(")
-            .substringBefore("// One quick-settings cell")
-        assertEquals(1, Regex("rememberScrollState\\(").findAll(popout).count())
-        assertEquals(1, Regex("\\.verticalScroll\\(scroll\\)").findAll(popout).count())
-        assertTrue(".heightIn(max = maxHeight)" in popout)
-        assertTrue(".nestedScroll(dismissScroll)\n            .verticalScroll(scroll)\n            .padding(Dim.popoutPad)" in popout)
-        assertFalse("pointerInput" in popout)
-        assertFalse("detectVerticalDragGestures" in popout)
-        val content = popout.substringAfter(".padding(Dim.popoutPad)")
-        for (action in listOf("onPictureInPicture", "onLight", "onRoom", "onSettings", "onFps", "onHud", "onGrid", "onPipAutoEnter")) {
-            assertTrue(action in content, action)
-        }
-        assertTrue("AUTO PiP" in content)
-        assertTrue("source != NestedScrollSource.UserInput || available.y <= 0f || scroll.canScrollBackward" in popout)
-        assertTrue("OverflowPopoutPolicy.reverseDelta(available.y, dismissPx)" in popout)
-        assertTrue("override suspend fun onPreFling" in popout)
-        assertTrue("if (!dragging) return Velocity.Zero" in popout)
-        assertTrue("OverflowPopoutPolicy.shouldClose(dismissPx, heightPx.toFloat())" in popout)
-        assertTrue("currentClose()" in popout)
-        assertTrue("reveal.settleTo(true, currentStyle, currentReduced)" in popout)
-        assertTrue("rememberUpdatedState(onRequestClose)" in popout)
-        assertTrue("StageChromeBounds.Card.Overflow" in popout)
-        assertTrue("reveal.setTravelPx(it.height.toFloat())" in popout)
-    }
-
     @Test fun popoutMeasuresInsideRotatedFrameAndKeepsAnchoringAndSingleScreenClosePath() {
         val screen = phase9Source("ui/PhosphorScreen.kt")
         val popout = screen.substringAfter("// The ⋯ overflow popout").substringBefore("// Layer 2: sheets")

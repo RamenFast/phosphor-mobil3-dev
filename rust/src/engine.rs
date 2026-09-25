@@ -653,57 +653,48 @@ pub(crate) fn grid_angle(mode: Mode, remote_geometry: bool, remote_mode: Option<
 }
 
 const AUTO_GAIN_MIN: f32 = 0.1;
-const AUTO_GAIN_MAX: f32 = 256.0;
+/// One size scale for AUTO and manual gain. Manual, archives and presets share this ceiling.
+pub(crate) const GAIN_MAX: f32 = 64.0;
+const AUTO_GAIN_MAX: f32 = GAIN_MAX;
 const AUTO_FRAME_MIN: f32 = 0.25;
-const AUTO_FRAME_MAX: f32 = 1.125;
+const AUTO_FRAME_MAX: f32 = 4.0;
 const AUTO_FRAME_FILL: f32 = 0.80;
-const STRUCTURE_PEAK_MIN: f32 = 0.0005;
-const STRUCTURE_CORRELATION_MIN: f32 = 0.20;
-const GAIN_RISE_SECONDS: f32 = 0.35;
-const PROTECTION_RELEASE_SECONDS: f32 = 0.75;
+/// Level is the 80th percentile of recent batch peaks, so clicks and taps do not resize the view.
+const LEVEL_WINDOW_SECONDS: f32 = 0.25;
+const LEVEL_PERCENTILE: f32 = 0.80;
+const LEVEL_RELEASE_SECONDS: f32 = 1.0;
+/// Gain glides both ways: quick enough to stop sustained clipping, gentle when growing.
+const GAIN_ATTACK_SECONDS: f32 = 0.08;
+/// When the trace is several times too large, shrink faster so sustained loud sound settles quickly.
+const GAIN_FAST_ATTACK_SECONDS: f32 = 0.03;
+const FAST_ATTACK_RATIO: f32 = 3.0;
+const GAIN_RELEASE_SECONDS: f32 = 0.6;
+/// Below this batch RMS the input is digital silence and AUTO holds its size.
+const SILENCE_RMS: f32 = 0.000_01;
 const MAX_UPDATE_SECONDS: f32 = 0.1;
 
 #[derive(Clone, Copy, Debug)]
 struct FrameActivity {
     peak: f32,
-    correlation: f32,
+    rms: f32,
 }
 
 impl FrameActivity {
     fn measure(samples: &[f32]) -> Option<Self> {
-        if samples.len() < 2 || samples.len() % 2 != 0 || samples.iter().any(|v| !v.is_finite()) {
+        if samples.len() < 2
+            || !samples.len().is_multiple_of(2)
+            || samples.iter().any(|v| !v.is_finite())
+        {
             return None;
         }
-        let peak = samples
-            .iter()
-            .fold(0.0_f32, |p, sample| p.max(sample.abs()));
-        let mut correlation = 0.0_f32;
-        if samples.len() < 64 {
-            return Some(Self { peak, correlation });
+        let mut peak = 0.0_f32;
+        let mut energy = 0.0_f64;
+        for sample in samples {
+            peak = peak.max(sample.abs());
+            energy += (*sample as f64) * (*sample as f64);
         }
-        for channel in 0..2 {
-            for lag in 1..=2 {
-                let mut product = 0.0_f64;
-                let mut earlier_energy = 0.0_f64;
-                let mut later_energy = 0.0_f64;
-                for frame in lag..(samples.len() / 2) {
-                    let earlier = samples[(frame - lag) * 2 + channel] as f64;
-                    let later = samples[frame * 2 + channel] as f64;
-                    product += earlier * later;
-                    earlier_energy += earlier * earlier;
-                    later_energy += later * later;
-                }
-                let scale = (earlier_energy * later_energy).sqrt();
-                if scale > f64::EPSILON {
-                    correlation = correlation.max((product.abs() / scale).min(1.0) as f32);
-                }
-            }
-        }
-        Some(Self { peak, correlation })
-    }
-
-    fn structured(self) -> bool {
-        self.peak >= STRUCTURE_PEAK_MIN && self.correlation >= STRUCTURE_CORRELATION_MIN
+        let rms = (energy / samples.len() as f64).sqrt() as f32;
+        Some(Self { peak, rms })
     }
 }
 
@@ -711,7 +702,9 @@ impl FrameActivity {
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
 pub(crate) struct AutoGain {
     enabled: bool,
-    peak: f32,
+    level: f32,
+    history: std::collections::VecDeque<(f32, f32)>,
+    history_seconds: f32,
     effective: f32,
     frame_scale: f32,
     view_scale: f32,
@@ -724,8 +717,10 @@ impl AutoGain {
     pub(crate) fn new(manual_gain: f32) -> Self {
         Self {
             enabled: false,
-            peak: 0.0,
-            effective: manual_gain.clamp(0.1, 7.0),
+            level: 0.0,
+            history: std::collections::VecDeque::new(),
+            history_seconds: 0.0,
+            effective: clamp_gain(manual_gain),
             frame_scale: 1.0,
             view_scale: 1.0,
             pending_seconds: 0.0,
@@ -737,19 +732,20 @@ impl AutoGain {
         self.pending_seconds = 0.0;
     }
 
+    /// Turning AUTO off keeps the current size; the caller adopts the returned gain as manual.
     pub(crate) fn set_auto(&mut self, on: bool, manual_gain: f32) -> f32 {
         self.rebase_time();
-        self.enabled = on;
-        if !on {
-            self.effective = manual_gain.clamp(0.1, 7.0);
+        if !on && !self.enabled {
+            self.effective = clamp_gain(manual_gain);
         }
+        self.enabled = on;
         self.effective
     }
 
     pub(crate) fn set_manual(&mut self, gain: f32) -> f32 {
         self.rebase_time();
         self.enabled = false;
-        self.effective = gain.clamp(0.1, 7.0);
+        self.effective = clamp_gain(gain);
         self.effective
     }
 
@@ -776,9 +772,25 @@ impl AutoGain {
 
     pub(crate) fn new_local_item(&mut self, proven_open: u64, current_open: u64) {
         if proven_open != 0 && proven_open == current_open && proven_open != self.reset_open {
-            self.peak = 0.0;
+            self.level = 0.0;
+            self.history.clear();
+            self.history_seconds = 0.0;
             self.reset_open = proven_open;
         }
+    }
+
+    fn percentile_level(&self) -> f32 {
+        let mut entries: Vec<(f32, f32)> = self.history.iter().copied().collect();
+        entries.sort_by(|a, b| a.0.total_cmp(&b.0));
+        let wanted = self.history_seconds * LEVEL_PERCENTILE;
+        let mut covered = 0.0;
+        for (peak, seconds) in &entries {
+            covered += seconds;
+            if covered >= wanted {
+                return *peak;
+            }
+        }
+        entries.last().map_or(0.0, |entry| entry.0)
     }
 
     pub(crate) fn update(&mut self, samples: &[f32], elapsed_seconds: f32) -> Option<f32> {
@@ -790,40 +802,50 @@ impl AutoGain {
         } else {
             0.0
         };
-        let release = (-dt / PROTECTION_RELEASE_SECONDS).exp();
-        // Empty presentation drains do not discard time between actual input batches.
+        // Empty presentation drains keep their time for the next actual input batch.
         self.pending_seconds = (self.pending_seconds + dt).min(MAX_UPDATE_SECONDS);
-        let input_elapsed = if samples.is_empty() {
-            0.0
-        } else {
-            let pending = std::mem::take(&mut self.pending_seconds);
-            if pending >= MAX_UPDATE_SECONDS {
-                0.0
-            } else {
-                pending
-            }
+        let Some(frame) = FrameActivity::measure(samples) else {
+            return Some(self.effective);
         };
-        let activity = FrameActivity::measure(samples);
-        self.peak *= release;
-        if let Some(frame) = activity {
-            self.peak = self.peak.max(frame.peak);
+        let seconds = std::mem::take(&mut self.pending_seconds);
+        if seconds <= 0.0 {
+            return Some(self.effective);
         }
-
+        self.history.push_back((frame.peak, seconds));
+        self.history_seconds += seconds;
+        while self.history.len() > 1
+            && self.history_seconds - self.history[0].1 >= LEVEL_WINDOW_SECONDS
+        {
+            let (_, old) = self.history.pop_front().unwrap_or((0.0, 0.0));
+            self.history_seconds -= old;
+        }
+        let current = self.percentile_level();
+        let release = (-seconds / LEVEL_RELEASE_SECONDS).exp();
+        self.level = current.max(self.level * release);
+        if frame.rms < SILENCE_RMS || self.level <= 0.0 {
+            return Some(self.effective);
+        }
         let fill = AUTO_FRAME_FILL * self.frame_scale * self.view_scale;
-        let target = if self.peak > 0.0 {
-            (fill / self.peak).clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX)
+        let ceiling = AUTO_GAIN_MAX * self.frame_scale.max(1.0);
+        let target = (fill / self.level).clamp(AUTO_GAIN_MIN, ceiling);
+        let tau = if target * FAST_ATTACK_RATIO < self.effective {
+            GAIN_FAST_ATTACK_SECONDS
+        } else if target < self.effective {
+            GAIN_ATTACK_SECONDS
         } else {
-            AUTO_GAIN_MAX
+            GAIN_RELEASE_SECONDS
         };
-        if target < self.effective {
-            // The current peak is already in the envelope, so this protects the same frame.
-            self.effective = target;
-        } else if activity.is_some_and(FrameActivity::structured) && input_elapsed > 0.0 {
-            let amount = 1.0 - (-input_elapsed / GAIN_RISE_SECONDS).exp();
-            self.effective += (target - self.effective) * amount;
-        }
-        self.effective = self.effective.clamp(AUTO_GAIN_MIN, AUTO_GAIN_MAX);
+        self.effective += (target - self.effective) * (1.0 - (-seconds / tau).exp());
+        self.effective = self.effective.clamp(AUTO_GAIN_MIN, ceiling);
         Some(self.effective)
+    }
+}
+
+pub(crate) fn clamp_gain(gain: f32) -> f32 {
+    if gain.is_finite() {
+        gain.clamp(AUTO_GAIN_MIN, GAIN_MAX)
+    } else {
+        1.0
     }
 }
 
@@ -1215,37 +1237,37 @@ mod tests {
     }
 
     #[test]
-    fn auto_framing_quiet_structure_is_useful_and_time_rate_equivalent() {
-        for peak in [0.001, 0.005, 0.015] {
+    fn auto_size_quiet_sound_grows_smoothly_at_any_frame_rate() {
+        for peak in [0.002, 0.005, 0.02] {
             let tone = stereo_tone(peak);
             let mut results = Vec::new();
             for hz in [60, 90, 120] {
                 let mut gain = super::AutoGain::new(1.0);
                 gain.set_auto(true, 1.0);
-                results.push(run_for(&mut gain, &tone, 1.0, hz));
+                results.push(run_for(&mut gain, &tone, 3.0, hz));
             }
-            assert!(
-                results.iter().all(|gain| gain.is_finite() && *gain > 20.0),
-                "peak={peak} {results:?}"
-            );
+            let expected = (super::AUTO_FRAME_FILL / peak).min(super::AUTO_GAIN_MAX);
+            for value in &results {
+                assert!(*value > expected * 0.9, "peak={peak} {results:?}");
+            }
             let spread = results.iter().copied().fold(f32::MIN, f32::max)
                 - results.iter().copied().fold(f32::MAX, f32::min);
             assert!(
-                spread < 0.02,
-                "peak={peak} rate spread={spread} {results:?}"
+                spread < expected * 0.02,
+                "peak={peak} rate spread {results:?}"
             );
         }
     }
 
     #[test]
-    fn auto_framing_empty_render_drains_keep_time_between_100hz_input_batches() {
-        let tone = stereo_tone(0.005);
+    fn auto_size_keeps_time_across_empty_render_drains() {
+        let tone = stereo_tone(0.02);
         let mut results = Vec::new();
         for hz in [60, 90, 120, 240, 1_000] {
             let mut gain = super::AutoGain::new(1.0);
             gain.set_auto(true, 1.0);
             let mut published = 0;
-            for frame in 1..=hz {
+            for frame in 1..=(2 * hz) {
                 let batches = frame * 100 / hz;
                 let input = if batches > published { &tone[..] } else { &[] };
                 gain.update(input, 1.0 / hz as f32);
@@ -1256,65 +1278,291 @@ mod tests {
         let spread = results.iter().copied().fold(f32::MIN, f32::max)
             - results.iter().copied().fold(f32::MAX, f32::min);
         assert!(
-            spread < 0.05,
+            spread < 1.0,
             "empty-drain cadence spread={spread} {results:?}"
         );
-        assert!(results.iter().all(|value| *value > 140.0));
+        assert!(results.iter().all(|value| *value > 30.0), "{results:?}");
     }
 
     #[test]
-    fn auto_framing_silence_invalid_and_stationary_noise_never_raise_gain() {
-        let noise = stationary_noise(0.001);
-        let measured = super::FrameActivity::measure(&noise).unwrap();
-        assert!(measured.peak >= super::STRUCTURE_PEAK_MIN);
-        assert!(
-            measured.correlation < super::STRUCTURE_CORRELATION_MIN,
-            "{measured:?}"
-        );
+    fn auto_size_holds_through_silence_and_invalid_input() {
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        let settled = run_for(&mut gain, &stereo_tone(0.05), 3.0, 120);
         for samples in [
             Vec::new(),
             vec![f32::NAN, 0.0, 0.0, 0.0, 0.0, 0.0],
             vec![0.0; 960],
-            noise,
         ] {
-            let mut gain = super::AutoGain::new(1.0);
-            gain.set_auto(true, 1.0);
-            assert_eq!(run_for(&mut gain, &samples, 10.0, 120), 1.0);
+            let held = run_for(&mut gain, &samples, 10.0, 120);
+            assert!(
+                (held - settled).abs() < 0.01,
+                "held={held} settled={settled}"
+            );
+        }
+    }
+
+    /// Ben's field report: the view collapsed for about half a second with no input change.
+    #[test]
+    fn auto_size_ignores_clicks_and_short_transients() {
+        let quiet = stereo_tone(0.01);
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        let settled = run_for(&mut gain, &quiet, 4.0, 100);
+        let mut lowest = settled;
+        for step in 0..200 {
+            let mut batch = quiet.clone();
+            if step % 50 == 10 {
+                batch[200] = 0.9; // a tap on the phone body
+                batch[201] = -0.7;
+            }
+            lowest = lowest.min(gain.update(&batch, 0.01).unwrap());
+        }
+        assert!(
+            lowest > settled * 0.8,
+            "click shrank view {settled} -> {lowest}"
+        );
+    }
+
+    #[test]
+    fn auto_size_stays_steady_through_speech_like_sound() {
+        // 4 Hz syllables with pauses and colored room noise, like a voice near the mic.
+        let mut state = 7_u32;
+        let mut noise = 0.0_f32;
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        let mut values = Vec::new();
+        for step in 0..1_000 {
+            let t = step as f32 * 0.01;
+            let envelope = ((t * 4.0 * std::f32::consts::TAU).sin().max(0.0)).powf(0.5);
+            let batch: Vec<f32> = (0..480)
+                .flat_map(|n| {
+                    state = state.wrapping_mul(1_664_525).wrapping_add(1_013_904_223);
+                    let white = (state as f32 / u32::MAX as f32) * 2.0 - 1.0;
+                    noise = noise * 0.95 + white * 0.05;
+                    let phase = std::f32::consts::TAU * 180.0 * (step * 480 + n) as f32 / 48_000.0;
+                    let voice = phase.sin() * 0.03 * envelope;
+                    [voice + noise * 0.002, voice * 0.9 + noise * 0.002]
+                })
+                .collect();
+            let value = gain.update(&batch, 0.01).unwrap();
+            if step >= 300 {
+                values.push(value);
+            }
+        }
+        let mean = values.iter().sum::<f32>() / values.len() as f32;
+        let min = values.iter().copied().fold(f32::MAX, f32::min);
+        let max = values.iter().copied().fold(f32::MIN, f32::max);
+        assert!(
+            min > mean * 0.75 && max < mean * 1.25,
+            "pumping {min} {mean} {max}"
+        );
+    }
+
+    #[test]
+    fn auto_size_settles_a_loud_entrance_and_recovers_quiet() {
+        let quiet = stereo_tone(0.005);
+        let loud = stereo_tone(0.8);
+        let fill = super::AUTO_FRAME_FILL;
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        run_for(&mut gain, &quiet, 4.0, 120);
+        let after_quarter = run_for(&mut gain, &loud, 0.35, 120);
+        assert!(
+            after_quarter * 0.8 < fill * 1.3,
+            "loud still oversized: {after_quarter}"
+        );
+        let settled = run_for(&mut gain, &loud, 1.0, 120);
+        assert!(
+            (settled * 0.8 - fill).abs() < 0.05,
+            "loud settled {settled}"
+        );
+        // From very loud to a whisper (160x quieter) the view regrows visibly, then fully in ~6 s.
+        let two_seconds = run_for(&mut gain, &quiet, 2.0, 120);
+        let five_seconds = run_for(&mut gain, &quiet, 4.0, 120);
+        assert!(two_seconds > 3.0, "quiet recovery too slow: {two_seconds}");
+        assert!(
+            five_seconds > 50.0,
+            "quiet recovery incomplete: {five_seconds}"
+        );
+        let mut previous = five_seconds;
+        run_for(&mut gain, &loud, 0.02, 120);
+        for _ in 0..60 {
+            let next = gain.update(&loud, 1.0 / 120.0).unwrap();
+            assert!(
+                next <= previous * 1.01 && next > previous * 0.5,
+                "no instant collapse: {previous} -> {next}"
+            );
+            previous = next;
         }
     }
 
     #[test]
-    fn auto_framing_pulses_ordinary_sound_and_loud_protection_stay_bounded() {
-        let quiet = stereo_tone(0.005);
-        let ordinary = stereo_tone(0.2);
-        let loud = stereo_tone(0.8);
-        let silence = vec![0.0; quiet.len()];
+    fn auto_size_is_bounded_by_the_shared_gain_scale() {
         let mut gain = super::AutoGain::new(1.0);
         gain.set_auto(true, 1.0);
-        for step in 0..120 {
-            gain.update(if step % 12 < 6 { &quiet } else { &silence }, 1.0 / 120.0);
+        for count in 1..32 {
+            gain.update(&vec![0.000_02; count * 2], 1.0 / 120.0);
         }
-        assert!(gain.effective > 20.0, "pulsed={}", gain.effective);
-        let mut impulse = vec![0.0; quiet.len()];
-        impulse[240 * 2] = 0.8;
-        let impulse_protected = gain.update(&impulse, 1.0 / 120.0).unwrap();
+        let noise = stationary_noise(0.0005);
+        let value = run_for(&mut gain, &noise, 10.0, 120);
+        assert!(value <= super::AUTO_GAIN_MAX, "{value}");
+        let mut small = super::AutoGain::new(1.0);
+        small.set_auto(true, 1.0);
+        run_for(&mut small, &stereo_tone(0.5), 2.0, 120);
+        run_for(&mut small, &[], 10.0, 120);
+        let before = small.effective;
+        let after = small.update(&stereo_tone(0.001), 1.0 / 120.0).unwrap();
         assert!(
-            (impulse_protected - 1.0).abs() < 0.001,
-            "impulse frame={impulse_protected}"
+            after < before * 1.2,
+            "starvation cannot be borrowed into one jump: {before} {after}"
         );
-        run_for(&mut gain, &quiet, 4.0, 120);
-        let protected = gain.update(&loud, 1.0 / 120.0).unwrap();
-        assert!(
-            (protected - 1.0).abs() < 0.001,
-            "first loud frame={protected}"
+        gain.set_frame_scale(4.0);
+        assert!(run_for(&mut gain, &stereo_tone(0.0005), 10.0, 120) > super::AUTO_GAIN_MAX);
+    }
+
+    #[test]
+    fn auto_size_quiet_sound_enlarges_actual_xy_and_waveform_geometry() {
+        fn extent(segments: &[[f32; 5]], axis: usize) -> f32 {
+            let coordinates: Vec<f32> = segments
+                .iter()
+                .flat_map(|s| [s[axis], s[axis + 2]])
+                .collect();
+            coordinates.iter().copied().fold(f32::MIN, f32::max)
+                - coordinates.iter().copied().fold(f32::MAX, f32::min)
+        }
+        let quiet = stereo_tone(0.01);
+        let loud = stereo_tone(0.8);
+        for scale in [0.25, 1.0] {
+            let mut gain = super::AutoGain::new(1.0);
+            gain.set_frame_scale(scale);
+            gain.set_auto(true, 1.0);
+            let effective = run_for(&mut gain, &quiet, 4.0, 120);
+            for mode in [Mode::Xy, Mode::Waveform] {
+                let mut computer = Computer::new();
+                computer.mode = mode;
+                computer.gain = 1.0;
+                let small = super::compute_scope_frame(&mut computer, &quiet, 1080.0, 1920.0);
+                computer.gain = effective;
+                let large = super::compute_scope_frame(&mut computer, &quiet, 1080.0, 1920.0);
+                let axis = if mode == Mode::Xy { 0 } else { 1 };
+                assert!(extent(&large, axis) > extent(&small, axis) + 90.0);
+            }
+            let settled = run_for(&mut gain, &loud, 1.5, 120);
+            let mut computer = Computer::new();
+            computer.mode = Mode::Xy;
+            computer.gain = settled;
+            let framed = super::compute_scope_frame(&mut computer, &loud, 1080.0, 1920.0);
+            assert!(
+                framed
+                    .iter()
+                    .all(|s| s[0] >= 0.0 && s[0] <= 1080.0 && s[2] >= 0.0 && s[2] <= 1080.0)
+            );
+        }
+    }
+
+    #[test]
+    fn auto_size_rotated_xy_keeps_channel_corners_inside_with_margin() {
+        let samples: Vec<f32> = (0..480)
+            .flat_map(|n| {
+                let left = if n % 4 < 2 { 0.02 } else { -0.02 };
+                let right = if n % 2 == 0 { 0.02 } else { -0.02 };
+                [left, right]
+            })
+            .collect();
+        for mode in [Mode::Xy45, Mode::XySwirl] {
+            for factor in [1, 2, 4, 8] {
+                let mut gain = super::AutoGain::new(1.0);
+                gain.set_mode(mode);
+                gain.set_auto(true, 1.0);
+                run_for(&mut gain, &stereo_tone(0.02), 6.0, 120);
+                let mut computer = Computer::new();
+                computer.mode = mode;
+                super::set_reconstruction_rate(&mut computer, factor);
+                computer.gain = gain.effective;
+                for _ in 0..20 {
+                    let segments =
+                        super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
+                    assert!(
+                        segments.iter().all(|s| s[0] >= 65.0
+                            && s[0] <= 1015.0
+                            && s[2] >= 65.0
+                            && s[2] <= 1015.0),
+                        "mode={} factor={factor} lost rotation margin",
+                        mode.name()
+                    );
+                }
+            }
+        }
+    }
+
+    #[test]
+    fn auto_size_new_item_forgets_level_without_jumping() {
+        let loud = stereo_tone(0.8);
+        let mut gain = super::AutoGain::new(1.0);
+        gain.set_auto(true, 1.0);
+        run_for(&mut gain, &loud, 1.0, 60);
+        let effective = gain.effective;
+        for (proof, current) in [(0, 0), (1, 2), (1, 0)] {
+            gain.new_local_item(proof, current);
+            assert!(gain.level > 0.5);
+        }
+        gain.new_local_item(2, 2);
+        assert_eq!(gain.level, 0.0);
+        assert_eq!(gain.effective, effective);
+        run_for(&mut gain, &loud, 0.1, 60);
+        gain.new_local_item(2, 2);
+        assert!(gain.level > 0.5, "same item cannot reset twice");
+        gain.new_local_item(3, 3);
+        assert_eq!(gain.level, 0.0);
+    }
+
+    #[test]
+    fn auto_frame_scale_has_exact_bounds_and_changes_target_fill() {
+        let tone = stereo_tone(0.05);
+        for (requested, expected) in [
+            (f32::NAN, 1.0),
+            (0.0, super::AUTO_FRAME_MIN),
+            (0.25, 0.25),
+            (1.0, 1.0),
+            (2.0, 2.0),
+            (9.0, super::AUTO_FRAME_MAX),
+        ] {
+            let mut gain = super::AutoGain::new(1.0);
+            assert_eq!(gain.set_frame_scale(requested), expected);
+            gain.set_auto(true, 1.0);
+            let settled = run_for(&mut gain, &tone, 8.0, 120);
+            let expected_gain = (super::AUTO_FRAME_FILL * expected / 0.05).clamp(
+                super::AUTO_GAIN_MIN,
+                super::AUTO_GAIN_MAX * expected.max(1.0),
+            );
+            assert!(
+                (settled - expected_gain).abs() < expected_gain * 0.02,
+                "requested={requested} settled={settled} expected={expected_gain}"
+            );
+        }
+    }
+
+    #[test]
+    fn leaving_auto_keeps_size_and_manual_gain_lands_exactly() {
+        let mut ag = super::AutoGain::new(1.0);
+        ag.set_auto(true, 1.0);
+        let auto_size = run_for(&mut ag, &stereo_tone(0.02), 4.0, 120);
+        assert!(auto_size > 30.0);
+        assert_eq!(
+            ag.set_auto(false, 1.0),
+            auto_size,
+            "AUTO off keeps the current size"
         );
-        assert!((run_for(&mut gain, &loud, 1.0, 90) - 1.0).abs() < 0.001);
-        assert!((run_for(&mut gain, &ordinary, 4.0, 60) - 4.0).abs() < 0.05);
-        run_for(&mut gain, &silence, 1.0, 120);
-        let recovered = run_for(&mut gain, &quiet, 4.0, 120);
-        assert!(recovered > 20.0, "quiet-loud-quiet recovery={recovered}");
-        assert!(gain.peak.is_finite() && gain.effective.is_finite());
-        assert!(gain.effective >= super::AUTO_GAIN_MIN && gain.effective <= super::AUTO_GAIN_MAX);
+        assert!(!ag.enabled());
+        assert_eq!(ag.update(&stereo_tone(0.01), 1.0 / 60.0), None);
+        assert_eq!(ag.set_manual(2.4), 2.4);
+        assert_eq!(ag.set_manual(500.0), super::GAIN_MAX);
+        assert_eq!(
+            ag.set_auto(false, 7.0),
+            7.0,
+            "already manual: adopt the manual value"
+        );
     }
 
     #[test]
@@ -1383,183 +1631,6 @@ mod tests {
                 mode.name()
             );
         }
-    }
-
-    #[test]
-    fn quiet_controller_changes_actual_xy_and_waveform_extents_with_loud_headroom() {
-        fn extent(segments: &[[f32; 5]], axis: usize) -> f32 {
-            let coordinates: Vec<f32> = segments
-                .iter()
-                .flat_map(|s| [s[axis], s[axis + 2]])
-                .collect();
-            coordinates.iter().copied().fold(f32::MIN, f32::max)
-                - coordinates.iter().copied().fold(f32::MAX, f32::min)
-        }
-        let quiet = stereo_tone(0.005);
-        let loud = stereo_tone(0.8);
-        for scale in [0.25, 1.0, 1.125] {
-            let mut gain = super::AutoGain::new(1.0);
-            gain.set_frame_scale(scale);
-            gain.set_auto(true, 1.0);
-            let effective = run_for(&mut gain, &quiet, 3.0, 120);
-            for mode in [Mode::Xy, Mode::Waveform] {
-                let mut computer = Computer::new();
-                computer.mode = mode;
-                computer.gain = 1.0;
-                let small = super::compute_scope_frame(&mut computer, &quiet, 1080.0, 1920.0);
-                computer.gain = effective;
-                let large = super::compute_scope_frame(&mut computer, &quiet, 1080.0, 1920.0);
-                let axis = if mode == Mode::Xy { 0 } else { 1 };
-                assert!(
-                    extent(&large, axis) > extent(&small, axis) + 90.0,
-                    "mode={} scale={scale} small={} large={}",
-                    mode.name(),
-                    extent(&small, axis),
-                    extent(&large, axis)
-                );
-                computer.gain = gain.update(&loud, 1.0 / 120.0).unwrap();
-                let protected = super::compute_scope_frame(&mut computer, &loud, 1080.0, 1920.0);
-                assert!(
-                    protected.iter().all(|s| s[0] >= 0.0
-                        && s[0] <= 1080.0
-                        && s[2] >= 0.0
-                        && s[2] <= 1080.0
-                        && s[1] >= 0.0
-                        && s[1] <= 1920.0
-                        && s[3] >= 0.0
-                        && s[3] <= 1920.0),
-                    "mode={} scale={scale} loud frame outside viewport",
-                    mode.name()
-                );
-                run_for(&mut gain, &quiet, 5.0, 120);
-            }
-        }
-    }
-
-    #[test]
-    fn rotated_xy_framing_keeps_both_channel_corners_inside_with_margin() {
-        // Equal/anti-equal extrema exercise the full sqrt(2) rotation expansion.
-        let samples: Vec<f32> = (0..480)
-            .flat_map(|n| {
-                let left = if n % 4 < 2 { 0.005 } else { -0.005 };
-                let right = if n % 2 == 0 { 0.005 } else { -0.005 };
-                [left, right]
-            })
-            .collect();
-        for mode in [Mode::Xy45, Mode::XySwirl] {
-            for factor in [1, 2, 4, 8] {
-                let mut gain = super::AutoGain::new(1.0);
-                gain.set_mode(mode);
-                gain.set_frame_scale(super::AUTO_FRAME_MAX);
-                gain.set_auto(true, 1.0);
-                run_for(&mut gain, &stereo_tone(0.005), 5.0, 120);
-                let mut computer = Computer::new();
-                computer.mode = mode;
-                super::set_reconstruction_rate(&mut computer, factor);
-                computer.gain = gain.effective;
-                for _ in 0..20 {
-                    let segments =
-                        super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);
-                    assert!(
-                        segments.iter().all(|s| s[0] >= 65.0
-                            && s[0] <= 1015.0
-                            && s[2] >= 65.0
-                            && s[2] <= 1015.0
-                            && s[1] >= 400.0
-                            && s[1] <= 1520.0
-                            && s[3] >= 400.0
-                            && s[3] <= 1520.0),
-                        "mode={} factor={factor} lost rotation margin",
-                        mode.name()
-                    );
-                }
-            }
-        }
-    }
-
-    #[test]
-    fn animated_mode_landing_selects_safe_gain_before_first_rotated_compute() {
-        let render = include_str!("render.rs");
-        assert!(
-            render
-                .find("computer.mode = mode_from_index(f.pending_mode)")
-                .unwrap()
-                < render.find("auto_gain.set_mode(computer.mode)").unwrap()
-        );
-        assert!(
-            render.find("auto_gain.set_mode(computer.mode)").unwrap()
-                < render
-                    .find("compute_scope_frame(&mut computer, &samples")
-                    .unwrap()
-        );
-        assert_eq!(render.matches("auto_gain.update(&samples").count(), 1);
-        let tone = stereo_tone(0.005);
-        for extrema in [
-            vec![0.005; 960],
-            (0..960)
-                .map(|i| if i % 2 == 0 { 0.005 } else { -0.005 })
-                .collect::<Vec<_>>(),
-        ] {
-            for rotated in [Mode::Xy45, Mode::XySwirl] {
-                let mut gain = super::AutoGain::new(1.0);
-                gain.set_frame_scale(super::AUTO_FRAME_MAX);
-                gain.set_auto(true, 1.0);
-                let unrotated = run_for(&mut gain, &tone, 5.0, 120);
-                assert!(unrotated > 179.0);
-                let mut computer = Computer::new();
-                computer.mode = rotated; // Actual tube-flip landing precedes the one AUTO update.
-                gain.set_mode(computer.mode);
-                computer.gain = gain.update(&extrema, 1.0 / 120.0).unwrap();
-                assert!(computer.gain < 128.0);
-                let segments = super::compute_scope_frame(&mut computer, &extrema, 1080.0, 1920.0);
-                assert!(!segments.is_empty());
-                assert!(
-                    segments
-                        .iter()
-                        .all(|s| s[0] >= 65.0 && s[0] <= 1015.0 && s[2] >= 65.0 && s[2] <= 1015.0)
-                );
-                let protected = computer.gain;
-                gain.set_mode(Mode::Xy);
-                let returning = gain.update(&tone, 1.0 / 120.0).unwrap();
-                assert!(
-                    returning > protected && returning < unrotated,
-                    "return glides upward"
-                );
-            }
-        }
-    }
-
-    #[test]
-    fn short_and_changing_noise_windows_do_not_cause_unbounded_rise() {
-        let mut gain = super::AutoGain::new(1.0);
-        gain.set_auto(true, 1.0);
-        for count in 1..32 {
-            gain.update(&vec![0.001; count * 2], 1.0 / 120.0);
-            assert_eq!(gain.effective, 1.0);
-        }
-        let noise = stationary_noise(0.001);
-        for shift in 0..120 {
-            let mut next = noise.clone();
-            next.rotate_left((shift * 2) % noise.len());
-            gain.update(&next, 1.0 / 120.0);
-        }
-        assert_eq!(gain.effective, 1.0);
-        for peak in [0.00049, 0.0005, 0.01999, 0.02, 0.02001] {
-            let mut current = super::AutoGain::new(1.0);
-            current.set_auto(true, 1.0);
-            let result = run_for(&mut current, &stereo_tone(peak), 1.0, 120);
-            assert_eq!(
-                result > 1.0,
-                peak >= super::STRUCTURE_PEAK_MIN,
-                "peak={peak} result={result}"
-            );
-        }
-        run_for(&mut gain, &[], 10.0, 120);
-        assert_eq!(
-            gain.update(&stereo_tone(0.005), 1.0 / 120.0),
-            Some(1.0),
-            "starvation cannot be borrowed into one frame"
-        );
     }
 
     #[test]
@@ -1978,57 +2049,6 @@ mod tests {
     }
 
     #[test]
-    fn auto_framing_only_current_new_item_resets_protection_without_jumping_gain() {
-        let loud = stereo_tone(0.8);
-        let quiet = stereo_tone(0.005);
-        let mut gain = super::AutoGain::new(1.0);
-        gain.set_auto(true, 1.0);
-        gain.update(&loud, 1.0 / 60.0);
-        let effective = gain.effective;
-        for (proof, current) in [(0, 0), (1, 2), (1, 0)] {
-            gain.new_local_item(proof, current);
-            assert_eq!(gain.peak, 0.8);
-        }
-        gain.set_auto(true, 1.0);
-        assert_eq!(gain.peak, 0.8);
-        gain.new_local_item(2, 2);
-        assert_eq!(gain.peak, 0.0);
-        assert_eq!(gain.effective, effective);
-        gain.update(&quiet, 1.0 / 60.0);
-        let quiet_peak = gain.peak;
-        gain.new_local_item(2, 2);
-        assert_eq!(gain.peak, quiet_peak);
-        gain.new_local_item(2, 3);
-        assert_eq!(gain.peak, quiet_peak);
-        gain.new_local_item(3, 3);
-        assert_eq!(gain.peak, 0.0);
-    }
-
-    #[test]
-    fn auto_frame_scale_has_exact_bounds_and_changes_target_fill() {
-        let tone = stereo_tone(0.005);
-        for (requested, expected) in [
-            (f32::NAN, 1.0),
-            (0.0, super::AUTO_FRAME_MIN),
-            (0.25, 0.25),
-            (1.0, 1.0),
-            (1.125, 1.125),
-            (9.0, super::AUTO_FRAME_MAX),
-        ] {
-            let mut gain = super::AutoGain::new(1.0);
-            assert_eq!(gain.set_frame_scale(requested), expected);
-            gain.set_auto(true, 1.0);
-            let settled = run_for(&mut gain, &tone, 5.0, 120);
-            let expected_gain = (super::AUTO_FRAME_FILL * expected / 0.005)
-                .clamp(super::AUTO_GAIN_MIN, super::AUTO_GAIN_MAX);
-            assert!(
-                (settled - expected_gain).abs() < 0.2,
-                "requested={requested} settled={settled}"
-            );
-        }
-    }
-
-    #[test]
     fn grid_angle_uses_actual_local_or_known_current_remote_mode_only() {
         for mode in Mode::ALL {
             let expected = if mode == Mode::Xy45 {
@@ -2081,17 +2101,6 @@ mod tests {
             .trim_end_matches(',');
         assert_eq!(fields, "session:Arc::downgrade(&shared),mode");
         // Protocol K and G have no shared mode revision. These are adapter checks, not GPU or relay execution.
-    }
-
-    #[test]
-    fn manual_gain_disarms_auto_and_lands_exactly() {
-        let mut ag = super::AutoGain::new(1.0);
-        ag.set_auto(true, 1.0);
-        ag.update(&stereo_tone(0.25), 1.0 / 60.0);
-        assert!(ag.enabled());
-        assert_eq!(ag.set_manual(2.4), 2.4);
-        assert!(!ag.enabled());
-        assert_eq!(ag.update(&stereo_tone(0.01), 1.0 / 60.0), None);
     }
 
     // ---- geometry FX stage ----

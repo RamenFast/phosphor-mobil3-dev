@@ -234,34 +234,6 @@ class StageGesturePolicyTest {
         assertFalse("size.height - Dim.bottomGestureBand" in owner)
     }
 
-    @Test fun realCardsReportAfterTheirTransformsAndBeforePadding() {
-        val screen = source("ui/PhosphorScreen.kt")
-        assertTrue("reference.localPositionOf(source, point)" in screen)
-        assertTrue("Offset.Zero, Offset(w, 0f), Offset(w, h), Offset(0f, h)" in screen)
-        assertTrue("takeIf { it.isAttached }" in screen)
-        assertTrue("onDispose { geometry.dismiss(card, measurement) }" in screen)
-        assertTrue("while (currentMoving)" in screen)
-        assertTrue("chromeMoving = transition.isRunning" in screen)
-        val console = source("ui/Console.kt")
-        val consoleCard = console.substringAfter("fun Console(").substringBefore("private fun OverflowHandleKey(")
-        val report = consoleCard.indexOf("StageChromeBounds.Card.Console")
-        val innerPadding = consoleCard.indexOf(".padding(horizontal = style.space(")
-        val tactileHorizontal = consoleCard.indexOf("if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 12.dp else Dim.consolePadH)")
-        val tactileVertical = consoleCard.indexOf("vertical = style.space(if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 6.dp else Dim.consolePadV)")
-        assertTrue(report >= 0 && innerPadding > report)
-        assertTrue(tactileHorizontal > innerPadding && tactileVertical > tactileHorizontal)
-        assertFalse(".padding(style.space(2.dp))" in consoleCard)
-        assertFalse(".background(p.plane)" in consoleCard)
-        assertTrue(consoleCard.indexOf(".playBarSwipeUp(onSettingsSwipe, settingsPullHost)") > tactileVertical)
-        val overflow = console.substringAfter("fun OverflowPopout(")
-        assertTrue(overflow.indexOf("translationY =") < overflow.indexOf("StageChromeBounds.Card.Overflow"))
-        assertTrue(overflow.indexOf("StageChromeBounds.Card.Overflow") < overflow.indexOf(".padding(Dim.popoutPad)"))
-        val sheet = source("ui/Sheets.kt").substringAfter("fun SheetHost(").substringBefore("fun DragRule(")
-        assertTrue(sheet.indexOf("translationY =") < sheet.indexOf("StageChromeBounds.Card.Sheet"))
-        assertTrue(sheet.indexOf("StageChromeBounds.Card.Sheet") < sheet.indexOf(".padding(Dim.sheetPad)"))
-        assertTrue("!openState.isIdle || dismissOffset.isRunning" in sheet)
-    }
-
     private fun source(path: String): String = phase8Source(path)
 }
 

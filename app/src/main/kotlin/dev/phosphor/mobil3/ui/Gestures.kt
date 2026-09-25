@@ -12,6 +12,16 @@ import androidx.compose.foundation.border
 import androidx.compose.foundation.gestures.awaitEachGesture
 import androidx.compose.foundation.gestures.awaitFirstDown
 import androidx.compose.foundation.layout.Box
+import androidx.compose.foundation.layout.Column
+import androidx.compose.foundation.layout.fillMaxHeight
+import androidx.compose.foundation.layout.fillMaxSize
+import androidx.compose.foundation.layout.height
+import androidx.compose.foundation.layout.size
+import androidx.compose.foundation.layout.width
+import androidx.compose.foundation.layout.windowInsetsPadding
+import androidx.compose.ui.Alignment
+import androidx.compose.ui.semantics.contentDescription
+import androidx.compose.ui.semantics.semantics
 import androidx.compose.foundation.layout.offset
 import androidx.compose.foundation.layout.padding
 import androidx.compose.runtime.Composable
@@ -266,6 +276,11 @@ fun Modifier.consoleSeekGesture(
 class RibbonState {
     var visible by mutableStateOf(false)
     var text by mutableStateOf("")
+    /** Size or glow rail: marker position 0..1 (bottom..top), optional tick, end words. */
+    var rail by mutableStateOf<Float?>(null)
+    var railTick by mutableStateOf<Float?>(null)
+    var railTop by mutableStateOf("closer")
+    var railBottom by mutableStateOf("farther")
     var at by mutableStateOf(Offset.Zero)
     var lastTouchMs by mutableLongStateOf(0L)
 }
@@ -472,7 +487,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         val d = pressed[0].position - pressed[0].previousPosition
                         glow = (glow - d.y * 0.0011f).coerceIn(0f, 0.98f)
                         host.setGlowAbsolute(glow)
-                        ribbon.text = "glow %.0f %%".format(glow * 100)
+                        ribbon.text = ""
+                        ribbon.rail = glow / 0.98f
+                        ribbon.railTick = null
+                        ribbon.railTop = "brighter"
+                        ribbon.railBottom = "dimmer"
                         ribbon.at = centroid
                         ribbon.visible = true
                         ribbon.lastTouchMs = System.currentTimeMillis()
@@ -484,21 +503,22 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                                 host.dollyBy((1f - zoom) * 2.2f)
                             } else if (host.gainLocked()) {
                                 ribbon.text = when {
-                                    host.autoFrameArmed() -> "auto frame · view locked"
-                                    host.gainAutoArmed() -> "desktop auto · view locked"
+                                    host.autoFrameArmed() -> "view locked"
+                                    host.gainAutoArmed() -> "view locked"
                                     else -> "view locked"
                                 }
+                                ribbon.rail = null
                             } else {
                                 val adjusted = StageZoomPolicy.adjust(gain, autoFrameScale, host.autoFrameArmed(), zoom)
                                 if (adjusted.owner == StageZoomOwner.AUTO_FRAME) {
                                     autoFrameScale = adjusted.value
                                     host.setAutoFrameScale(autoFrameScale)
                                     frameEdited = true
-                                    ribbon.text = "auto frame × %.3f".format(autoFrameScale)
+                                    ribbon.showSize(RibbonRail.frame(autoFrameScale), RibbonRail.frame(1f))
                                 } else {
                                     gain = adjusted.value
                                     host.setGainAbsolute(gain)
-                                    ribbon.text = "manual gain × %.2f".format(gain)
+                                    ribbon.showSize(GainWords.toSlider(gain), null)
                                 }
                                 if (adjusted.crossedNeutral) Haptics.light(host.view())
                             }
@@ -521,10 +541,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                             host.orbitBy(d.x * 0.006f, d.y * 0.006f)
                         } else if (host.gainLocked()) {
                             ribbon.text = when {
-                                host.autoFrameArmed() -> "auto frame · view locked"
-                                host.gainAutoArmed() -> "desktop auto · view locked"
+                                host.autoFrameArmed() -> "view locked"
+                                host.gainAutoArmed() -> "view locked"
                                 else -> "view locked"
                             }
+                            ribbon.rail = null
                             ribbon.at = ch.position
                             ribbon.visible = true
                             ribbon.lastTouchMs = System.currentTimeMillis()
@@ -536,11 +557,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                                 autoFrameScale = adjusted.value
                                 host.setAutoFrameScale(autoFrameScale)
                                 frameEdited = true
-                                ribbon.text = "auto frame × %.3f".format(autoFrameScale)
+                                ribbon.showSize(RibbonRail.frame(autoFrameScale), RibbonRail.frame(1f))
                             } else {
                                 gain = adjusted.value
                                 host.setGainAbsolute(gain)
-                                ribbon.text = "manual gain × %.2f".format(gain)
+                                ribbon.showSize(GainWords.toSlider(gain), null)
                             }
                             if (adjusted.crossedNeutral) Haptics.light(host.view())
                             ribbon.at = ch.position
@@ -564,7 +585,23 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
         }
     }
 
-// The readout ribbon — a quiet mono etching beside the thumb; fades 600 ms after release.
+internal object RibbonRail {
+    private val lo = kotlin.math.ln(AutoFramePreference.MIN)
+    private val hi = kotlin.math.ln(AutoFramePreference.MAX)
+    fun frame(scale: Float): Float =
+        ((kotlin.math.ln(AutoFramePreference.normalize(scale)) - lo) / (hi - lo)).coerceIn(0f, 1f)
+}
+
+internal fun RibbonState.showSize(position: Float, tick: Float?) {
+    text = ""
+    rail = position
+    railTick = tick
+    railTop = "closer"
+    railBottom = "farther"
+}
+
+// Gesture feedback: a thin rail at the screen edge (size or glow), or a short word. No numbers.
+// Fades 600 ms after release.
 @Composable
 fun GestureRibbon(ribbon: RibbonState, p: Palette) {
     LaunchedEffect(ribbon.lastTouchMs) {
@@ -574,20 +611,47 @@ fun GestureRibbon(ribbon: RibbonState, p: Palette) {
         }
     }
     AnimatedVisibility(visible = ribbon.visible, enter = fadeIn(), exit = fadeOut()) {
-        Box(
-            Modifier.offset {
-                IntOffset(
-                    (ribbon.at.x + 44f).roundToInt(),
-                    (ribbon.at.y - 64f).roundToInt(),
-                )
-            },
-        ) {
+        val rail = ribbon.rail
+        if (rail != null) {
+            Box(Modifier.fillMaxSize().windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 16.dp))) {
+                Column(
+                    Modifier.align(Alignment.CenterEnd).padding(end = 14.dp)
+                        .semantics(mergeDescendants = true) {
+                            contentDescription = "${ribbon.railTop} to ${ribbon.railBottom}"
+                        },
+                    horizontalAlignment = Alignment.CenterHorizontally,
+                ) {
+                    Mono(ribbon.railTop, p.ink2, Type.dataSm)
+                    Box(Modifier.padding(vertical = 8.dp).width(24.dp).height(240.dp)) {
+                        Box(Modifier.align(Alignment.Center).width(Dim.hairline).fillMaxHeight().background(p.line))
+                        ribbon.railTick?.let { tick ->
+                            Box(Modifier.align(Alignment.TopCenter)
+                                .offset(y = (240.dp - 1.dp) * (1f - tick))
+                                .width(12.dp).height(1.dp).background(p.ink2))
+                        }
+                        Box(Modifier.align(Alignment.TopCenter)
+                            .offset(y = (240.dp - 8.dp) * (1f - rail))
+                            .size(width = 20.dp, height = 8.dp).background(p.accent))
+                    }
+                    Mono(ribbon.railBottom, p.ink2, Type.dataSm)
+                }
+            }
+        } else {
             Box(
-                Modifier
-                    .background(p.surface.copy(alpha = 0.80f))
-                    .border(Dim.hairline, p.line)
-                    .padding(horizontal = 8.dp, vertical = 4.dp),
-            ) { Mono(ribbon.text, p.ink, Type.dataLg) }
+                Modifier.offset {
+                    IntOffset(
+                        (ribbon.at.x + 44f).roundToInt(),
+                        (ribbon.at.y - 64f).roundToInt(),
+                    )
+                },
+            ) {
+                Box(
+                    Modifier
+                        .background(p.surface.copy(alpha = 0.80f))
+                        .border(Dim.hairline, p.line)
+                        .padding(horizontal = 8.dp, vertical = 4.dp),
+                ) { Mono(ribbon.text, p.ink, Type.dataLg) }
+            }
         }
     }
 }

@@ -37,6 +37,8 @@ import androidx.compose.runtime.rememberUpdatedState
 import androidx.compose.runtime.setValue
 import androidx.compose.ui.Alignment
 import androidx.compose.ui.Modifier
+import androidx.compose.ui.semantics.semantics
+import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.draw.clip
 import androidx.compose.ui.draw.drawBehind
 import androidx.compose.ui.draw.drawWithContent
@@ -78,7 +80,36 @@ fun Modifier.burnInWalk(reduced: Boolean, visible: Boolean = true): Modifier {
     }
 }
 
-// ── Status band — read-only, mono, flanking the punch-hole. Never a tap target. ──
+/** Plain words for what is playing. The stage never shows engineering labels to users. */
+object StageWords {
+    fun source(label: String, noSignal: Boolean, trackTitle: String?): String {
+        val base = when {
+            label == "mic" -> "microphone"
+            label == "capture" -> "everything playing"
+            label.startsWith("capture ·") -> "everything playing · starting"
+            label == "deck" -> trackTitle?.takeIf { it.isNotBlank() } ?: "my library"
+            label == "no source" -> return "choose a sound · SRC"
+            else -> label
+        }
+        return if (noSignal) "$base · no sound yet" else base
+    }
+}
+
+// ── Quiet line — what is playing, in words, no plate. The default stage chrome. ──
+@Composable
+fun QuietBand(state: ScopeUiState, p: Palette, reduced: Boolean, chromeVisible: Boolean,
+    onHeightChanged: (Int) -> Unit = {}) {
+    val style = LocalRoomStyle.current
+    Box(Modifier.fillMaxWidth().onSizeChanged { onHeightChanged(it.height) }
+        .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
+        .padding(horizontal = style.space(20.dp), vertical = style.space(10.dp))
+        .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip)) {
+        Mono(StageWords.source(state.sourceLabel, state.noSignal, state.trackTitle),
+            p.ink2.copy(alpha = 0.72f), Type.dataSm, maxLines = 2)
+    }
+}
+
+// ── Status band — developer view only. Read-only, mono, flanking the punch-hole. ──
 @Composable
 fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Boolean,
     chromeVisible: Boolean = true, onHeightChanged: (Int) -> Unit = {}) {
@@ -225,15 +256,13 @@ fun Console(
                     p.surface.copy(alpha = Dim.consoleAlpha * style.panelAlphaScale)
                 )
                 .border(Dim.hairline, p.line, cardShape)
-                .padding(horizontal = style.space(
-                    if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 12.dp else Dim.consolePadH),
-                    vertical = style.space(if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 6.dp else Dim.consolePadV))
+                .padding(horizontal = style.space(Dim.consolePadH), vertical = style.space(Dim.consolePadV))
                 // The play bar owns this deliberate upward reveal. Stage drags remain
                 // gain/orbit gestures, and horizontal seek scrubs keep their lane.
                 .playBarSwipeUp(onSettingsSwipe, settingsPullHost),
         ) {
-            val tactile = ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport) && state.appearanceValue != null
-            if (!tactile) {
+            // Transpose: one row in the S25 key language for every look (design/DIRECTION.md).
+            run {
                 state.trackTitle?.let { title ->
                     Mono(
                         buildString {
@@ -256,12 +285,9 @@ fun Console(
                     Spacer(Modifier.height(style.space(Dim.gap)))
                 }
             }
-            if (tactile) {
-                TactileConsoleKeybed(state, p, reduced, onMode, onSrc, onPlay, onPrev, onNext, onSeek,
-                    onMore, moreActive, overflowPullHost)
-            } else Row(verticalAlignment = Alignment.CenterVertically) {
+            Row(verticalAlignment = Alignment.CenterVertically) {
                 if (hasTransport && (!capture || state.captureCanPrevious)) {
-                    FlatKey("◂◂", p) { Haptics.light(view); onPrev() }
+                    FlatKey("◂◂", p, Modifier.semantics { contentDescription = "previous" }) { Haptics.light(view); onPrev() }
                     Spacer(Modifier.width(style.space(Dim.gap)))
                 }
                 if (!capture || state.captureCanPlay || state.live) {
@@ -281,7 +307,7 @@ fun Console(
                 }
                 if (hasTransport && (!capture || state.captureCanNext)) {
                     Spacer(Modifier.width(style.space(Dim.gap)))
-                    FlatKey("▸▸", p) { Haptics.light(view); onNext() }
+                    FlatKey("▸▸", p, Modifier.semantics { contentDescription = "next" }) { Haptics.light(view); onNext() }
                 }
                 Spacer(Modifier.width(style.space(Dim.gapLg)))
                 // Reference-designator conventions, honestly applied: V = the tube
@@ -323,6 +349,7 @@ private fun OverflowHandleKey(
             .background(p.surface)
             .border(Dim.hairline, if (active || pressed) p.accent else p.line)
             .overflowHandleGesture(pullHost, onTap) { pressed = it }
+            .semantics { contentDescription = "more controls" }
             .padding(horizontal = style.space(10.dp), vertical = style.space(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -478,7 +505,7 @@ fun OverflowPopout(
         val cells = listOf(
             Triple("PiP", SettingsGlyph.Display, onPictureInPicture),
             Triple("light", SettingsGlyph.BeamColor, onLight),
-            Triple("room", SettingsGlyph.Room, onRoom),
+            Triple("look", SettingsGlyph.Room, onRoom),
             Triple("settings", SettingsGlyph.Knob, onSettings),
         )
         cells.chunked(2).forEachIndexed { index, gridRow ->
@@ -496,34 +523,11 @@ fun OverflowPopout(
         Spacer(Modifier.height(Dim.gap))
         Box(Modifier.fillMaxWidth().height(Dim.hairline).background(p.line))
         Spacer(Modifier.height(Dim.gap))
-        // Live quick settings share the available width and show state beneath each icon.
-        Row(
-            Modifier.fillMaxWidth(),
-            horizontalArrangement = Arrangement.SpaceEvenly,
-        ) {
-            QuickToggle(
-                SettingsGlyph.Fps,
-                when (state.fpsValue) { 0 -> "120"; -1 -> "unc"; else -> "${state.fpsValue}" },
-                active = true, p = p, onTap = onFps,
-            )
-            // HUD and status-band visibility are independent display controls.
-            QuickToggle(
-                SettingsGlyph.Hud,
-                when (state.hudMode) { 0 -> "on"; 1 -> "auto"; else -> "off" },
-                active = state.hudMode != 2,
-                p = p,
-                onTap = onHud,
-            )
-            QuickToggle(
-                SettingsGlyph.Grid,
-                if (state.grid) "on" else "off",
-                active = state.grid, p = p, onTap = onGrid,
-            )
-        }
+        // One quick toggle. Frame rate, HUD and AUTO PiP live once, in Settings.
         ChipCell(
-            "AUTO PiP · " + if (state.pipAutoEnter) "on" else "off",
-            active = state.pipAutoEnter, p = p, small = true,
-            onClick = onPipAutoEnter,
+            "GRID · " + if (state.grid) "on" else "off",
+            active = state.grid, p = p, small = true,
+            onClick = onGrid,
         )
     }
 }

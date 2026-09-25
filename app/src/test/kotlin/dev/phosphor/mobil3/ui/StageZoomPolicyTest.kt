@@ -22,8 +22,9 @@ class StageZoomPolicyTest {
         assertEquals(StageZoomOwner.AUTO_FRAME, up.owner)
     }
 
-    @Test fun manualModeRetainsPointOneToSevenSemantics() {
-        assertEquals(7f, StageZoomPolicy.adjust(6f, 0.4f, false, 2f).value)
+    @Test fun manualModeUsesTheSharedGainScale() {
+        assertEquals(12f, StageZoomPolicy.adjust(6f, 0.4f, false, 2f).value)
+        assertEquals(GainScale.MAX, StageZoomPolicy.adjust(40f, 0.4f, false, 2f).value)
         assertEquals(0.1f, StageZoomPolicy.adjust(0.2f, 1.1f, false, 0.1f).value)
         assertEquals(StageZoomOwner.MANUAL_GAIN, StageZoomPolicy.adjust(2f, 1f, false, 1.1f).owner)
     }

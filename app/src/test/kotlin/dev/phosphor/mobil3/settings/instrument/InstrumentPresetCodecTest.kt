@@ -170,7 +170,7 @@ class InstrumentPresetCodecTest {
     }
 
     @Test fun decimalBoundsAreCheckedBeforeFloatRoundingAndAllBansAreTyped() {
-        mapOf("gain" to "7.0000000001", "focus" to "0.29999999999", "glow" to "0.9800000001",
+        mapOf("gain" to "64.0000000001", "focus" to "0.29999999999", "glow" to "0.9800000001",
             "geom_amount" to "-0.00000000000001", "beam_energy" to "30.00000001").forEach { (key, value) ->
             reject { InstrumentPresetCodec.decodeSetup(setupJson.replace(Regex("\"$key\":[0-9.]+"), "\"$key\":$value")) }
         }

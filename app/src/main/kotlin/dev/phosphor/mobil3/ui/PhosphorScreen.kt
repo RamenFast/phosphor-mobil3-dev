@@ -188,6 +188,7 @@ interface ScopeActions : InstrumentPresetActions, AppearanceActions {
     fun resetAutoFrameScale()
     fun finishAutoFrameScale() {}
     fun setViewLock(on: Boolean)
+    fun setDeveloperView(on: Boolean)
     fun setHudMode(mode: Int)
     fun setFullscreen(on: Boolean)
     fun setLingerBackground(on: Boolean)
@@ -399,6 +400,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun resetAutoFrameScale() = actions.resetAutoFrameScale()
             override fun finishAutoFrameScale() = actions.finishAutoFrameScale()
             override fun setViewLock(on: Boolean) = actions.setViewLock(on)
+            override fun setDeveloperView(on: Boolean) = actions.setDeveloperView(on)
             override fun setBeamEnergy(e: Float) = actions.setBeamEnergy(e)
             override fun setGlow(g: Float) = actions.setGlow(g)
             override fun tapBeamRandom() = actions.tapBeamRandom()
@@ -703,7 +705,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)
             // The gesture readout ribbon rides above the stage.
             GestureRibbon(ribbon, p)
-            if (sheet == Sheet.NONE && !overflowComposed && !state.pip &&
+            if (state.developerView && sheet == Sheet.NONE && !overflowComposed && !state.pip &&
                 (state.noSignal || state.sourceLabel == "no source" || (!state.live && state.captureStatus.isNotBlank()) || state.remoteFailure.isNotBlank())) {
                 val signalTop = StageReadability.signalTopDp(bandShown, with(density) { statusBandHeightPx.toDp().value }).dp
                 val plotPalette = p.copy(ink = androidx.compose.ui.graphics.Color(
@@ -712,7 +714,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     SignalCheckAction("SIGNAL CHECK", plotPalette) { sheet = Sheet.SIGNAL_CHECK }
                 }
             }
-            if (state.displayPaused || state.displayPresentPending) {
+            if (state.developerView && (state.displayPaused || state.displayPresentPending)) {
                 val pausePalette = p.readableOn(p.plane)
                 Prose(state.pauseLabel, pausePalette.muted,
                     modifier = Modifier.align(Alignment.TopCenter).padding(top = 56.dp)
@@ -721,7 +723,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
 
             // Layer 1a: read-only status band.
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.
-            if (bandShown && sheet == Sheet.NONE) {
+            if (bandShown && sheet == Sheet.NONE && !state.developerView) {
+                QuietBand(state, p, reduced, chromeVisible = !overflowComposed,
+                    onHeightChanged = { statusBandHeightPx = it })
+            } else if (bandShown && sheet == Sheet.NONE) {
                 StatusBand(
                     state, p, reduced,
                     hudVisible = state.hudMode == 0 ||

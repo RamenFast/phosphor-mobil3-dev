@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.settings.instrument
 
+import dev.phosphor.mobil3.ui.GainScale
 import dev.phosphor.mobil3.ui.LightCycleGuard
 import dev.phosphor.mobil3.ui.LightRgb
 import dev.phosphor.mobil3.ui.LightSettings
@@ -49,7 +50,7 @@ class InstrumentSetup(
             "invalid_setup", "Random mode needs at least two eligible modes")
         presetRequire(geomFx in 0..4, "invalid_setup", "Geometry effect must be within 0..4")
         finiteRange("geom_amount", geomAmount, 0f, 1f)
-        finiteRange("gain", gain, 0.1f, 7f)
+        finiteRange("gain", gain, GainScale.MIN, GainScale.MAX)
         finiteRange("focus", focus, 0.3f, 3f)
         finiteRange("beam_energy", beamEnergy, 1f, 30f)
         finiteRange("glow", glow, 0f, 0.98f)

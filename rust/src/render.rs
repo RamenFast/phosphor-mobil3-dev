@@ -40,7 +40,7 @@ pub enum Cmd {
     /// DSP reconstruction multiplier. Input stays 48 kHz; 1/2/4 reconstruct at
     /// 48/96/192 kHz while preserving one decay/deposit per displayed frame.
     SetOversample(u8),
-    /// Manual deflection gain (the figure swelling under a thumb). Clamped 0.1..7.
+    /// Manual deflection gain (the figure swelling under a thumb). Clamped 0.1..64 (engine::GAIN_MAX).
     SetGain(f32),
     /// Mobile-local automatic visual framing. Manual SetGain always disarms it.
     SetGainAuto(bool),
@@ -288,7 +288,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut computer = Computer::new();
     crate::engine::set_reconstruction_rate(&mut computer, 1);
     computer.mode = Mode::Xy;
-    let mut manual_gain = defaults.gain.clamp(0.1, 7.0);
+    let mut manual_gain = crate::engine::clamp_gain(defaults.gain);
     computer.gain = manual_gain;
     let mut auto_gain = crate::engine::AutoGain::new(manual_gain);
     let mut auto_gain_last = std::time::Instant::now();
@@ -564,13 +564,17 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     log::info!("view rotation: {}°", view_rotation * 90);
                 }
                 Cmd::SetGain(g) => {
-                    manual_gain = g.clamp(0.1, 7.0);
+                    manual_gain = crate::engine::clamp_gain(g);
                     computer.gain = auto_gain.set_manual(manual_gain);
                     GAIN_AUTO.store(false, Ordering::Relaxed);
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
                 }
                 Cmd::SetGainAuto(on) => {
                     computer.gain = auto_gain.set_auto(on, manual_gain);
+                    if !on {
+                        // One size scale: leaving AUTO keeps the current size as the manual gain.
+                        manual_gain = computer.gain;
+                    }
                     GAIN_AUTO.store(on, Ordering::Relaxed);
                     GAIN_MILLI.store((computer.gain * 1000.0) as u32, Ordering::Relaxed);
                     log::info!("auto framing: {on}");

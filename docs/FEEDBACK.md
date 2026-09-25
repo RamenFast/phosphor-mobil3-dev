@@ -662,3 +662,11 @@ Repeat signals: auto-gain/zoom (B20, Chapel report) ×2 after this attempt. Sett
 Prime's miss: source tests, numeric logs and screenshots were treated as acceptance. They did not show whether the instrument feels usable.
 The `×63.69·a` label is a raw internal gain readout plus an AUTO marker. It carries no meaning for a user.
 No further implementation follows from this entry. Direction and salvage approach need Ben's decision.
+
+## 2026-09-24 Transpose Phase 1 · verify (Prime)
+
+- Mic "glitches all the time": AUTO instant-drop replaced by a gliding controller (clicks ignored, loud settles in ~0.3 s, quiet regrows gently). Status: **verify**.
+- `×63.69·a` and fps/segs on stage: moved to the developer view; stage shows one quiet line in words. Status: **verify**.
+- Zoom numbers: replaced by a closer/farther rail; AUTO and manual share one size scale; leaving AUTO keeps the size. Status: **verify**.
+- Console: S25 one-row key language for every look; ⋯ popout trimmed to 4 destinations + GRID. Status: **verify**.
+Test card: `docs/plans/transpose/TEST-CARD-1.md`.

@@ -1231,14 +1231,14 @@ internal fun SettingsSheet(
             SignalCheckEntry(state, p)
             val remoteGeometry = state.remote && state.remoteGeometry
             DragRule(
-                "MANUAL GAIN · TAKES OVER AUTO",
-                if (remoteGeometry) state.gain else state.manualGain,
-                0.1f, 7.0f, p, { "×%.2f".format(it) },
-            ) { actions.setGainAbsolute(it) }
+                "SIZE",
+                GainWords.toSlider(if (remoteGeometry) state.gain else state.manualGain),
+                0f, 1f, p, { GainWords.word(GainWords.fromSlider(it)) },
+            ) { actions.setGainAbsolute(GainWords.fromSlider(it)) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {
                     ChipCell(
-                        (if (remoteGeometry) "DESKTOP AUTO-GAIN · " else "AUTO-FRAMING · ") +
+                        (if (remoteGeometry) "DESKTOP AUTO · " else "AUTO SIZE · ") +
                             if (state.autoGain) "on" else "off",
                         active = state.autoGain, p = p, small = true,
                     ) { actions.setGainAuto(!state.autoGain) }
@@ -1250,29 +1250,14 @@ internal fun SettingsSheet(
                     ) { actions.setViewLock(!state.viewLock) }
                 }
             }
-            Prose(
-                "LOCAL AUTO FRAMING · ×%.3f%s".format(
-                    state.autoFrameScale,
-                    if (remoteGeometry) " · saved, not applied to desktop geometry" else "",
-                ),
-                p.muted, modifier = Modifier.padding(top = 6.dp),
-            )
-            FlatKey("RESET AUTO FRAMING · ×1.000", p) { actions.resetAutoFrameScale() }
+            FlatKey("RESET SIZE", p) { actions.resetAutoFrameScale() }
             if (state.autoFrameSaveStatus.isNotEmpty()) {
                 Prose(state.autoFrameSaveStatus, p.muted)
                 if (state.autoFrameSaveStatus.contains("failed")) {
                     FlatKey("RETRY FRAMING SAVE", p) { actions.finishAutoFrameScale() }
                 }
             }
-            Prose(
-                if (remoteGeometry) {
-                    "Remote geometry keeps desktop gain ownership. The manual rule and AUTO command go to the source machine."
-                } else {
-                    "With AUTO on, stage pinch and upward drag bring local structure closer and keep AUTO on. " +
-                        "The manual rule turns AUTO off. VIEW LOCK blocks both stage zoom gestures."
-                },
-                p.muted, modifier = Modifier.padding(top = 6.dp),
-            )
+
         }
         val beam: @Composable () -> Unit = {
             DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
@@ -1551,6 +1536,22 @@ internal fun SettingsSheet(
             SettingsGlyphRow("manual · how it all works", SettingsGlyph.About, p) {
                 actions.openManual()
             }
+            // Seven taps on the version open the developer view (engineering readouts).
+            var versionTaps by remember { mutableIntStateOf(0) }
+            Mono(
+                "version ${dev.phosphor.mobil3.BuildConfig.VERSION_NAME}" +
+                    if (state.developerView) " · developer view on" else "",
+                p.muted, Type.dataXs,
+                Modifier.fillMaxWidth().heightIn(min = 48.dp)
+                    .clickable {
+                        versionTaps += 1
+                        if (versionTaps >= 7) {
+                            versionTaps = 0
+                            actions.setDeveloperView(!state.developerView)
+                        }
+                    }
+                    .padding(vertical = 14.dp),
+            )
             // The bench keeps a service stamp: the REAL date the knobs were last
             // saved (Annotated rooms only — a calibration sticker, typeset).
             if (LocalRoomStyle.current.designators && state.calDate.isNotBlank()) {
@@ -1633,6 +1634,7 @@ interface SheetActions : AppearanceActions {
     fun setFullscreen(on: Boolean)
     fun setLingerBackground(on: Boolean)
     fun setViewLock(on: Boolean)
+    fun setDeveloperView(on: Boolean)
     fun isScopeRotationLocked(): Boolean
     fun setScopeRotationLocked(locked: Boolean)
     fun isUiPlacementLocked(): Boolean

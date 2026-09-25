@@ -7,8 +7,8 @@ import android.content.ComponentName
 import android.content.Context
 import android.content.Intent
 import android.content.IntentFilter
-import android.content.pm.PackageManager
 import android.content.pm.ActivityInfo
+import android.content.pm.PackageManager
 import android.content.res.Configuration
 import android.graphics.Rect
 import android.media.projection.MediaProjectionConfig
@@ -45,26 +45,27 @@ import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
 import com.google.common.util.concurrent.MoreExecutors
+import dev.phosphor.mobil3.settings.SettingsArchive
+import dev.phosphor.mobil3.settings.appearance.*
+import dev.phosphor.mobil3.settings.instrument.*
+import dev.phosphor.mobil3.ui.AppearanceMigration
+import dev.phosphor.mobil3.ui.AppearancePalette
+import dev.phosphor.mobil3.ui.AutoFramePreference
+import dev.phosphor.mobil3.ui.AutoFrameSave
+import dev.phosphor.mobil3.ui.GainScale
+import dev.phosphor.mobil3.ui.LightCycleGuard
+import dev.phosphor.mobil3.ui.LightRgb
+import dev.phosphor.mobil3.ui.LightSettings
 import dev.phosphor.mobil3.ui.Palette
 import dev.phosphor.mobil3.ui.PhosphorScreen
 import dev.phosphor.mobil3.ui.RotationDetent
 import dev.phosphor.mobil3.ui.ScopeActions
 import dev.phosphor.mobil3.ui.ScopeUiState
+import dev.phosphor.mobil3.ui.applyPresetLight
+import dev.phosphor.mobil3.ui.overridden
 import dev.phosphor.mobil3.ui.readReducedMotion
 import dev.phosphor.mobil3.ui.rollModeExcluding
-import dev.phosphor.mobil3.ui.applyPresetLight
-import dev.phosphor.mobil3.ui.LightSettings
-import dev.phosphor.mobil3.ui.LightRgb
-import dev.phosphor.mobil3.ui.LightCycleGuard
-import dev.phosphor.mobil3.settings.SettingsArchive
-import dev.phosphor.mobil3.settings.appearance.*
-import dev.phosphor.mobil3.ui.AppearanceMigration
-import dev.phosphor.mobil3.ui.AppearancePalette
-import dev.phosphor.mobil3.ui.AutoFramePreference
-import dev.phosphor.mobil3.ui.AutoFrameSave
 import dev.phosphor.mobil3.ui.style
-import dev.phosphor.mobil3.ui.overridden
-import dev.phosphor.mobil3.settings.instrument.*
 import java.io.ByteArrayOutputStream
 import java.io.File
 import java.util.UUID
@@ -2203,6 +2204,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.bandMode = p.getInt("band_mode", 1)
         ui.fullscreen = p.getBoolean("fullscreen", true)
         ui.viewLock = p.getBoolean("view_lock", false)
+        ui.developerView = p.getBoolean("developer_view", false)
         scopeRotationLockState = p.getBoolean("scope_rotation_locked", true)
         lockedScopeOrientation = p.getInt(
             "scope_locked_orientation",
@@ -2265,6 +2267,11 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setLingerBackground(on: Boolean) {
         ui.lingerBackground = on
         prefs().edit { putBoolean(BackgroundLifecyclePolicy.LINGER_KEY, on) }
+    }
+
+    override fun setDeveloperView(on: Boolean) {
+        ui.developerView = on
+        prefs().edit { putBoolean("developer_view", on) }
     }
 
     override fun setViewLock(on: Boolean) {
@@ -2389,7 +2396,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun setFocus(focus: Float) = instrumentEdit { ui.focus = focus; PhosphorNative.setFocus(focus) }
 
     override fun setGainAbsolute(g: Float) = instrumentEdit {
-        gainValue = g.coerceIn(0.1f, 7f)
+        gainValue = GainScale.clamp(g)
         PhosphorNative.setGain(gainValue)
         ui.gain = gainValue
         ui.manualGain = gainValue
@@ -2440,6 +2447,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     override fun setGainAuto(on: Boolean) = instrumentEdit {
+        if (!on && ui.localAutoGain && !ui.remoteGeometry) {
+            // One size scale: leaving AUTO keeps what the user sees as the manual size.
+            gainValue = GainScale.clamp(PhosphorNative.gainNow())
+            ui.gain = gainValue
+            ui.manualGain = gainValue
+            PhosphorNative.setGain(gainValue)
+            tick.removeCallbacks(persistGain)
+            tick.post(persistGain)
+        }
         prefs().edit { putBoolean("auto_gain", on) }
         // Keep the local renderer ready for local/captured remote audio, while a
         // remote source also receives the desktop's existing typed gain verb.

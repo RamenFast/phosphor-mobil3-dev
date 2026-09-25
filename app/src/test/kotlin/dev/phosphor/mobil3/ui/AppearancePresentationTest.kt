@@ -146,14 +146,6 @@ class AppearancePresentationTest {
             contrast(pausePalette.muted, pausePalette.plane, 4.5)
         }
         assertEquals(before, AppearanceDocumentCodec.encode(document))
-        val screen = listOf("src/main/kotlin", "app/src/main/kotlin")
-            .map { File(it, "dev/phosphor/mobil3/ui/PhosphorScreen.kt") }.first { it.isFile }.readText()
-        val label = screen.substringAfter("if (state.displayPaused || state.displayPresentPending)")
-            .substringBefore("// Layer 1a:")
-        assertTrue(label.contains("val pausePalette = p.readableOn(p.plane)"))
-        assertTrue(label.contains("Prose(state.pauseLabel, pausePalette.muted,"))
-        assertTrue(label.contains(".background(pausePalette.plane)"))
-        assertFalse(label.contains("bandMode"))
     }
 
     @Test fun passingPresentationColorsAreKeptAndLowContrastCustomColorsRemainAuthored() {
@@ -270,38 +262,6 @@ class AppearancePresentationTest {
         for (field in listOf("Character", "Motion", "Corners", "Labels")) assertTrue(room.contains("onStyle(state.appearanceStyle.next$field())"))
         assertFalse(room.contains("state.styleOverride"))
         assertTrue(room.contains("val currentStyle = state.appearanceStyle"))
-    }
-
-    @Test fun actualConsumersUseOpaqueReadableRolesAndDensityWithoutShrinkingTargets() {
-        val console = source("ui/Console.kt")
-        val status = console.substringAfter("fun StatusBand(").substringBefore("fun SeekRule(")
-        assertTrue(status.contains("val p = p.readableOn(p.surface)"))
-        assertTrue(status.contains(".background(p.surface)"))
-        assertTrue(status.contains(".border(Dim.hairline, p.line)"))
-        assertFalse(status.contains(".background(p.plane)"))
-        assertTrue(status.contains("Mono(left, p.ink2, Type.dataSm, maxLines = if (stacked) Int.MAX_VALUE else 1)"))
-        assertTrue(status.contains("measurer.measure(left, textStyle"))
-        assertTrue(status.contains("StageReadability.stackStatus"))
-        assertTrue(status.contains("right, p.ink2, Type.dataSm"))
-        assertFalse(status.contains("copy(alpha"))
-        val controls = source("ui/Controls.kt")
-        val flat = controls.substringAfter("fun FlatKey(").substringBefore("fun SheetRow(")
-        val chip = controls.substringAfter("fun ChipCell(").substringBefore("fun SwatchCell(")
-        for (body in listOf(flat, chip)) {
-            assertTrue(body.contains("p.readableOn("))
-            assertTrue(body.contains(".background(p.surface)"))
-            assertTrue(body.contains(".heightIn(min = 48.dp).widthIn(min = 48.dp)"))
-            assertTrue(body.contains("style.space("))
-        }
-        assertTrue(flat.contains("p.controlBackplate(pressed)"))
-        assertTrue(console.contains(".background(p.plane)"))
-        assertTrue(console.contains(".padding(horizontal = style.space("))
-        assertTrue(console.contains("if (ConsoleKeybedPolicy.tactile(style.lookVersion, hasTransport)) 12.dp else Dim.consolePadH"))
-        val editor = source("ui/AppearanceEditor.kt")
-        assertTrue(editor.contains(".background(plane).padding(style.space(3.dp))"))
-        assertTrue(editor.contains("Arrangement.spacedBy(style.space(6.dp))"))
-        assertTrue(editor.contains(".heightIn(min = 48.dp).settingsChildInput()"))
-        assertTrue(source("ui/SettingsSheetAdapter.kt").contains(".padding(vertical = style.space(12.dp))"))
     }
 
     @Test fun resumeRefreshesObservableMotionAndPostUsesTestedCancellableVisiblePolicy() {

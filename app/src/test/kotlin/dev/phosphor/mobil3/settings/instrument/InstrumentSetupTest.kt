@@ -49,7 +49,7 @@ class InstrumentSetupTest {
         data class Field(val min: Float, val max: Float, val build: (Float) -> InstrumentSetup)
         val fields = listOf(
             Field(0f, 1f) { baseline.copy(geomAmount = it) },
-            Field(0.1f, 7f) { baseline.copy(gain = it) },
+            Field(0.1f, 64f) { baseline.copy(gain = it) },
             Field(0.3f, 3f) { baseline.copy(focus = it) },
             Field(1f, 30f) { baseline.copy(beamEnergy = it) },
             Field(0f, 0.98f) { baseline.copy(glow = it) },

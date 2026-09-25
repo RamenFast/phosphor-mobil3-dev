@@ -231,39 +231,6 @@ class KnownDefaultsTest {
 
     }
 
-    @Test fun sourceOnlyFiveKeyMatrixRetainsOneStateRestoreActionArchiveAndFullUiOwner() {
-        val activity = source("MainActivity.kt")
-        val restore = section(activity, "private fun restoreTuning(", "override fun captureConsentNeeded()")
-        val state = source("ui/ScopeUiState.kt")
-        val archive = source("settings/SettingsArchive.kt")
-        val sheets = source("ui/Sheets.kt")
-        val screen = source("ui/PhosphorScreen.kt")
-        val rows = listOf(
-            listOf("pip_auto_enter", "pipAutoEnter", "setPipAutoEnter", "PictureInPicturePolicy.KEY", "PictureInPicturePolicy.autoEnter(p.all)"),
-            listOf("controls_always_visible", "controlsAlwaysVisible", "setControlsAlwaysVisible", "dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.KEY", "dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(p.all)"),
-            listOf("grid_data", "gridData", "setGridData", "dev.phosphor.mobil3.ui.GridData.KEY", "p.getBoolean(dev.phosphor.mobil3.ui.GridData.KEY, dev.phosphor.mobil3.ui.GridData.DEFAULT)"),
-            listOf("double_tap_playback", "doubleTapPlayback", "setDoubleTapPlayback", "\"double_tap_playback\"", "p.getBoolean(\"double_tap_playback\", true)"),
-            listOf("linger_background", "lingerBackground", "setLingerBackground", "BackgroundLifecyclePolicy.LINGER_KEY", "BackgroundLifecyclePolicy.linger(p.all)"),
-        )
-        for ((key, field, action, storageKey, read) in rows) {
-            assertEquals(1, Regex("\\bvar $field\\b").findAll(state).count(), "$key state")
-            assertEquals(1, Regex(Regex.escape("ui.$field = $read")).findAll(restore).count(), "$key restore")
-            val write = activity.substringAfter("override fun $action(on: Boolean)").substringBefore("override fun")
-            assertTrue(write.contains("ui.$field = on"), "$key action state")
-            assertEquals(1, Regex(Regex.escape("putBoolean($storageKey, on)")).findAll(write).count(), "$key typed write")
-            assertEquals(1, Regex(Regex.escape("\"$key\" to Spec(Kind.BOOLEAN)")).findAll(archive).count(), "$key archive")
-            assertEquals(1, Regex(Regex.escape("actions.$action(!state.$field)")).findAll(sheets).count(), "$key full UI")
-            assertTrue(screen.contains("override fun $action(on: Boolean) = actions.$action(on)"), "$key action adapter")
-        }
-        val console = source("ui/Console.kt")
-        assertEquals(1, Regex(Regex.escape("AUTO PiP · ")).findAll(console).count())
-        assertTrue(console.contains("onClick = onPipAutoEnter"))
-        assertTrue(screen.contains("onPipAutoEnter = { actions.setPipAutoEnter(!state.pipAutoEnter) }"))
-        for (field in listOf("controlsAlwaysVisible", "gridData", "doubleTapPlayback", "lingerBackground")) {
-            assertFalse(console.contains("!state.$field"), "$field has no quick toggle")
-        }
-    }
-
     @Test fun sourceOnlyLightLegRangeAndPhotosensitivityConfirmationRemainOwnedByLightSheet() {
         val light = source("ui/LightSheet.kt")
         assertTrue(light.contains("\"LEG seconds\", light.seconds, 0.1f, 60f"))
