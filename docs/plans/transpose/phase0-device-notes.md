@@ -26,3 +26,17 @@ Captures: `build/transpose/captures/s25/` and `build/transpose/captures/current/
 - Stage: a boxed status band with fps, segment count and `×gain·a` is shown on every console reveal.
   S25 showed the same readouts unboxed. Both are engineering output, not user information.
 - Current adds a floating "SIGNAL CHECK" label on the stage at launch.
+
+## Decider run · AUTO on vs off (20 s each, same session, fresh data)
+
+| Setting | Height px min / median / max | CV | Jumps >30% | Stalled runs |
+|---|---|---|---|---|
+| AUTO on | 81 / 198 / 253 | 0.152 | 3 | [(np.float64(0.7), 14)] |
+| AUTO off, manual ×7 | 35 / 47 / 64 | 0.099 | 1 | none |
+
+- With AUTO off, the trace is as steady as the S25 build (CV 0.099 vs 0.097), with no stalls or jumps.
+- With AUTO on, size swings and a stall appear again. This supports the cartographer's first cause:
+  AUTO's instant drop and regrow (`engine.rs:818-823`), not audio starvation.
+- Manual gain maxes at ×7, while AUTO climbs to ×63. Turning AUTO off drops the view from ×63 to ×1.83.
+  One gain scale must serve both modes.
+- Limit: one quiet room, one phone, video-based measurement. A host test on recorded mic PCM should confirm.
