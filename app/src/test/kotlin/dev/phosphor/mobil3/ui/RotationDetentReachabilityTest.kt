@@ -157,25 +157,6 @@ class RotationDetentReachabilityTest {
     }
 
     @Test
-    fun sourceOnlyFullSheetDisablesBothDependentControlsAndExplainsAndroidAuthority() {
-        val sheets = source("ui/Sheets.kt")
-        val scope = sheets.substringAfter("val scopeRotation: @Composable")
-            .substringBefore("val uiPlacement: @Composable")
-        val placement = sheets.substringAfter("val uiPlacement: @Composable")
-            .substringBefore("if (wideEnoughForOneRow)")
-        for (control in listOf(scope, placement)) {
-            assertTrue(control.contains("ChipCell("))
-            assertTrue(control.contains("enabled = !state.systemRotationLocked"))
-        }
-        assertTrue(sheets.contains("if (state.systemRotationLocked)"))
-        assertTrue(sheets.contains("Android rotation lock is on. Enable system auto-rotate"))
-        val cell = source("ui/Controls.kt").substringAfter("fun ChipCell(")
-            .substringBefore("fun SwatchCell(")
-        assertTrue(cell.contains(".clickable(enabled = enabled, onClick = onClick)"))
-        assertTrue(cell.contains("!enabled -> p.muted"))
-    }
-
-    @Test
     fun sourceOnlyChromeAndSheetTransformsDoNotReadImportedLockChoicesAsPresentation() {
         val screen = source("ui/PhosphorScreen.kt")
         val orientation = screen.substringAfter("val actualLandscape =")

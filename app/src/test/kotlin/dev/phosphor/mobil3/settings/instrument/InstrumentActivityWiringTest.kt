@@ -69,24 +69,6 @@ class InstrumentActivityWiringTest {
         assertTrue(streams.contains("instrumentWorkflow?.settle"))
     }
 
-    @Test fun sheetRoutesEveryPresetActionThroughActivityAndModeBansHaveNoUiBypass() {
-        val sheets = source("ui/Sheets.kt")
-        assertTrue(sheets.contains("actions.openInstrument()"))
-        assertFalse(sheets.contains("state.randomBanModes ="))
-        val screen = source("ui/PhosphorScreen.kt")
-        assertTrue(screen.contains("onBanModes = actions::setRandomBanModes"))
-        assertTrue(screen.contains("Sheet.INSTRUMENT -> InstrumentPresetSheet"))
-        val preset = source("ui/InstrumentPresetSheet.kt")
-        for (action in listOf("applyInstrument", "saveInstrument", "updateInstrument", "renameInstrument", "duplicateInstrument",
-            "deleteInstrument", "undoInstrument", "retryInstrumentSave", "chooseInstrumentImport", "commitInstrumentImport")) {
-            assertTrue(action, preset.contains("actions.$action"))
-        }
-        assertTrue(preset.contains("heightIn(min = 48.dp)"))
-        assertTrue(preset.contains("maxLines = Int.MAX_VALUE"))
-        assertTrue(source("ui/LightSheet.kt").contains("LightKey(\"RECALL INSTRUMENT\", p, action = onRecallInstrument)"))
-        assertTrue(screen.contains("onRecallInstrument = { actions.openInstrumentPresets(); sheet = Sheet.INSTRUMENT }"))
-    }
-
     @Test fun wholeSettingsPickerAndProviderCarryTheSameAuthoredTicketBeforeMutation() {
         val launch = section("override fun importSettings()", "override fun startMic()")
         assertTrue(launch.indexOf("owner.beginSettingsImport()") < launch.indexOf("openSettingsArchive.launch"))

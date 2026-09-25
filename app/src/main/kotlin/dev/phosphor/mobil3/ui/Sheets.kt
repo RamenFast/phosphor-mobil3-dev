@@ -523,9 +523,6 @@ fun SheetHost(
                         }
                     }
                     Spacer(Modifier.height(Dim.gapLg))
-                    if (style.character == ChromeCharacter.Glass) {
-                        Prose("Glass text uses an opaque readability surface. The outer material stays translucent.", p.ink)
-                    }
                     if (settingsDismiss?.interrupted == true) {
                         Prose("Drag paused after delayed input. Use Close or Back, then reopen Settings to retry.", p.ink)
                     }
@@ -550,14 +547,11 @@ fun DragRule(
     val unit = remember { SliderGeometry(1f, 0f) }
     val accessible = LocalSettingsControlAccess.current
     Column(Modifier.fillMaxWidth().padding(vertical = 6.dp)) {
-        if (accessible) {
-            Mono(label, p.ink2, Type.data)
-            Mono(format(value), p.ink, Type.data)
-        } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.SpaceBetween) {
-                Mono(label, p.ink2, Type.data)
-                Mono(format(value), p.ink, Type.data)
-            }
+        // One row: name left, value right, like every other setting. Wraps at large font sizes.
+        Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
+            Mono(label, p.ink, Type.dataLg, Modifier.weight(1f))
+            Spacer(Modifier.width(12.dp))
+            Mono(format(value), if (accessible) p.accent else p.ink, Type.data)
         }
         val range = if (accessible) Modifier.settingsFocusBorder(p).settingsRange(label, format(value),
             SettingsRangeAction(value, min, max, onChange)) else Modifier
@@ -1213,357 +1207,8 @@ internal fun SettingsSheet(
         onSettingsInput = presentation::cancelAnchor,
         onClosing = actions::cancelAppearancePreview,
     ) {
-        val signal: @Composable () -> Unit = {
-            SettingsGlyphRow("source · ${state.sourceLabel}", SettingsGlyph.Signal, p) {
-                state.showSourcePicker = true
-            }
-            Prose("DEFAULT SOURCE on a fresh launch. None keeps SRC manual. Last-used is not a default.", p.muted)
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("none" to "none", "mic" to "mic", "capture" to "capture").forEach { (id, label) ->
-                    ChipCell("DEFAULT · $label", active = state.defaultSource == id, p = p, small = true) {
-                        actions.setDefaultSource(id)
-                    }
-                }
-            }
-            ChipCell("AUTOMATIC PERMISSION POPUP · " + if (state.automaticPermissionPopup) "on" else "off",
-                active = state.automaticPermissionPopup, p = p, small = true,
-            ) { actions.setAutomaticPermissionPopup(!state.automaticPermissionPopup) }
-            SignalCheckEntry(state, p)
-            val remoteGeometry = state.remote && state.remoteGeometry
-            DragRule(
-                "SIZE",
-                GainWords.toSlider(if (remoteGeometry) state.gain else state.manualGain),
-                0f, 1f, p, { GainWords.multiplier(GainWords.fromSlider(it)) },
-            ) { actions.setGainAbsolute(GainWords.fromSlider(it)) }
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.weight(1f)) {
-                    ChipCell(
-                        (if (remoteGeometry) "DESKTOP AUTO · " else "AUTO SIZE · ") +
-                            if (state.autoGain) "on" else "off",
-                        active = state.autoGain, p = p, small = true,
-                    ) { actions.setGainAuto(!state.autoGain) }
-                }
-                Box(Modifier.weight(1f)) {
-                    ChipCell(
-                        "VIEW LOCK · " + if (state.viewLock) "on" else "off",
-                        active = state.viewLock, p = p, small = true,
-                    ) { actions.setViewLock(!state.viewLock) }
-                }
-            }
-            FlatKey("RESET SIZE", p) { actions.resetAutoFrameScale() }
-            if (state.autoFrameSaveStatus.isNotEmpty()) {
-                Prose(state.autoFrameSaveStatus, p.muted)
-                if (state.autoFrameSaveStatus.contains("failed")) {
-                    FlatKey("RETRY FRAMING SAVE", p) { actions.finishAutoFrameScale() }
-                }
-            }
-
-        }
-        val beam: @Composable () -> Unit = {
-            DragRule("FOCUS", focusValue, 0.3f, 3.0f, p, { "%.2f px".format(it) }, onFocus)
-            DragRule(
-                "BEAM", state.beamEnergy, 1.0f, 30.0f, p, { "×%.0f".format(it) },
-            ) { actions.setBeamEnergy(it) }
-            RangeDragRule(
-                "BEAM RANGE", state.beamRandomLo, state.beamRandomHi, 1.0f, 30.0f, p,
-                armed = state.beamRandomArmed, onLabelTap = { actions.tapBeamRandom() },
-                format = { "×%.0f".format(it) },
-            ) { lo, hi -> actions.setBeamRandomRange(lo, hi) }
-            DragRule(
-                "GLOW", state.glow, 0.0f, 0.98f, p, { "%.0f %%".format(it * 100) },
-            ) { actions.setGlow(it) }
-            RangeDragRule(
-                "GLOW RANGE", state.glowRandomLo, state.glowRandomHi, 0.0f, 0.98f, p,
-                armed = state.glowRandomArmed, onLabelTap = { actions.tapGlowRandom() },
-                format = { "%.0f %%".format(it * 100) },
-            ) { lo, hi -> actions.setGlowRandomRange(lo, hi) }
-            Prose(
-                "check a ⚄ box to arm the die: it rolls inside the kept range now and " +
-                    "re-rolls on every track, like the mode die. Uncheck to disarm (the " +
-                    "last roll stays put); dragging the plain rule also takes over.",
-                p.muted, modifier = Modifier.padding(top = 6.dp),
-            )
-        }
-        val display: @Composable () -> Unit = {
-            ChipCell("PIN SCREEN BRIGHTNESS · " + if (state.pinScreenBrightness) "on" else "off",
-                active = state.pinScreenBrightness, p = p, small = true,
-            ) { actions.setPinScreenBrightness(!state.pinScreenBrightness) }
-            ChipCell("REQUEST HDR · " + if (state.hdrRequested) "on" else "off",
-                active = state.hdrRequested, p = p, small = true,
-            ) { actions.setHdrRequested(!state.hdrRequested) }
-            Prose(state.hdrStatus, p.muted, modifier = Modifier.padding(top = 6.dp))
-            Prose(if (state.brightnessPinActive) "Full window brightness requested · keeps this window awake."
-                else if (state.pinScreenBrightness) "Pin selected · waiting for the focused full app."
-                else "Android controls screen brightness.", p.muted)
-            Prose("Sustained brightness and static images use more battery and can wear the panel. " +
-                "Thermal, panel and accessibility limits still apply. This is not HDR or measured luminance. " +
-                "The pin releases in PiP, HUD, background or focus loss.", p.muted)
-            if (state.brightnessPinError.isNotBlank()) Prose(state.brightnessPinError, p.ink)
-            ChipCell("PAUSE DISPLAY · " + if (state.pauseBlack) "BLACK" else "HOLD FRAME",
-                active = !state.pauseBlack, p = p, small = true,
-            ) { actions.setPauseBlack(!state.pauseBlack) }
-            FlatKey(if (state.displayPaused) "RETURN DISPLAY TO LIVE" else "PAUSE DISPLAY ONLY", p) {
-                actions.toggleDisplayPause()
-            }
-            if (state.displayPaused) {
-                Prose(state.pauseLabel + ". Pan or pinch the image. Live tuning applies on resume.", p.muted)
-                FlatKey("RESET INSPECTION", p) { actions.resetInspection() }
-            }
-
-            ChipCell(
-                "CONTROLS ALWAYS VISIBLE · " + if (state.controlsAlwaysVisible) "on" else "off",
-                active = state.controlsAlwaysVisible, p = p, small = true,
-            ) { actions.setControlsAlwaysVisible(!state.controlsAlwaysVisible) }
-            ChipCell(
-                "AUTO PiP · " + if (state.pipAutoEnter) "on" else "off",
-                active = state.pipAutoEnter, p = p, small = true,
-            ) { actions.setPipAutoEnter(!state.pipAutoEnter) }
-            FlatKey("ENTER PiP", p) { actions.enterPictureInPicture() }
-            ChipCell("FLOATING HUD · " + if (state.floatingHudEnabled) "enabled" else "off",
-                active = state.floatingHudEnabled, p = p, small = true,
-            ) { actions.setFloatingHudEnabled(!state.floatingHudEnabled) }
-            ChipCell("HUD BACKGROUND · " + if (state.floatingHudTransparent) "TRANSPARENT" else "SOLID",
-                active = state.floatingHudTransparent, p = p, small = true,
-            ) { actions.setFloatingHudTransparent(!state.floatingHudTransparent) }
-            FlatKey(if (state.floatingHudActive) "HIDE FLOATING HUD" else "SHOW FLOATING HUD", p) {
-                if (state.floatingHudActive) actions.hideFloatingHud() else actions.showFloatingHud()
-            }
-            Prose(state.floatingHudStatus + ". Show requests overlay access only when needed. Imported preferences never start a HUD.", p.muted)
-            ChipCell(
-                "DOUBLE TAP PLAYBACK · " + if (state.doubleTapPlayback) "on" else "off",
-                active = state.doubleTapPlayback, p = p, small = true,
-            ) { actions.setDoubleTapPlayback(!state.doubleTapPlayback) }
-            ChipCell(
-                "BACKGROUND LINGER · " + if (state.lingerBackground) "on" else "off",
-                active = state.lingerBackground, p = p, small = true,
-            ) { actions.setLingerBackground(!state.lingerBackground) }
-            Prose(
-                "After removal from recents, keep only existing service-owned local or relay playback and capture. " +
-                    "Established service-owned microphone input can continue too. Off stops sources when the task is removed.",
-                p.muted, modifier = Modifier.padding(top = 6.dp, bottom = 6.dp),
-            )
-            Spacer(Modifier.height(6.dp))
-            BoxWithConstraints(Modifier.fillMaxWidth()) {
-                val wideEnoughForOneRow = maxWidth >= 480.dp
-                val fullscreen: @Composable () -> Unit = {
-                    // Immersive is a choice, not a law. Off shows the bars; the
-                    // corner-clearance helper reads real insets either way.
-                    ChipCell(
-                        "FULLSCREEN · " + (if (state.fullscreen) "on" else "off"),
-                        active = state.fullscreen, p = p, small = true,
-                    ) { actions.setFullscreen(!state.fullscreen) }
-                }
-                val scopeRotation: @Composable () -> Unit = {
-                    ChipCell(
-                        "SCOPE ROTATION · " +
-                            (if (actions.isScopeRotationLocked()) "locked" else "free"),
-                        active = actions.isScopeRotationLocked(), p = p, small = true,
-                        enabled = !state.systemRotationLocked,
-                    ) {
-                        actions.setScopeRotationLocked(!actions.isScopeRotationLocked())
-                    }
-                }
-                val uiPlacement: @Composable () -> Unit = {
-                    ChipCell(
-                        "UI PLACEMENT · " +
-                            (if (actions.isUiPlacementLocked()) "locked" else "follow"),
-                        active = actions.isUiPlacementLocked(), p = p, small = true,
-                        enabled = !state.systemRotationLocked,
-                    ) {
-                        actions.setUiPlacementLocked(!actions.isUiPlacementLocked())
-                    }
-                }
-                if (wideEnoughForOneRow) {
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        Box(Modifier.weight(1f)) { fullscreen() }
-                        Box(Modifier.weight(1f)) { scopeRotation() }
-                        Box(Modifier.weight(1f)) { uiPlacement() }
-                    }
-                } else {
-                    Column(Modifier.fillMaxWidth()) {
-                        fullscreen()
-                        scopeRotation()
-                        uiPlacement()
-                    }
-                }
-            }
-            Prose(
-                if (state.systemRotationLocked) {
-                    "Android rotation lock is on. Enable system auto-rotate to change these controls. " +
-                        "Your app choices are saved; the current orientation stays put."
-                } else {
-                    "Scope lock pins the current orientation. When both app locks are off, " +
-                        "rotation follows the gravity detent. UI placement lock holds the Activity " +
-                        "while labels face the viewer. Layout fits the actual window if Android " +
-                        "ignores an orientation request."
-                },
-                p.muted, modifier = Modifier.padding(top = 6.dp),
-            )
-        }
-        val performance: @Composable () -> Unit = {
-            Spacer(Modifier.height(Dim.gap))
-            Mono("FRAME RATE", p.muted, Type.dataXs, Modifier.padding(bottom = 4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                FpsOptions.forEach { opt ->
-                    Box(Modifier.weight(1f)) {
-                        ChipCell(opt.label, active = opt.value == state.fpsValue, p = p, small = true) {
-                            actions.setFps(opt.value)
-                        }
-                    }
-                }
-            }
-            Prose(FpsNote, p.muted, modifier = Modifier.padding(top = 6.dp))
-            Mono("BEAM RATE", p.muted, Type.dataXs, Modifier.padding(top = Dim.gapLg, bottom = 4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                BeamRates.forEach { opt ->
-                    Box(Modifier.weight(1f)) {
-                        ChipCell(opt.label, active = opt.oversample == state.oversample, p = p, small = true) {
-                            actions.setOversample(opt.oversample)
-                        }
-                    }
-                }
-            }
-            Prose(BeamRateNote, p.muted, modifier = Modifier.padding(top = 6.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.weight(1f)) {
-                    ChipCell(
-                        "STATS HUD · " + when (state.hudMode) {
-                            0 -> "on"; 1 -> "auto"; else -> "off"
-                        },
-                        active = state.hudMode == 0,
-                        p = p,
-                        small = true,
-                    ) { actions.setHudMode((state.hudMode + 1) % 3) }
-                }
-                Box(Modifier.weight(1f)) {
-                    // The status band can stay visible, follow the console timer, or remain hidden.
-                    ChipCell(
-                        "BAND · " + when (state.bandMode) {
-                            1 -> "auto"; 2 -> "off"; else -> "on"
-                        },
-                        active = state.bandMode == 0, p = p, small = true,
-                    ) { state.bandMode = (state.bandMode + 1) % 3 }
-                }
-                Spacer(Modifier.weight(1f))
-            }
-            if (state.hudControlStatus.isNotBlank()) {
-                Prose(state.hudControlStatus, p.muted, modifier = Modifier.padding(top = 6.dp))
-            }
-        }
-        val remote: @Composable () -> Unit = {
-            Mono("RELAY ONLY · LATENCY", p.muted, Type.dataXs, Modifier.padding(top = Dim.gap, bottom = 4.dp))
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                listOf("tight" to 0, "balanced" to 1, "safe" to 2).forEach { (label, mode) ->
-                    Box(Modifier.weight(1f)) {
-                        ChipCell(
-                            label, active = state.latencyMode == mode, p = p, small = true,
-                        ) { actions.setRemoteLatencyMode(mode) }
-                    }
-                }
-            }
-            Prose(
-                "Tight is for a low-latency Tailscale path. The bridge widens automatically on underruns; " +
-                    "safe is today's ear-verified behavior.",
-                p.muted, modifier = Modifier.padding(top = 6.dp),
-            )
-            Prose(
-                "Relay traffic follows Android and Tailscale routing. Phosphor never forces the " +
-                    "whole app onto Wi-Fi or mobile data.",
-                p.muted, modifier = Modifier.padding(top = Dim.gapLg),
-            )
-        }
-        val appearance: @Composable () -> Unit = {
-            AppearanceEditor(state, actions)
-            SettingsGlyphRow("room · ${state.room.label}", SettingsGlyph.Room, p) {
-                actions.openRoom()
-            }
-        }
-        val beamNavigation: @Composable () -> Unit = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.weight(1f)) {
-                    ChipCell("GRID · " + (if (state.grid) "on" else "off"), active = state.grid, p = p, small = true) {
-                        actions.setGrid(!state.grid)
-                    }
-                }
-                Box(Modifier.weight(2f)) {
-                    ChipCell("GRID DATA · " + if (state.gridData) "on" else "off",
-                        active = state.gridData, p = p, small = true,
-                    ) { actions.setGridData(!state.gridData) }
-                }
-            }
-            SettingsGlyphRow("light · beam color", SettingsGlyph.BeamColor, p) {
-                actions.openLight()
-            }
-            SettingsGlyphRow("instrument presets · recall / save", SettingsGlyph.Display, p) {
-                actions.openInstrument()
-            }
-        }
-        val migration: @Composable () -> Unit = {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                Box(Modifier.weight(1f)) {
-                    ChipCell("EXPORT SETTINGS", active = false, p = p, small = true) {
-                        actions.exportSettings()
-                    }
-                }
-                Box(Modifier.weight(1f)) {
-                    ChipCell("IMPORT SETTINGS", active = false, p = p, small = true) {
-                        actions.importSettings()
-                    }
-                }
-            }
-            Prose(
-                "Portable .phossettings archives carry only allowlisted instrument settings " +
-                    "and room/light state. They exclude media paths, hosts, consent tokens, " +
-                    "purchase data, and agent authorization.",
-                p.muted, modifier = Modifier.padding(top = 6.dp),
-            )
-            if (state.settingsTransferStatus.isNotBlank()) {
-                Mono(
-                    state.settingsTransferStatus, p.accent, Type.dataXs,
-                    Modifier.padding(top = 6.dp), maxLines = Int.MAX_VALUE,
-                )
-            }
-        }
-        val about: @Composable () -> Unit = {
-            Prose(
-                "Phosphor draws sound as light — a CRT oscilloscope in your pocket, " +
-                    "sample-locked to what you hear. GPL-3.0. The beam remembers.",
-                p.muted, modifier = Modifier.padding(bottom = Dim.gap),
-            )
-            SettingsGlyphRow("manual · how it all works", SettingsGlyph.About, p) {
-                actions.openManual()
-            }
-            // Seven taps on the version open the developer view (engineering readouts).
-            var versionTaps by remember { mutableIntStateOf(0) }
-            Mono(
-                "version ${dev.phosphor.mobil3.BuildConfig.VERSION_NAME}" +
-                    if (state.developerView) " · developer view on" else "",
-                p.muted, Type.dataXs,
-                Modifier.fillMaxWidth().heightIn(min = 48.dp)
-                    .clickable {
-                        versionTaps += 1
-                        if (versionTaps >= 7) {
-                            versionTaps = 0
-                            actions.setDeveloperView(!state.developerView)
-                        }
-                    }
-                    .padding(vertical = 14.dp),
-            )
-            // The bench keeps a service stamp: the REAL date the knobs were last
-            // saved (Annotated rooms only — a calibration sticker, typeset).
-            if (LocalRoomStyle.current.designators && state.calDate.isNotBlank()) {
-                Mono(
-                    "CAL · ${state.calDate}   S/N 003" +
-                        if (state.bestiaryFound) "   ☂ holding" else "",
-                    p.muted, Type.dataXs,
-                    Modifier.padding(bottom = Dim.gap), letterSpacing = 1.2.sp,
-                )
-            }
-        }
-        // One reading order and one screen-owned scroll in either orientation.
+        // Transpose: a short index of topics; each opens its own page (SettingsPages.kt).
+        var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<SettingsPage?>(null) }
         val anchorRequest = presentation.request
         Column(
             Modifier.fillMaxWidth()
@@ -1571,41 +1216,19 @@ internal fun SettingsSheet(
                 .verticalScroll(scroll, overscrollEffect = null)
                 .settingsAnchorLayout(presentation, anchorRequest, scope)
         ) {
-            SettingsExpandableSection(SettingsSectionId.SIGNAL, "SIGNAL & STARTUP",
-                if (state.remote && state.remoteGeometry) {
-                    "${state.sourceLabel} · desktop gain ×${"%.2f".format(state.gain)} · auto ${if (state.autoGain) "on" else "off"}"
-                } else {
-                    "${state.sourceLabel} · manual ×${"%.2f".format(state.manualGain)} · auto frame ×${"%.3f".format(state.autoFrameScale)}"
-                },
-                SettingsGlyph.Signal, p, presentation) {
-                signal()
-                remote()
-            }
-            SettingsExpandableSection(SettingsSectionId.BEAM, "BEAM & LIGHT",
-                "Focus ${"%.2f".format(focusValue)} px · beam ×${"%.0f".format(state.beamEnergy)} · glow ${"%.0f".format(state.glow * 100)}%",
-                SettingsGlyph.BeamColor, p, presentation) {
-                beam()
-                beamNavigation()
-            }
-            SettingsExpandableSection(SettingsSectionId.DISPLAY, "DISPLAY & HUD",
-                "${if (state.pauseBlack) "Black" else "Hold"} on pause · floating HUD ${if (state.floatingHudActive) "showing" else "hidden"} · fullscreen ${if (state.fullscreen) "on" else "off"}",
-                SettingsGlyph.Display, p, presentation) {
-                display()
-            }
-            SettingsExpandableSection(SettingsSectionId.MOTION, "MOTION & PERFORMANCE",
-                "Frame rate ${FpsOptions.firstOrNull { it.value == state.fpsValue }?.label ?: state.fpsValue} · beam reconstruction ${BeamRates.firstOrNull { it.oversample == state.oversample }?.label ?: state.oversample}",
-                SettingsGlyph.Performance, p, presentation) {
-                performance()
-            }
-            SettingsExpandableSection(SettingsSectionId.APPEARANCE, "APPEARANCE",
-                state.appearanceSummary, SettingsGlyph.Room, p, presentation) {
-                appearance()
-            }
-            SettingsExpandableSection(SettingsSectionId.ABOUT, "ABOUT & MANUAL",
-                state.settingsTransferStatus.ifBlank { "GPL-3.0 · manual · settings import / export" },
-                SettingsGlyph.About, p, presentation) {
-                migration()
-                about()
+            val current = page
+            if (current == null) {
+                SettingsIndex(state, p) { next ->
+                    page = next
+                    scope.launch { scroll.scrollTo(0) }
+                }
+            } else {
+                SettingsPageHeader(current, p) {
+                    page = null
+                    scope.launch { scroll.scrollTo(0) }
+                }
+                SettingsPageBody(current, state, p, actions, focusValue, onFocus)
+                Spacer(Modifier.height(24.dp))
             }
         }
     }

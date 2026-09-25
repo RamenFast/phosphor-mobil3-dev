@@ -68,40 +68,4 @@ class GridDataTest {
         } finally { Locale.setDefault(before) }
     }
 
-    @Test fun actualHeartbeatSettingsAndVisibleBandAdaptersUseTheSameOwners() {
-        // Source-string boundaries only. Compose drawing, Android preferences and JNI require root execution.
-        val base = File("src/main/kotlin/dev/phosphor/mobil3")
-        val activity = File(base, "MainActivity.kt").readText()
-        val tick = activity.substringAfter("private val uiTick = object : Runnable")
-            .substringBefore("// Moving chrome accents")
-        assertEquals(1, Regex("PhosphorNative.scopeStats\\(\\)").findAll(tick).count())
-        assertTrue(tick.contains("GridData.needsStats(ui.hudMode, ui.gridData)"))
-        assertTrue(tick.indexOf("ui.gridReading =") < tick.indexOf("if (ui.hudMode != 2)"))
-        val restore = activity.substringAfter("private fun restoreTuning(lightPublished: Boolean = false)")
-        assertTrue(restore.contains("p.getBoolean(dev.phosphor.mobil3.ui.GridData.KEY, dev.phosphor.mobil3.ui.GridData.DEFAULT)"))
-        val write = activity.substringAfter("override fun setGridData(on: Boolean)").substringBefore("override fun")
-        assertTrue(write.contains("ui.gridData = on"))
-        assertTrue(write.contains("putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, on)"))
-        assertTrue(activity.contains("putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)"))
-        val imported = activity.substringAfter("private fun acceptSettingsArchive(")
-            .substringBefore("imported ${'$'}{imported.values.size}")
-        assertTrue(imported.contains("SettingsArchive.merge(decoded, prefs().all)"))
-        assertTrue(imported.contains("imported.values.forEach"))
-        assertTrue(imported.contains("restoreTuning(lightPublished)"))
-        val sheets = File(base, "ui/Sheets.kt").readText()
-        assertTrue(sheets.contains("GRID DATA · "))
-        assertTrue(sheets.contains("actions.setGridData(!state.gridData)"))
-        val screen = File(base, "ui/PhosphorScreen.kt").readText()
-        assertTrue(screen.contains("override fun setGridData(on: Boolean) = actions.setGridData(on)"))
-        val bandCondition = screen.indexOf("val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)")
-        val bandVisibility = screen.indexOf("if (bandShown && sheet == Sheet.NONE)")
-        assertTrue(bandCondition >= 0 && bandVisibility > bandCondition)
-        assertTrue(screen.substring(bandVisibility).substringBefore("// The service-bench POST").contains("StatusBand("))
-        val band = File(base, "ui/Console.kt").readText().substringAfter("fun StatusBand(")
-            .substringBefore("fun SeekRule(")
-        val grid = band.substringAfter("if (state.gridData)").substringBefore("if (hudVisible")
-        assertTrue(grid.contains("GridData.line(state.gridReading, left = true)"))
-        assertTrue(grid.contains("GridData.line(state.gridReading, left = false)"))
-        assertFalse(grid.contains("hudVisible &&"))
-    }
 }

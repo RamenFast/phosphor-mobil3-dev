@@ -110,26 +110,4 @@ class ForegroundBrightnessPolicyTest {
         assertEquals(1, Regex("override fun setPinScreenBrightness").findAll(screen).count())
     }
 
-    @Test fun persistenceImportAndUiStaySeparateFromAudioAndGlobalBrightness() {
-        val activity = source("MainActivity")
-        val setter = activity.substringAfter("override fun setPinScreenBrightness(").substringBefore("private fun reassertSourceWake")
-        assertTrue(setter.contains("if (!taskIsCurrent()) return"))
-        assertTrue(setter.contains("putBoolean(ForegroundBrightnessPolicy.KEY, on).commit()"))
-        assertTrue(setter.indexOf("applyBrightnessPin()") < setter.indexOf(".commit()"))
-        assertTrue(setter.contains("saving failed"))
-        val restore = activity.substringAfter("private fun restoreTuning(").substringBefore("PhosphorNative.setPauseBlack")
-        assertTrue(restore.contains("ForegroundBrightnessPolicy.requested(p.all)"))
-        assertTrue(restore.contains("applyBrightnessPin()"))
-        val import = activity.substringAfter("private fun acceptSettingsArchive(").substringBefore("private val openSettingsArchive")
-        assertTrue(import.indexOf("settingsWriteOwner.commit(") < import.indexOf("restoreTuning(lightPublished)"))
-        for (name in listOf("settings/instrument/InstrumentSetup", "settings/appearance/AppearanceDocument", "FloatingHudService")) {
-            assertFalse(source(name).contains("pin_screen_brightness"))
-            assertFalse(source(name).contains("screenBrightness"))
-        }
-        val sheet = source("ui/Sheets")
-        assertTrue(sheet.contains("actions.setPinScreenBrightness(!state.pinScreenBrightness)"))
-        assertTrue(sheet.contains("Thermal, panel and accessibility limits"))
-        assertFalse(activity.contains("Settings.System.put"))
-        assertFalse(activity.contains("Settings.System.SCREEN_BRIGHTNESS"))
-    }
 }

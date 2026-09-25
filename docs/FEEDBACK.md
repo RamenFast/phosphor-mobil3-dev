@@ -677,3 +677,9 @@ Test card: `docs/plans/transpose/TEST-CARD-1.md`.
 > It feels calm on the main screen, screen is still a bit laggy, but settings are still a cluster I can't wrap my head around, but yes far far better :)
 
 Asks, handled the same pass (verify): ×multiplier beside the zoom rail and on the SIZE slider; fps and segs back under the STATS HUD setting (gain tag stays hidden). Lag: Vulkan validation turned off on device and engine crates built at opt-level 3 in debug APKs (verify). Open: AUTO PiP must stay a setting Ben can disable (Phase 3). Settings clarity (Phase 3, repeat).
+
+## 2026-09-25 Transpose Phase 3a · Settings · verify (Prime)
+
+- "Settings are a cluster": rebuilt as a six-topic index with pages; one row family; plain words; no prose blocks; duplicates removed (GRID, LIGHT, LOOK, source row, ENTER PiP). Status: **verify**. Test card #2.
+- "Auto PiP must be a setting I can disable": PiP & BACKGROUND → AUTO PiP toggle. Status: **verify**.
+- Glass disclaimer under every sheet title removed.

@@ -143,3 +143,15 @@ Section summaries use words (`auto size · closer`), never raw multipliers.
   system; one size scale; words instead of numbers.
 - **Cut:** status plate, stage readouts, SIGNAL CHECK on stage, 16 → 1 button family,
   17 duplicate paths, the hex editor, root prose, multi-row console reflow, edge flash.
+
+## As built · Settings (2026-09-25)
+
+- Settings is an index of topics; each opens a page with "‹ all settings" and system Back to return.
+- Topics: SOUND & VIEW · SCREEN · PiP & BACKGROUND · SOURCES · SETUPS & BACKUP · ABOUT (+ DEVELOPER).
+  STARTUP and REMOTE merged into SOURCES (law 4: no menu under three choices).
+- GRID lives only in the ⋯ popout. LIGHT and LOOK live only in ⋯. The raw appearance editor is in DEVELOPER.
+- Row family: toggle (label, optional hint, on/off word, filled-square mark), choice (hairline cells,
+  chosen = accent rim + filled square; stacks vertically at large font), slider (name left, value right),
+  action (label, value or ›). Hints only where a label is jargon.
+- SIZE follows AUTO: closer/farther around AUTO when on, direct size when off (same as the stage gestures).
+- Font scale 2.0 checked on device: no clipped or mid-word-broken text in the index, SCREEN and SOURCES.

@@ -112,8 +112,8 @@ Ben may say "continue" instead of testing when he has no time.
 |---|---|
 | 0 · See both clearly | done: inventory, device comparison, mic cause confirmed |
 | 1 · Stage and console | done, Ben: "far far better", zoom feels right. Follow-ups done: ×multiplier on rail and SIZE slider, fps/segs back under the HUD setting, validation layers off, engine crates optimized in debug |
-| 2 · Color and look | next |
-| 3 · Settings and help | Ben: settings are "a cluster I can't wrap my head around". Must keep AUTO PiP as a setting Ben can disable |
+| 2 · Color and look | after Settings (Ben swapped 2 and 3) |
+| 3 · Settings and help | Settings rebuilt as index + pages (test card #2), AUTO PiP toggle kept. Manual/help next |
 | 4 · Rest of the port, accessibility, release list | after 3 |
 
 Ben's ongoing notes: the screen is "still a bit laggy" (first fixes in; measure again), mic steadiness verify.

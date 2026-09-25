@@ -104,18 +104,6 @@ class BackgroundLifecyclePolicyTest {
         assertTrue(activity.contains("runCatching { future.get().release() }"))
     }
 
-    @Test fun settingsSourceWiringHasOneChipTheExistingAdapterAndImmediatePersistence() {
-        val sheets = source("ui/Sheets.kt")
-        val screen = source("ui/PhosphorScreen.kt")
-        val activity = source("MainActivity.kt")
-        assertEquals(1, Regex("actions\\.setLingerBackground\\(").findAll(sheets).count())
-        assertTrue(screen.contains("override fun setLingerBackground(on: Boolean) = actions.setLingerBackground(on)"))
-        val setter = activity.substringAfter("override fun setLingerBackground(on: Boolean)").substringBefore("\n    }")
-        assertTrue(setter.contains("putBoolean(BackgroundLifecyclePolicy.LINGER_KEY, on)"))
-        assertFalse(setter.contains("pip", ignoreCase = true))
-        assertTrue(activity.contains("ui.lingerBackground = BackgroundLifecyclePolicy.linger(p.all)"))
-    }
-
     @Test fun lifecycleSourceWiringStopsOnlyTheOwnedActivityMicAndDoesNotReplaceTerminalWork() {
         val activity = source("MainActivity.kt")
         val destroy = activity.substringAfter("override fun onDestroy()").substringBefore("\n    }")

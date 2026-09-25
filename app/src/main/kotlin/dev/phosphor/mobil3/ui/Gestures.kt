@@ -592,6 +592,8 @@ internal object RibbonRail {
     private val hi = kotlin.math.ln(AutoFramePreference.MAX)
     fun frame(scale: Float): Float =
         ((kotlin.math.ln(AutoFramePreference.normalize(scale)) - lo) / (hi - lo)).coerceIn(0f, 1f)
+    fun frameAt(position: Float): Float =
+        AutoFramePreference.normalize(kotlin.math.exp(lo + position.coerceIn(0f, 1f) * (hi - lo)))
 }
 
 internal fun RibbonState.showSize(position: Float, tick: Float?, multiplier: Float) {
