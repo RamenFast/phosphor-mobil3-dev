@@ -642,3 +642,23 @@ Ben clarified that mono input is not the desired Phosphor development default. D
 ## 2026-09-13 Unit 1 delivered for feedback
 
 Status: **verify**, not user-accepted shipped. Source `9d5d77e` is installed on ASUS. Stereo-first input, fresh microphone diagnostics, quiet AUTO framing, remembered stage zoom and rotation margin have source and device evidence. [Receipt](plans/ben-prime-recovery/UNIT1-RECEIPT.md). Ben tests the three-action card before any next slice. Earlier recovery feedback and inherited gaps remain open.
+
+## 2026-09-13/24 Unit 1 field result · Ben
+
+Ben tested the installed Unit 1 build. Status: **open, failed Ben's lived test**. The earlier `verify` is withdrawn.
+
+Ben's words, lightly trimmed:
+
+> i just, I can't even test this dude...
+> 1. The mic works. But it glitches out all the time.
+> 2. Zoom is fucked. Yeah, pinch works, but the zoom measurement rates make no sense, and what is with x63.69a in the corner?
+> 3. Not bothering
+> Settings and UI are unusable, gpt model doesn't know shit about design, and it shows.
+> Honestly? I don't know if this is salvagable, grok might have fucked it.
+> This was originally a fable project ... this is never coming out on the play store looking/behaving like this...
+> Most of your test code is garbage, I would throw it mostly out and replace it with actual UX/UI testing and staying aligned
+
+Repeat signals: auto-gain/zoom (B20, Chapel report) ×2 after this attempt. Settings/UI usability (REC01-REC11) is a repeat.
+Prime's miss: source tests, numeric logs and screenshots were treated as acceptance. They did not show whether the instrument feels usable.
+The `×63.69·a` label is a raw internal gain readout plus an AUTO marker. It carries no meaning for a user.
+No further implementation follows from this entry. Direction and salvage approach need Ben's decision.
