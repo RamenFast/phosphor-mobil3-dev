@@ -1233,7 +1233,7 @@ internal fun SettingsSheet(
             DragRule(
                 "SIZE",
                 GainWords.toSlider(if (remoteGeometry) state.gain else state.manualGain),
-                0f, 1f, p, { GainWords.word(GainWords.fromSlider(it)) },
+                0f, 1f, p, { GainWords.multiplier(GainWords.fromSlider(it)) },
             ) { actions.setGainAbsolute(GainWords.fromSlider(it)) }
             Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
                 Box(Modifier.weight(1f)) {

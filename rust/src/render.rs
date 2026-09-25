@@ -1180,7 +1180,12 @@ fn bring_up(
     transparent: bool,
 ) -> Result<Active, String> {
     if gpu.is_none() {
-        let instance = wgpu::Instance::default();
+        // No validation layers on device: debug builds otherwise validate every frame (Adreno
+        // VKDBGUTILWARN003 spam) and the instrument stutters.
+        let instance = wgpu::Instance::new(&wgpu::InstanceDescriptor {
+            flags: wgpu::InstanceFlags::empty(),
+            ..Default::default()
+        });
         let surface = create_surface(&instance, &window)?;
         let adapter = pollster::block_on(instance.request_adapter(&wgpu::RequestAdapterOptions {
             power_preference: wgpu::PowerPreference::HighPerformance,

@@ -14,6 +14,13 @@ object GainWords {
     fun toSlider(gain: Float): Float = ((kotlin.math.ln(GainScale.clamp(gain)) - lo) / (hi - lo)).coerceIn(0f, 1f)
     fun fromSlider(position: Float): Float =
         GainScale.clamp(kotlin.math.exp(lo + position.coerceIn(0f, 1f) * (hi - lo)))
+    /** A short readable multiplier: ×0.25, ×1.5, ×12. */
+    fun multiplier(value: Float): String = when {
+        !value.isFinite() -> "×1"
+        value < 1f -> "×" + String.format(java.util.Locale.ROOT, "%.2f", value).trimEnd('0').trimEnd('.')
+        value < 10f -> "×" + String.format(java.util.Locale.ROOT, "%.1f", value).removeSuffix(".0")
+        else -> "×" + value.toInt()
+    }
     fun word(gain: Float): String = when {
         gain < 0.7f -> "far"
         gain < 3f -> "normal"

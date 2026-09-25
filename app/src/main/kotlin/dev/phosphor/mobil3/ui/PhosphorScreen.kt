@@ -725,6 +725,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             // Band visibility: on is persistent, auto follows the console timer, and off hides it.
             if (bandShown && sheet == Sheet.NONE && !state.developerView) {
                 QuietBand(state, p, reduced, chromeVisible = !overflowComposed,
+                    hudVisible = state.hudMode == 0 || (state.hudMode == 1 && consoleShown),
                     onHeightChanged = { statusBandHeightPx = it })
             } else if (bandShown && sheet == Sheet.NONE) {
                 StatusBand(

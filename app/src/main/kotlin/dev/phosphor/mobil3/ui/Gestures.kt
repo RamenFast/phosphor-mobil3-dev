@@ -279,6 +279,7 @@ class RibbonState {
     /** Size or glow rail: marker position 0..1 (bottom..top), optional tick, end words. */
     var rail by mutableStateOf<Float?>(null)
     var railTick by mutableStateOf<Float?>(null)
+    var railValue by mutableStateOf<String?>(null)
     var railTop by mutableStateOf("closer")
     var railBottom by mutableStateOf("farther")
     var at by mutableStateOf(Offset.Zero)
@@ -490,6 +491,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         ribbon.text = ""
                         ribbon.rail = glow / 0.98f
                         ribbon.railTick = null
+                        ribbon.railValue = null
                         ribbon.railTop = "brighter"
                         ribbon.railBottom = "dimmer"
                         ribbon.at = centroid
@@ -514,11 +516,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                                     autoFrameScale = adjusted.value
                                     host.setAutoFrameScale(autoFrameScale)
                                     frameEdited = true
-                                    ribbon.showSize(RibbonRail.frame(autoFrameScale), RibbonRail.frame(1f))
+                                    ribbon.showSize(RibbonRail.frame(autoFrameScale), RibbonRail.frame(1f), autoFrameScale)
                                 } else {
                                     gain = adjusted.value
                                     host.setGainAbsolute(gain)
-                                    ribbon.showSize(GainWords.toSlider(gain), null)
+                                    ribbon.showSize(GainWords.toSlider(gain), null, gain)
                                 }
                                 if (adjusted.crossedNeutral) Haptics.light(host.view())
                             }
@@ -557,11 +559,11 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                                 autoFrameScale = adjusted.value
                                 host.setAutoFrameScale(autoFrameScale)
                                 frameEdited = true
-                                ribbon.showSize(RibbonRail.frame(autoFrameScale), RibbonRail.frame(1f))
+                                ribbon.showSize(RibbonRail.frame(autoFrameScale), RibbonRail.frame(1f), autoFrameScale)
                             } else {
                                 gain = adjusted.value
                                 host.setGainAbsolute(gain)
-                                ribbon.showSize(GainWords.toSlider(gain), null)
+                                ribbon.showSize(GainWords.toSlider(gain), null, gain)
                             }
                             if (adjusted.crossedNeutral) Haptics.light(host.view())
                             ribbon.at = ch.position
@@ -592,10 +594,11 @@ internal object RibbonRail {
         ((kotlin.math.ln(AutoFramePreference.normalize(scale)) - lo) / (hi - lo)).coerceIn(0f, 1f)
 }
 
-internal fun RibbonState.showSize(position: Float, tick: Float?) {
+internal fun RibbonState.showSize(position: Float, tick: Float?, multiplier: Float) {
     text = ""
     rail = position
     railTick = tick
+    railValue = GainWords.multiplier(multiplier)
     railTop = "closer"
     railBottom = "farther"
 }
@@ -633,6 +636,7 @@ fun GestureRibbon(ribbon: RibbonState, p: Palette) {
                             .offset(y = (240.dp - 8.dp) * (1f - rail))
                             .size(width = 20.dp, height = 8.dp).background(p.accent))
                     }
+                    ribbon.railValue?.let { Mono(it, p.ink, Type.data, Modifier.padding(top = 6.dp)) }
                     Mono(ribbon.railBottom, p.ink2, Type.dataSm)
                 }
             }

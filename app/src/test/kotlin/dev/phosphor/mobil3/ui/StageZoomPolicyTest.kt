@@ -40,4 +40,15 @@ class StageZoomPolicyTest {
         assertTrue(StageZoomPolicy.adjust(0.8f, 0.7f, false, 2f).crossedNeutral)
         assertTrue(StageZoomPolicy.adjust(2f, 0.8f, true, 1.3f).crossedNeutral)
     }
+
+    @Test fun sizeMultiplierIsShortAndReadable() {
+        assertEquals("×0.25", GainWords.multiplier(0.25f))
+        assertEquals("×0.5", GainWords.multiplier(0.5f))
+        assertEquals("×1", GainWords.multiplier(1f))
+        assertEquals("×1.5", GainWords.multiplier(1.5f))
+        assertEquals("×12", GainWords.multiplier(12.4f))
+        assertEquals(GainScale.MIN, GainWords.fromSlider(0f), 0.0001f)
+        assertEquals(GainScale.MAX, GainWords.fromSlider(1f), 0.01f)
+        assertEquals(0.5f, GainWords.toSlider(GainWords.fromSlider(0.5f)), 0.001f)
+    }
 }

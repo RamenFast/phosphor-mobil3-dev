@@ -98,14 +98,19 @@ object StageWords {
 // ── Quiet line — what is playing, in words, no plate. The default stage chrome. ──
 @Composable
 fun QuietBand(state: ScopeUiState, p: Palette, reduced: Boolean, chromeVisible: Boolean,
-    onHeightChanged: (Int) -> Unit = {}) {
+    hudVisible: Boolean = false, onHeightChanged: (Int) -> Unit = {}) {
     val style = LocalRoomStyle.current
     Box(Modifier.fillMaxWidth().onSizeChanged { onHeightChanged(it.height) }
         .windowInsetsPadding(chromeSafeDrawingInsets(16.dp, 6.dp))
         .padding(horizontal = style.space(20.dp), vertical = style.space(10.dp))
         .burnInWalk(reduced, chromeVisible && state.presentationVisible && !state.pip)) {
-        Mono(StageWords.source(state.sourceLabel, state.noSignal, state.trackTitle),
-            p.ink2.copy(alpha = 0.72f), Type.dataSm, maxLines = 2)
+        Column {
+            Mono(StageWords.source(state.sourceLabel, state.noSignal, state.trackTitle),
+                p.ink2.copy(alpha = 0.72f), Type.dataSm, maxLines = 2)
+            // fps and segs follow Settings › STATS HUD (on / auto / off).
+            if (hudVisible && state.hudLine.isNotBlank()) Mono(state.hudLine, p.muted.copy(alpha = 0.72f), Type.dataXs, maxLines = 2)
+            if (hudVisible && state.hudLine2.isNotBlank()) Mono(state.hudLine2, p.muted.copy(alpha = 0.72f), Type.dataXs, maxLines = 2)
+        }
     }
 }
 

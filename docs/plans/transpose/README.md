@@ -106,6 +106,18 @@ Ben may say "continue" instead of testing when he has no time.
 - Accessibility pass on the whole app. Large fonts, TalkBack and landscape.
 - Test card #4, then a release-readiness list for the Play Store. No store action without Ben.
 
+## Status · 2026-09-25
+
+| Phase | State |
+|---|---|
+| 0 · See both clearly | done: inventory, device comparison, mic cause confirmed |
+| 1 · Stage and console | done, Ben: "far far better", zoom feels right. Follow-ups done: ×multiplier on rail and SIZE slider, fps/segs back under the HUD setting, validation layers off, engine crates optimized in debug |
+| 2 · Color and look | next |
+| 3 · Settings and help | Ben: settings are "a cluster I can't wrap my head around". Must keep AUTO PiP as a setting Ben can disable |
+| 4 · Rest of the port, accessibility, release list | after 3 |
+
+Ben's ongoing notes: the screen is "still a bit laggy" (first fixes in; measure again), mic steadiness verify.
+
 ## Team
 
 At most three subagents, all on `anthropic/claude-opus-5-5`, as Ben asked. Prime also runs on Opus 5.5.

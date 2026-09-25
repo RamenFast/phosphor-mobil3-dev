@@ -670,3 +670,10 @@ No further implementation follows from this entry. Direction and salvage approac
 - Zoom numbers: replaced by a closer/farther rail; AUTO and manual share one size scale; leaving AUTO keeps the size. Status: **verify**.
 - Console: S25 one-row key language for every look; ⋯ popout trimmed to 4 destinations + GRID. Status: **verify**.
 Test card: `docs/plans/transpose/TEST-CARD-1.md`.
+
+## 2026-09-25 Ben on Phase 1
+
+> okay! Now that's what I'm talking about with zoom ... pinch and one finger zoom *look* good 👍
+> It feels calm on the main screen, screen is still a bit laggy, but settings are still a cluster I can't wrap my head around, but yes far far better :)
+
+Asks, handled the same pass (verify): ×multiplier beside the zoom rail and on the SIZE slider; fps and segs back under the STATS HUD setting (gain tag stays hidden). Lag: Vulkan validation turned off on device and engine crates built at opt-level 3 in debug APKs (verify). Open: AUTO PiP must stay a setting Ben can disable (Phase 3). Settings clarity (Phase 3, repeat).
