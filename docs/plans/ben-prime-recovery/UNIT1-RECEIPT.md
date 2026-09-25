@@ -112,3 +112,11 @@ A failed Settings-opening swipe must not be followed by a scroll unless SETTINGS
 This run caught a later stage swipe that changed the new preference to0.25 during test setup.
 Final RESET and a complete preference comparison corrected it to1.0 before closeout.
 Android's file picker appended `.json` and retained its last directory. Archive paths were checked rather than inferred.
+
+## Second ASUS install · 2026-09-24
+
+Ben connected a second ASUS_AI2202, serial `NAAIB700B7373PZ`, Android 14.
+Phosphor debug was not previously installed, so no prior app state existed.
+`pm3 install` installed the same APK `4a3b5928f2d42d911e1d4165cb4164e7a8b221dab6ef7c64e905a6671c80e594`. Readback hash and signer matched.
+The app was not launched. Microphone permission remains ungranted until Ben chooses it.
+This install is not separate device acceptance.
