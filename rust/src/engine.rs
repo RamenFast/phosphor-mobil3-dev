@@ -656,8 +656,8 @@ const AUTO_GAIN_MIN: f32 = 0.1;
 /// One size scale for AUTO and manual gain. Manual, archives and presets share this ceiling.
 pub(crate) const GAIN_MAX: f32 = 64.0;
 const AUTO_GAIN_MAX: f32 = GAIN_MAX;
-const AUTO_FRAME_MIN: f32 = 0.25;
-const AUTO_FRAME_MAX: f32 = 4.0;
+const AUTO_FRAME_MIN: f32 = 0.1;
+const AUTO_FRAME_MAX: f32 = 20.0;
 const AUTO_FRAME_FILL: f32 = 0.80;
 /// Level is the 80th percentile of recent batch peaks, so clicks and taps do not resize the view.
 const LEVEL_WINDOW_SECONDS: f32 = 0.25;
@@ -1526,7 +1526,8 @@ mod tests {
             (0.25, 0.25),
             (1.0, 1.0),
             (2.0, 2.0),
-            (9.0, super::AUTO_FRAME_MAX),
+            (8.0, 8.0),
+            (99.0, super::AUTO_FRAME_MAX),
         ] {
             let mut gain = super::AutoGain::new(1.0);
             assert_eq!(gain.set_frame_scale(requested), expected);
@@ -1612,7 +1613,8 @@ mod tests {
         for mode in Mode::ALL {
             let mut computer = Computer::new();
             computer.mode = mode;
-            computer.gain = super::AUTO_GAIN_MAX;
+            // The deepest zoom: AUTO's ceiling at the closest framing preference.
+            computer.gain = super::AUTO_GAIN_MAX * super::AUTO_FRAME_MAX;
             // Spectrum modes need a full FFT window and at least two compute calls.
             for _ in 0..20 {
                 super::compute_scope_frame(&mut computer, &samples, 1080.0, 1920.0);

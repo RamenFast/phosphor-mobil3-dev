@@ -23,7 +23,7 @@ class AutoFramePreferenceTest {
 
     @Test fun nativeBoundaryNormalizationClampsFiniteAndResetsNonfinite() {
         assertEquals(AutoFramePreference.MIN, AutoFramePreference.normalize(-1f))
-        assertEquals(AutoFramePreference.MAX, AutoFramePreference.normalize(9f))
+        assertEquals(AutoFramePreference.MAX, AutoFramePreference.normalize(99f))
         assertEquals(AutoFramePreference.DEFAULT, AutoFramePreference.normalize(Float.NaN))
         assertEquals(AutoFramePreference.DEFAULT, AutoFramePreference.normalize(Float.POSITIVE_INFINITY))
     }

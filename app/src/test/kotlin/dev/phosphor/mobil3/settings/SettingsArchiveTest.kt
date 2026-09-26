@@ -507,7 +507,7 @@ class SettingsArchiveTest {
     @Test
     fun autoFrameScaleRoundTripsAndOldArchivesPreserveDestination() {
         val key = dev.phosphor.mobil3.ui.AutoFramePreference.KEY
-        for (value in listOf(0.25f, 1f, 4f)) {
+        for (value in listOf(0.1f, 1f, 20f)) {
             val decoded = SettingsArchive.decode(export(mapOf(key to value)).json)
             assertEquals(mapOf(key to value), decoded.values)
         }
@@ -527,7 +527,7 @@ class SettingsArchiveTest {
         val destination = mutableMapOf<String, Any>(key to 0.75f, "gain" to 2f)
         val before = destination.toMap()
         for (invalid in listOf<Any>(
-            0.249f, 4.001f, Float.NaN, Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, "1.0", true,
+            0.099f, 20.001f, Float.NaN, Float.NEGATIVE_INFINITY, Float.POSITIVE_INFINITY, "1.0", true,
         )) {
             val error = assertFailsWith<SettingsArchive.ArchiveException> {
                 if (invalid is Number && !invalid.toDouble().isFinite()) export(mapOf(key to invalid))

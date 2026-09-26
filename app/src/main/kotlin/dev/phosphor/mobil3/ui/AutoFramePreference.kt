@@ -33,8 +33,8 @@ object GainWords {
 object AutoFramePreference {
     const val KEY = "auto_frame_scale"
     const val DEFAULT = 1f
-    const val MIN = 0.25f
-    const val MAX = 4f
+    const val MIN = 0.1f
+    const val MAX = 20f
 
     fun normalize(value: Float): Float =
         if (value.isFinite()) value.coerceIn(MIN, MAX) else DEFAULT
