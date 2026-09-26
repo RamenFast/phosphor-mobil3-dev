@@ -112,13 +112,22 @@ Ben may say "continue" instead of testing when he has no time.
 |---|---|
 | 0 · See both clearly | done: inventory, device comparison, mic cause confirmed |
 | 1 · Stage and console | done, Ben: "far far better", zoom feels right. Follow-ups done: ×multiplier on rail and SIZE slider, fps/segs back under the HUD setting, validation layers off, engine crates optimized in debug |
-| 2 · Color and look | after Settings (Ben swapped 2 and 3) |
+| 2 · Color and look | in progress (Opus designer), together with a whole-app redesign: Ben 2026-09-26 "get rid of the collapsable submenus... lessen the amount of submenus... keep/optimize the swipe feel... retain functionality" |
 | 3 · Settings and help | Settings rebuilt as index + pages (test card #2), AUTO PiP toggle kept. Manual/help next |
 | 4 · Rest of the port, accessibility, release list | after 3 |
 
 Ben's ongoing notes: the screen is "still a bit laggy" (first fixes in; measure again), mic steadiness verify.
 
-## Team
+Also 2026-09-26: zoom range around AUTO widened to 0.1x-20x (881c238). "Everything playing" capture regression under investigation (Astra auditor, NewPipe FearofDark on Ben's primary).
+
+## Team (2026-09-26)
+
+Ben: Opus 5.5 for design work, Astra (openai-codex/gpt-6-astra) for logic and auditing; defer to Opus when unclear.
+- designer (Opus 5.5): REDESIGN.md, then Settings flat scroll, LIGHT, LOOK, SRC, MODE, manual Back. Owns ui/**.
+- auditor (Astra): capture regression now; then a functionality-retention audit of the redesign.
+- Prime: integration, builds, devices, git, creative direction.
+
+## Team (original)
 
 At most three subagents, all on `anthropic/claude-opus-5-5`, as Ben asked. Prime also runs on Opus 5.5.
 
