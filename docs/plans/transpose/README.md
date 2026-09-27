@@ -120,6 +120,15 @@ Ben's ongoing notes: the screen is "still a bit laggy" (first fixes in; measure 
 
 Also 2026-09-26: zoom range around AUTO widened to 0.1x-20x (881c238). "Everything playing" capture regression under investigation (Astra auditor, NewPipe FearofDark on Ben's primary).
 
+## Status · 2026-09-27 (autonomous day)
+
+Whole-app redesign done (docs/plans/transpose/design/REDESIGN.md): slices a-m committed
+29d6587..7fdd5af. Settings flat, LIGHT swatches (Phase 2), LOOK tiles, SRC, MODE, manual rewrite
+with figures and Back, one row family, one sheet dismissal + tap guard, landscape two columns,
+floating HUD in the key language and look colors. Capture fixed (ccc7c37), zoom 0.1x-20x (881c238).
+Device-verified on Ben's primary by Prime and the Auditor with prefs byte-identical after tests.
+Waiting on Ben: TEST-CARD-4.md.
+
 ## Team (2026-09-26)
 
 Ben: Opus 5.5 for design work, Astra (openai-codex/gpt-6-astra) for logic and auditing; defer to Opus when unclear.

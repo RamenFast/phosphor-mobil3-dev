@@ -692,3 +692,10 @@ Asks, handled the same pass (verify): ×multiplier beside the zoom rail and on t
 - "Keep/optimize the swipe feel": one shared scroll-then-pull dismissal for every sheet. Device: pull-up opens, flings never close, scroll-to-top-then-pull closes in one motion, short drags spring back. **verify**
 - Zoom range 0.1x-20x (881c238). "Everything playing" capture fixed (ccc7c37). **verify**
 Test card: docs/plans/transpose/TEST-CARD-3.md.
+
+## 2026-09-27 Redesign complete · verify (Prime + designer + auditor)
+
+Slices c-m: LOOK tiles, SRC, MODE, manual rewrite + figures + Back, legacy families folded, one-tap
+mic, landscape two columns, floating HUD restyle and look colors, sheet tap guard (a scroll or pull
+never taps; found when device tests changed Ben's fullscreen/auto PiP/glow, all restored). Device
+checks on Ben's primary with prefs byte-identical after each run. Test card #4. **verify**
