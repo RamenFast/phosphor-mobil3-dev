@@ -112,10 +112,11 @@ private fun ManualHeading(text: String, p: Palette, modifier: Modifier = Modifie
 
 @Composable
 private fun ManualKey(label: String, p: Palette, modifier: Modifier = Modifier, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     Row(
         modifier.fillMaxWidth().heightIn(min = 48.dp)
             .border(Dim.hairline, p.line).settingsFocusBorder(p)
-            .clickable(role = Role.Button, onClickLabel = label, onClick = onClick)
+            .clickable(role = Role.Button, onClickLabel = label, onClick = tap)
             .padding(horizontal = 12.dp, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -126,13 +127,14 @@ private fun ManualKey(label: String, p: Palette, modifier: Modifier = Modifier, 
 // One card of the built-in viewer: title + address, taps open the user's own browser.
 @Composable
 fun LinkCard(title: String, address: String, p: Palette, onOpen: () -> Unit) {
+    val tap = sheetTap(onOpen)
     Row(
         Modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp)
             .border(Dim.hairline, p.line)
             .settingsFocusBorder(p)
-            .clickable(role = Role.Button, onClickLabel = "Open $title", onClick = onOpen)
+            .clickable(role = Role.Button, onClickLabel = "Open $title", onClick = tap)
             .padding(horizontal = Dim.rowPad, vertical = 10.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {

@@ -52,6 +52,7 @@ import androidx.compose.ui.layout.onGloballyPositioned
 import androidx.compose.ui.semantics.contentDescription
 import androidx.compose.ui.semantics.semantics
 import androidx.compose.ui.semantics.Role
+import androidx.compose.ui.semantics.selected
 import androidx.compose.ui.unit.TextUnit
 import androidx.compose.foundation.rememberScrollState
 import androidx.compose.foundation.verticalScroll
@@ -77,6 +78,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.PointerEventPass
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -215,6 +217,36 @@ internal object SheetPullPolicy {
         val dt = last.first - first.first
         return if (dt <= 0L) 0f else (last.second - first.second) * 1000f / dt
     }
+}
+
+/**
+ * One gesture's history inside a sheet. A pointer sequence that scrolled the content or
+ * moved the card is never also a tap: rows, keys and slider taps ask [allows] first.
+ * The DOWN of each new gesture resets it (observed on the stationary scrim, Initial pass).
+ */
+internal class SheetGestureGuard {
+    var moved = false
+        private set
+
+    fun down() { moved = false }
+    fun markMoved() { moved = true }
+    fun allows(): Boolean = !moved
+
+    /** Wraps a tap action so it is dropped when this gesture already scrolled or pulled. */
+    fun tap(action: () -> Unit): () -> Unit = { if (allows()) action() }
+}
+
+internal val LocalSheetGestureGuard = staticCompositionLocalOf<SheetGestureGuard?> { null }
+
+/** True unless this gesture already scrolled the sheet or moved it. */
+internal fun SheetGestureGuard?.allowsTap(): Boolean = this?.allows() != false
+
+/** A tap action that ignores gestures which scrolled the sheet or moved it. */
+@Composable
+internal fun sheetTap(action: () -> Unit): () -> Unit {
+    val guard = LocalSheetGestureGuard.current ?: return action
+    val current by rememberUpdatedState(action)
+    return remember(guard) { { if (guard.allows()) current() } }
 }
 
 internal class SheetDismissState(private val scope: CoroutineScope, private val resistancePx: Float = 0f) {
@@ -361,6 +393,7 @@ fun SheetHost(
     val openState = remember {
         MutableTransitionState(entryReveal != null).apply { targetState = true }
     }
+    val gestureGuard = remember { SheetGestureGuard() }
     val resistancePx = with(density) { SheetPullPolicy.RESISTANCE_DP.dp.toPx() }
     val dismissal = remember(resistancePx) { SheetDismissState(scope, resistancePx) }
     val currentClosing by rememberUpdatedState(onClosing)
@@ -398,6 +431,7 @@ fun SheetHost(
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (dismissal.committed != null) return Offset.Zero
                 if (source != NestedScrollSource.UserInput) return Offset.Zero
+                if (available.y != 0f) gestureGuard.markMoved()
                 if (dismissal.rawPx <= 0f || available.y >= 0f) return Offset.Zero
                 // A reversal first pushes the displaced sheet home; only the remainder
                 // scrolls content away from its top edge.
@@ -412,6 +446,7 @@ fun SheetHost(
                 source: NestedScrollSource,
             ): Offset {
                 if (dismissal.committed != null) return Offset.Zero
+                if (source == NestedScrollSource.UserInput && (consumed.y != 0f || available.y != 0f)) gestureGuard.markMoved()
                 if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
                 if (dismissal.rawPx == 0f) beginDismiss()
                 dragDismissBy(available.y)
@@ -444,6 +479,16 @@ fun SheetHost(
                     alpha = Dim.scrimAlpha * (entryReveal?.progress ?: 1f)
                 )
             )
+            // The scrim never moves: each new DOWN resets the gesture guard here, before children.
+            .pointerInput(gestureGuard) {
+                awaitPointerEventScope {
+                    while (true) {
+                        val event = awaitPointerEvent(PointerEventPass.Initial)
+                        if (event.changes.any { it.pressed && !it.previousPressed } &&
+                            event.changes.count { it.pressed } == 1) gestureGuard.down()
+                    }
+                }
+            }
             .pointerInput(Unit) { detectTapGestures(onTap = { dismiss() }) },
     ) {
         Box(
@@ -559,6 +604,7 @@ fun SheetHost(
                                     onDragEnd = { settleDismiss(0f) },
                                     onDragCancel = { cancelDismiss() },
                                 ) { change, delta ->
+                                    gestureGuard.markMoved()
                                     if (delta > 0f || dismissal.rawPx > 0f) {
                                         change.consume()
                                         dragDismissBy(delta)
@@ -588,7 +634,7 @@ fun SheetHost(
                         }
                     }
                     Spacer(Modifier.height(8.dp))
-                    body()
+                    CompositionLocalProvider(LocalSheetGestureGuard provides gestureGuard) { body() }
                 }
             }
         }
@@ -701,7 +747,7 @@ fun RangeDragRule(
     }
 }
 
-// Grouped scope modes and geometry controls.
+// Grouped scope modes and geometry controls (REDESIGN §2 MODE). No prose.
 @Composable
 fun ModeSheet(
     state: ScopeUiState,
@@ -713,122 +759,114 @@ fun ModeSheet(
     onBanModes: (Set<Int>) -> Unit = {},
     onDismiss: () -> Unit,
 ) {
+    val p = p.sheetText()
     val view = LocalView.current
     val scroll = rememberScrollState()
-    val groups = listOf(
-        "XY" to listOf(0, 1, 2, 3),
-        "3D" to listOf(4, 5),
-        "TIME" to listOf(6, 7),
-        "SPECTRUM" to listOf(8, 9, 10),
-    )
+    CompositionLocalProvider(LocalSettingsControlAccess provides true) {
     SheetHost(p, "MODE", reduced, onDismiss, glyph = SettingsGlyph.Display) {
-        Column(
-            Modifier
-                .verticalScroll(scroll, overscrollEffect = null)
-        ) {
-            SectionHeading("AUTOMATIC", p, Modifier.padding(top = 0.dp))
+        Column(Modifier.verticalScroll(scroll, overscrollEffect = null)) {
+            GroupHeading("AUTOMATIC", p, first = true)
             val randomActive = state.randomModeArmed
-            Row(
-                Modifier
-                    .fillMaxWidth()
-                    .border(Dim.hairline, if (randomActive) p.accent else p.line)
-                    .clickable { Haptics.medium(view); state.requestRandomMode() }
-                    .padding(horizontal = Dim.rowPad, vertical = 10.dp),
-                verticalAlignment = Alignment.CenterVertically,
-            ) {
-                Mono("⚄", if (randomActive) p.accent else p.ink2, Type.dataXl, Modifier.width(22.dp))
-                Spacer(Modifier.width(Dim.gapLg))
-                Mono("random", if (randomActive) p.accent else p.ink, Type.dataLg)
-                Spacer(Modifier.weight(1f))
-                Mono(if (randomActive) state.modeTag else "new face", p.muted, Type.dataXs)
+            ModeRow(
+                lead = { Mono("⚄", if (randomActive) p.accent else p.ink2, Type.dataXl, Modifier.width(24.dp)) },
+                label = "random", trailing = if (randomActive) state.modeTag else "new face",
+                active = randomActive, p = p,
+            ) { Haptics.medium(view); state.requestRandomMode() }
+            ModeGroups.forEach { (heading, indices) ->
+                GroupHeading(heading, p)
+                indices.forEach { i ->
+                    ModeRow(
+                        lead = { Box(Modifier.width(24.dp)) { ModeGlyph(i, if (state.modeIndex == i) p.accent else p.ink2) } },
+                        label = ModeLabels[i], trailing = ModeTags[i], active = state.modeIndex == i, p = p,
+                    ) { Haptics.medium(view); onPick(i) }
+                }
             }
-            Spacer(Modifier.height(6.dp))
-            // Ban editor: faces struck here never come up on ⚄. At least two must stay
-            // in play — the guard simply refuses the tap that would starve the die.
-            var banEditing by remember { mutableStateOf(false) }
+            GroupHeading("GEOMETRY", p)
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
+                ChoiceCells(GeomFxLabels.mapIndexed { i, label -> i to label }, state.geomFx, p) {
+                    Haptics.medium(view); onGeomFx(it)
+                }
+            }
+            RowDivider(p)
+            if (state.geomFx != 0) {
+                SettingSlider("amount", state.geomAmount, 0f, 1f, p, { "%.0f %%".format(it * 100) }) { onGeomAmount(it) }
+            }
+            // Always here, so faces can be skipped before the first roll (Auditor L4).
+            GroupHeading("SKIP ON ⚄", p)
             val banned = state.randomBanModes
-            ChipCell(
-                "BAN FACES · " + if (banned.isEmpty()) "none" else "${banned.size}",
-                banned.isNotEmpty(), p, small = true,
-            ) { banEditing = !banEditing }
-            if (banEditing) {
-                Spacer(Modifier.height(6.dp))
-                ModeTags.indices.chunked(4).forEach { rowIdx ->
-                    Row(
-                        Modifier.fillMaxWidth(),
-                        horizontalArrangement = Arrangement.spacedBy(6.dp),
-                    ) {
-                        rowIdx.forEach { i ->
-                            Box(Modifier.weight(1f)) {
-                                ChipCell(ModeTags[i], i in banned, p, small = true) {
-                                    onBanModes(when {
-                                        i in banned -> banned - i
-                                        ModeLabels.size - banned.size > 2 -> banned + i
-                                        else -> banned
-                                    })
-                                }
+            Column(Modifier.fillMaxWidth().padding(vertical = 12.dp), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+                ModeTags.indices.chunked(4).forEach { row ->
+                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                        row.forEach { i ->
+                            SkipCell(ModeTags[i], ModeLabels[i], i in banned, p, Modifier.weight(1f)) {
+                                onBanModes(ModeBans.toggle(banned, i, ModeLabels.size))
                             }
                         }
-                        repeat(4 - rowIdx.size) { Spacer(Modifier.weight(1f)) }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
-                Prose(
-                    "banned faces never come up on ⚄ — at least two must stay in play",
-                    p.muted, modifier = Modifier.padding(bottom = 4.dp),
-                )
-            }
-            Spacer(Modifier.height(6.dp))
-            groups.forEach { (heading, indices) ->
-                SectionHeading(heading, p)
-                indices.forEach { i ->
-                    val active = state.modeIndex == i
-                    Row(
-                        Modifier
-                            .fillMaxWidth()
-                            .border(Dim.hairline, if (active) p.accent else p.line)
-                            .clickable { Haptics.medium(view); onPick(i) }
-                            .padding(horizontal = Dim.rowPad, vertical = 10.dp),
-                        verticalAlignment = Alignment.CenterVertically,
-                    ) {
-                        ModeGlyph(i, if (active) p.accent else p.ink2.copy(alpha = 0.8f))
-                        Spacer(Modifier.width(Dim.gapLg))
-                        Mono(ModeLabels[i], if (active) p.accent else p.ink, Type.dataLg)
-                        Spacer(Modifier.weight(1f))
-                        Mono(ModeTags[i], p.muted, Type.dataXs)
-                    }
-                    Spacer(Modifier.height(6.dp))
-                }
-            }
-            SectionHeading("GEOMETRY", p)
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                GeomFxLabels.forEachIndexed { i, label ->
-                    Box(Modifier.weight(1f)) {
-                        ChipCell(label, state.geomFx == i, p, small = true) {
-                            Haptics.medium(view)
-                            onGeomFx(i)
-                        }
+                        repeat(4 - row.size) { Spacer(Modifier.weight(1f)) }
                     }
                 }
             }
-            if (state.geomFx != 0) {
-                DragRule("AMOUNT", state.geomAmount, 0f, 1f, p, { "%.0f %%".format(it * 100) }) {
-                    onGeomAmount(it)
-                }
-            }
-            Prose(
-                "geometry bends the beam after the mode draws it — it rides every face, " +
-                    "⚄ included. phone-local: a remote desktop beam is untouched",
-                p.muted, modifier = Modifier.padding(top = 4.dp),
-            )
-            Prose(
-                "the sheet stays open — tap modes to try them live behind the glass",
-                p.muted, modifier = Modifier.padding(top = 4.dp),
-            )
+            Spacer(Modifier.height(12.dp))
         }
+    }
+    }
+}
+
+internal val ModeGroups = listOf(
+    "XY" to listOf(0, 1, 2, 3),
+    "3D" to listOf(4, 5),
+    "TIME" to listOf(6, 7),
+    "SPECTRUM" to listOf(8, 9, 10),
+)
+
+/** Faces struck from ⚄. At least two must stay in play: the tap that would starve the die is refused. */
+internal object ModeBans {
+    fun toggle(banned: Set<Int>, mode: Int, total: Int): Set<Int> = when {
+        mode in banned -> banned - mode
+        total - banned.size > 2 -> banned + mode
+        else -> banned
+    }
+}
+
+@Composable
+private fun ModeRow(lead: @Composable () -> Unit, label: String, trailing: String, active: Boolean, p: Palette,
+    onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
+    Row(
+        Modifier.fillMaxWidth().heightIn(min = 56.dp)
+            .semantics { selected = active }
+            .clickable(role = Role.Button, onClick = tap)
+            .padding(vertical = 12.dp),
+        verticalAlignment = Alignment.CenterVertically,
+    ) {
+        lead()
+        Spacer(Modifier.width(12.dp))
+        Mono(label, if (active) p.accent else p.ink, Type.label, Modifier.weight(1f))
+        Spacer(Modifier.width(12.dp))
+        Mono(trailing, if (active) p.accent else p.ink2, Type.value)
+        Spacer(Modifier.width(12.dp))
+        Box(Modifier.size(10.dp).background(if (active) p.accent else Color.Transparent))
+    }
+    RowDivider(p)
+}
+
+@Composable
+private fun SkipCell(tag: String, name: String, skipped: Boolean, p: Palette, modifier: Modifier, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
+    Row(
+        modifier.heightIn(min = 48.dp)
+            .border(Dim.hairline, if (skipped) p.accent else p.line)
+            .toggleable(skipped, role = Role.Checkbox) { tap() }
+            .semantics { contentDescription = "skip $name on random" }
+            .padding(horizontal = 6.dp, vertical = 8.dp),
+        verticalAlignment = Alignment.CenterVertically,
+        horizontalArrangement = Arrangement.Center,
+    ) {
+        if (skipped) {
+            Box(Modifier.size(8.dp).background(p.accent))
+            Spacer(Modifier.width(6.dp))
+        }
+        Mono(tag, if (skipped) p.accent else p.ink2, Type.value, maxLines = 1)
     }
 }
 

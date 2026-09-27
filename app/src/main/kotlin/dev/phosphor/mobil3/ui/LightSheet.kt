@@ -189,6 +189,7 @@ fun LightSheetV2(
 /** A preset block of real colour with its name. Chosen = accent rim + corner mark. */
 @Composable
 private fun PresetSwatch(swatch: BeamSwatch, worn: Boolean, p: Palette, modifier: Modifier, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     Column(
         modifier
             .semantics(mergeDescendants = true) {
@@ -196,7 +197,7 @@ private fun PresetSwatch(swatch: BeamSwatch, worn: Boolean, p: Palette, modifier
                 selected = worn
                 role = Role.RadioButton
             }
-            .clickable(onClick = onClick),
+            .clickable(onClick = tap),
         horizontalAlignment = Alignment.CenterHorizontally,
     ) {
         ColorBlock(swatch.color, worn, p, Modifier.fillMaxWidth().height(44.dp))
@@ -225,6 +226,8 @@ private fun SavedSwatch(
     index: Int, rgb: LightRgb, worn: Boolean, editing: Boolean, p: Palette, modifier: Modifier,
     onTap: () -> Unit, onEdit: () -> Unit, onDelete: () -> Unit,
 ) {
+    val tap = sheetTap(onTap)
+    val edit = sheetTap(onEdit)
     val color = Color(rgb.red, rgb.green, rgb.blue)
     val name = "saved ${index + 1} · ${ColorWords.name(rgb.red, rgb.green, rgb.blue)}"
     Box(
@@ -238,7 +241,7 @@ private fun SavedSwatch(
                     CustomAccessibilityAction("delete") { onDelete(); true },
                 )
             }
-            .combinedClickable(onClick = onTap, onLongClick = onEdit, onLongClickLabel = "edit"),
+            .combinedClickable(onClick = tap, onLongClick = edit, onLongClickLabel = "edit"),
     ) {
         ColorBlock(color, worn || editing, p, Modifier.fillMaxWidth().height(52.dp))
     }
@@ -246,10 +249,11 @@ private fun SavedSwatch(
 
 @Composable
 private fun AddSwatch(p: Palette, modifier: Modifier, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     Box(
         modifier.height(52.dp).border(Dim.hairline, p.lineStrong)
             .semantics { contentDescription = "save the current color" }
-            .clickable(role = Role.Button, onClick = onClick),
+            .clickable(role = Role.Button, onClick = tap),
         contentAlignment = Alignment.Center,
     ) { Mono("+", p.ink2, Type.dataXl) }
 }

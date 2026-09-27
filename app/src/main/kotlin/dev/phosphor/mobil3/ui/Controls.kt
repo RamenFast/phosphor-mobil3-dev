@@ -71,13 +71,16 @@ internal fun SliderLane(
     onStart: (Float) -> Unit = {},
     onChange: (Float) -> Unit,
 ) {
+    // A slider tap after a scroll or pull is not a tap: the lane never sees the parent's
+    // consumption, so the sheet's gesture guard decides. Sideways scrubs never scroll.
+    val guard = LocalSheetGestureGuard.current
     Box(
         modifier.height(if (LocalSettingsControlAccess.current) 48.dp else SliderGeometry.HIT_LANE_DP.dp)
             .consoleSeekGesture(
                 durationMs = 1L,
-                onStart = onStart,
-                onScrub = onChange,
-                onCommit = onChange,
+                onStart = { if (guard.allowsTap()) onStart(it) },
+                onScrub = { if (guard.allowsTap()) onChange(it) },
+                onCommit = { if (guard.allowsTap()) onChange(it) },
                 onCancel = {},
             )
             .sliderTrack(p, fraction, highFraction),
@@ -312,6 +315,7 @@ fun FlatKey(
     val style = LocalRoomStyle.current
     val accessible = LocalSettingsControlAccess.current
     val p = p.readableOn(p.controlBackplate(pressed))
+    val tap = sheetTap(onClick)
     Box(
         modifier
             .heightIn(min = 48.dp).widthIn(min = 48.dp)
@@ -319,7 +323,7 @@ fun FlatKey(
             .background(p.surface)
             .border(Dim.hairline, if (active || pressed) p.accent else p.line)
             .then(if (accessible) Modifier.settingsFocusBorder(p) else Modifier)
-            .clickable(interactionSource = interaction, indication = null, onClick = onClick)
+            .clickable(interactionSource = interaction, indication = null, onClick = tap)
             .padding(horizontal = style.space(14.dp), vertical = style.space(6.dp)),
         contentAlignment = Alignment.Center,
     ) {
@@ -402,11 +406,12 @@ fun SheetRow(
 ) {
     val p = p.readableOn()
     val style = LocalRoomStyle.current
+    val tap = sheetTap(onClick)
     Box(
         modifier
             .fillMaxWidth()
             .heightIn(min = 48.dp).background(if (checked) p.surface2 else p.surface)
-            .clickable(onClick = onClick)
+            .clickable(onClick = tap)
             .border(Dim.hairline, if (checked) p.accent else p.line)
             .padding(style.space(Dim.rowPad)),
     ) {
@@ -445,6 +450,7 @@ fun ChipCell(
     val p = p.readableOn()
     val style = LocalRoomStyle.current
     val latched = active && enabled
+    val tap = sheetTap(onClick)
     Box(
         Modifier
             .padding(style.space(3.dp))
@@ -454,7 +460,7 @@ fun ChipCell(
             .background(p.surface)
             .then(if (latched) Modifier.background(p.surface2) else Modifier)
             .border(Dim.hairline, if (latched) p.accent else p.line)
-            .clickable(enabled = enabled, onClick = onClick)
+            .clickable(enabled = enabled, onClick = tap)
             .padding(style.space(6.dp)),
         contentAlignment = Alignment.Center,
     ) {

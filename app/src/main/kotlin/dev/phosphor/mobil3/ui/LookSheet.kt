@@ -161,6 +161,7 @@ private fun LookGrid(tiles: List<LookTiles.Tile>, marked: String?, p: Palette,
 /** A live preview: the look's own plane, surface, ink, accent and corner. */
 @Composable
 private fun LookTile(tile: LookTiles.Tile, active: Boolean, p: Palette, modifier: Modifier, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     val look = remember(tile) { AppearancePalette.palette(tile.value, tile.key, tile.label) }
     val lookStyle = remember(tile) { AppearancePalette.style(tile.value) }
     val corner = RoundedCornerShape(lookStyle.cornerRadius.coerceAtMost(12.dp))
@@ -174,7 +175,7 @@ private fun LookTile(tile: LookTiles.Tile, active: Boolean, p: Palette, modifier
             .border(if (active) 2.dp else Dim.hairline, if (active) p.accent else p.lineStrong)
             .padding(if (active) 2.dp else 1.dp)
             .background(look.plane)
-            .clickable(onClick = onClick)
+            .clickable(onClick = tap)
             .padding(10.dp),
     ) {
         Box(

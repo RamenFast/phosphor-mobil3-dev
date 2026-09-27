@@ -193,7 +193,7 @@ private fun EditorText(text: String, p: Palette) {
 @Composable
 internal fun AppearanceButton(label: String, p: Palette, enabled: Boolean = true, action: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp).settingsFocusBorder(p)
-        .border(1.dp, p.lineStrong).clickable(enabled = enabled, role = Role.Button, onClick = action)
+        .border(1.dp, p.lineStrong).clickable(enabled = enabled, role = Role.Button, onClick = sheetTap(action))
         .padding(LocalRoomStyle.current.space(10.dp)), verticalArrangement = Arrangement.Center) {
         EditorText(if (enabled) label else "$label · unavailable", p)
     }

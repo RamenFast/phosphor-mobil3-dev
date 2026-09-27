@@ -68,10 +68,11 @@ internal object MicNames {
 @Composable
 internal fun SourceRow(label: String, p: Palette, glyph: SettingsGlyph? = null, active: Boolean = false,
     trailing: String? = null, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp)
             .semantics { selected = active; if (active) stateDescription = "on" }
-            .clickable(role = Role.Button, onClick = onClick)
+            .clickable(role = Role.Button, onClick = tap)
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,
     ) {
@@ -140,13 +141,14 @@ fun SourceSheet(
         SourceRow("open folder", p, SettingsGlyph.Folder,
             active = state.sourceLabel == "deck" && state.queueTitles.size > 1) { actions.openFolder(); onDismiss() }
         if (state.queueTitles.isNotEmpty()) {
+            val guard = LocalSheetGestureGuard.current
             LazyColumn(Modifier.heightIn(max = 260.dp)) {
                 itemsIndexed(state.queueTitles) { i, title ->
                     val current = i == state.queueIndex
                     Row(
                         Modifier.fillMaxWidth().heightIn(min = 48.dp)
                             .semantics { selected = current }
-                            .clickable { actions.jumpToQueue(i) }
+                            .clickable { if (guard.allowsTap()) actions.jumpToQueue(i) }
                             .padding(vertical = 8.dp),
                         verticalAlignment = Alignment.CenterVertically,
                     ) {

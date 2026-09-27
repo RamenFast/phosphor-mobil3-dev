@@ -113,9 +113,10 @@ private val RowPadV = 12.dp
 @Composable
 internal fun SettingToggle(label: String, on: Boolean, p: Palette, hint: String? = null,
     enabled: Boolean = true, onToggle: (Boolean) -> Unit) {
+    val guard = LocalSheetGestureGuard.current
     Row(
         Modifier.fillMaxWidth().heightIn(min = RowMin)
-            .toggleable(on, enabled = enabled, role = Role.Switch) { onToggle(it) }
+            .toggleable(on, enabled = enabled, role = Role.Switch) { if (guard.allowsTap()) onToggle(it) }
             .semantics { stateDescription = if (on) "on" else "off" }
             .alpha(if (enabled) 1f else 0.45f)
             .padding(vertical = RowPadV),
@@ -153,6 +154,7 @@ internal fun <T> ChoiceCells(options: List<Pair<T, String>>, selected: T, p: Pal
     enabled: Boolean = true, onPick: (T) -> Unit) {
     val measurer = rememberTextMeasurer()
     val density = LocalDensity.current
+    val guard = LocalSheetGestureGuard.current
     val style = TextStyle(fontFamily = MonoFace, fontSize = Type.value)
     BoxWithConstraints(Modifier.fillMaxWidth()) {
         val widths = options.map { (_, text) ->
@@ -166,7 +168,7 @@ internal fun <T> ChoiceCells(options: List<Pair<T, String>>, selected: T, p: Pal
             Row(
                 modifier.heightIn(min = 48.dp)
                     .border(Dim.hairline, if (chosen) p.accent else p.line)
-                    .selectable(chosen, enabled = enabled, role = Role.RadioButton) { onPick(value) }
+                    .selectable(chosen, enabled = enabled, role = Role.RadioButton) { if (guard.allowsTap()) onPick(value) }
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
                 horizontalArrangement = if (single) Arrangement.Start else Arrangement.Center,
@@ -264,9 +266,10 @@ internal fun SettingRange(label: String, lo: Float, hi: Float, min: Float, max: 
 @Composable
 internal fun SettingAction(label: String, p: Palette, hint: String? = null, value: String = "›",
     enabled: Boolean = true, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     Row(
         Modifier.fillMaxWidth().heightIn(min = RowMin)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = tap)
             .alpha(if (enabled) 1f else 0.45f)
             .padding(vertical = RowPadV),
         verticalAlignment = Alignment.CenterVertically,

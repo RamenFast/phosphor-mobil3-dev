@@ -68,6 +68,7 @@ internal fun SheetKey(label: String, p: Palette, modifier: Modifier = Modifier, 
     enabled: Boolean = true, description: String? = null, onClick: () -> Unit) {
     val interaction = remember { MutableInteractionSource() }
     val pressed by interaction.collectIsPressedAsState()
+    val tap = sheetTap(onClick)
     Box(
         modifier.heightIn(min = 48.dp).widthIn(min = 48.dp)
             .background(if (pressed) p.accent.copy(alpha = 0.10f) else p.surface)
@@ -75,7 +76,7 @@ internal fun SheetKey(label: String, p: Palette, modifier: Modifier = Modifier, 
             .settingsFocusBorder(p)
             .semantics { selected = active; description?.let { contentDescription = it } }
             .clickable(interactionSource = interaction, indication = null, enabled = enabled,
-                role = Role.Button, onClick = onClick)
+                role = Role.Button, onClick = tap)
             .alpha(if (enabled) 1f else 0.45f)
             .padding(horizontal = 14.dp, vertical = 8.dp),
         contentAlignment = Alignment.Center,
@@ -112,9 +113,10 @@ internal fun NameField(value: String, label: String, p: Palette, changed: (Strin
 /** One pick-able row: name left, chosen mark right. */
 @Composable
 private fun SetupRow(name: String, chosen: Boolean, trailing: String?, p: Palette, enabled: Boolean, onClick: () -> Unit) {
+    val tap = sheetTap(onClick)
     Row(
         Modifier.fillMaxWidth().heightIn(min = 56.dp)
-            .clickable(enabled = enabled, role = Role.Button, onClick = onClick)
+            .clickable(enabled = enabled, role = Role.Button, onClick = tap)
             .semantics { selected = chosen }
             .padding(vertical = 12.dp),
         verticalAlignment = Alignment.CenterVertically,

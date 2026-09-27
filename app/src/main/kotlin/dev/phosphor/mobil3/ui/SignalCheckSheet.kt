@@ -61,7 +61,7 @@ private fun SignalCheckContent(state: ScopeUiState, p: Palette, onSources: () ->
 @Composable
 internal fun SignalCheckAction(label: String, p: Palette, onClick: () -> Unit) {
     Column(Modifier.fillMaxWidth().heightIn(min = 48.dp)
-        .clickable(role = Role.Button, onClick = onClick).padding(vertical = 14.dp, horizontal = 8.dp)) {
+        .clickable(role = Role.Button, onClick = sheetTap(onClick)).padding(vertical = 14.dp, horizontal = 8.dp)) {
         Mono(label, p.ink)
     }
 }
