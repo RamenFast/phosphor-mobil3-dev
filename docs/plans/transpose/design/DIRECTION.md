@@ -155,3 +155,9 @@ Section summaries use words (`auto size · closer`), never raw multipliers.
   action (label, value or ›). Hints only where a label is jargon.
 - SIZE follows AUTO: closer/farther around AUTO when on, direct size when off (same as the stage gestures).
 - Font scale 2.0 checked on device: no clipped or mid-word-broken text in the index, SCREEN and SOURCES.
+
+## As built · Redesign (2026-09-25, Designer)
+
+The index + pages Settings above is superseded. Settings, LIGHT, LOOK, SRC and MODE are now one flat
+scroll each, with one type scale, one row family and one shared dismissal. Source of truth:
+[REDESIGN.md](REDESIGN.md). Commits `29d6587` … (Prime) carry slices a, a', b, a2, c, c', d, e, f.

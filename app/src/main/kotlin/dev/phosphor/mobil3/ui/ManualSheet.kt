@@ -1,5 +1,6 @@
 package dev.phosphor.mobil3.ui
 
+import androidx.activity.compose.BackHandler
 import androidx.compose.foundation.border
 import androidx.compose.foundation.background
 import androidx.compose.foundation.clickable
@@ -169,6 +170,9 @@ fun ManualSheet(
         if (navigation.chapterId != null) chapterScroll.scrollTo(0)
     }
     SheetHost(p, "MANUAL", reduced, onDismiss, glyph = SettingsGlyph.About) {
+        // System Back peels one layer: chapter → previous chapter or index → the sheet
+        // the manual came from. Registered inside the sheet, so it wins over its close.
+        BackHandler(enabled = navigation.chapterId != null) { navigation = navigation.back() }
         Column(
             Modifier
                 .verticalScroll(if (selected == null) indexScroll else chapterScroll, overscrollEffect = null)
