@@ -37,10 +37,11 @@ internal class CaptureMixInput {
     private var previous: CaptureClock? = null
     private var validClock = false
     private var lastReceipt = 0L
+    var deliveryDelayNanos = 0L; private set
 
     fun clear() {
         first = 0; end = 0; queuedFrames = 0; anchor = null; previous = null
-        validClock = false; estimated = true; correctionPpm = 0.0; lastReceipt = 0
+        validClock = false; estimated = true; correctionPpm = 0.0; lastReceipt = 0; deliveryDelayNanos = 0
     }
     fun reset(generation: Long, epoch: Long) {
         clear(); this.generation = generation; this.epoch = epoch
@@ -72,6 +73,10 @@ internal class CaptureMixInput {
         queuedFrames = (end - first).toInt()
         lastReceipt = receipt
         updateClock(clock, CaptureClock(end, receipt), fmt.rate)
+        anchor?.takeIf { queuedFrames > 0 }?.let {
+            val endNanos = it.nanos + ((end - it.frame).toDouble() * 1e9 / fmt.rate / (1 + correctionPpm / 1e6)).toLong()
+            deliveryDelayNanos = (receipt - endNanos).coerceAtLeast(0)
+        }
     }
     private fun updateClock(clock: CaptureClock?, fallback: CaptureClock, rate: Int) {
         val usable = clock?.takeIf { it.frame >= 0 && it.nanos > 0 &&
@@ -140,13 +145,61 @@ internal class CaptureMixCore(private val microphoneOnly: Boolean) {
     private var playbackLevel = 1f
     private var micLevel = 0f
     private var microphoneEnabled = microphoneOnly
+    private var playbackFormat: CapturePcm? = null
+    val directPlayback get() = !microphoneOnly && !microphoneEnabled &&
+        (playbackFormat == null || playbackFormat?.let { it.rate == 48_000 && it.channels == 2 } == true)
+    var missingPlaybackFrames = 0L; private set
+    var missingMicrophoneFrames = 0L; private set
+    var playoutGapFrames = 0L; private set
+    private var delayNanos = 50_000_000L
+    private var previousLiveNanos = 0L
+    private var nextPresentationNanos = Long.MIN_VALUE
+
+    @Synchronized fun preparePlaybackRead(pcm: FloatArray, count: Int, format: CapturePcm, readEpoch: Long): Boolean {
+        if (readEpoch != epoch) return false
+        playbackFormat = format
+        if (!directPlayback) return false
+        // The reader observes raw PCM first and overwrites this buffer on its next read.
+        require(count in 0..pcm.size && count % 2 == 0)
+        var peak = 0f
+        for (i in 0 until count) {
+            pcm[i] = if (pcm[i].isFinite()) (pcm[i] * settings.playback).coerceIn(-1f, 1f) else 0f
+            peak = max(peak, abs(pcm[i]))
+        }
+        outputPeak = peak
+        return true
+    }
+
+    @Synchronized fun renderLive(now: Long, result: FloatArray): Long {
+        val lead = max(if (!microphoneOnly) playback.deliveryDelayNanos else 0,
+            if (microphoneEnabled) microphone.deliveryDelayNanos else 0)
+        // One output block plus 20 ms for read cadence and the interpolation tail.
+        val required = max(50_000_000L, ((lead + 39_999_999L) / 10_000_000L) * 10_000_000L)
+        val release = if (previousLiveNanos == 0L) 0L else (now - previousLiveNanos).coerceAtLeast(0) / 1000
+        delayNanos = max(required, delayNanos - release)
+        previousLiveNanos = now
+        val start = now - delayNanos
+        if (start < nextPresentationNanos) {
+            result.fill(0f); outputPeak = 0f; playoutGapFrames += result.size / 2
+            return epoch
+        }
+        nextPresentationNanos = start + 10_000_000L
+        return render(start, result)
+    }
     @Synchronized fun settings(value: CaptureMixSettings) { settings = value }
     @Synchronized fun attachment(generation: Long, enabled: Boolean) {
+        if (directPlayback && enabled) {
+            playback.reset(0, epoch)
+            delayNanos = 50_000_000L; previousLiveNanos = 0L; nextPresentationNanos = Long.MIN_VALUE
+        }
         attachment = generation; microphoneEnabled = enabled
         microphone.reset(generation, epoch)
     }
     @Synchronized fun epoch(value: Long) {
-        if (epoch != value) { epoch = value; playback.reset(0, value); microphone.reset(attachment, value) }
+        if (epoch != value) {
+            epoch = value; playback.reset(0, value); microphone.reset(attachment, value)
+            delayNanos = 50_000_000L; previousLiveNanos = 0L; nextPresentationNanos = Long.MIN_VALUE
+        }
     }
     @Synchronized fun offer(mic: Boolean, pcm: FloatArray, count: Int, format: CapturePcm, frame: Long,
                             clock: CaptureClock?, receipt: Long, generation: Long, readEpoch: Long): Boolean {
@@ -161,6 +214,8 @@ internal class CaptureMixCore(private val microphoneOnly: Boolean) {
             val at = start + i * 1_000_000_000L / 48_000
             val p0 = if (!microphoneOnly) playback.sample(at, 0) else null
             val m0 = if (microphoneEnabled) microphone.sample(at, 0) else null
+            if (!microphoneOnly && p0 == null) missingPlaybackFrames++
+            if (microphoneEnabled && m0 == null) missingMicrophoneFrames++
             val targetP = if (p0 != null) settings.playback else 0f
             val targetM = if (m0 != null) settings.microphone else 0f
             playbackLevel += (targetP - playbackLevel).coerceIn(-1f / 960, 1f / 960)
@@ -181,5 +236,7 @@ internal class CaptureMixCore(private val microphoneOnly: Boolean) {
     }
     @Synchronized fun describe(): String = "48 kHz stereo · queues ${playback.queuedFrames}/${microphone.queuedFrames} frames · " +
         "alignment ${if ((microphoneOnly || !playback.estimated) && (!microphoneEnabled || !microphone.estimated)) "timestamp observed" else "estimated"} · " +
-        "drift ${playback.correctionPpm.toInt()}/${microphone.correctionPpm.toInt()} ppm · discontinuities ${playback.discontinuities}/${microphone.discontinuities} · output peak $outputPeak"
+        "drift ${playback.correctionPpm.toInt()}/${microphone.correctionPpm.toInt()} ppm · discontinuities ${playback.discontinuities}/${microphone.discontinuities} · " +
+        "playout ${delayNanos / 1_000_000} ms · missing $missingPlaybackFrames/$missingMicrophoneFrames frames · delay gaps $playoutGapFrames frames · " +
+        "${if (directPlayback) "direct playback" else "mixed"} · output peak $outputPeak"
 }

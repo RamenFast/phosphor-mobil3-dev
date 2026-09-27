@@ -110,12 +110,7 @@ class CaptureMixPolicyTest {
         assertEquals(queued, core.playback.queuedFrames)
         val out = FloatArray(960)
         assertEquals(6, core.render(1_050_000_000, out))
-        val session = java.io.File("app/src/main/kotlin/dev/phosphor/mobil3/CaptureMixSession.kt").takeIf { it.isFile }
-            ?: java.io.File("src/main/kotlin/dev/phosphor/mobil3/CaptureMixSession.kt")
-        val source = session.readText()
-        val offer = source.substringAfter("fun offer(").substringBefore("fun invalidate")
-        assertFalse("core.epoch(" in offer)
-        assertTrue("core.offer(" in offer)
+
     }
     @Test fun monoAndTrueStereoRemainDistinct() {
         val (mono) = input(16_000, 1)
@@ -177,6 +172,140 @@ class CaptureMixPolicyTest {
         input.reset(2, 3)
         input.offer(data, data.size, stereo, 0, null, 2_000_000_000, 2, 3)
         assertTrue(input.estimated)
+    }
+    // Failure cases: delayed delivery, unequal input latency, stalled reads, and a growing delay
+    // must not cause permanent silence, channel loss, stale replay, or timeline rewind.
+    @Test fun livePlaybackFollowsDeliveredAudioInsteadOfTheHardwareHead() {
+        val core = CaptureMixCore(false)
+        core.epoch(3)
+        val output = FloatArray(960)
+        val data = FloatArray(960) { if (it % 2 == 0) .25f else -.5f }
+        repeat(100) { block ->
+            val frame = block * 480L
+            val now = 2_000_000_000L + block * 10_000_000L
+            core.offer(false, data, data.size, stereo, frame,
+                CaptureClock(frame + 480 + 4320, now), now, 0, 3)
+            core.renderLive(now, output)
+            if (block > 20) {
+                assertEquals(.25f, output[0], 1e-5f)
+                assertEquals(-.5f, output[1], 1e-5f)
+                assertTrue(output.all { it != 0f }, "complete delayed block $block")
+            }
+        }
+        core.renderLive(4_000_000_000L, output)
+        assertTrue(output.all { it == 0f }, "stalled input cannot replay old sound")
+    }
+    @Test fun liveMixUsesOnePresentationTimeForDifferentDeliveryLatencies() {
+        val core = CaptureMixCore(false)
+        core.epoch(3); core.attachment(1, true)
+        val output = FloatArray(960)
+        repeat(100) { block ->
+            val frame = block * 480L
+            val now = 2_000_000_000L + block * 10_000_000L
+            for (mic in listOf(false, true)) {
+                val delay = if (mic) 480 else 4320
+                // The same time ramp reaches each reader with a different delivery delay.
+                val data = FloatArray(960) { ((frame + it / 2 - delay) / 48_000f) }
+                core.offer(mic, data, data.size, stereo, frame,
+                    CaptureClock(frame + 480 + delay, now), now, if (mic) 1 else 0, 3)
+            }
+            core.renderLive(now, output)
+            if (block > 25) {
+                val expected = (block * 480 + 480 - 5760) / 48_000f
+                assertEquals(expected, output[0], 1e-4f, "aligned inputs at block $block")
+            }
+        }
+    }
+    @Test fun increasingLiveDelayNeverReplaysPublishedFramesAndEpochCanRestart() {
+        val core = CaptureMixCore(false)
+        core.epoch(3)
+        val data = FloatArray(960) { .5f }
+        val output = FloatArray(960)
+        repeat(30) { block ->
+            val now = 2_000_000_000L + block * 10_000_000L
+            core.offer(false, data, 960, stereo, block * 480L,
+                CaptureClock(block * 480L + 480, now), now, 0, 3)
+            core.renderLive(now, output)
+        }
+        core.renderLive(2_280_000_000L, output)
+        assertTrue(output.all { it == 0f }, "presentation cannot run backwards")
+        core.epoch(4)
+        core.renderLive(2_000_000_000L, output)
+        assertTrue(output.all { it == 0f }, "retired epoch contains no samples")
+    }
+    @Test fun playbackOnlyReadsBypassClockAlignmentAndKeepStereoLevelAndEpoch() {
+        val core = CaptureMixCore(false)
+        core.epoch(3)
+        core.settings(CaptureMixSettings(playback = .5f))
+        val pcm = floatArrayOf(.5f, -.25f)
+        assertTrue(core.preparePlaybackRead(pcm, pcm.size, stereo, 3))
+        assertContentEquals(floatArrayOf(.25f, -.125f), pcm)
+        assertFalse(core.preparePlaybackRead(pcm, pcm.size, stereo, 2))
+        core.attachment(1, true)
+        assertFalse(core.preparePlaybackRead(pcm, pcm.size, stereo, 3))
+        core.attachment(2, false)
+        assertTrue(core.preparePlaybackRead(pcm, pcm.size, stereo, 3))
+        assertFalse(CaptureMixCore(true).preparePlaybackRead(pcm, pcm.size, stereo, -1))
+    }
+    @Test fun rejectedClockCannotTurnClearedFrameZeroIntoAPlaybackDelay() {
+        val input = CaptureMixInput()
+        val data = FloatArray(960) { .5f }
+        val frame = 4_800_000L
+        input.offer(data, 960, stereo, frame, CaptureClock(frame + 480, 100_000_000_000L),
+            100_000_000_000L, 0, 3)
+        input.offer(data, 960, stereo, frame + 480, CaptureClock(frame + 960, 100_200_000_000L),
+            100_200_000_000L, 0, 3)
+        assertEquals(0, input.queuedFrames)
+        assertEquals(0L, input.deliveryDelayNanos)
+        input.offer(data, 960, stereo, frame + 960, CaptureClock(frame + 1440, 100_210_000_000L),
+            100_210_000_000L, 0, 3)
+        assertEquals(0L, input.deliveryDelayNanos)
+    }
+    @Test fun nonNativePlaybackFormatsUseTheStereoResamplingMixerWithoutMic() {
+        for (format in listOf(CapturePcm(44_100, 2), CapturePcm(48_000, 1))) {
+            val core = CaptureMixCore(false)
+            core.epoch(3)
+            val output = FloatArray(960)
+            val frames = format.rate / 100
+            val data = FloatArray(frames * format.channels) { .5f }
+            repeat(40) { block ->
+                val now = 2_000_000_000L + block * 10_000_000L
+                assertFalse(core.preparePlaybackRead(data, data.size, format, 3))
+                assertFalse(core.directPlayback)
+                core.offer(false, data, data.size, format, block.toLong() * frames,
+                    CaptureClock((block + 1L) * frames, now), now, 0, 3)
+                core.renderLive(now, output)
+                if (block > 20) {
+                    assertEquals(960, output.size)
+                    assertTrue(output.all { abs(it - .5f) < 1e-5f })
+                }
+            }
+        }
+    }
+    @Test fun growingDeliveryLatencyRecoversAndStarvedMicDoesNotSilencePlayback() {
+        val core = CaptureMixCore(false)
+        core.epoch(3); core.attachment(1, true)
+        val output = FloatArray(960)
+        var frame = 0L
+        repeat(150) { block ->
+            val now = 2_000_000_000L + block * 10_000_000L
+            // Four missing reads increase delivery lag from 90 ms to 130 ms.
+            if (block !in 50..53) {
+                val data = FloatArray(960) { .5f }
+                core.offer(false, data, data.size, stereo, frame,
+                    CaptureClock(block * 480L + 480 + 4320, now), now, 0, 3)
+                frame += 480
+            }
+            if (block < 40) {
+                val mic = FloatArray(960) { .25f }
+                core.offer(true, mic, 960, stereo, block * 480L,
+                    CaptureClock(block * 480L + 480, now), now, 1, 3)
+            }
+            core.renderLive(now, output)
+            if (block > 110) assertTrue(output.all { abs(it - .5f) < 1e-5f })
+        }
+        assertTrue(core.missingMicrophoneFrames > 0)
+        assertTrue(core.playoutGapFrames > 0)
     }
     @Test fun simulatedClocksStayBoundedForSixtySeconds() {
         for (ppm in listOf(-500, 500)) {

@@ -28,9 +28,13 @@ internal class CaptureMixSession(val microphoneOnly: Boolean, settings: CaptureM
                     val now = SystemClock.elapsedRealtimeNanos()
                     if (now < deadline) { LockSupport.parkNanos(deadline - now); continue }
                     if (now - deadline > 20_000_000) deadline = now
-                    core.epoch(PhosphorNative.captureReadEpoch())
-                    val epoch = core.render(deadline - 50_000_000, output)
-                    if (live) PhosphorNative.pushCaptureRead(output, output.size, nativeOwner, epoch)
+                    synchronized(this@CaptureMixSession) {
+                        core.epoch(PhosphorNative.captureReadEpoch())
+                        if (!core.directPlayback) {
+                            val epoch = core.renderLive(deadline, output)
+                            if (live) PhosphorNative.pushCaptureRead(output, output.size, nativeOwner, epoch)
+                        }
+                    }
                     deadline += 10_000_000
                 }
             } catch (error: RuntimeException) {
@@ -58,19 +62,28 @@ internal class CaptureMixSession(val microphoneOnly: Boolean, settings: CaptureM
     @Synchronized fun clearMicrophone(generation: Long) {
         if (micGeneration == generation) core.attachment(generation, true)
     }
-    fun offer(mic: Boolean, data: FloatArray, count: Int, format: CapturePcm, frame: Long,
+    @Synchronized fun offer(mic: Boolean, data: FloatArray, count: Int, format: CapturePcm, frame: Long,
               clock: CaptureClock?, receipt: Long, generation: Long, epoch: Long) {
         if (!live || (mic && !accepts(generation))) return
+        if (!mic) {
+            core.epoch(PhosphorNative.captureReadEpoch())
+            if (core.preparePlaybackRead(data, count, format, epoch)) {
+                PhosphorNative.pushCaptureRead(data, count, nativeOwner, epoch)
+                return
+            }
+        }
         core.offer(mic, data, count, format, frame, clock, receipt, generation, epoch)
     }
     fun invalidate() { live = false; LockSupport.unpark(publisher) }
     /** Off-main; only the whole-source owner calls this after retiring both readers. */
-    @Synchronized fun finish(): String? {
+    fun finish(): String? {
         invalidate()
         publisher.join(2_000)
         if (publisher.isAlive) return ReaderStop.TIMEOUT
-        if (!ringReleased) { PhosphorNative.setRingActive(false); ringReleased = true }
-        core.epoch(-1)
+        synchronized(this) {
+            if (!ringReleased) { PhosphorNative.setRingActive(false); ringReleased = true }
+            core.epoch(-1)
+        }
         return null
     }
     private var ringReleased = false
