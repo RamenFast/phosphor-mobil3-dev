@@ -64,6 +64,28 @@ internal fun Palette.sheetText(): Palette = copy(
     ink = readableColor(ink), ink2 = readableColor(ink2), muted = readableColor(muted), accent = readableColor(accent),
 )
 
+/** Two columns only in landscape with room for two readable columns (REDESIGN, slice j). */
+internal fun twoColumns(landscape: Boolean, widthDp: Float): Boolean = landscape && widthDp >= 560f
+
+/**
+ * A sheet body that becomes two columns in landscape. [right] learns whether it starts a
+ * column (so its first heading sits level with the left column's first heading).
+ */
+@Composable
+internal fun SheetColumns(left: @Composable () -> Unit, right: @Composable (startsColumn: Boolean) -> Unit) {
+    val landscape = LocalChromeLandscape.current
+    BoxWithConstraints(Modifier.fillMaxWidth()) {
+        if (twoColumns(landscape, maxWidth.value)) {
+            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(28.dp)) {
+                Column(Modifier.weight(1f)) { left() }
+                Column(Modifier.weight(1f)) { right(true) }
+            }
+        } else {
+            Column(Modifier.fillMaxWidth()) { left(); right(false) }
+        }
+    }
+}
+
 /** Group heading: glyph + tracked CAPS eyebrow. Hierarchy, never a box. */
 @Composable
 internal fun GroupHeading(title: String, p: Palette, glyph: SettingsGlyph? = null, first: Boolean = false,
@@ -321,10 +343,11 @@ internal fun SettingsBody(
             state.settingsFocus = null
         }
     }
-    SettingsGroup.visible(state.developerView).forEachIndexed { index, group ->
-        GroupHeading(group.title, p, group.glyph, first = index == 0,
-            modifier = if (group == SettingsGroup.SETUPS) Modifier.bringIntoViewRequester(setupsRequester) else Modifier)
-        when (group) {
+    val groups = SettingsGroup.visible(state.developerView)
+    val group: @Composable (SettingsGroup, Boolean) -> Unit = { g, first ->
+        GroupHeading(g.title, p, g.glyph, first = first,
+            modifier = if (g == SettingsGroup.SETUPS) Modifier.bringIntoViewRequester(setupsRequester) else Modifier)
+        when (g) {
             SettingsGroup.SOUND -> SoundGroup(state, p, actions, focusValue, onFocus)
             SettingsGroup.SCREEN -> ScreenGroup(state, p, actions)
             SettingsGroup.PIP -> PipGroup(state, p, actions)
@@ -334,6 +357,12 @@ internal fun SettingsBody(
             SettingsGroup.DEVELOPER -> DeveloperGroup(state, p, actions)
         }
     }
+    // Landscape: the two long groups on the left, the rest on the right.
+    val (left, right) = groups.partition { it == SettingsGroup.SOUND || it == SettingsGroup.SCREEN }
+    SheetColumns(
+        left = { left.forEachIndexed { i, g -> group(g, i == 0) } },
+        right = { starts -> right.forEachIndexed { i, g -> group(g, starts && i == 0) } },
+    )
 }
 
 @Composable

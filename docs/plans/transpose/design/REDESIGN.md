@@ -74,6 +74,12 @@ gets its own `current` tile first. Tiles are live previews. → STYLE: feel · m
 soft · round) · labels, each changing only its field. Choices use one row, else a 2-column grid, else
 one column, whichever first fits every label on one line. Raw values stay in DEVELOPER.
 
+**Landscape (slice j)** · SETTINGS, LIGHT, LOOK, SRC and MODE become two columns when the sheet has
+≥ 560 dp of content width in landscape (sheet max 860 dp). SETTINGS: SOUND & VIEW + SCREEN left, the
+rest right. LIGHT: COLORS + SAVED left, CYCLE + RANDOM right. LOOK: tiles left, STYLE right. SRC:
+LIBRARY + OTHER APPS left, MICROPHONE + REMOTE right. MODE: faces left, GEOMETRY + SKIP ON ⚄ right.
+The manual keeps one reading column at the console width.
+
 ## 3. One type scale
 
 | Token | Size | Face | Case | Use |

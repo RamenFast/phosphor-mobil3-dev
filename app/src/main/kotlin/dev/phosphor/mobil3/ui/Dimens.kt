@@ -30,6 +30,7 @@ object Dim {
     val popoutPullTravel = 184.dp
     val landscapeConsoleMaxWidth = 620.dp
     val landscapeSheetMaxWidth = 600.dp
+    val landscapeWideSheetMaxWidth = 860.dp // two-column sheets in landscape
     val landscapeBandMaxWidth = 760.dp
     val bottomGestureBand = 88.dp
     // Top band belongs to Android's transient-bars swipe — never gain/orbit.

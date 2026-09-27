@@ -33,6 +33,18 @@ class SheetGestureGuardTest {
         assertEquals(1, taps)
     }
 
+    @Test fun keyboardAndTalkBackActivateAfterATouchScrollEnds() {
+        val guard = SheetGestureGuard()
+        guard.down(); guard.markMoved()
+        var during = 0
+        guard.tap { during++ }()          // the scroll's own UP: suppressed
+        assertEquals(0, during)
+        guard.up()                        // the sequence ends (Final pass of the last UP)
+        var semantic = 0
+        guard.tap { semantic++ }()        // a later semantic onClick has no DOWN of its own
+        assertEquals(1, semantic)
+    }
+
     @Test fun outsideASheetEverythingTaps() {
         val none: SheetGestureGuard? = null
         assertTrue(none.allowsTap())

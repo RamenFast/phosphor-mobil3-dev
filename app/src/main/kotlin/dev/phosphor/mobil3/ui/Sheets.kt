@@ -230,6 +230,13 @@ internal class SheetGestureGuard {
 
     fun down() { moved = false }
     fun markMoved() { moved = true }
+
+    /**
+     * The pointer sequence ended (all fingers up or cancelled), after its children handled it.
+     * Suppression belongs to that sequence only: a later keyboard or TalkBack activation,
+     * which has no DOWN of its own, is never blocked by an earlier scroll.
+     */
+    fun up() { moved = false }
     fun allows(): Boolean = !moved
 
     /** Wraps a tap action so it is dropped when this gesture already scrolled or pulled. */
@@ -363,6 +370,8 @@ fun SheetHost(
     entryReveal: PullRevealState? = null,
     glyph: SettingsGlyph? = null,
     onClosing: () -> Unit = {},
+    /** Two-column sheets may grow wider in landscape; reading sheets keep the console width. */
+    wide: Boolean = false,
     body: @Composable () -> Unit,
 ) {
     val style = LocalRoomStyle.current
@@ -486,6 +495,9 @@ fun SheetHost(
                         val event = awaitPointerEvent(PointerEventPass.Initial)
                         if (event.changes.any { it.pressed && !it.previousPressed } &&
                             event.changes.count { it.pressed } == 1) gestureGuard.down()
+                        // The same event's Final pass comes after every child: clear on the last UP.
+                        val final = awaitPointerEvent(PointerEventPass.Final)
+                        if (final.changes.none { it.pressed }) gestureGuard.up()
                     }
                 }
             }
@@ -539,7 +551,9 @@ fun SheetHost(
                             // Centred landscape matches the console's own max width, so
                             // the card reads as the same object growing out of the bar
                             // rather than a differently-sized panel arriving beside it.
-                            if (slidesSideways) Modifier.widthIn(max = Dim.landscapeSheetMaxWidth)
+                            if (landscape && wide) Modifier.widthIn(max = Dim.landscapeWideSheetMaxWidth)
+                                .fillMaxWidth()
+                            else if (slidesSideways) Modifier.widthIn(max = Dim.landscapeSheetMaxWidth)
                                 .fillMaxWidth()
                             else if (landscape) Modifier.widthIn(max = Dim.landscapeConsoleMaxWidth)
                                 .fillMaxWidth()
@@ -657,8 +671,9 @@ fun ModeSheet(
     val view = LocalView.current
     val scroll = rememberScrollState()
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
-    SheetHost(p, "MODE", reduced, onDismiss, glyph = SettingsGlyph.Display) {
+    SheetHost(p, "MODE", reduced, onDismiss, glyph = SettingsGlyph.Display, wide = true) {
         Column(Modifier.verticalScroll(scroll, overscrollEffect = null)) {
+          SheetColumns(left = {
             GroupHeading("AUTOMATIC", p, first = true)
             val randomActive = state.randomModeArmed
             ModeRow(
@@ -675,7 +690,8 @@ fun ModeSheet(
                     ) { Haptics.medium(view); onPick(i) }
                 }
             }
-            GroupHeading("GEOMETRY", p)
+          }, right = { starts ->
+            GroupHeading("GEOMETRY", p, first = starts)
             Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
                 ChoiceCells(GeomFxLabels.mapIndexed { i, label -> i to label }, state.geomFx, p) {
                     Haptics.medium(view); onGeomFx(it)
@@ -700,6 +716,7 @@ fun ModeSheet(
                     }
                 }
             }
+          })
             Spacer(Modifier.height(12.dp))
         }
     }
@@ -782,7 +799,7 @@ internal fun SettingsSheet(
     val p = p.sheetText()
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
     SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob,
-        onClosing = actions::cancelAppearancePreview,
+        onClosing = actions::cancelAppearancePreview, wide = true,
     ) {
         // One flat scroll of headed groups (REDESIGN §2). No index, no pages.
         LaunchedEffect(Unit) {

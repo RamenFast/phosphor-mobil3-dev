@@ -22,4 +22,11 @@ class SettingsLayoutTest {
         assertEquals(1, choiceColumns(300f, 8f, 32f, listOf(100f, 120f)))
         assertEquals(1, choiceColumns(300f, 8f, 32f, emptyList()))
     }
+
+    @Test fun sheetsSplitIntoTwoColumnsOnlyInLandscapeWithRoom() {
+        assertFalse(twoColumns(landscape = false, widthDp = 900f))
+        assertFalse(twoColumns(landscape = true, widthDp = 520f))
+        assertTrue(twoColumns(landscape = true, widthDp = 560f))
+        assertTrue(twoColumns(landscape = true, widthDp = 820f))
+    }
 }

@@ -51,6 +51,12 @@ internal object MicNames {
 
     enum class Tap { STOP, START, MOVE, CHOOSE_AND_START }
 
+    private val normal = setOf("", "Microphone off", "Microphone stopped", "Microphone included", "Microphone starting",
+        "Microphone start cancelled", "Microphone start superseded", "Bluetooth microphone not started")
+
+    /** Only a failure earns a status line and a retry key; ordinary stops and starts stay quiet. */
+    fun failed(status: String): Boolean = status.trim() !in normal && !status.startsWith("Microphone active")
+
     /** One tap per row: the running input stops, any idle input starts, another input takes over a running mic. */
     fun tap(active: Boolean, chosen: Boolean, micLive: Boolean): Tap = when {
         active -> Tap.STOP
@@ -118,7 +124,7 @@ fun SourceSheet(
     var consentCard by remember { mutableStateOf(false) }
     val scroll = rememberScrollState()
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
-    SheetHost(p, "SRC", reduced, onDismiss, glyph = SettingsGlyph.Signal) {
+    SheetHost(p, "SRC", reduced, onDismiss, glyph = SettingsGlyph.Signal, wide = true) {
       Column(Modifier.verticalScroll(scroll, overscrollEffect = null)) {
         if (consentCard) {
             // Consent logic unchanged: one plain explanation, the source link, two keys.
@@ -144,7 +150,7 @@ fun SourceSheet(
                 }
                 SheetKey("not now", p) { consentCard = false }
             }
-        } else {
+        } else SheetColumns(left = {
         GroupHeading("LIBRARY", p, first = true)
         SourceRow("open file", p, SettingsGlyph.File,
             active = state.sourceLabel == "deck" && state.queueTitles.size <= 1) { actions.openFile(); onDismiss() }
@@ -215,12 +221,13 @@ fun SourceSheet(
             }
         }
 
-        GroupHeading("MICROPHONE", p)
+        }, right = { starts ->
+        GroupHeading("MICROPHONE", p, first = starts)
         MicrophoneRows(state, p, actions)
 
         GroupHeading("REMOTE", p)
         RemoteFlow(state, p, actions, onDismiss)
-        }
+        })
       }
     }
     }
@@ -251,8 +258,7 @@ private fun MicrophoneRows(state: ScopeUiState, p: Palette, actions: SheetAction
             }
         }
     }
-    val idle = state.microphoneStatus.isBlank() || state.microphoneStatus == "Microphone off"
-    if (!micLive && !idle && !state.micBluetoothExplain) {
+    if (!micLive && MicNames.failed(state.microphoneStatus) && !state.micBluetoothExplain) {
         SettingNote(state.microphoneStatus, p)
         KeyRow { SheetKey("retry", p) { actions.retryMicrophone() } }
     }

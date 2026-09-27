@@ -70,8 +70,9 @@ fun LightSheetV2(
     val p = p.sheetText()
     if (editSlot !in light.slots.indices) editSlot = -1
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
-    SheetHost(p, "LIGHT", reduced, { state.lightPending = null; onDismiss() }, glyph = SettingsGlyph.BeamColor) {
+    SheetHost(p, "LIGHT", reduced, { state.lightPending = null; onDismiss() }, glyph = SettingsGlyph.BeamColor, wide = true) {
         Column(Modifier.verticalScroll(rememberScrollState(), overscrollEffect = null)) {
+          SheetColumns(left = {
             if (state.lightError.isNotEmpty()) SettingNote(state.lightError, p)
 
             // COLORS: the S25 grid of real colour, first thing.
@@ -127,9 +128,11 @@ fun LightSheetV2(
                 )
             }
 
+          }, right = { starts ->
             // CYCLE: whenever it has an effect (≥2 saved, or generated colour on).
-            if (LightChoices.cycleVisible(light)) {
-                GroupHeading("CYCLE", p)
+            val cycle = LightChoices.cycleVisible(light)
+            if (cycle) {
+                GroupHeading("CYCLE", p, first = starts)
                 val words = mapOf(LightChoices.Cycle.OFF to "off", LightChoices.Cycle.TIMER to "timer",
                     LightChoices.Cycle.TRACK to "each track")
                 Column(Modifier.fillMaxWidth().padding(vertical = 12.dp)) {
@@ -175,11 +178,12 @@ fun LightSheetV2(
             }
 
             // RANDOM: one roll now, or generated colour that keeps changing.
-            GroupHeading("RANDOM", p)
+            GroupHeading("RANDOM", p, first = starts && !cycle)
             KeyRow { SheetKey("⚄ roll", p, description = "roll a random color") { editSlot = -1; onRoll() } }
             SettingToggle("auto color", light.generatedAuto, p, hint = "a new color every step") {
                 onLightChange(light.copy(generatedAuto = it))
             }
+          })
             Spacer(Modifier.height(12.dp))
         }
     }

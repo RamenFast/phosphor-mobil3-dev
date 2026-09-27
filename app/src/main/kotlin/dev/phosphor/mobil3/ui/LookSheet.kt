@@ -112,8 +112,9 @@ fun LookSheet(
         LookTiles.build(document) { AppearancePalette.legacy(LegacyAppearanceInput(it.id)).value }
     }
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
-    SheetHost(p, "LOOK", reduced, onDismiss, glyph = SettingsGlyph.Room) {
+    SheetHost(p, "LOOK", reduced, onDismiss, glyph = SettingsGlyph.Room, wide = true) {
         Column(Modifier.verticalScroll(rememberScrollState(), overscrollEffect = null)) {
+          SheetColumns(left = {
             val activeKey = LookTiles.activeKey(tiles, document, state.room.id)
             val current = if (activeKey == null) LookTiles.current(document) else null
             val marked = activeKey ?: current?.key
@@ -124,7 +125,8 @@ fun LookSheet(
                 GroupHeading("CLASSIC", p)
                 LookGrid(classic, marked, p, onPickRoom, onPickLook)
             }
-            GroupHeading("STYLE", p)
+          }, right = { starts ->
+            GroupHeading("STYLE", p, first = starts)
             val style = state.appearanceStyle
             SettingChoice("feel", LookTiles.feelWords, style.character, p) { onStyle(StyleOverride(character = it)) }
             SettingChoice("motion", LookTiles.motionWords, style.motion, p) { onStyle(StyleOverride(motion = it)) }
@@ -132,6 +134,7 @@ fun LookSheet(
                 onStyle(StyleOverride(radiusDp = it))
             }
             SettingChoice("labels", LookTiles.labelWords, style.designators, p) { onStyle(StyleOverride(designators = it)) }
+          })
             Spacer(Modifier.height(12.dp))
         }
     }

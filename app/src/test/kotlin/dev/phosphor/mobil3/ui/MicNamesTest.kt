@@ -30,4 +30,12 @@ class MicNamesTest {
         assertEquals(MicNames.Tap.MOVE, MicNames.tap(active = false, chosen = false, micLive = true))
         assertEquals(MicNames.Tap.CHOOSE_AND_START, MicNames.tap(active = false, chosen = false, micLive = false))
     }
+
+    @Test fun retryAppearsOnlyOnFailure() {
+        listOf("", "Microphone off", "Microphone stopped", "Microphone included", "Microphone starting",
+            "Microphone active · built-in", "Bluetooth microphone not started").forEach { assertFalse(it, MicNames.failed(it)) }
+        listOf("Microphone did not initialize, change the audio route and retry",
+            "Selected microphone unavailable. Connect it or choose an input",
+            "Microphone read failed (-3). Check permission and retry").forEach { assertTrue(it, MicNames.failed(it)) }
+    }
 }
