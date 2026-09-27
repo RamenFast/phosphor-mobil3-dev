@@ -263,29 +263,4 @@ class AppearancePresentationTest {
         assertFalse(room.contains("state.styleOverride"))
         assertTrue(room.contains("val currentStyle = state.appearanceStyle"))
     }
-
-    @Test fun resumeRefreshesObservableMotionAndPostUsesTestedCancellableVisiblePolicy() {
-        val activity = source("MainActivity.kt")
-        assertTrue(activity.contains("private var reduced by mutableStateOf(false)"))
-        val resume = activity.substringAfter("override fun onResume()").substringBefore("override fun onPause()")
-        assertTrue(resume.indexOf("reduced = readReducedMotion(this)") >= 0)
-        assertTrue(resume.indexOf("reduced = readReducedMotion(this)") < resume.indexOf("signalResumed = true"))
-        assertTrue(resume.contains("PhosphorNative.setReducedMotion(reduced)"))
-        assertTrue(activity.contains("setContent { PhosphorScreen(ui, this, reduced) }"))
-        val post = source("ui/Console.kt").substringAfter("fun BenchPost(").substringBefore("internal object OverflowPopoutPolicy")
-        assertTrue(post.contains("AppearancePresentationPolicy.post(state.presentationVisible, !state.pip, chromeVisible"))
-        assertTrue(post.contains("LaunchedEffect(policy)"))
-        assertTrue(post.contains("AppearancePresentationPolicy.revealPost(policy"))
-        assertTrue(source("ui/PhosphorScreen.kt").contains("BenchPost(state, p, reduced, chromeVisible = sheet == Sheet.NONE && !overflowComposed)"))
-        val glyph = source("ui/Motion.kt").substringAfter("internal fun stateGlyphFloat(").substringBefore("fun <T> motionSpec(")
-        assertTrue(glyph.contains("AppearanceMotionPolicy.stateChange"))
-        assertTrue(glyph.contains("LocalReducedMotion.current"))
-        assertTrue(glyph.contains("coerceIn(80, 200)"))
-        assertFalse(glyph.contains("spring("))
-        assertFalse(glyph.contains("Infinite"))
-        val section = source("ui/SettingsSheetAdapter.kt").substringAfter("internal fun SettingsExpandableSection(")
-        assertTrue(section.contains("SettingsExpansionGlyph(expanded, p"))
-        assertTrue(section.contains("if (expanded) {"))
-        assertFalse(section.contains("AnimatedVisibility"))
-    }
 }

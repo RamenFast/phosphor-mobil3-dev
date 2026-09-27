@@ -128,45 +128,6 @@ class SheetEntryPolicyTest {
         assertEquals(2, Regex(Regex.escape("{ entrySign * (it / 3) }")).findAll(host).count())
     }
 
-    @Test
-    fun sourceOnlyFirstCommitLatchesCurrentEntryBeforeClosingWithoutResettingLiveOffset() {
-        val host = sheetHostSource()
-        assertTrue(host.contains("val currentEntry by rememberUpdatedState(entry)"))
-        val commit = host.substringAfter("val commitDismiss:").substringBefore("val dismissOffset")
-        val guard = commit.indexOf("if (openState.targetState &&")
-        val latch = commit.indexOf("dismissal.commit(currentEntry, fromDrag)")
-        val close = commit.indexOf("openState.targetState = false")
-        assertTrue(guard >= 0 && latch > guard && close > latch)
-        assertFalse(commit.contains("snapTo"))
-        assertFalse(commit.contains("onDismiss()"))
-        assertTrue(host.contains("val dismiss = { commitDismiss(false) }"))
-        val settle = host.substringAfter("val settleDismiss:").substringBefore("val dismissNestedScroll")
-        assertTrue(settle.contains("dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style)"))
-        assertTrue(settle.contains("commitDismiss(true)"))
-        assertTrue(host.contains("val exit = dismissal.committed?.edge ?: entry"))
-        assertTrue(host.contains("exit = if (reduced) fadeOut() else if (exit == SheetEntry.FROM_EDGE)"))
-        assertTrue(host.contains("{ exitSign * (it / 2) }"))
-        assertTrue(host.contains("dismissal.offsetPx.roundToInt()"))
-        assertEquals(1, Regex("onDismiss\\(\\)").findAll(host).count())
-    }
-
-    @Test
-    fun sourceOnlyHeaderNestedAndExplicitClosesKeepTheirExistingOwners() {
-        val host = sheetHostSource()
-        for (wiring in listOf(
-            "BackHandler { dismiss() }",
-            "detectTapGestures(onTap = { dismiss() })",
-            ".clickable(onClick = dismiss)",
-            "contentDescription = \"Close settings\"",
-            "contentDescription = \"Close \$title\"",
-            "else Modifier.size(48.dp).semantics",
-            "onDragEnd = { settleDismiss(0f) }",
-            "settleDismiss(available.y.coerceAtLeast(0f))",
-            "if (!openState.targetState && openState.isIdle) onDismiss()",
-            "!openState.isIdle || dismissOffset.isRunning",
-        )) assertTrue(host.contains(wiring), wiring)
-    }
-
     private fun sheetHostSource(): String = File("src/main/kotlin/dev/phosphor/mobil3/ui/Sheets.kt")
         .readText().substringAfter("fun SheetHost(").substringBefore("// Labels sit above")
 
@@ -275,22 +236,6 @@ class SheetEntryPolicyTest {
             assertEquals(applied, state.offsetPx)
         } finally { scope.cancel() }
         // Production Animatable and owner execute with a synthetic host frame clock, not Android pointers.
-    }
-
-    @Test
-    fun sourceOnlyHostUsesTheGuardedOwnerAndItsCommittedRenderedOffset() {
-        val host = sheetHostSource()
-        for (wiring in listOf(
-            "val dismissal = remember { SheetDismissState(scope) }",
-            "val beginDismiss = { dismissal.begin() }",
-            "dismissal.dragBy(delta)",
-            "dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style)",
-            "dismissal.offsetPx.roundToInt()",
-            "if (dismissal.committed != null) return Velocity.Zero",
-        )) assertTrue(host.contains(wiring), wiring)
-        assertEquals(2, Regex(Regex.escape("if (dismissal.committed != null) return Offset.Zero")).findAll(host).count())
-        assertFalse(host.contains("dismissOffset.snapTo"))
-        assertFalse(host.contains("dismissOffset.animateTo"))
     }
 
     private class QueuedDispatcher : CoroutineDispatcher() {

@@ -231,28 +231,6 @@ class KnownDefaultsTest {
 
     }
 
-    @Test fun sourceOnlyLightLegRangeAndPhotosensitivityConfirmationRemainOwnedByLightSheet() {
-        val light = source("ui/LightSheet.kt")
-        assertTrue(light.contains("\"LEG seconds\", light.seconds, 0.1f, 60f"))
-        assertTrue(light.contains("\"Minimum seconds\", light.intervalMin, 0.1f, 60f"))
-        assertTrue(light.contains("\"Maximum seconds\", light.intervalMax, 0.1f, 60f"))
-        assertTrue(light.contains("onLightChange(light.copy(perTrack = false))"))
-        assertTrue(light.contains("onLightChange(light.copy(perTrack = true))"))
-        assertTrue(light.contains("val pending = state.lightPending"))
-        assertTrue(light.contains("ackEpilepsy()"))
-        assertTrue(light.contains("if (epilepsyAcknowledged()) onLightChange(pending)"))
-        assertTrue(light.contains("LightKey(\"KEEP SAFE\", p) { state.lightPending = null }"))
-        assertTrue(light.contains("heightIn(min = 48.dp)"))
-        assertTrue(light.contains("setProgress { change(it.coerceIn(min, max)); true }"))
-        val policy = source("ui/LightSettings.kt")
-        assertTrue(policy.contains("if (requested.randomInterval) requested.intervalMin else requested.seconds"))
-        assertTrue(policy.contains("acknowledged || requested.perTrack || minimum >= 1f"))
-        assertTrue(policy.contains("intervalMax = requested.intervalMax.coerceAtLeast(1f)"))
-        val activity = source("MainActivity.kt")
-        assertTrue(activity.contains("override fun epilepsyAcknowledged(): Boolean = runtimePrefs().getBoolean(\"epilepsy_ack\", false)"))
-        assertTrue(activity.contains("override fun ackEpilepsy() { runtimePrefs().edit { putBoolean(\"epilepsy_ack\", true) } }"))
-    }
-
     @Test fun sourceOnlyApplicationWritesResolvedHudBeforeActivityRestoresIt() {
         assertTrue(repoFile("app/src/main/AndroidManifest.xml").readText()
             .contains("android:name=\".PhosphorApplication\""))

@@ -683,3 +683,12 @@ Asks, handled the same pass (verify): ×multiplier beside the zoom rail and on t
 - "Settings are a cluster": rebuilt as a six-topic index with pages; one row family; plain words; no prose blocks; duplicates removed (GRID, LIGHT, LOOK, source row, ENTER PiP). Status: **verify**. Test card #2.
 - "Auto PiP must be a setting I can disable": PiP & BACKGROUND → AUTO PiP toggle. Status: **verify**.
 - Glass disclaimer under every sheet title removed.
+
+## 2026-09-26 Redesign slices a, a', b, a2 · verify (Prime + designer + auditor)
+
+- "Get rid of the collapsable submenus / lessen submenus": Settings is one flat scroll with six headed groups; the INSTRUMENT sub-sheet folded into SETTINGS › SETUPS; index/pages removed. **verify**
+- "Settings menu/text is off": one type scale, one row family, measured choice cells (no mid-word breaks), 4.5:1 text on Glass. **verify**
+- Phase 2 LIGHT: 3x3 real-color grid restored, saved colors as squares, accessible HSV editor, cycle/random. **verify**
+- "Keep/optimize the swipe feel": one shared scroll-then-pull dismissal for every sheet. Device: pull-up opens, flings never close, scroll-to-top-then-pull closes in one motion, short drags spring back. **verify**
+- Zoom range 0.1x-20x (881c238). "Everything playing" capture fixed (ccc7c37). **verify**
+Test card: docs/plans/transpose/TEST-CARD-3.md.

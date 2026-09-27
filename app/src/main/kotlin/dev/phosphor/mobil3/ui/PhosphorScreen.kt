@@ -292,8 +292,14 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
     LaunchedEffect(state.showSourcePicker) {
         if (state.showSourcePicker) { sheet = Sheet.SOURCE; state.showSourcePicker = false }
     }
+    // Saved setups live inline in Settings (REDESIGN §1). A request from elsewhere opens
+    // Settings at SETUPS; a load while Settings is already open does not move the scroll.
     LaunchedEffect(state.showInstrumentPresets) {
-        if (state.showInstrumentPresets) { sheet = Sheet.INSTRUMENT; state.showInstrumentPresets = false }
+        if (state.showInstrumentPresets) {
+            if (sheet != Sheet.SETTINGS) state.settingsFocus = SettingsGroup.SETUPS.name
+            sheet = Sheet.SETTINGS
+            state.showInstrumentPresets = false
+        }
     }
     var manualFrom by remember { mutableStateOf(Sheet.SETTINGS) } // where MANUAL returns to
     var overflowComposed by remember { mutableStateOf(false) }
@@ -869,9 +875,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     onRoll = { actions.rollLight() },
                     epilepsyAcknowledged = { actions.epilepsyAcknowledged() },
                     ackEpilepsy = { actions.ackEpilepsy() },
-                    onRecallInstrument = { actions.openInstrumentPresets(); sheet = Sheet.INSTRUMENT },
                 ) { sheet = Sheet.NONE }
-                Sheet.INSTRUMENT -> InstrumentPresetSheet(state, p, reduced, actions) { sheet = Sheet.NONE }
+                Sheet.INSTRUMENT -> LaunchedEffect(Unit) { sheet = Sheet.SETTINGS } // retired sub-sheet: setups live in Settings
                 Sheet.SIGNAL_CHECK -> SignalCheckSheet(state, p, reduced) { sheet = Sheet.NONE }
                 Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) },
                     onStyle = actions::setRoomStyle) {
@@ -882,12 +887,13 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                     sheetActions.withSheetRouting(
                         openRoom = { sheet = Sheet.ROOM },
                         openLight = { sheet = Sheet.LIGHT },
-                        openInstrument = { actions.openInstrumentPresets(); sheet = Sheet.INSTRUMENT },
+                        openInstrument = { actions.openInstrumentPresets() },
                         openManual = { manualFrom = Sheet.SETTINGS; sheet = Sheet.MANUAL },
                     ),
                     focusValue = state.focus,
                     onFocus = actions::setFocus,
                     presentation = settingsPresentation,
+                    setups = actions,
                     entryReveal = if (settingsPullActive) settingsReveal else null,
                 ) {
                     settingsPullActive = false

@@ -21,3 +21,29 @@ Plan rule: source-string and layout tests retire when their code is touched. Beh
 | `RotationDetentReachabilityTest` | `sourceOnlyFullSheetDisablesBothDependentControlsAndExplainsAndroidAuthority` | source strings |
 
 Replacement: device UX checks on the test bed and primary phone (screens, gestures, large fonts) plus host behavior tests.
+
+## Redesign slice a (Settings flat) · Designer · 2026-09-25
+
+| Test class | Test | Why |
+|---|---|---|
+| `InstrumentActivityWiringTest` | `startupCreatesRecoveryOwnerBeforeAnyRestoreTimeLightWrite` | source strings of the retired INSTRUMENT sheet / old SheetHost header text |
+| `InstrumentActivityWiringTest` | `typedNativeRefusalReachesSourceNavigationWithoutStatusStringInference` | source strings of the retired INSTRUMENT sheet / old SheetHost header text |
+| `ManualContentTest` | `gestureDiagnosticRateAndPresetAnswersMatchImplementedOwners` | source strings of the retired INSTRUMENT sheet / old SheetHost header text |
+| `SheetEntryPolicyTest` | `sourceOnlyHeaderNestedAndExplicitClosesKeepTheirExistingOwners` | source strings of the retired INSTRUMENT sheet / old SheetHost header text |
+
+## Redesign slice b (LIGHT) · Designer · 2026-09-25
+
+| Test class | Test | Why |
+|---|---|---|
+| `KnownDefaultsTest` | `sourceOnlyLightLegRangeAndPhotosensitivityConfirmationRemainOwnedByLightSheet` | source strings of the old LIGHT text rows; range and timer/track now covered by LightChoicesTest; guard by LightCycleGuardTest |
+
+## Redesign slice a2 (shared dismissal) · Designer · 2026-09-25
+
+| Test class | Test | Why |
+|---|---|---|
+| `AppearancePresentationTest` | `resumeRefreshesObservableMotionAndPostUsesTestedCancellableVisiblePolicy` | source strings of the retired Settings dismissal adapter / expander |
+| `AppearanceRuntimeWiringTest` | `editorHasExactInputsAccessibleActionsAndRootOwnedChildGestureHook` | source strings of the retired Settings dismissal adapter / expander |
+| `SheetEntryPolicyTest` | `sourceOnlyHostUsesTheGuardedOwnerAndItsCommittedRenderedOffset` | source strings of the retired Settings dismissal adapter / expander |
+| `SheetEntryPolicyTest` | `sourceOnlyFirstCommitLatchesCurrentEntryBeforeClosingWithoutResettingLiveOffset` | source strings of the retired Settings dismissal adapter / expander |
+| `SettingsGestureAdapterTest` | `(whole file, 43 tests)` | its code (SettingsGestureAdapter) retired: all sheets share one scroll-then-pull mechanism |
+| `SettingsInteractionTest` | `(whole file, 15 tests)` | its code (SettingsDismissOwner, SettingsPresentationOwner) retired with the adapter and the expanders |

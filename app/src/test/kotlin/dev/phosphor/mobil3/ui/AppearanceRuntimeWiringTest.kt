@@ -74,19 +74,6 @@ class AppearanceRuntimeWiringTest {
         assertFalse(screen.contains(".style.overridden(state.styleOverride)"))
     }
 
-    @Test fun editorHasExactInputsAccessibleActionsAndRootOwnedChildGestureHook() {
-        val editor = source("ui/AppearanceEditor.kt")
-        listOf("PREVIEW", "APPLY", "CANCEL", "SAVE AS NEW", "RENAME", "DELETE", "RESET TO AMOLED", "READABILITY WARNING").forEach {
-            assertTrue("Missing editor action $it", editor.contains(it))
-        }
-        assertTrue(editor.contains("AppearanceEditorValues.value("))
-        assertTrue(editor.contains(".heightIn(min = 48.dp).settingsChildInput().settingsFocusBorder(p)"))
-        assertTrue(editor.contains("role = Role.Button"))
-        assertTrue(editor.contains("contentDescription = label"))
-        assertTrue(editor.contains("Key.Escape"))
-        assertTrue(source("ui/Sheets.kt").contains("LocalSettingsGestureOwner provides settingsDismiss"))
-    }
-
     @Test fun restylingPreservesExactAuthoredColorsAndAllExplicitStyleFields() {
         val source = CuratedAppearances.light
         val style = GlassStyle.copy(durationScale = 1.7f, densityScale = 1.2f, cornerRadius = androidx.compose.ui.unit.Dp(64f),

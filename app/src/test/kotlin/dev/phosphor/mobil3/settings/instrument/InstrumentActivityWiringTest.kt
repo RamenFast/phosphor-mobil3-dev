@@ -10,15 +10,6 @@ class InstrumentActivityWiringTest {
         File("src/main/kotlin/dev/phosphor/mobil3/$relative")).first { it.isFile }.readText()
     private fun section(start: String, end: String) = source("MainActivity.kt").substringAfter(start).substringBefore(end)
 
-    @Test fun typedNativeRefusalReachesSourceNavigationWithoutStatusStringInference() {
-        val refresh = section("private fun refreshInstrumentState()", "private fun instrumentEdit(")
-        assertTrue(refresh.contains("ui.instrumentSourceRequired = owner.sourceControlsRequired"))
-        val sheet = source("ui/InstrumentPresetSheet.kt")
-        assertTrue(sheet.contains("if ((state.remote && state.remoteGeometry) || state.instrumentSourceRequired)"))
-        assertTrue(sheet.contains("PresetKey(\"SOURCE CONTROLS\", p) { actions.instrumentSourceControls() }"))
-        assertFalse(sheet.contains("instrumentApplyStatus.contains"))
-    }
-
     @Test fun authoredSnapshotDoesNotUseMeasuredOrRemoteGain() {
         val capture = section("private fun captureInstrument()", "private fun publishInstrument(")
         assertTrue(capture.contains("gainValue, ui.localAutoGain, ui.focus"))
@@ -101,19 +92,4 @@ class InstrumentActivityWiringTest {
         assertTrue(section("private fun applyLight", "override fun rollLight").contains("reportTuningWriteFailure(failure)"))
     }
 
-    @Test fun startupCreatesRecoveryOwnerBeforeAnyRestoreTimeLightWrite() {
-        val create = section("override fun onCreate(", "override fun onResume()")
-        val initialize = create.indexOf("initializeInstruments()")
-        val restore = create.indexOf("restoreTuning()")
-        assertTrue(initialize >= 0)
-        assertTrue(restore > initialize)
-        assertEquals(1, Regex("initializeInstruments\\(\\)").findAll(create).count())
-        val restoreBody = section("private fun restoreTuning", "override fun captureConsentNeeded")
-        assertTrue(restoreBody.contains("else if (!applyLight(it)) markLightRestoreUnconfirmed(it)"))
-        assertTrue(restoreBody.contains("if (!lightPublished) markLightRestoreUnconfirmed(ui.light)"))
-        val unconfirmed = section("private fun markLightRestoreUnconfirmed", "override fun captureConsentNeeded")
-        assertTrue(unconfirmed.contains("instrumentWorkflow?.restoreUnconfirmed(captureInstrument())"))
-        assertFalse(unconfirmed.contains("PhosphorNative"))
-        assertTrue(source("ui/InstrumentPresetSheet.kt").contains("if (state.instrumentRestoreRequired) \"RESTORE DISPLAYED SETUP\""))
-    }
 }

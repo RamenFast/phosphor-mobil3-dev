@@ -77,6 +77,7 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
+import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -88,6 +89,7 @@ import androidx.compose.ui.unit.Velocity
 import androidx.compose.ui.unit.Dp
 import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
+import androidx.compose.ui.unit.em
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.launch
 import kotlin.math.roundToInt
@@ -182,7 +184,26 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
 
 // ── Sheet mechanics (shared): a safe-area floating card over the live scope;
 // fill-driven top curl; drag-down / scrim-tap / close / Back to dismiss. ──
-internal class SheetDismissState(private val scope: CoroutineScope) {
+/**
+ * The one pull-to-dismiss rule for every sheet (design/REDESIGN.md §5). Pure numbers in px.
+ * Travel is the finger's; the card shows it with soft resistance.
+ */
+internal object SheetPullPolicy {
+    const val CLOSE_DP = 96f
+    const val FLICK_MIN_DP = 48f
+    const val FLICK_DP_PER_SECOND = 920f
+    const val RESISTANCE_DP = 240f
+
+    fun offset(rawPx: Float, resistancePx: Float): Float {
+        val raw = rawPx.coerceAtLeast(0f)
+        return if (resistancePx <= 0f) raw else resistancePx * raw / (resistancePx + raw)
+    }
+
+    fun closes(rawPx: Float, velocityPxPerSecond: Float, closePx: Float, flickMinPx: Float, flickPx: Float): Boolean =
+        rawPx >= closePx || (rawPx >= flickMinPx && velocityPxPerSecond >= flickPx)
+}
+
+internal class SheetDismissState(private val scope: CoroutineScope, private val resistancePx: Float = 0f) {
     data class Commitment(val edge: SheetEntry, val offsetPx: Float)
 
     val animation = Animatable(0f)
@@ -194,14 +215,19 @@ internal class SheetDismissState(private val scope: CoroutineScope) {
 
     fun begin() {
         if (committed != null) return
-        rawPx = animation.value.coerceAtLeast(0f)
+        rawPx = rawFor(animation.value.coerceAtLeast(0f))
         scope.launch { if (committed == null) animation.stop() }
     }
+
+    /** Inverse of the resistance curve, so a new grab continues from where the card sits. */
+    private fun rawFor(offset: Float): Float =
+        if (resistancePx <= 0f) offset
+        else if (offset >= resistancePx) offset else offset * resistancePx / (resistancePx - offset)
 
     fun dragBy(delta: Float) {
         if (committed != null) return
         rawPx = (rawPx + delta).coerceAtLeast(0f)
-        val target = rawPx
+        val target = SheetPullPolicy.offset(rawPx, resistancePx)
         scope.launch { if (committed == null) animation.snapTo(target) }
     }
 
@@ -222,9 +248,19 @@ internal class SheetDismissState(private val scope: CoroutineScope) {
         reduced: Boolean,
         style: RoomStyle,
         commitDrag: () -> Unit,
+    ) = settle(velocityY, distancePx, flickPx, reduced, style, 0f, commitDrag)
+
+    fun settle(
+        velocityY: Float,
+        distancePx: Float,
+        flickPx: Float,
+        reduced: Boolean,
+        style: RoomStyle,
+        flickMinPx: Float,
+        commitDrag: () -> Unit,
     ) {
         if (committed != null) return
-        if (rawPx >= distancePx || velocityY >= flickPx) {
+        if (SheetPullPolicy.closes(rawPx, velocityY, distancePx, flickMinPx, flickPx)) {
             commitDrag()
         } else {
             rawPx = 0f
@@ -238,10 +274,7 @@ internal class SheetDismissState(private val scope: CoroutineScope) {
                         0f,
                         spring(dampingRatio = 0.72f, stiffness = 380f, visibilityThreshold = 0.5f),
                     )
-                    else -> animation.animateTo(
-                        0f,
-                        styleSpec(false, style, Motion.settle, Motion.decelerate),
-                    )
+                    else -> animation.animateTo(0f, tween(Motion.settle, easing = Motion.decelerate))
                 }
             }
         }
@@ -258,9 +291,6 @@ fun SheetHost(
     onDismiss: () -> Unit,
     entryReveal: PullRevealState? = null,
     glyph: SettingsGlyph? = null,
-    settingsScroll: ScrollState? = null,
-    settingsSourceKey: Any? = null,
-    onSettingsInput: () -> Unit = {},
     onClosing: () -> Unit = {},
     body: @Composable () -> Unit,
 ) {
@@ -292,19 +322,12 @@ fun SheetHost(
     val openState = remember {
         MutableTransitionState(entryReveal != null).apply { targetState = true }
     }
-    val dismissal = remember { SheetDismissState(scope) }
-    val settingsDismiss = if (settingsScroll != null) remember { SettingsSheetDismiss(scope) } else null
-    val currentSettingsInput by rememberUpdatedState(onSettingsInput)
+    val resistancePx = with(density) { SheetPullPolicy.RESISTANCE_DP.dp.toPx() }
+    val dismissal = remember(resistancePx) { SheetDismissState(scope, resistancePx) }
     val currentClosing by rememberUpdatedState(onClosing)
-    DisposableEffect(settingsDismiss) {
-        onDispose { settingsDismiss?.retire() }
-    }
     val commitDismiss: (Boolean) -> Unit = { fromDrag ->
-        if (openState.targetState && (if (settingsDismiss == null) dismissal.commit(currentEntry, fromDrag)
-            else dismissal.commit(currentEntry, fromDrag, settingsDismiss.offsetPx))) {
-            settingsDismiss?.retire()
+        if (openState.targetState && dismissal.commit(currentEntry, fromDrag)) {
             currentClosing()
-            if (settingsDismiss != null) currentSettingsInput()
             openState.targetState = false
         }
     }
@@ -312,17 +335,18 @@ fun SheetHost(
     val exit = dismissal.committed?.edge ?: entry
     val exitSign = if (exit == SheetEntry.FROM_TOP) -1 else 1
     val dismissOffset = dismissal.animation
-    val dismissDistancePx = with(density) { Dim.sheetDismissDistance.toPx() }
-    val dismissFlickPx = with(density) { Dim.chromeFlickVelocity.toPx() }
+    val dismissDistancePx = with(density) { SheetPullPolicy.CLOSE_DP.dp.toPx() }
+    val dismissFlickMinPx = with(density) { SheetPullPolicy.FLICK_MIN_DP.dp.toPx() }
+    val dismissFlickPx = with(density) { SheetPullPolicy.FLICK_DP_PER_SECOND.dp.toPx() }
     val beginDismiss = { dismissal.begin() }
     val dragDismissBy: (Float) -> Unit = { delta -> dismissal.dragBy(delta) }
     val settleDismiss: (Float) -> Unit = { velocityY ->
-        dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style) {
+        dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style, dismissFlickMinPx) {
             commitDismiss(true)
         }
     }
-    // A scroll child first consumes every ordinary scroll delta. Only its unconsumed
-    // downward remainder at TOP reaches this parent, becoming the sheet pull.
+    // One mechanism for every sheet (REDESIGN §5). Content scrolls first; only the finger's
+    // unconsumed downward remainder at the top pulls the card. A fling never pulls it.
     val dismissNestedScroll = remember(style.motion, reduced, dismissDistancePx, dismissFlickPx) {
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
@@ -341,28 +365,26 @@ fun SheetHost(
                 source: NestedScrollSource,
             ): Offset {
                 if (dismissal.committed != null) return Offset.Zero
-                if (available.y <= 0f) return Offset.Zero
+                if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
                 if (dismissal.rawPx == 0f) beginDismiss()
                 dragDismissBy(available.y)
                 return Offset(0f, available.y)
             }
 
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (dismissal.committed != null) return Velocity.Zero
-                if (dismissal.rawPx <= 0f) return Velocity.Zero
+            // Release: a displaced card decides here and takes the whole fling, so content
+            // never scrolls under a card that is on its way out or home.
+            override suspend fun onPreFling(available: Velocity): Velocity {
+                if (dismissal.committed != null || dismissal.rawPx <= 0f) return Velocity.Zero
                 settleDismiss(available.y.coerceAtLeast(0f))
-                return if (available.y > 0f) Velocity(0f, available.y) else Velocity.Zero
+                return available
+            }
+
+            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
+                if (dismissal.committed == null && dismissal.rawPx > 0f) settleDismiss(0f)
+                return Velocity.Zero
             }
         }
     }
-    val settingsNestedScroll = if (settingsDismiss != null && settingsScroll != null) {
-        remember(settingsDismiss, settingsScroll, density.density) {
-            settingsDismiss.nestedScroll(settingsScroll, density.density) { currentSettingsInput() }
-        }
-    } else null
-    val currentSettingsClose by rememberUpdatedState({ commitDismiss(true) })
-    val settingsGeometry = listOf(entry, landscape, uiLocked, density.density, density.fontScale,
-        availableHeightPx, sheetWidthPx, sheetHeightPx, settingsSourceKey)
     LaunchedEffect(openState.targetState, openState.isIdle) {
         if (!openState.targetState && openState.isIdle) onDismiss()
     }
@@ -370,10 +392,6 @@ fun SheetHost(
     Box(
         Modifier
             .fillMaxSize()
-            .then(if (settingsDismiss != null) Modifier.settingsPointerObserver(
-                settingsDismiss, density.density, settingsGeometry, reduced,
-                onInput = { currentSettingsInput() }, onClose = { currentSettingsClose() },
-            ) else Modifier)
             .background(
                 Color.Black.copy(
                     alpha = Dim.scrimAlpha * (entryReveal?.progress ?: 1f)
@@ -422,8 +440,7 @@ fun SheetHost(
                         .offset {
                             IntOffset(
                                 0,
-                                if (settingsDismiss == null) dismissal.offsetPx.roundToInt()
-                                else (dismissal.committed?.offsetPx ?: settingsDismiss.offsetPx).roundToInt(),
+                                dismissal.offsetPx.roundToInt(),
                             )
                         }
                         .then(
@@ -464,69 +481,68 @@ fun SheetHost(
                         }
                         .stageChromeBounds(
                             StageChromeBounds.Card.Sheet,
-                            !openState.isIdle || dismissOffset.isRunning || settingsDismiss?.returning == true ||
+                            !openState.isIdle || dismissOffset.isRunning ||
                                 entryReveal?.animation?.isRunning == true ||
                                 (entryReveal != null && entryReveal.progress < 1f),
                             entryReveal?.progress,
                         )
-                        .nestedScroll(settingsNestedScroll ?: dismissNestedScroll)
+                        .nestedScroll(dismissNestedScroll)
                         .clip(sheetShape)
                         .background(
-                            if (style.character == ChromeCharacter.Glass)
-                                p.surface.copy(alpha = Dim.sheetAlpha * style.panelAlphaScale)
+                            // Glass keeps a hint of the beam through the whole card, but
+                            // text needs a steady plane: one 90% pane, no inset plate.
+                            if (style.character == ChromeCharacter.Glass) p.surface.copy(alpha = 0.90f)
                             else p.surface,
                         )
                         .border(Dim.hairline, p.lineStrong, sheetShape)
-                        .padding(Dim.sheetPad)
-                        .then(if (style.character == ChromeCharacter.Glass) Modifier.background(p.surface) else Modifier)
+                        // One plane edge to edge: no inset plate inside the card (REDESIGN §4).
+                        .padding(start = Dim.sheetPadH, end = Dim.sheetPadH, top = 6.dp, bottom = 12.dp)
                         // Swallow taps so only the surrounding scrim dismisses.
                         .pointerInput(Unit) { detectTapGestures(onTap = {}) },
                 ) {
                     Row(
                         Modifier
                             .fillMaxWidth()
-                            .then(if (settingsDismiss != null) Modifier
-                                .heightIn(min = 48.dp)
-                                .settingsHeaderDrag(settingsDismiss, density.density, reduced)
-                            else Modifier.pointerInput(style.motion, reduced) {
+                            .heightIn(min = 48.dp)
+                            .pointerInput(style.motion, reduced) {
+                                // The header always pulls; release speed counts as a flick.
+                                val tracker = VelocityTracker()
                                 detectVerticalDragGestures(
-                                    onDragStart = { beginDismiss() },
-                                    onDragEnd = { settleDismiss(0f) },
+                                    onDragStart = { tracker.resetTracking(); beginDismiss() },
+                                    onDragEnd = { settleDismiss(tracker.calculateVelocity().y.coerceAtLeast(0f)) },
                                     onDragCancel = { settleDismiss(0f) },
                                 ) { change, delta ->
+                                    tracker.addPosition(change.uptimeMillis, change.position)
                                     if (delta > 0f || dismissal.rawPx > 0f) {
                                         change.consume()
                                         dragDismissBy(delta)
                                     }
                                 }
-                            }),
+                            },
                         horizontalArrangement = Arrangement.SpaceBetween,
+                        verticalAlignment = Alignment.CenterVertically,
                     ) {
                         // A sheet is one coherent pinned document: the header stays with
                         // the body (a lone rotated title read as "messed up" — Ben).
                         Row(verticalAlignment = Alignment.CenterVertically) {
                             glyph?.let {
-                                SettingsGlyphIcon(it, p, 15.dp)
-                                Spacer(Modifier.width(8.dp))
+                                SettingsGlyphIcon(it, p, 16.dp)
+                                Spacer(Modifier.width(10.dp))
                             }
-                            Mono(title, p.ink2, Type.data)
+                            Mono(title, p.ink, Type.title, letterSpacing = 0.06.em)
                         }
                         Box(
-                            (if (settingsDismiss != null) Modifier.size(48.dp)
-                                .semantics { contentDescription = "Close settings" }
-                                .clickable(onClick = dismiss)
-                            else Modifier.size(48.dp).semantics { contentDescription = "Close $title" }
-                                .clickable(onClick = dismiss)),
+                            // The ✕ glyph's right edge lines up with the content edge.
+                            Modifier.offset(x = 15.dp).size(48.dp)
+                                .semantics { contentDescription = "Close ${title.lowercase()}" }
+                                .clickable(onClick = dismiss),
                             contentAlignment = Alignment.Center,
                         ) {
                             SheetChromeMark(SheetChromeVector.Close, p.ink2, size = 18.dp)
                         }
                     }
-                    Spacer(Modifier.height(Dim.gapLg))
-                    if (settingsDismiss?.interrupted == true) {
-                        Prose("Drag paused after delayed input. Use Close or Back, then reopen Settings to retry.", p.ink)
-                    }
-                    CompositionLocalProvider(LocalSettingsGestureOwner provides settingsDismiss) { body() }
+                    Spacer(Modifier.height(8.dp))
+                    body()
                 }
             }
         }
@@ -1185,51 +1201,28 @@ internal fun SettingsSheet(
     focusValue: Float,
     onFocus: (Float) -> Unit,
     presentation: SettingsPresentationState,
+    setups: InstrumentPresetActions,
     entryReveal: PullRevealState? = null,
     onDismiss: () -> Unit,
 ) {
+    // The scroll position outlives one opening, so Settings reopens where it was left.
     val scroll = presentation.scroll
-    val scope = rememberCoroutineScope()
-    val configuration = LocalConfiguration.current
-    val density = LocalDensity.current
-    val quadrant = LocalSheetEntryQuadrant.current
-    LaunchedEffect(presentation, configuration.screenWidthDp, configuration.screenHeightDp,
-        density.density, density.fontScale, quadrant) {
-        presentation.cancelAnchor()
-    }
-    DisposableEffect(presentation) {
-        onDispose { presentation.retire() }
-    }
+    val p = p.sheetText()
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
     SheetHost(p, "SETTINGS", reduced, onDismiss, entryReveal, glyph = SettingsGlyph.Knob,
-        settingsScroll = scroll,
-        settingsSourceKey = listOf(state.sourceLabel, state.live, state.remote, state.captureRoot),
-        onSettingsInput = presentation::cancelAnchor,
         onClosing = actions::cancelAppearancePreview,
     ) {
-        // Transpose: a short index of topics; each opens its own page (SettingsPages.kt).
-        var page by androidx.compose.runtime.saveable.rememberSaveable { mutableStateOf<SettingsPage?>(null) }
-        val anchorRequest = presentation.request
+        // One flat scroll of headed groups (REDESIGN §2). No index, no pages.
+        LaunchedEffect(Unit) {
+            // Setups live inline here, so their collection loads with Settings.
+            if (state.instrumentCollection == null) setups.openInstrumentPresets()
+        }
         Column(
             Modifier.fillMaxWidth()
-                .onGloballyPositioned { presentation.viewport = it }
                 .verticalScroll(scroll, overscrollEffect = null)
-                .settingsAnchorLayout(presentation, anchorRequest, scope)
         ) {
-            val current = page
-            if (current == null) {
-                SettingsIndex(state, p) { next ->
-                    page = next
-                    scope.launch { scroll.scrollTo(0) }
-                }
-            } else {
-                SettingsPageHeader(current, p) {
-                    page = null
-                    scope.launch { scroll.scrollTo(0) }
-                }
-                SettingsPageBody(current, state, p, actions, focusValue, onFocus)
-                Spacer(Modifier.height(24.dp))
-            }
+            SettingsBody(state, p, actions, setups, focusValue, onFocus)
+            Spacer(Modifier.height(24.dp))
         }
     }
 }

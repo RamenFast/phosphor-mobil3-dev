@@ -205,7 +205,7 @@ private fun AppearanceField(label: String, value: String, p: Palette, enabled: B
     Column(Modifier.fillMaxWidth()) {
         EditorText(label, p)
         BasicTextField(value = value, onValueChange = change, enabled = enabled,
-            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).settingsChildInput().settingsFocusBorder(p)
+            modifier = Modifier.fillMaxWidth().heightIn(min = 48.dp).settingsFocusBorder(p)
                 .border(1.dp, p.lineStrong).semantics { contentDescription = label }.padding(LocalRoomStyle.current.space(10.dp)),
             textStyle = TextStyle(color = p.ink, fontSize = 16.sp, fontFamily = FontFamily.Monospace),
             cursorBrush = SolidColor(p.accent), singleLine = false,

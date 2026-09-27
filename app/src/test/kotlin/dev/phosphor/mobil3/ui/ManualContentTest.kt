@@ -171,40 +171,6 @@ class ManualContentTest {
         listOf("delay(", "while (", "BringIntoViewRequester", "animateScrollTo").forEach { assertFalse(source.contains(it)) }
     }
 
-    @Test fun gestureDiagnosticRateAndPresetAnswersMatchImplementedOwners() {
-        val screen = source("ui/PhosphorScreen.kt")
-        assertTrue(screen.contains("override fun gainLocked() = state.viewLock"))
-        assertTrue(screen.contains("val bandShown = state.bandMode == 0 || (state.bandMode == 1 && consoleShown)"))
-        assertTrue(screen.contains("if (bandShown && sheet == Sheet.NONE)"))
-        assertTrue(screen.contains("onHeightChanged = { statusBandHeightPx = it }"))
-        assertTrue(screen.contains("hudVisible = state.hudMode == 0 ||"))
-        assertTrue(source("ui/Console.kt").contains("if (state.gridData)"))
-        val gestures = source("ui/Gestures.kt")
-        assertTrue(gestures.contains("host.modeStep(if (travel.x < 0f) 1 else -1)"))
-        assertTrue(gestures.contains("host.setGlowAbsolute(glow)"))
-        assertTrue(gestures.contains("host.orbitBy(d.x * 0.006f, d.y * 0.006f)"))
-        answer("two-finger", "gesture", "left or right", "next or previous mode", "increase or decrease GLOW")
-        answer("3d pinch", "gesture", "one-finger drag orbits", "pinch dollies")
-        val rates = source("ui/ScopeModel.kt")
-        listOf("60", "90", "120 · panel max", "uncapped", "120 · 48 kHz", "240 · 96 kHz", "480 · 192 kHz").forEach {
-            assertTrue("Current rate choice: $it", rates.contains("\"$it\""))
-            assertTrue("Documented rate choice: $it", ManualContent.chapter("performance").text.contains(it))
-        }
-        val motion = source("ui/Motion.kt")
-        assertTrue(motion.contains("Settings.Global.TRANSITION_ANIMATION_SCALE"))
-        assertTrue(motion.contains("Settings.Global.ANIMATOR_DURATION_SCALE"))
-        val presets = source("ui/InstrumentPresetSheet.kt")
-        listOf("RECALL INSTRUMENT", "SAVE CURRENT AS…", "SAVE NEW SETUP", "DUPLICATE AS…", "UPDATE WITH CURRENT AUTHORED SETUP",
-            "KEEP RECORD", "UNDO LAST APPLY", "IMPORT PREVIEW", "SAVE RESOLVED IMPORT · DOES NOT APPLY", "CANCEL PREVIEW",
-            "CANCEL PENDING APPLY", "RETRY SAVE CURRENT · TUNING UNCHANGED", "RESTORE DISPLAYED SETUP", "KEEP SAFE TIMING").forEach {
-            val actual = if (it == "RECALL INSTRUMENT") source("ui/LightSheet.kt") else presets
-            assertTrue("Current preset action: $it", actual.contains(it))
-            assertTrue("Searchable preset action: $it", ManualContent.search(it).isNotEmpty())
-        }
-        answer("preset import", "presets", "does not apply a setup", "CANCEL PREVIEW", "KEEP RECORD", "UNDO LAST APPLY")
-        answer("preset recovery", "preset-recovery", "CANCEL PENDING APPLY", "RESTORE DISPLAYED SETUP", "not transport")
-    }
-
     @Test fun rootPreviewIsLocalDismissibleAndHasNoOperationalCallbacks() {
         val source = sheet()
         val button = source.substringAfter("private fun ManualKey(").substringBefore("// One card")

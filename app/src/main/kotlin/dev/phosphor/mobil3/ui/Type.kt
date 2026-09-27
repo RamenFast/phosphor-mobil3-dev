@@ -27,6 +27,13 @@ object Type {
     val dataLg = 14.sp   // sheet rows, titles in the console
     val dataXl = 16.5.sp // stone glyphs, big readouts
     val prose = 13.sp    // humanist reading face
+
+    // The one sheet scale (design/REDESIGN.md §3). CAPS only for title and eyebrow.
+    val title = 14.sp    // sheet title, mono CAPS
+    val eyebrow = 12.sp  // group heading, mono CAPS, tracked
+    val label = 15.sp    // every row and key label, mono lowercase
+    val value = 14.sp    // trailing values, chip text, on/off
+    val hint = 13.sp     // the one optional humanist line
 }
 
 // The one text primitive for data. Sharp, mono, ellipsized.

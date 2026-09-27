@@ -157,6 +157,8 @@ var bestiaryFound by mutableStateOf(false)
     var instrumentRapid by mutableStateOf(false)
     var instrumentDocumentBusy by mutableStateOf(false)
     var showInstrumentPresets by mutableStateOf(false)
+    /** A Settings group to bring into view once (SettingsGroup name), then cleared. */
+    var settingsFocus by mutableStateOf<String?>(null)
 
     var light by mutableStateOf(LightSettings())
     var lightPending by mutableStateOf<LightSettings?>(null)

@@ -17,6 +17,7 @@ object Dim {
     val cardMarginH = 12.dp    // chrome floats clear of the display's side glass
     val cardMarginBottom = 10.dp
     val sheetPad = 16.dp
+    val sheetPadH = 20.dp      // one side padding for every sheet (REDESIGN §4)
     val consolePadH = 14.dp
     val consolePadV = 10.dp
     val rowPad = 14.dp
