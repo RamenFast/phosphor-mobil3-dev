@@ -568,3 +568,89 @@ but drag arbitration, text-field input, header flick and post-scroll dismissal s
 No acceptance claim is made for those gesture changes here.
 
 The shared test-results directory can be overwritten by concurrent builds. This audit does not reuse an unrelated test XML as a compile receipt.
+
+## slice-c
+
+Reachability check #2 · exact commit `711be8e` · read-only code review, 2026-09-26.
+Compared LOOK with baseline `8cbad15`. Traced owner behavior in the same reviewed commit.
+No device, compiler or test command was run for this review. Existing behavior-test bodies were inspected, not counted as fresh passing runs.
+
+### LOOK retention
+
+`PhosphorScreen.kt:881–884` mounts LookSheet for the existing ROOM destination.
+Room tiles call `actions.setRoom`; curated and saved tiles call `actions.selectAppearance`; STYLE calls `actions.setRoomStyle`.
+Overflow LOOK still dispatches this destination (`PhosphorScreen.kt:822`).
+
+| Baseline capability | New reachable home / owner | Result |
+|---|---|---|
+| Blossom, Blossom Dark, Light, Dark, Chromacore, Basalt, Afterglow, Stonework 95, AMOLED, Paper, CRT Amber, Fable, Liquid Glass | LookTiles.build iterates every Rooms entry; LookSheet room tile → setRoom | All 13 classic room values are represented. Exact curated-value duplicates may be merged; current curated values differ from the corresponding classic values. Name collisions receive “classic”. |
+| Four curated appearance records | LookTiles curated order Glass, AMOLED, Dark, Light → onPickLook → selectAppearance | Retained, now directly selectable outside Developer. |
+| Every user/saved look | document.users → LookTiles.Kind.SAVED → selectAppearance(record.id) | Retained; no fixed-size truncation or selected-only filtering. |
+| Load named/curated draft without applying | Settings → DeveloperGroup → AppearanceEditor | Retained. Direct LOOK selection is an additional route, not a replacement for draft loading. |
+| Preview, apply, cancel / Escape, temporary preview cleanup | DeveloperGroup → AppearanceEditor → AppearanceActions | Retained. |
+| Save new user look; overwrite selected saved look | AppearanceEditor saveAppearance(name, value) and saveAppearance(name, value, id) | Both retained. |
+| Rename/delete user look | AppearanceEditor renameAppearance / deleteAppearance | Retained in Developer, not dropped because LOOK tiles have no edit menu. |
+| Load immutable legacy record and optional legacy:current override snapshot | AppearanceEditor LEGACY SNAPSHOTS → LOAD IMMUTABLE DRAFT | Retained. These immutable provenance snapshots are deliberately distinct from classic-room tiles. |
+| FEEL: carved / engraved / bench / glass | LookSheet SettingChoice → StyleOverride(character) | Retained. Existing coupled defaults when changing feel are unchanged in the owner. |
+| MOTION: eased / cut / steps / spring | LookSheet SettingChoice → StyleOverride(motion) | Retained. |
+| CORNERS: 0 / 8 / 12 | LookSheet SettingChoice → StyleOverride(radiusDp) | Restored to ordinary LOOK, not hidden behind Developer. L3 is addressed. |
+| Arbitrary authored radius 0–64 | AppearanceEditor radius field | Retained. LOOK only displays the nearest named choice; opening LOOK does not rewrite the actual radius. |
+| LABELS/designators: plain / part numbers | LookSheet SettingChoice → StyleOverride(designators) | Retained. |
+| Other appearance fields, readable-color proposal, reset, repair and authoritative recovery | DeveloperGroup → unchanged AppearanceEditor body | Retained. |
+| Live preview sample | LookTile renders authored plane/surface/ink/accent/corners | Replaced as planned; no tuning capability removed. |
+
+### Legacy identity and provenance
+
+- `MainActivity.setRoom` resolves a classic room from `LegacyAppearanceInput(room.id)` and calls `owner.apply(value, id)`.
+  It uses a legacy association only when that record exists in the committed document. It does not blindly call select on a nonexistent legacy ID.
+- `selectAppearance` calls AppearanceWorkflow.select → AppearanceCollection.apply(recordId) for curated or user records.
+- `setRoomStyle` edits the effective authored value and retains the current association ID. It does not rewrite the stored named record.
+- AppearanceCollection.changed carries `document.legacy` and `document.provenance` unchanged into the replacement document.
+  Classic-room selection, curated/user selection and style edits therefore do not erase migration provenance or immutable snapshots.
+- The migrated `legacy:current` snapshot can include original overrides. It remains recoverable from AppearanceEditor; choosing a classic tile intentionally selects the classic defaults instead.
+
+Two LOOK feedback edge cases remain, without blocking the reachable action paths:
+
+1. **C1 · A classic tile can lack an active mark after a valid legacy-empty import.** `LookTiles.active` falls back to comparing `tile.room.id` with displayedRoomId when activeId is empty.
+   MainActivity.refreshAppearance instead names an unassociated authored value `appearance:custom`. With `document.legacy` empty, setRoom correctly uses empty association,
+   so neither branch marks the chosen classic tile. Compare an unassociated active value with the tile value, or carry an explicit truthful selection marker.
+2. **C2 · Saved names can collide with curated/classic names.** AppearanceDocument only requires unique names among users.
+   A saved record named Glass can therefore produce a second tile labeled/announced Glass. LookTiles disambiguates classic-room names but not saved names.
+   Preserve a “saved” qualifier in the label or accessibility name when names collide. The old editor distinguished LOAD SAVED DRAFT from curated drafts.
+
+### AB1–AB4 verification
+
+| Finding | Status at 711be8e | Code evidence / remaining work |
+|---|---|---|
+| AB1 · Setup result/error masking | **Partly fixed, still open** | SettingsSetups.kt:147–149 replaces fixed ifBlank priority with two LaunchedEffects. Independent later changes can display correctly, but reopening with both strings nonblank launches both effects and the apply-status effect is last. Same-frame changes have no event revision/order. A newer file/store error can still be hidden by stale workflow status. Show both distinct channels or select using owner-level revisions, not effect declaration order. |
+| AB2 · Quantized timing keyboard no-op | **Keyboard fixed; TalkBack still open** | LightTime.next/stepOnRail is wired into SliderRow and both SettingRange endpoints. SettingsRangeAction.step uses it for keyboard arrows. However settingsRange SetProgress still calls action.set directly (SettingsControlAccess.kt:81). AndroidX adjustable forward/back actions add 1/20 of a continuous normalized range before invoking SetProgress. At 0.1s, +0.05 maps to about 0.1377s, then rounds back to 0.1s. The increment can remain a no-op for TalkBack, especially at minimum or a narrow interval endpoint. Route semantic adjustments through a quantization-aware value contract as well. |
+| AB3 · Plus saves the wrong live color | **Fixed for the normal live path** | LightSheet.kt:112–114 reads PhosphorNative.beamColorNow and passes rgbOf to addCurrent. Steady authored colors copy exact stored triples; moving/generated/temporary colors use the snapshot. Generated-auto is disabled and the new slot worn. If the native read fails, the code deliberately falls back to authored color; that exceptional fallback is not device-tested here. |
+| AB4 · Active/modified/temporary feedback | **Partly fixed, still open** | ownerLine now shows rolled/generated state and explains plus. But SetupsGroup still never reads instrumentRecall, so active setup association and modified state remain absent. SavedSwatch still calls savedWorn(light,index) without state.lightTemporary (LightSheet.kt:103; LightChoices.kt:29), so a saved color remains marked selected during a temporary roll even though preset marks suppress that state. |
+
+The TalkBack path was checked against AndroidX AndroidComposeViewAccessibilityDelegateCompat: ACTION_SCROLL_FORWARD/BACKWARD on a continuous ProgressBarRangeInfo
+uses `(max−min)/AccessibilitySliderStepsCount`, where the constant is 20, then calls SemanticsActions.SetProgress.
+This is a different path from the app’s onKeyEvent stepper. No device accessibility claim is made by this source review.
+
+Prime accepted a minimum of two slots in an active cycle. That deliberate choice is no longer an open blocker.
+Numeric RGB sliders remain an intentional design change; accessible HSV editing is retained.
+
+### Five dismissal findings: closure check
+
+| Prior finding | Current code witness | Result |
+|---|---|---|
+| Double-counted card displacement | Sheets.kt:252–267 dragByFinger → dragBy sums only delta; no shownAtLastDelta compensation | Fixed. |
+| Cancellation commits a pull | Sheets.kt:202–204 closes rejects cancelled; 391–392 cancelDismiss passes cancelled=true; 560 header onDragCancel calls cancelDismiss | Fixed for the reviewed cancellation callback. It clears raw travel and samples before return-home. |
+| Cached speed survives a hold before release | Sheets.kt:243–245 appends release uptime/raw position; 384–385 uses releaseVelocity(now) | Fixed. Old samples age out relative to release. |
+| SideEffect/programmatic pre-scroll changes pull state | Sheets.kt:400 rejects non-UserInput, matching post-scroll at 415 | Fixed. |
+| Header-local positions underestimate flick speed | Sheets.kt:252–256 tracks accumulated deltas, 558–560 uses release/cancel paths; no moving-local-position VelocityTracker | Fixed. |
+
+Inspected host tests cover plain delta accumulation while the card follows, flick→hold→release, and cancelled large/fast pulls returning home.
+This review did not rerun them. Production thresholds are now 32dp/700dp/s for flick and 96dp for distance; the older design text still says 48dp/920dp/s.
+That threshold change should be recorded as a tuning decision, not confused with the five correctness fixes.
+
+### Check #2 disposition
+
+LOOK actions and provenance paths are retained. All five named dismissal fixes are present in code.
+Do not close AB1, the TalkBack part of AB2, or the remaining AB4 feedback issues yet.
+AB3’s normal path is fixed. C1/C2 are specific selection-feedback edge cases for valid imported/saved documents.
+Device acceptance and compilation remain with Prime; this section is exact-commit source evidence only.

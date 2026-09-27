@@ -48,12 +48,16 @@ that state (for example range sliders under "vary per track"); that is context, 
 7. DEVELOPER (after 7 taps) · signal check · status band · beam rate · grid data · pause display
    only · reset inspection · HDR / HUD status · appearance values editor
 
-**SRC** · LIBRARY (open file · open folder · queue rows) → OTHER APPS (everything playing ·
-include mic + two levels · track names · allow, only while not granted) → MICROPHONE (one row per
-input, human names) → REMOTE (relay rows, + add relay, and when connected: music · visualizer ·
-desktop sources · browse library · disconnect).
-Active source rows say `stop` on the right; tapping the active row stops it. The ⏻ LIVE stone goes
-(it duplicated the rows and could start capture on its own).
+**SRC** (as built, slice d) · LIBRARY (open file · open folder · queue rows) → OTHER APPS
+(everything playing · include mic + playback/mic levels · track names `allow` only while not granted)
+→ MICROPHONE → REMOTE (relay rows with an `edit` key, `add relay`, and when connected: music ·
+desktop visualizer · desktop sources · desktop library · disconnect).
+Active source rows say `stop` and stop on tap. The ⏻ LIVE stone is gone (it duplicated the rows).
+Microphone rows use kind names (`built-in`, `built-in · second`, `USB headset`, `Bluetooth`) and read
+`microphone` when there is only one. The active row stops; the chosen idle row says `start`; another
+row chooses that input (a running mic moves to it). Choosing an idle input and starting it are two
+taps: capture logic is unchanged, and a one-tap "choose and start" would need a new activity action.
+Status and consent lines appear only when they carry live state; the relay empty state is one line.
 
 **MODE** · AUTOMATIC: random (⚄) → XY · 3D · TIME · SPECTRUM mode rows → GEOMETRY chips + amount
 (amount only when a geometry is on) → SKIP ON ⚄: the 11 face chips, always visible at the end, so
@@ -63,10 +67,12 @@ bans can be set before the first roll. No prose. Why at the end: the modes stay 
 → CYCLE (only with ≥ 2 saved) → RANDOM: `⚄ roll` key + `new color each cycle` toggle.
 Details in §6.
 
-**LOOK** · one tile grid: Glass, AMOLED, Dark, Light, then the other rooms, then saved looks.
-Tiles are live previews (their own plane, surface, ink, accent and corner). → STYLE: feel · motion ·
-corners (sharp · soft · round = 0 / 8 / 12 dp) · labels as choice rows. Each changes only its own
-field. Raw values stay in DEVELOPER.
+**LOOK** (as built, slices c/c') · LOOKS: Glass, AMOLED, Dark, Light, then the distinct rooms, then
+saved looks (a saved name that matches a built-in one reads `name · saved`). CLASSIC: the older
+versions of the curated four, together at the end. Exactly one tile is marked; a custom unsaved look
+gets its own `current` tile first. Tiles are live previews. → STYLE: feel · motion · corners (sharp ·
+soft · round) · labels, each changing only its field. Choices use one row, else a 2-column grid, else
+one column, whichever first fits every label on one line. Raw values stay in DEVELOPER.
 
 ## 3. One type scale
 

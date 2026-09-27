@@ -60,14 +60,23 @@ internal class SettingsRangeAction(
 
     fun set(requested: Float): Boolean {
         if (!requested.isFinite()) return false
-        val next = requested.coerceIn(minimum, maximum)
+        // On a quantized rail an accessibility adjust moves at least one representable value,
+        // so a small TalkBack increment never rounds back to where it started.
+        val wanted = stepper?.let { next ->
+            when {
+                requested > value -> maxOf(requested, next(value, true))
+                requested < value -> minOf(requested, next(value, false))
+                else -> requested
+            }
+        } ?: requested
+        val next = wanted.coerceIn(minimum, maximum)
         if (next == value) return false
         publish(next)
         return true
     }
 
     fun step(increase: Boolean): Boolean =
-        set(stepper?.invoke(value, increase) ?: (value + (maximum - minimum) * if (increase) 0.01f else -0.01f))
+        set(value + (maximum - minimum) * if (increase) 0.01f else -0.01f)
 }
 
 internal fun Modifier.settingsRange(

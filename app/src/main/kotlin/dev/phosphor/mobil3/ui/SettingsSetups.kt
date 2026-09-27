@@ -21,7 +21,6 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
-import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -132,6 +131,12 @@ private fun SetupRow(name: String, chosen: Boolean, trailing: String?, p: Palett
     RowDivider(p)
 }
 
+/** Which setup the instrument wears now, in words; nothing for the plain local setup. */
+internal object SetupsRecall {
+    const val LOCAL = "Local authored setup"
+    fun line(recall: String): String? = recall.takeIf { it.isNotBlank() && it != LOCAL }?.let { "wearing $it" }
+}
+
 private enum class SetupEdit { NONE, SAVE, RENAME, COPY, DELETE }
 
 /** Saved setups inline in Settings: name rows, one actions row under the chosen one. */
@@ -143,10 +148,9 @@ internal fun SetupsGroup(state: ScopeUiState, p: Palette, actions: SheetActions,
     val collection = state.instrumentCollection
     val ready = collection != null
 
-    // Live results and recovery only. No help prose. The newest result wins.
-    var status by remember { mutableStateOf(state.instrumentApplyStatus.ifBlank { state.instrumentStatus }) }
-    LaunchedEffect(state.instrumentStatus) { if (state.instrumentStatus.isNotBlank()) status = state.instrumentStatus }
-    LaunchedEffect(state.instrumentApplyStatus) { if (state.instrumentApplyStatus.isNotBlank()) status = state.instrumentApplyStatus }
+    // Live results and recovery only. No help prose. The newest result wins (write order).
+    SetupsRecall.line(state.instrumentRecall)?.let { SettingNote(it, p) }
+    val status = state.instrumentNewestStatus
     if (status.isNotBlank()) SettingNote(status, p)
     if (state.instrumentRapid) {
         SettingNote("fast color changes can trigger seizures", p)

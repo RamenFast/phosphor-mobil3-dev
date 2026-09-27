@@ -250,11 +250,4 @@ class RemoteFolderActionTest {
         assertTrue(f.calls.isEmpty())
     }
 
-    @Test fun sourceSheetWiresRootAuthorityAndDismissalDisposalRetirement() {
-        val source = java.io.File("src/main/kotlin/dev/phosphor/mobil3/ui/Sheets.kt").readText()
-        assertTrue(source.contains("rootRequest?.selectRoot(id, browseRequest, currentPeer(), browsing, ::requestBrowse)"))
-        assertTrue(source.contains("DisposableEffect(Unit)"))
-        assertTrue(source.contains("onDispose { browseRequest?.retire() }"))
-        assertTrue(source.contains("dismiss = { clearBrowse(); onDismiss() }"))
-    }
 }

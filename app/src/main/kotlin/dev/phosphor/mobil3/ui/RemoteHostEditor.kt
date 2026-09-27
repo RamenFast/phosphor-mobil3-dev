@@ -53,15 +53,16 @@ fun HairlineField(
 ) {
     Box(
         modifier
-            .height(Dim.flatKey)
-            .border(Dim.hairline, p.line)
-            .padding(horizontal = Dim.gap),
+            .height(48.dp)
+            .border(Dim.hairline, p.lineStrong)
+            .settingsFocusBorder(p)
+            .padding(horizontal = 12.dp),
         contentAlignment = Alignment.CenterStart,
     ) {
         // The hint is drawn beneath rather than as a decoration box, so an empty field
         // still shows the same glyph metrics as a filled one and nothing shifts on focus.
         if (value.isEmpty()) {
-            Mono(hint, p.muted, Type.data)
+            Mono(hint, p.muted, Type.label)
         }
         BasicTextField(
             value = value,
@@ -69,7 +70,7 @@ fun HairlineField(
             singleLine = true,
             textStyle = TextStyle(
                 color = p.ink,
-                fontSize = Type.data,
+                fontSize = Type.label,
                 fontFamily = MonoFace,
             ),
             cursorBrush = SolidColor(if (p.accent.alpha > 0f) p.accent else p.ink),
@@ -110,7 +111,8 @@ fun RemoteHostEditor(
         mutableStateOf(existing?.port?.toString() ?: "45777")
     }
 
-    SheetSectionLabel(if (existing == null) "ADD RELAY" else "EDIT RELAY", p)
+    Mono(if (existing == null) "add relay" else "edit relay", p.ink, Type.label,
+        Modifier.padding(top = 12.dp, bottom = 8.dp))
 
     HairlineField(
         value = label,
@@ -143,31 +145,14 @@ fun RemoteHostEditor(
 
     // A refusal is the store's own fix-bearing message. It appears under the fields it
     // concerns and stays until the input changes, so nothing is dismissed before it is read.
-    refusal?.let {
-        Spacer(Modifier.height(Dim.gap))
-        Box(
-            Modifier
-                .fillMaxWidth()
-                .border(Dim.hairline, p.accent)
-                .background(p.surface2)
-                .padding(Dim.gap),
-        ) {
-            Mono(it, p.ink, Type.data, maxLines = 6)
-        }
-    }
+    refusal?.let { SettingNote(it, p) }
 
-    Spacer(Modifier.height(Dim.gap))
-    Row(horizontalArrangement = Arrangement.spacedBy(Dim.gap)) {
-        FlatKey("SAVE", p, active = true, modifier = Modifier.weight(1f)) {
-            onSubmit(label, host, port)
-        }
-        FlatKey("CANCEL", p, modifier = Modifier.weight(1f), onClick = onCancel)
+    KeyRow {
+        SheetKey("save", p, active = true) { onSubmit(label, host, port) }
+        SheetKey("cancel", p, onClick = onCancel)
+        onRemove?.let { SheetKey("remove", p, description = "remove this relay", onClick = it) }
     }
-    onRemove?.let {
-        Spacer(Modifier.height(Dim.gap))
-        FlatKey("REMOVE THIS RELAY", p, modifier = Modifier.fillMaxWidth(), onClick = it)
-    }
-    Spacer(Modifier.height(Dim.gapLg))
+    RowDivider(p)
 }
 
 /**
@@ -179,32 +164,5 @@ fun RemoteHostEditor(
  * exists or promising LAN addresses that the endpoint validator correctly refuses.
  */
 internal const val RemoteEmptyStateText =
-    "No relay saved.\n\n" +
-        "Phosphor can scope a desktop's audio over your private tailnet. " +
-        "Run phosphor-relay on that machine, connect both devices to Tailscale, " +
-        "then add its tailnet address below.\n\n" +
+    "Run phosphor-relay on a desktop in your Tailscale tailnet, then add its address. " +
         "Nothing is hosted by Phosphor and no audio leaves your tailnet."
-
-@Composable
-fun RemoteEmptyState(p: Palette) {
-    Box(
-        Modifier
-            .fillMaxWidth()
-            .border(Dim.hairline, p.line)
-            .padding(Dim.rowPad),
-    ) {
-        Mono(
-            RemoteEmptyStateText,
-            p.muted,
-            Type.data,
-            maxLines = 12,
-        )
-    }
-    Spacer(Modifier.height(Dim.gap))
-}
-
-@Composable
-private fun SheetSectionLabel(text: String, p: Palette) {
-    Mono(text, p.muted, Type.dataSm)
-    Spacer(Modifier.height(Dim.gap))
-}

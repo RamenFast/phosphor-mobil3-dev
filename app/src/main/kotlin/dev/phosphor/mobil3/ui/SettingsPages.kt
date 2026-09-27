@@ -131,13 +131,21 @@ internal fun SettingToggle(label: String, on: Boolean, p: Palette, hint: String?
 }
 
 /**
- * Choice cells stack when any label would not fit on one line in its cell.
- * Widths are measured, never guessed from fontScale, so no word ever breaks.
+ * Columns for a choice: one row of every option, else a 2-column grid, else one column,
+ * whichever first fits every label on one line. Widths are measured, never guessed.
  */
-internal fun choicesStack(availablePx: Float, gapPx: Float, cellChromePx: Float, labelWidthsPx: List<Float>): Boolean {
-    if (labelWidthsPx.isEmpty()) return false
-    val cell = (availablePx - gapPx * (labelWidthsPx.size - 1)) / labelWidthsPx.size - cellChromePx
-    return labelWidthsPx.any { it > cell }
+internal fun choiceColumns(availablePx: Float, gapPx: Float, cellChromePx: Float, labelWidthsPx: List<Float>): Int {
+    val n = labelWidthsPx.size
+    if (n <= 1) return 1
+    fun fits(columns: Int): Boolean {
+        val cell = (availablePx - gapPx * (columns - 1)) / columns - cellChromePx
+        return labelWidthsPx.all { it <= cell }
+    }
+    return when {
+        fits(n) -> n
+        n > 2 && fits(2) -> 2
+        else -> 1
+    }
 }
 
 @Composable
@@ -151,9 +159,8 @@ internal fun <T> ChoiceCells(options: List<Pair<T, String>>, selected: T, p: Pal
             measurer.measure(text, style, maxLines = 1, softWrap = false).size.width.toFloat()
         }
         // Chrome: 8dp padding each side + the 8dp chosen mark and its 8dp gap, always reserved.
-        val stacked = with(density) {
-            choicesStack(maxWidth.toPx(), 8.dp.toPx(), 32.dp.toPx(), widths)
-        }
+        val columns = with(density) { choiceColumns(maxWidth.toPx(), 8.dp.toPx(), 32.dp.toPx(), widths) }
+        val single = columns == 1 && options.size > 1
         val cell: @Composable (Modifier, T, String) -> Unit = { modifier, value, text ->
             val chosen = value == selected
             Row(
@@ -162,22 +169,21 @@ internal fun <T> ChoiceCells(options: List<Pair<T, String>>, selected: T, p: Pal
                     .selectable(chosen, enabled = enabled, role = Role.RadioButton) { onPick(value) }
                     .padding(horizontal = 8.dp, vertical = 8.dp),
                 verticalAlignment = Alignment.CenterVertically,
-                horizontalArrangement = if (stacked) Arrangement.Start else Arrangement.Center,
+                horizontalArrangement = if (single) Arrangement.Start else Arrangement.Center,
             ) {
                 if (chosen) {
                     Box(Modifier.size(8.dp).background(p.accent))
                     Spacer(Modifier.width(8.dp))
                 }
-                Mono(text, if (chosen) p.accent else p.ink2, Type.value, maxLines = if (stacked) 3 else 1)
+                Mono(text, if (chosen) p.accent else p.ink2, Type.value, maxLines = if (single) 3 else 1)
             }
         }
-        if (stacked) {
-            Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
-                options.forEach { (value, text) -> cell(Modifier.fillMaxWidth(), value, text) }
-            }
-        } else {
-            Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                options.forEach { (value, text) -> cell(Modifier.weight(1f), value, text) }
+        Column(Modifier.fillMaxWidth(), verticalArrangement = Arrangement.spacedBy(8.dp)) {
+            options.chunked(columns).forEach { rowOptions ->
+                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+                    rowOptions.forEach { (value, text) -> cell(Modifier.weight(1f), value, text) }
+                    repeat(columns - rowOptions.size) { Spacer(Modifier.weight(1f)) }
+                }
             }
         }
     }

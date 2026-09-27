@@ -100,7 +100,7 @@ fun LightSheetV2(
                 Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
                     indices.forEach { index ->
                         if (index < light.slots.size) {
-                            SavedSwatch(index, light.slots[index], LightChoices.savedWorn(light, index),
+                            SavedSwatch(index, light.slots[index], LightChoices.savedWorn(light, index, state.lightTemporary),
                                 editSlot == index, p, Modifier.weight(1f),
                                 onTap = { editSlot = -1; onLightChange(LightChoices.tapSaved(light, index)) },
                                 onEdit = { editSlot = if (editSlot == index) -1 else index },

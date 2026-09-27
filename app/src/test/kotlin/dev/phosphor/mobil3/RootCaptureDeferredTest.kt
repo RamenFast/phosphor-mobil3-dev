@@ -52,26 +52,6 @@ class RootCaptureDeferredTest {
         }
     }
 
-    @Test fun sourceSheetCannotAdvertiseOperationalRootEvenForAStaleRootStatus() {
-        val sheet = source("ui/Sheets")
-        val gate = "if (dev.phosphor.mobil3.RootCapturePolicy.PRODUCT_AVAILABLE && (state.rootCaptureEnabled || state.captureRoot)) {"
-        assertTrue(sheet.contains(gate))
-        val before = sheet.substringBefore(gate)
-        val gated = sheet.substringAfter(gate).substringBefore("if (state.captureStatus.isNotBlank())")
-        val after = sheet.substringAfter("if (state.captureStatus.isNotBlank())")
-        listOf("RETRY ROOT", "ROOT MANAGER", "Root input:").forEach {
-            assertFalse(before.contains(it))
-            assertTrue(gated.contains(it))
-            assertFalse(after.contains(it))
-        }
-        assertTrue(gated.contains("actions.startStandardCapture()"))
-        assertTrue(sheet.contains("actions.startCapture(); onDismiss()"))
-        assertTrue(sheet.contains("actions.captureConsentNeeded()"))
-        assertTrue(sheet.contains("Root capture is deferred from this release"))
-        assertFalse(sheet.contains("authorized root capture uses"))
-        assertFalse(sheet.contains("Root capture can include BY_SYSTEM"))
-    }
-
     @Test fun manualApiAndCallerContainNoOperationalRootPlumbing() {
         val sheet = source("ui/ManualSheet")
         val caller = source("ui/PhosphorScreen").substringAfter("Sheet.MANUAL -> ManualSheet(")

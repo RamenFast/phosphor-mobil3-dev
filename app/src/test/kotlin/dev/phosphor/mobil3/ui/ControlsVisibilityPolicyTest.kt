@@ -49,29 +49,6 @@ class ControlsVisibilityPolicyTest {
         assertTrue("ControlsVisibilityPolicy.alwaysVisible(p.all)" in activity)
     }
 
-    @Test fun sourceKeepsQueueJumpWithoutDeckOrConsoleVolume() {
-        val sheets = phase9Source("ui/Sheets.kt")
-        val source = sheets.substringAfter("fun SourceSheet(").substringBefore("fun ModeSheet(")
-        assertTrue("itemsIndexed(state.queueTitles)" in source)
-        assertTrue("i == state.queueIndex" in source)
-        assertTrue("actions.jumpToQueue(i)" in source)
-        assertFalse("SeekRule(" in source)
-        assertFalse("StoneKey(if (state.playing)" in source)
-        val screen = phase9Source("ui/PhosphorScreen.kt")
-        assertTrue("override fun jumpToQueue(index: Int) = actions.jumpToQueue(index)" in screen)
-        assertFalse("volumeFrac = { actions.volumeFrac() }" in screen)
-        assertFalse("onVolume" in screen)
-        assertFalse("DragRuleInline(" in phase9Source("ui/Console.kt"))
-        for (text in listOf(screen, sheets, phase9Source("ui/Console.kt"), phase9Source("ui/Glyphs.kt"))) {
-            for (removed in listOf("Sheet.DECK", "DeckSheet", "SettingsGlyph.Deck", "onDeck")) assertFalse(removed in text)
-        }
-        assertTrue("deckOpen" in phase9Source("PhosphorNative.kt"))
-        val player = phase9Source("PhosphorPlayer.kt")
-        assertTrue("if (queue.isNotEmpty()) add(Player.COMMAND_SEEK_TO_MEDIA_ITEM)" in player)
-        assertTrue("mediaItemIndex != index && mediaItemIndex in queue.indices" in player)
-        assertTrue("onSwitchTrack?.invoke(index)" in player)
-    }
-
     @Test fun removedVolumeLeavesAndroidOwnershipAndExistingHeartbeat() {
         val activity = phase9Source("MainActivity.kt")
         val console = phase9Source("ui/Console.kt")

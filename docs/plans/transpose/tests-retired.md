@@ -58,3 +58,11 @@ Replacement: device UX checks on the test bed and primary phone (screens, gestur
 | `SettingsControlAccessTest` | `settingsOnlyContextKeepsLegacyLayoutsAndPointerSetters` | source strings of the retired ROOM sheet / live style sample |
 | `AppearancePresentationTest` | `activityAndRoomUseTheTestedCurrentAdapterNotSavedRecordsOrLegacyTuples` | source strings of the retired ROOM sheet / live style sample |
 | `RoomStyleOverrideTest` | `sampleReadsAnimatedOffsetDuringPlacementInsteadOfComposition` | source strings of the retired live style sample |
+
+## Redesign slice d (SRC) · Designer · 2026-09-25
+
+| Test class | Test | Why |
+|---|---|---|
+| `RemoteFolderActionTest` | `sourceSheetWiresRootAuthorityAndDismissalDisposalRetirement` | source strings of Sheets.kt SourceSheet/RemoteFlow (moved to SourceSheet.kt, prose removed) |
+| `RootCaptureDeferredTest` | `sourceSheetCannotAdvertiseOperationalRootEvenForAStaleRootStatus` | source strings of Sheets.kt SourceSheet/RemoteFlow (moved to SourceSheet.kt, prose removed) |
+| `ControlsVisibilityPolicyTest` | `sourceKeepsQueueJumpWithoutDeckOrConsoleVolume` | source strings of Sheets.kt SourceSheet/RemoteFlow (moved to SourceSheet.kt, prose removed) |

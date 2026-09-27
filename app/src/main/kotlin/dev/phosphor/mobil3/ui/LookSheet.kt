@@ -34,7 +34,7 @@ import dev.phosphor.mobil3.settings.appearance.AppearanceValue
 
 /** One picker for every look: curated, the classic rooms and saved looks (REDESIGN §2). */
 internal object LookTiles {
-    enum class Kind { CURATED, ROOM, SAVED }
+    enum class Kind { CURRENT, CURATED, ROOM, CLASSIC, SAVED }
     data class Tile(val key: String, val label: String, val kind: Kind, val value: AppearanceValue, val room: Palette? = null)
 
     /** Curated order leads: the four looks Ben named first. */
@@ -44,27 +44,46 @@ internal object LookTiles {
         val curated = curatedOrder.mapNotNull { id -> AppearanceDocument.CURATED.find { it.id == id } }
             .map { Tile(it.id, it.name, Kind.CURATED, it.value) }
         val curatedValues = curated.map { it.value }.toSet()
-        val curatedNames = curated.map { it.label.lowercase() }.toSet()
         // A classic room identical to a curated look is the same look: show it once.
-        // A different room with a taken name keeps its colors under a distinct name.
+        // The older versions of the curated four stay reachable in one quiet CLASSIC row.
         val rooms = Rooms.mapNotNull { room ->
             val value = roomValue(room)
-            if (value in curatedValues) null
-            else Tile("legacy:${room.id}", if (room.label.lowercase() in curatedNames) "${room.label} classic" else room.label,
-                Kind.ROOM, value, room)
+            when {
+                value in curatedValues -> null
+                room.id in classicIds -> Tile("legacy:${room.id}", classicLabel(room), Kind.CLASSIC, value, room)
+                else -> Tile("legacy:${room.id}", room.label, Kind.ROOM, value, room)
+            }
         }
-        val saved = document?.users.orEmpty().map { Tile(it.id, it.name, Kind.SAVED, it.value) }
-        return curated + rooms + saved
+        val main = curated + rooms.filter { it.kind == Kind.ROOM }
+        val taken = main.map { it.label.lowercase() }.toSet()
+        // A saved look never shares a name (or a TalkBack announcement) with a built-in one.
+        val saved = document?.users.orEmpty().map {
+            Tile(it.id, if (it.name.lowercase() in taken) "${it.name} · saved" else it.name, Kind.SAVED, it.value)
+        }
+        return main + saved + rooms.filter { it.kind == Kind.CLASSIC }
     }
 
-    fun active(tile: Tile, document: AppearanceDocument?, displayedRoomId: String): Boolean {
+    /**
+     * Exactly one tile is marked: the committed id, else the tile whose values equal the
+     * active look, else the displayed room. Null means the look is custom: show [current].
+     */
+    fun activeKey(tiles: List<Tile>, document: AppearanceDocument?, displayedRoomId: String): String? {
         val activeId = document?.activeId.orEmpty()
-        return when {
-            activeId.isNotEmpty() -> activeId == tile.key
-            tile.kind == Kind.ROOM -> tile.room?.id == displayedRoomId
-            else -> false
-        }
+        tiles.firstOrNull { activeId.isNotEmpty() && it.key == activeId }?.let { return it.key }
+        document?.active?.let { value -> tiles.firstOrNull { it.value == value }?.let { return it.key } }
+        if (activeId.isEmpty()) tiles.firstOrNull { it.room?.id == displayedRoomId }?.let { return it.key }
+        return null
     }
+
+    /** The custom, unsaved look as its own tile, so something is always marked. */
+    fun current(document: AppearanceDocument?): Tile? =
+        document?.active?.let { Tile(CURRENT_KEY, "current", Kind.CURRENT, it) }
+
+    const val CURRENT_KEY = "current"
+
+    /** Rooms that are the older versions of the curated four. */
+    val classicIds = setOf("light", "dark", "amoled", "glass")
+    private fun classicLabel(room: Palette) = if (room.id == "glass") "Glass" else room.label
 
     val feelWords = listOf(ChromeCharacter.Carved to "carved", ChromeCharacter.Engraved to "engraved",
         ChromeCharacter.Annotated to "bench", ChromeCharacter.Glass to "glass")
@@ -95,17 +114,15 @@ fun LookSheet(
     CompositionLocalProvider(LocalSettingsControlAccess provides true) {
     SheetHost(p, "LOOK", reduced, onDismiss, glyph = SettingsGlyph.Room) {
         Column(Modifier.verticalScroll(rememberScrollState(), overscrollEffect = null)) {
+            val activeKey = LookTiles.activeKey(tiles, document, state.room.id)
+            val current = if (activeKey == null) LookTiles.current(document) else null
+            val marked = activeKey ?: current?.key
             GroupHeading("LOOKS", p, first = true)
-            tiles.chunked(2).forEachIndexed { row, pair ->
-                if (row > 0) Spacer(Modifier.height(8.dp))
-                Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
-                    pair.forEach { tile ->
-                        LookTile(tile, LookTiles.active(tile, document, state.room.id), p, Modifier.weight(1f)) {
-                            if (tile.kind == LookTiles.Kind.ROOM) tile.room?.let(onPickRoom) else onPickLook(tile.key)
-                        }
-                    }
-                    if (pair.size == 1) Spacer(Modifier.weight(1f))
-                }
+            LookGrid(listOfNotNull(current) + tiles.filter { it.kind != LookTiles.Kind.CLASSIC }, marked, p, onPickRoom, onPickLook)
+            val classic = tiles.filter { it.kind == LookTiles.Kind.CLASSIC }
+            if (classic.isNotEmpty()) {
+                GroupHeading("CLASSIC", p)
+                LookGrid(classic, marked, p, onPickRoom, onPickLook)
             }
             GroupHeading("STYLE", p)
             val style = state.appearanceStyle
@@ -118,6 +135,26 @@ fun LookSheet(
             Spacer(Modifier.height(12.dp))
         }
     }
+    }
+}
+
+@Composable
+private fun LookGrid(tiles: List<LookTiles.Tile>, marked: String?, p: Palette,
+    onPickRoom: (Palette) -> Unit, onPickLook: (String) -> Unit) {
+    tiles.chunked(2).forEachIndexed { row, pair ->
+        if (row > 0) Spacer(Modifier.height(8.dp))
+        Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(8.dp)) {
+            pair.forEach { tile ->
+                LookTile(tile, tile.key == marked, p, Modifier.weight(1f)) {
+                    when {
+                        tile.kind == LookTiles.Kind.CURRENT -> {} // already worn
+                        tile.room != null -> onPickRoom(tile.room)
+                        else -> onPickLook(tile.key)
+                    }
+                }
+            }
+            if (pair.size == 1) Spacer(Modifier.weight(1f))
+        }
     }
 }
 

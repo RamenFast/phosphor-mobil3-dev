@@ -146,8 +146,18 @@ var bestiaryFound by mutableStateOf(false)
     var instrumentCollection by mutableStateOf<dev.phosphor.mobil3.settings.instrument.InstrumentPresetCollection?>(null)
     var instrumentPreview by mutableStateOf<dev.phosphor.mobil3.settings.instrument.InstrumentImportPreview?>(null)
     var instrumentChoices by mutableStateOf<Map<String, dev.phosphor.mobil3.settings.instrument.InstrumentImportChoice>>(emptyMap())
-    var instrumentStatus by mutableStateOf("")
-    var instrumentApplyStatus by mutableStateOf("")
+    // Two owners write setup results; a shared sequence says which is newest (SETUPS shows it).
+    private var statusSequence = 0L
+    private var instrumentStatusState by mutableStateOf(InstrumentStatusLine("", 0L))
+    private var instrumentApplyStatusState by mutableStateOf(InstrumentStatusLine("", 0L))
+    var instrumentStatus: String
+        get() = instrumentStatusState.text
+        set(value) { if (value != instrumentStatusState.text) instrumentStatusState = InstrumentStatusLine(value, ++statusSequence) }
+    var instrumentApplyStatus: String
+        get() = instrumentApplyStatusState.text
+        set(value) { if (value != instrumentApplyStatusState.text) instrumentApplyStatusState = InstrumentStatusLine(value, ++statusSequence) }
+    /** The newest nonblank setup result, by write order. */
+    val instrumentNewestStatus: String get() = InstrumentStatusLine.newest(instrumentStatusState, instrumentApplyStatusState)
     var instrumentRecall by mutableStateOf("Local authored setup")
     var instrumentPending by mutableStateOf(false)
     var instrumentUndo by mutableStateOf(false)
@@ -219,3 +229,11 @@ object GridData {
 }
 
 fun nextHudMode(current: Int): Int = ((if (current in 0..2) current else 2) + 1) % 3
+
+/** One setup result line and its write order. */
+internal data class InstrumentStatusLine(val text: String, val sequence: Long) {
+    companion object {
+        fun newest(a: InstrumentStatusLine, b: InstrumentStatusLine): String =
+            listOf(a, b).filter { it.text.isNotBlank() }.maxByOrNull { it.sequence }?.text.orEmpty()
+    }
+}

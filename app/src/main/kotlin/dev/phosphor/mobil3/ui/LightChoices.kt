@@ -26,7 +26,8 @@ internal object LightChoices {
     fun presetWorn(l: LightSettings, index: Int, temporary: Boolean): Boolean =
         !temporary && !l.generatedAuto && l.selectedMask == 0 && l.preset == index
 
-    fun savedWorn(l: LightSettings, index: Int): Boolean = !l.generatedAuto && index in l.selected
+    fun savedWorn(l: LightSettings, index: Int, temporary: Boolean = false): Boolean =
+        !temporary && !l.generatedAuto && index in l.selected
 
     /** Cycle off: wear this colour alone. Cycling: add or remove it; the ring keeps two. */
     fun tapSaved(l: LightSettings, index: Int): LightSettings {

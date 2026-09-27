@@ -22,8 +22,15 @@ class LookTilesTest {
             val shown = all.any { it.room?.id == room.id } || value in curatedValues
             assertTrue("room ${room.id} reachable", shown)
         }
-        assertEquals(all.size, all.map { it.label.lowercase() }.toSet().size)
-        assertFalse(all.any { it.label.contains("legacy", ignoreCase = true) })
+        val main = all.filter { it.kind != LookTiles.Kind.CLASSIC }
+        val classic = all.filter { it.kind == LookTiles.Kind.CLASSIC }
+        assertEquals(main.size, main.map { it.label.lowercase() }.toSet().size)
+        assertEquals(classic.size, classic.map { it.label.lowercase() }.toSet().size)
+        assertFalse(all.any { it.label.contains("legacy", ignoreCase = true) || it.label.contains("classic", ignoreCase = true) })
+        // Classic versions of the curated four sit together at the end, never among the main tiles.
+        assertTrue(classic.all { it.room?.id in LookTiles.classicIds })
+        assertEquals(classic, all.takeLast(classic.size))
+        assertTrue(main.none { it.room?.id in LookTiles.classicIds })
     }
 
     @Test fun cornersMapToTheNearestNamedChoice() {
@@ -34,12 +41,27 @@ class LookTilesTest {
         assertEquals(listOf(0, 8, 12), LookTiles.cornerWords.map { it.first })
     }
 
-    @Test fun activeFollowsTheCommittedIdOrTheDisplayedRoom() {
+    @Test fun exactlyOneTileIsMarkedAndACustomLookGetsACurrentTile() {
         val all = tiles()
-        val glass = all.first { it.key == "curated:glass" }
-        assertTrue(LookTiles.active(glass, AppearanceDocument.of(activeId = "curated:glass"), "x"))
-        assertFalse(LookTiles.active(glass, AppearanceDocument.of(activeId = "curated:amoled"), "x"))
+        assertEquals("curated:glass", LookTiles.activeKey(all, AppearanceDocument.of(
+            dev.phosphor.mobil3.settings.appearance.CuratedAppearances.glass, "curated:glass"), "x"))
+        // Values equal to a curated look mark that look even under another id.
+        assertEquals("curated:amoled", LookTiles.activeKey(all, AppearanceDocument.of(activeId = ""), "x"))
+        // A custom look matches no tile: the sheet adds one "current" tile.
+        val custom = dev.phosphor.mobil3.settings.appearance.CuratedAppearances.glass.copy(radiusDp = 5)
+        val doc = AppearanceDocument.of(custom, activeId = "")
+        assertNull(LookTiles.activeKey(all, doc, "x"))
+        assertEquals(LookTiles.CURRENT_KEY, LookTiles.current(doc)?.key)
+        // The displayed room marks its tile when nothing else does.
         val basalt = all.first { it.room?.id == "basalt" }
-        assertTrue(LookTiles.active(basalt, null, "basalt"))
+        assertEquals(basalt.key, LookTiles.activeKey(all, null, "basalt"))
+    }
+
+    @Test fun aSavedLookNamedLikeABuiltInOneIsDisambiguated() {
+        val doc = AppearanceDocument.of(users = listOf(
+            dev.phosphor.mobil3.settings.appearance.AppearanceRecord("3f2b8c1e-4d5a-4b6c-8e9f-0a1b2c3d4e5f", "Glass",
+                dev.phosphor.mobil3.settings.appearance.CuratedAppearances.glass.copy(radiusDp = 3))))
+        val all = LookTiles.build(doc) { AppearancePalette.legacy(LegacyAppearanceInput(it.id)).value }
+        assertEquals("Glass · saved", all.first { it.key == "3f2b8c1e-4d5a-4b6c-8e9f-0a1b2c3d4e5f" }.label)
     }
 }
