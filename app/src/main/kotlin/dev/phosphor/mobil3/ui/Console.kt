@@ -529,38 +529,8 @@ fun OverflowPopout(
         Box(Modifier.fillMaxWidth().height(Dim.hairline).background(p.line))
         Spacer(Modifier.height(Dim.gap))
         // One quick toggle. Frame rate, HUD and AUTO PiP live once, in Settings.
-        ChipCell(
-            "GRID · " + if (state.grid) "on" else "off",
-            active = state.grid, p = p, small = true,
-            onClick = onGrid,
-        )
-    }
-}
-
-// One quick-settings cell: room-aware glyph over a terse mono state.
-@Composable
-private fun QuickToggle(
-    glyph: SettingsGlyph,
-    value: String,
-    active: Boolean,
-    enabled: Boolean = true,
-    p: Palette,
-    onTap: () -> Unit,
-) {
-    Column(
-        Modifier
-            .clickable(enabled = enabled, onClick = onTap)
-            .padding(horizontal = 10.dp, vertical = 4.dp),
-        horizontalAlignment = Alignment.CenterHorizontally,
-    ) {
-        // The whole glyph+state cell rotates as a unit through the correct primitive.
-        UprightCell {
-            Column(horizontalAlignment = Alignment.CenterHorizontally) {
-                SettingsGlyphIcon(glyph, p, 18.dp)
-                Spacer(Modifier.height(3.dp))
-                Mono(value, if (enabled && active) p.accent else p.muted, Type.dataXs)
-            }
-        }
+        SheetKey("grid · " + if (state.grid) "on" else "off", p, Modifier.fillMaxWidth(),
+            active = state.grid, description = "grid", onClick = onGrid)
     }
 }
 

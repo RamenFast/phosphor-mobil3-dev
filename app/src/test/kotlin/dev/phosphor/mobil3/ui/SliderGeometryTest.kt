@@ -70,7 +70,7 @@ class SliderGeometryTest {
         assertTrue(".height(if (LocalSettingsControlAccess.current) 48.dp else SliderGeometry.HIT_LANE_DP.dp)" in lane)
         assertTrue(".consoleSeekGesture(" in lane)
         assertFalse("detectTapGestures" in lane)
-        val rules = phase9Source("ui/Sheets.kt").substringAfter("fun DragRule(").substringBefore("fun SourceSheet(")
+        val rules = phase9Source("ui/SettingsPages.kt").substringAfter("fun SliderRow(").substringBefore("fun SettingAction(")
         assertEquals(2, Regex("SliderLane\\(").findAll(rules).count())
         assertTrue("unit.nearestThumb" in rules)
         assertTrue("unit.moveThumb" in rules)

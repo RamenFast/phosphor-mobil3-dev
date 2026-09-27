@@ -717,7 +717,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 val plotPalette = p.copy(ink = androidx.compose.ui.graphics.Color(
                     StageReadability.plotInk(p.ink.toArgb() and 0xffffff) or 0xff000000.toInt()))
                 Box(Modifier.align(Alignment.TopCenter).padding(top = signalTop)) {
-                    SignalCheckAction("SIGNAL CHECK", plotPalette) { sheet = Sheet.SIGNAL_CHECK }
+                    SheetKey("signal check", plotPalette) { sheet = Sheet.SIGNAL_CHECK }
                 }
             }
             if (state.developerView && (state.displayPaused || state.displayPresentPending)) {

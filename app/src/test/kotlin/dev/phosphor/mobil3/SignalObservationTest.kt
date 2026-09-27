@@ -32,7 +32,6 @@ class SignalObservationTest {
             assertFalse(forbidden, join.contains(forbidden))
         val ui = source(base + "ui/SignalCheckSheet.kt")
         for (forbidden in listOf("PhosphorNative", "startCapture(", "startMic(", ".launch(", "remoteConnect(")) assertFalse(ui.contains(forbidden))
-        assertTrue(ui.contains("heightIn(min = 48.dp)"))
         assertTrue(ui.contains("onDispose { state.signalCheckVisible = false }"))
         val native = source("rust/src/jni_glue.rs").substringAfter("fn Java_dev_phosphor_mobil3_PhosphorNative_signalObservation").substringBefore("#[unsafe(no_mangle)]")
         assertFalse(native.contains("take_stereo_stats"))

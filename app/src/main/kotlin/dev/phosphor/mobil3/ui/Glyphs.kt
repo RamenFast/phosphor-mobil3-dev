@@ -643,18 +643,6 @@ fun OverflowHandleGlyph(
     }
 }
 
-@Composable
-internal fun SettingsExpansionGlyph(expanded: Boolean, p: Palette, modifier: Modifier = Modifier) {
-    val angle = stateGlyphFloat(dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy.sectionAngle(expanded), "section-expansion")
-    Canvas(modifier.size(20.dp)) {
-        rotate(angle) {
-            fun point(x: Float, y: Float) = Offset(size.width * x, size.height * y)
-            drawLine(p.ink2, point(.25f, .35f), point(.5f, .65f), 1.5.dp.toPx(), cap = StrokeCap.Butt)
-            drawLine(p.ink2, point(.5f, .65f), point(.75f, .35f), 1.5.dp.toPx(), cap = StrokeCap.Butt)
-        }
-    }
-}
-
 // Engraved mode glyphs — tiny etched vectors of each mode's characteristic figure.
 // Static, ink_2, hairline stroke: an instrument's front-panel legends, not icons.
 @Composable

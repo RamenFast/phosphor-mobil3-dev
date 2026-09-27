@@ -82,3 +82,10 @@ Replacement: device UX checks on the test bed and primary phone (screens, gestur
 | `ManualContentTest` | `rootPreviewIsLocalDismissibleAndHasNoOperationalCallbacks` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
 | `ManualContentTest` | `actualSheetKeepsDiscoveryAndBestiaryArt` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
 | `ManualContentTest` | `actualSheetUsesNonExecutableWrappingSearchAndNavigation` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+
+## Redesign slice h (legacy families) · Designer · 2026-09-25
+
+| Test class | Test | Change |
+|---|---|---|
+| `SignalObservationTest` | `AndroidSourceAssertionsSupplementThePureBehaviorTests` | dropped one source assertion (`heightIn(min = 48.dp)` in SignalCheckSheet); the 48dp target now comes from SheetKey. Other assertions kept |
+| `SliderGeometryTest` | `realRulesUseSharedGeometryAndOneRecognizerNotAnOverlayTapHandler` | retargeted from the deleted `DragRule`/`RangeDragRule` in Sheets.kt to `SliderRow`/`SettingRange` in SettingsPages.kt; same assertions |
