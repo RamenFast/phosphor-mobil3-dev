@@ -902,6 +902,7 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 }
                 Sheet.MANUAL -> ManualSheet(
                     p, reduced,
+                    developer = state.developerView,
                     bestiaryFound = state.bestiaryFound,
                     onBestiaryFound = { actions.markBestiaryFound() },
                     onOpenLink = { actions.openLink(it) },

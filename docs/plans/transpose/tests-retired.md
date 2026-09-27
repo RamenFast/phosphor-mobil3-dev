@@ -66,3 +66,19 @@ Replacement: device UX checks on the test bed and primary phone (screens, gestur
 | `RemoteFolderActionTest` | `sourceSheetWiresRootAuthorityAndDismissalDisposalRetirement` | source strings of Sheets.kt SourceSheet/RemoteFlow (moved to SourceSheet.kt, prose removed) |
 | `RootCaptureDeferredTest` | `sourceSheetCannotAdvertiseOperationalRootEvenForAStaleRootStatus` | source strings of Sheets.kt SourceSheet/RemoteFlow (moved to SourceSheet.kt, prose removed) |
 | `ControlsVisibilityPolicyTest` | `sourceKeepsQueueJumpWithoutDeckOrConsoleVolume` | source strings of Sheets.kt SourceSheet/RemoteFlow (moved to SourceSheet.kt, prose removed) |
+
+## Redesign slice g (manual rewrite) · Designer · 2026-09-25
+
+| Test class | Test | Why |
+|---|---|---|
+| `ManualContentTest` | `chaptersAndResponsesAreDistinctAndSubstantial` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `indexCoversAllApprovedWorkstreamsAndSourceRecovery` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `pendingFeaturesAndRootEvidenceStayExplicit` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `operatingQuestionsReturnActionsAndRecoveryNotOnlyTopicIds` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `lightAnswersNameRealPrecedenceBoundsAndSafeRecovery` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `plannedFeaturesProvideExistingAlternatives` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `appearanceAnswersDescribeCurrentEditorWithoutPhoneAcceptanceClaims` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `chapterViewportStartsAtHeadingAndQueryDoesNotOwnScrolling` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `rootPreviewIsLocalDismissibleAndHasNoOperationalCallbacks` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `actualSheetKeepsDiscoveryAndBestiaryArt` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |
+| `ManualContentTest` | `actualSheetUsesNonExecutableWrappingSearchAndNavigation` | pinned old manual prose or ManualSheet source strings; replaced by behavior tests (reachability, visible labels, developer split, retired names, Back) |

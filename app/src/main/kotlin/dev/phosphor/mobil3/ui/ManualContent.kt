@@ -3,132 +3,240 @@ package dev.phosphor.mobil3.ui
 import java.util.Collections
 import java.util.Locale
 
+/** One chapter. Developer chapters appear only in the developer view (REC08/09). */
 internal data class ManualChapter(
     val id: String,
     val title: String,
-    val availability: String,
     val text: String,
     val response: String,
+    val developer: Boolean = false,
 )
 
 /** Offline help only. Search text is never a command or a network request. */
 internal object ManualContent {
     const val QUERY_LIMIT = 256
+    private fun everyday(id: String, title: String, text: String, response: String) = ManualChapter(id, title, text, response)
+    private fun developer(id: String, title: String, text: String, response: String) = ManualChapter(id, title, text, response, true)
+
     val chapters: List<ManualChapter> = Collections.unmodifiableList(listOf(
-        ManualChapter("start", "START HERE · the beam owns the screen", "Guide",
-            "Tap the glass to reveal the console. SRC chooses the signal, MODE chooses its representation, and LIGHT chooses its phosphor color. Swipe up from the play bar to open Settings. No configured source means no automatic recording or relay connection. A dark screen can be correct when there is no input. Open SRC to choose an input, then use SIGNAL CHECK to distinguish missing samples from measured silence.",
+        // ── Everyday: using and reading the scope, in the words on screen. ──
+        everyday("start", "the first minute",
+            "Phosphor draws sound as light, like an oscilloscope tube. The beam owns the screen.\n\n" +
+                "Tap the glass to show the keys. Play and pause sit on the left. MODE chooses how sound is drawn. " +
+                "SRC chooses where the sound comes from. ⋯ holds LIGHT, LOOK, PiP, SETTINGS and the grid.\n\n" +
+                "Swipe up on the keys to open settings. Pull any sheet down to close it, or use ✕ or Back. " +
+                "Nothing plays until you choose a sound in SRC.",
             "The turtle has booted. The turtle has not invented a signal."),
-        ManualChapter("local", "LOCAL · files and folders", "Available",
-            "Open SRC > open file… or open folder → queue to use Android's picker. A folder becomes a queue. Tap a title under QUEUE to jump to it. Canceling the picker leaves the current source alone. Local playback feeds the scope from the playback path. Use transport pause to stop the music, not display HOLD. If a saved file is missing or access fails, choose a readable file or folder again.",
+        everyday("sources", "SRC · where the sound comes from",
+            "LIBRARY: open file plays one file. open folder plays a folder as a queue; tap a title to jump to it.\n\n" +
+                "OTHER APPS: everything playing draws the sound other apps play, such as Spotify.\n\n" +
+                "MICROPHONE: draws what the phone hears.\n\n" +
+                "REMOTE: draws a desktop's sound over your own Tailscale network.\n\n" +
+                "The active source is marked and says stop. Tap it to stop.",
             "Localhost? More like localmost. The music stayed in the room."),
-        ManualChapter("relay", "REMOTE · your desktop relay", "Available",
-            "Open SRC > REMOTE and select an explicitly saved Tailscale host. Remote audio and remote geometry are different modes. Geometry belongs to the remote instrument, so local beam controls may be unavailable. SOURCE CONTROLS explains that owner. A disconnected host is not a silent microphone. Reconnect explicitly and verify the source identity in Signal Check. Settings > SIGNAL & STARTUP exposes RELAY ONLY · LATENCY when applicable. Choose tight, balanced or safe. If the link underruns, try safe rather than increasing visual gain. This is not an acoustic latency measurement.",
-            "The skeleton checked the host. It did not dial a random IP for the plot."),
-        ManualChapter("capture", "EVERYTHING PLAYING · standard capture", "Available with Android consent",
-            "Open SRC > everything playing. For standard capture, choose CONTINUE and approve recording permission and fresh MediaProjection consent. NOT NOW cancels the explanation without starting capture. Android may call consent screen sharing. Phosphor uses the audio path, not a video recording. Start playback in the source app, then inspect actual samples in SIGNAL CHECK. Silence alone cannot identify an opt-out, DRM, routing failure or a stalled reader. Use SRC > LIVE to stop capture. Optional grant… opens NOTIFICATION ACCESS for track names and art. Sound capture does not require that metadata grant.",
+        everyday("everything-playing", "everything playing · other apps",
+            "Tap everything playing in SRC. The first time, Phosphor explains what Android will ask. " +
+                "Android calls it sharing your screen; Phosphor takes only the sound. Choose continue, then allow it.\n\n" +
+                "include mic adds the microphone to the picture, with playback level and mic level. " +
+                "These change the drawing only, never the speaker volume.\n\n" +
+                "track names · allow lets Phosphor show titles and cover art. Sound works without it.\n\n" +
+                "Some apps block capture, so their sound arrives as silence.",
             "Android said share screen. The scope brought ears, not a camera crew."),
-        ManualChapter("root", "ROOT · a future beam", "Deferred from this release",
-            "The hidden bestiary contains ROOT CAPTURE · COMING LATER. Tap it for a local preview and use GOT IT · CLOSE PREVIEW to close it. The button does not request root, open a root manager, change sources or start capture. Earlier root-enabled settings stay inactive. For now, use SRC > everything playing and approve Android consent, or select a local file or microphone. Standard capture cannot guarantee audio from every app. The retained helper research demonstrated 16 kHz mono feasibility. Duplicating mono does not recover stereo. Original stereo, SoundCloud capture and added acoustic latency are not yet accepted. Those goals remain for later, not promises made by this button.",
-            "The turtle saved a door for a future beam. It has not secretly started a root orchestra."),
-        ManualChapter("mic", "MIC · recording and privacy", "Available for the current input path",
-            "Open SRC > MICROPHONE, choose an input, then start selected microphone. Grant Android recording permission when asked. The microphone service can continue through Activity recreation, PiP and HUD. Its notification and SRC > stop microphone end that input. After explicit accessory loss, reconnect and retry or choose another input. Phosphor does not silently use the built-in mic. Signal Check separates requested input, actual route, client/device format, ordinary silence and unavailable measurements. Android input arbitration or the microphone privacy switch may silence a running recorder. No audio is saved or monitored to speakers.",
+        everyday("microphone", "microphone",
+            "Each input has its own row: built-in, built-in · second, USB, headset or Bluetooth. " +
+                "With only one input the row just says microphone.\n\n" +
+                "The chosen input says start. Tap it to begin; Android asks for permission the first time. " +
+                "The running input says stop. Tap another input to choose it; a running microphone moves to it.\n\n" +
+                "A Bluetooth mic can lower playback quality while it runs. Phosphor asks first. " +
+                "Nothing is recorded or saved.",
             "The microphone is not judging your humming. It is counting samples."),
-        ManualChapter("mix", "INPUT MIX · accessories and Bluetooth", "Route-dependent",
-            "Choose everything playing with Android consent, then enable INCLUDE MIC beside that source. Choose the microphone under MICROPHONE. PLAYBACK LEVEL and MIC LEVEL change only the visualization, not speaker volume. Disable INCLUDE MIC to remove only microphone input. The mixer uses one bounded stereo timeline and clipping protection. SIGNAL CHECK reports both inputs separately, including estimated timing when capture timestamps are unavailable. If mic fails, independently healthy playback can continue. Root mixing remains deferred. Before Bluetooth activation, review the quality/output explanation. A temporary communication route may change playback quality. Phosphor releases only its own route and mode requests when stopped. Reconnect requires explicit retry; a missing accessory never silently becomes built-in mic. Available formats and concurrent input behavior depend on Android and the accessory.",
-            "Two readers in a trench coat are not a synchronized mixer."),
-        ManualChapter("gesture", "GESTURES · deliberate, not surprising", "Available",
-            "Swipe up from the play bar to open Settings. Tap the glass to show or hide the console. Settings > DISPLAY & HUD > CONTROLS ALWAYS VISIBLE keeps controls on screen. Enable DOUBLE TAP PLAYBACK there to make a double tap toggle playback. Disable it if accidental taps interrupt playback. Outside chrome, drag one finger upward or pinch outward to bring a local 2D shape closer. With AUTO-FRAMING on, both gestures change the remembered auto framing preference and keep AUTO on. With AUTO off, both change manual gain from ×0.1 to ×7. VIEW LOCK blocks those 2D zoom gestures. In attractor or time helix, one-finger drag orbits and pinch dollies the 3D view. Two-finger swipes left or right step to the next or previous mode. Two-finger swipes up or down increase or decrease GLOW. While HOLD is active, pan and pinch inspect the captured image instead. Ordinary child scrolling, sliders and short top-edge motion should not dismiss Settings. Pull down deliberately from the header or top boundary to close it. Reverse to cancel the pull. Close or system Back remains the explicit recovery if a drag does not close it.",
-            "Yeet prevention is enabled. The settings deserve a proper goodbye."),
-        ManualChapter("sections", "SETTINGS · six expandable groups", "Available",
-            "Swipe up from the play bar, then tap a Settings header to expand its controls. SIGNAL & STARTUP, BEAM & LIGHT, DISPLAY & HUD, MOTION & PERFORMANCE, APPEARANCE and ABOUT & MANUAL expand independently. More than one group can stay open. A header changes presentation only, not the setting it summarizes. Its chevron shows expansion, and its summary shows current values. Collapsed controls leave accessibility focus. Keyboard users can focus controls and use arrows or Home/End on supported ranges. Close and system Back remain explicit exits. Find this help under ABOUT & MANUAL > manual · how it all works.",
-            "Nested drawers, not a boss fight. Open the one with your screwdriver."),
-        ManualChapter("mode", "MODE · geometry and representation", "Available",
-            "Open MODE and tap a face to try it live. Choices are xy · scope art, xy · goniometer, xy · swirl, xy · dots, attractor, time helix, waveform, ring, spectrum, spectrum · radial and spectrum · tunnel. A face changes representation, not source. The random die arms track-based changes. BAN FACES excludes choices, but at least two must remain. Pick a face manually to leave automatic mode. GEOMETRY offers off, kaleido, spin, tunnel and pulse after the face. AMOUNT runs from 0 to 100 percent. Select off to remove the effect. Remote geometry remains remote-owned. Use that instrument or switch source explicitly before applying local setups.",
+        everyday("remote", "REMOTE · your desktop",
+            "Run phosphor-relay on a desktop, join both devices to your Tailscale tailnet, then tap add relay " +
+                "and enter its address. Tap the relay to connect.\n\n" +
+                "When connected: music plays the desktop's sound here; desktop visualizer draws the desktop's own " +
+                "picture; desktop sources and desktop library pick what it plays. disconnect ends it.\n\n" +
+                "If the sound stutters, set settings › relay latency to safe.",
+            "The skeleton checked the host. It did not dial a random IP for the plot."),
+        everyday("reading", "reading the scope",
+            "In the XY faces the left channel moves the beam sideways and the right channel moves it up and down.\n\n" +
+                "Mono sound, the same on both sides, draws a straight diagonal line. Wide stereo opens it into a cloud. " +
+                "Two tones a quarter turn apart draw a circle; simple ratios between tones draw knots and flowers. " +
+                "This is how oscilloscope music is written.\n\n" +
+                "waveform and ring draw sound over time. The spectrum faces draw how much of each pitch is present.",
             "Same samples. Different hat. The hat has Fourier opinions."),
-        ManualChapter("gain", "GAIN · measured versus authored", "Available",
-            "Open Settings > SIGNAL & STARTUP. AUTO-FRAMING keeps sound comfortably in view and glides: taps and clicks do not resize it, loud sound settles quickly, and quiet sound grows back gently. Stage pinch or one-finger drag moves closer or farther around AUTO's choice. SIZE sets the size by hand and turns AUTO off; turning AUTO off keeps the current size. RESET AUTO FRAMING returns to AUTO's own choice. VIEW LOCK blocks stage zoom. Remote geometry keeps desktop gain ownership.",
+        everyday("mode", "MODE · faces and geometry",
+            "Tap a face to try it live; the sheet stays open. XY faces: scope art, goniometer, swirl, dots. " +
+                "3D: attractor, time helix. TIME: waveform, ring. SPECTRUM: spectrum, radial, tunnel.\n\n" +
+                "random (⚄) picks a new face for each track. skip on ⚄ keeps chosen faces out of the roll; " +
+                "at least two stay in play.\n\n" +
+                "GEOMETRY bends the drawing: off, kaleido, spin, tunnel or pulse, with an amount.",
+            "Rolling the die is allowed. Rolling a face you banned is not."),
+        everyday("size", "closer and farther",
+            "auto size keeps sound comfortably in view. Quiet sound grows back gently; loud sound settles quickly.\n\n" +
+                "Pinch, or drag one finger up or down on the glass, to move closer or farther. A thin rail on the edge " +
+                "shows where you are, with the size as ×. With auto size on you move around its choice; " +
+                "with it off you set the size yourself.\n\n" +
+                "settings › size does the same. reset appears when you have moved. view lock stops pinch and drag zoom.",
             "Turning zero up to eleven still makes zero. The umbrella knows math."),
-        ManualChapter("beam", "FOCUS, BEAM and GLOW", "Available",
-            "Open Settings > BEAM & LIGHT. FOCUS changes beam shape from 0.3 to 3.0 px. BEAM changes emission from ×1 to ×30. GLOW controls persistence from 0 to 98 percent. BEAM RANGE and GLOW RANGE use those same bounds. Check a range die to roll now and again on each track. Uncheck to keep the last roll without further rolls. Drag the plain BEAM or GLOW rule for manual takeover. These are authored visual settings, not signal level or window brightness. If the trace smears, lower GLOW. HOLD keeps captured pixels unchanged, so return the display to LIVE to see new tuning.",
-            "More glow is a preference, not a packet-loss repair strategy."),
-        ManualChapter("light", "LIGHT · six saved colors", "Available",
-            "Open LIGHT. ADD CURRENT PRESET COLOR stores the chosen preset color and selects its new slot, up to six RGB slots. Select slot toggles participation. Edit slot opens the color square and red, green and blue rules, each from 0 to 1. Delete slot removes that saved color and its membership. Editing an unselected slot does not step a selected TRACK cycle.\n\nAutomatic generated color owns the beam while enabled, even with one selected slot. Otherwise selected slots own color. With none selected, the fallback is the selected color under PRESETS, such as P7 Green, not an invented extra slot. One selected slot stays solid only when generated color and a temporary roll are inactive. Pick a PRESETS color to return to preset mode. Appearance colors are separate from beam colors.",
-            "Six colors entered the bank. None were rounded down to three."),
-        ManualChapter("random", "RANDOM · color, interval and shuffle", "Available",
-            "In LIGHT, ROLL NOW makes a temporary manual color. The next light edit restores your setup. Automatic generated color selects new colors while retaining inactive saved-slot order. Turn it off to use saved colors or the selected preset. Le random order shuffles selected slots once per bag. Equal saved RGB values can still look unchanged. Random interval changes timing only, not color ownership.\n\nTIMER interpolates by duration. LEG seconds sets fixed timing from 0.1 to 60 seconds. Enable Random interval for Minimum seconds and Maximum seconds within the same 0.1 to 60 bounds. Moving one bound past the other moves the other bound too. TRACK holds color until track identity changes. Its interval controls are inactive, but their values remain stored. Applying TRACK again is not a new track.\n\nBelow one second, full-screen color changes can trigger photosensitive seizures. The rapid-cycle guard checks the whole candidate, including imports. Safe timing is already active when the warning appears. Choose KEEP SAFE to discard the pending faster timing. I understand: allow faster explicitly acknowledges and applies it. Closing LIGHT also discards the pending change. HOLD keeps pixels while edits prepare the next live image.",
-            "RNGesus can pick a color. The ownership ledger still picks the clock."),
-        ManualChapter("presets", "INSTRUMENT PRESETS · complete beam setups", "Available",
-            "Open Settings > BEAM & LIGHT > instrument presets · recall / save, or LIGHT > RECALL INSTRUMENT. Opening the browser does not apply a setup. Select a record, then APPLY its name. SAVE CURRENT AS… and SAVE NEW SETUP create a named snapshot. DUPLICATE AS…, UPDATE WITH CURRENT AUTHORED SETUP and RENAME… act on the selected record. DELETE… shows a confirmation. KEEP RECORD cancels deletion. UNDO LAST APPLY is a separate one-level action.\n\nIMPORT PREVIEW reads a document without applying it. Resolve duplicate names with KEEP EXISTING / SKIP, REPLACE or IMPORT NAMED COPY. SAVE RESOLVED IMPORT · DOES NOT APPLY stores the result. CANCEL PREVIEW leaves it unapplied. EXPORT SELECTED and EXPORT ALL SAVED write portable records. Presets include geometry, authored gain and the full six-color policy. They exclude sources, appearance, root grants, HDR and window brightness. Modified status compares authored settings, not the dancing signal.",
-            "A preset remembers your bench, not the last thing your microphone heard."),
-        ManualChapter("preset-recovery", "PRESET RECOVERY · current is not always saved", "Available",
-            "A native apply needs its matching receipt. A late or canceled receipt cannot overwrite a newer edit. If saving fails, the active setup and saved setup may differ. Read the displayed recovery state. CANCEL PENDING APPLY cancels a pending apply. RETRY SAVE CURRENT · TUNING UNCHANGED retries durability, not transport. RESTORE DISPLAYED SETUP appears when restoration is required. KEEP SAFE TIMING rejects a pending rapid-cycle change. A failed rollback blocks edits until authoritative state can be saved. SOURCE CONTROLS explains remote-owned refusal.",
-            "The skeleton accepts receipts. Screenshots of confidence are not receipts."),
-        ManualChapter("signal", "SIGNAL CHECK · ask why the beam is dark", "Available",
-            "Open Settings > SIGNAL & STARTUP > SIGNAL CHECK on demand. Reading does not start capture, grant access, dial a relay or change playback. Selected source, current owner, requested format and observed format have different meanings. A fresh sample window may show signal or measured silence. Stale measurements do not prove a running reader. Unavailable is not zero. Scope-consumed peaks and source-input peaks are different observations with separate provenance. For missing access or a disconnected input, choose OPEN SOURCES. Use that source's grant, retry or picker action. For measured silence, check source playback and Android microphone privacy access before changing gain.",
-            "The detective found no samples. The detective did not immediately arrest DRM."),
-        ManualChapter("rails", "SIGNAL CHECK · peaks, rails and age", "Available",
-            "A PCM full-scale rail means a digital sample reached that encoding's endpoint. It does not prove analog microphone clipping. Mono duplication remains mono provenance even when the ring has two channels. Root received PCM/progress observations are not a count of completed AudioRecord reads. Hidden diagnostics do not manufacture fresh timestamps when reopened.",
-            "A rail is a sample fact, not a certificate that the singer was too loud."),
-        ManualChapter("hold", "HOLD and BLACK · display versus transport", "Available with acceptance limits",
-            "Open Settings > DISPLAY & HUD. PAUSE DISPLAY · HOLD FRAME is the default presentation. Tap it to choose BLACK instead. PAUSE DISPLAY ONLY freezes the display without pausing music. HOLD keeps the last committed image rather than letting it decay. BLACK hides it. For a controllable source, the play-bar transport pause affects music instead. Live sources can keep arriving while the display is held. Use RETURN DISPLAY TO LIVE to resume its current timeline. Returning LIVE waits for a matching application presentation acknowledgement. That is not a physical scanout or source-age guarantee.",
-            "Freeze frame. Record scratch optional, because display pause did not touch the record."),
-        ManualChapter("inspect", "INSPECTION · pan, zoom and return LIVE", "Available",
-            "While HOLD FRAME has an image, pan or pinch it to inspect without rewriting live gain, geometry or source settings. Open Settings > DISPLAY & HUD > RESET INSPECTION to undo inspection pan and zoom. RETURN DISPLAY TO LIVE resumes the current timeline instead of intentionally replaying a backlog. If BLACK hides the image, select HOLD FRAME to inspect the retained frame. If no held frame exists, return LIVE and wait for input before holding again. Source replacement retires held ownership. Pending presentation, unknown capture-buffer age and actual display latency are different facts, not a single realtime guarantee.",
-            "Enhance. Enhance. Still the same captured phosphor, not new evidence."),
-        ManualChapter("hud", "FLOATING HUD and PiP", "Available with device acceptance pending",
-            "Open Settings > DISPLAY & HUD. Enable FLOATING HUD, choose HUD BACKGROUND · TRANSPARENT or SOLID, then SHOW FLOATING HUD. Show requests Android overlay access only when needed. Grant that access in the system screen, return, and choose Show explicitly if it is not active. HIDE FLOATING HUD closes it. The HUD has move, resize and close controls. Theme Glass is not HUD transparency.\n\nENTER PiP opens Android picture-in-picture explicitly. AUTO PiP controls automatic entry when leaving the app. Turn it off to avoid automatic PiP, without removing ENTER PiP. PiP and HUD hand off one surface, not a second capture owner. An established service-owned microphone can transfer. Pending microphone starts require the visible full app and cannot use the HUD to bypass recording permission. STATS HUD is a separate in-app diagnostic readout, not this floating window. Device transparency and handoff acceptance remain pending.",
-            "One source, one surface owner. The tiny window did not clone the orchestra."),
-        ManualChapter("appearance", "APPEARANCE · looks are not beam presets", "Host-integrated, device acceptance pending",
-            "Open Settings > APPEARANCE. LOAD LIGHT DRAFT, LOAD DARK DRAFT, LOAD GLASS DRAFT and LOAD AMOLED DRAFT select a draft without changing the look. PREVIEW · temporary tries it. APPLY · persist draft commits it. CANCEL · restore committed appearance restores the saved look and resets the draft. Leaving the editor cancels its temporary preview.\n\nAMOLED has a true-black base. Glass means translucent app chrome with readable backplates, not compositor blur or HUD transparency. Appearance owns chrome, not source or beam tuning. Named appearance saves differ from instrument presets. The runtime editor is host-integrated, with device acceptance pending. Legacy migration, four-theme readability and Glass phone behavior still need device evidence.",
+        everyday("light", "LIGHT · beam colour",
+            "COLORS: tap a swatch to wear it.\n\n" +
+                "SAVED keeps up to six colours. + saves the colour the beam shows now. Tap a saved colour to wear it. " +
+                "Long-press it to edit its hue, saturation and brightness, or to delete it.\n\n" +
+                "CYCLE appears with two saved colours or auto color. timer changes colour every few seconds; " +
+                "each track changes it when the track changes. While a cycle runs, tap saved colours to add or remove " +
+                "them; at least two stay. order can be saved or shuffled.\n\n" +
+                "RANDOM: ⚄ roll wears a surprise colour now; + keeps it. auto color keeps inventing colours.\n\n" +
+                "Fast colour changes can trigger seizures. Below one second Phosphor keeps safe timing until you choose allow faster.",
+            "Six colours entered the bank. None were rounded down to three."),
+        everyday("look", "LOOK · the room around the beam",
+            "Each tile shows a look in its own colours. Tap one to wear it. Glass, AMOLED, Dark and Light come first; " +
+                "CLASSIC holds their older versions.\n\n" +
+                "STYLE changes one thing at a time: feel (carved, engraved, bench, glass), motion (eased, cut, steps, " +
+                "spring), corners (sharp, soft, round) and labels (plain or part numbers).\n\n" +
+                "A look changes the keys and sheets, never the beam.",
             "The room changed its jacket. The beam kept its job."),
-        ManualChapter("hdr", "HDR · real headroom, not a brighter slider", "Planned",
-            "Genuine HDR scope output needs an actual suitable surface, linear rendering and compositor/display support. A brighter SDR beam is not HDR. Requested and active modes must be reported separately, including fallback reasons. HDR and transparent HUD need their own combined proof. This build has not accepted that path; ordinary SDR remains the working output.",
-            "We added the letters H D R. The panel asked for actual floating-point receipts."),
-        ManualChapter("brightness", "SCREEN BRIGHTNESS · a foreground window", "ASUS foreground and archive checks passed",
-            "Open Settings > DISPLAY & HUD > PIN SCREEN BRIGHTNESS. It is off by default. Turn it on to request full window brightness and keep the screen awake, including paused playback or no source. Only the started, resumed, focused full app owns the pin. PiP, floating HUD, background, permission overlays and focus loss release it to Android. Returning to the focused full app restores a selected pin. Turn it off to use Android's brightness control again. Global brightness and automatic brightness settings are not changed. This is separate from beam energy, auto-gain and HDR. Sustained brightness and static images use battery and can wear the panel. Panel, thermal and accessibility limits still apply. A requested override is not measured luminance. Saving errors appear inline; the local choice applies immediately, but toggle again to retry saving. Settings /2 archives carry the choice, not active window state. Importing a choice applies only when this app owns the foreground. Foreground focus, Home, PiP, floating HUD, restart and settings import were checked on ASUS Zenfone 9. Other devices and physical luminance remain unverified.",
-            "The sun has entered the chat. The thermal governor may politely remove it."),
-        ManualChapter("startup", "STARTUP · one intentional launch", "Planned",
-            "The planned default-source coordinator distinguishes a fresh user launch from resume, rotation and permission return. No default means no automatic source or permission chain. Missing consent must use the real Android flow once, never a fake grant. For now, open SRC and choose the source manually. DEFAULT SOURCE and AUTOMATIC PERMISSION POPUP are not accepted controls in this build. Imported startup choices need local confirmation before activation. Private local/relay targets and permission tokens do not belong in portable archives.",
-            "Once per launch. Not once per blink. The permission dialog can rest."),
-        ManualChapter("privacy", "PRIVACY, PERMISSIONS and RECOVERY", "Available",
-            "Phosphor has no account, ads, analytics or remote meme feed. Local audio is processed in memory, not recorded or uploaded. Relay audio is an explicitly chosen network source. Notification listener access supplies optional metadata and differs from notification permission. Overlay, microphone, projection and root grants are separate. Denial is not a reason to loop prompts or switch sources silently. Links below open only when you choose them.",
+        everyday("settings", "settings",
+            "One scroll, top to bottom:\n\n" +
+                "SOUND & VIEW: auto size, size, view lock, focus, beam, glow, vary beam per track, vary glow per track.\n\n" +
+                "SCREEN: frame rate, fps line, keep screen bright, HDR, fullscreen, keys always visible, double tap to play, " +
+                "when paused, lock scope rotation, lock key placement.\n\n" +
+                "PiP & BACKGROUND: auto PiP, floating HUD, keep playing in background.\n\n" +
+                "SOURCES: on launch, ask for permission at launch, relay latency.\n\n" +
+                "SETUPS and ABOUT follow.",
+            "Nested drawers, not a boss fight. This one is a single drawer now."),
+        everyday("beam", "focus, beam and glow",
+            "focus sharpens or softens the beam. beam sets how bright it burns. glow sets how long the phosphor " +
+                "keeps shining after the beam moves on.\n\n" +
+                "vary beam per track and vary glow per track roll a new value inside a range each time the track changes.\n\n" +
+                "If the trace smears, lower glow.",
+            "More glow is a preference, not a packet-loss repair strategy."),
+        everyday("setups", "SETUPS · whole instruments",
+            "A setup remembers the beam: mode, geometry, colours, focus, beam, glow and size. It leaves sources, " +
+                "the look and permissions alone.\n\n" +
+                "save current setup names what you have now. Tap a setup, then apply. update, rename, copy, export " +
+                "and delete act on the chosen one. The starters are a place to begin.\n\n" +
+                "settings file exports or imports all settings. setups file exports or imports setups; an import " +
+                "asks what to do with each one and never applies it by itself.",
+            "A setup remembers your bench, not the last thing your microphone heard."),
+        everyday("gestures", "gestures",
+            "Tap the glass: show or hide the keys. Double tap: play or pause (settings › double tap to play).\n\n" +
+                "Pinch or one-finger drag: closer or farther. Two fingers sideways: next or previous face. " +
+                "Two fingers up or down: more or less glow.\n\n" +
+                "In the 3D faces one finger turns the view and a pinch moves through it. While the picture is held, " +
+                "pan and pinch look around the held image.\n\n" +
+                "Swipe up on the keys: settings. Pull a sheet down, even after scrolling, to close it. " +
+                "A scroll or a pull never presses a control.",
+            "Yeet prevention is enabled. The settings deserve a proper goodbye."),
+        everyday("hold", "pause and hold",
+            "For files and folders, play and pause stop the music.\n\n" +
+                "For live sound (other apps, microphone) the play key holds the picture instead: the last image stays " +
+                "on the glass while sound keeps arriving. Press it again to return to live.\n\n" +
+                "settings › when paused chooses hold frame or black.",
+            "Freeze frame. Record scratch optional, because the record kept spinning."),
+        everyday("pip", "PiP and the floating HUD",
+            "⋯ › PiP shrinks Phosphor into a small window. auto PiP does that when you leave the app; turn it off " +
+                "if you prefer.\n\n" +
+                "floating HUD is a small scope over other apps, with its own keys, a move handle and a resize corner. " +
+                "HUD background can be solid or clear. Android asks once for permission to draw over apps.\n\n" +
+                "keep playing in background keeps a source running after you swipe Phosphor away.",
+            "One source, one surface owner. The tiny window did not clone the orchestra."),
+        everyday("inside", "inside the tube",
+            "Sound arrives as 48,000 stereo samples a second. A small engine written in Rust draws them with the " +
+                "GPU, up to 120 times a second on this panel.\n\n" +
+                "Each frame the beam deposits light along the path of the sound, and the old light fades a little: " +
+                "that fading is glow, the same persistence a real phosphor screen has.\n\n" +
+                "auto size watches how loud the sound is and eases the size so the shape stays in view.",
+            "Rust, a GPU and a very patient turtle walk into a tube."),
+        everyday("privacy", "privacy",
+            "No account, no ads, no tracking. Sound is processed in memory and is never recorded or uploaded. " +
+                "A relay connects only to an address you saved, inside your own Tailscale network.\n\n" +
+                "Microphone, other-app sound, track names and drawing over apps are separate Android permissions. " +
+                "Saying no is fine; Phosphor does not ask in a loop.",
             "Under the umbrella, everything is kind. Including a perfectly valid no."),
-        ManualChapter("manual", "MANUAL · search, reading and the workshop", "Available",
-            "Search uses all your words across local chapters, without case sensitivity. Try frame rate or double tap. CLEAR SEARCH restores the full index. No match means shorten the query or use a control label. Select a result to enter its separate reading viewport at the chapter heading. PREVIOUS CHAPTER and NEXT CHAPTER follow the whole manual, not only search results. BACK retraces up to 32 chapter selections. INDEX returns to your retained filter and index scroll position. Search starts new history and accepts at most 256 characters. System Back or Close exits the sheet independently. The welcome tube reveals its four-beast workshop after five taps. Once found, BESTIARY opens it again. Reading a chapter does not revoke discovery or activate the deferred root feature.",
+        everyday("manual", "this manual",
+            "Search with any words from a control or a problem, such as glow or no sound. " +
+                "Tap a chapter to read it. back and system Back return one step: to the previous chapter, then to the " +
+                "list, then out of the manual. previous and next walk through every chapter.\n\n" +
+                "The little tube at the top keeps a secret. Five taps.",
             "The terminal accepts questions. It has politely misplaced its shell interpreter."),
-        ManualChapter("grid", "GRID and GRID DATA · guides, not new samples", "Available",
-            "Open Settings > BEAM & LIGHT. GRID toggles the scope's reference grid. GRID DATA shows separate L and R raw-channel peaks and dBFS in the status band, independent of display gain. No data means unavailable, not measured zero. Turn off GRID DATA to reduce annotation clutter, or GRID to remove the grid itself. If GRID DATA is enabled but hidden, set BAND to on in MOTION & PERFORMANCE. BAND visibility also controls whether these readings can appear. Neither control repairs missing input or changes the source. For a dark trace, read SIGNAL CHECK before changing display guides. STATS HUD in MOTION & PERFORMANCE is a separate diagnostic overlay.",
-            "The graph paper is helpful. It did not perform the concert."),
-        ManualChapter("rotation", "FULLSCREEN, SCOPE ROTATION and UI PLACEMENT", "Available",
-            "Open Settings > DISPLAY & HUD. FULLSCREEN hides Android system bars. Turn it off to show them again. SCOPE ROTATION · locked pins the current scope orientation. UI PLACEMENT · locked holds the Activity while labels face the viewer. With both app locks off, rotation follows the gravity detent. Android rotation lock takes precedence and disables these two controls. Enable system auto-rotate to change them. Your app choices stay saved while Android holds the current orientation. If Android ignores an orientation request, layout fits the actual window rather than promising a forced rotation.",
-            "Rotate the laboratory, not the laws of Android. The turtle stays upright in spirit."),
-        ManualChapter("background", "BACKGROUND LINGER · existing owners only", "Available",
-            "Open Settings > DISPLAY & HUD > BACKGROUND LINGER. On keeps only existing service-owned local or relay playback and capture after removal from recents. It does not start a source or restore an ended one. Established service-owned microphone input follows the same linger choice. Off stops sources when the task is removed. To stop current live capture now, use SRC > LIVE instead of waiting for task removal. AUTO PiP is a separate leaving-app window choice, not a promise that the microphone survives.",
-            "Linger keeps the band already playing. It does not secretly hire a second band."),
-        ManualChapter("performance", "FRAME RATE, BEAM RATE, STATS HUD and BAND", "Available",
-            "Open Settings > MOTION & PERFORMANCE. FRAME RATE offers 60, 90, 120 · panel max and uncapped. The S25 panel presents at up to 120 Hz. Uncapped removes the software render limit, not the panel limit, and can cost heat and battery. Choose 60 or 90 to reduce rendering work.\n\nBEAM RATE controls reconstruction points within each contiguous audio window, not panel refresh. Its choices are 120 · 48 kHz, 240 · 96 kHz and 480 · 192 kHz. Higher reconstruction costs battery. Choose 120 · 48 kHz to reduce that cost. Neither rate control creates fresh source samples.\n\nSTATS HUD cycles on, auto and off for the in-app diagnostic readout. BAND cycles on, auto and off for the status band. Auto follows console visibility. BAND contains both GRID DATA and STATS HUD, so BAND off hides both. For persistent stats, set both BAND and STATS HUD to on. A missing diagnostic line can still mean no measurement. These do not show a FLOATING HUD or request overlay access.",
+
+        // ── Developer: measurement, recovery and internals (after 7 taps on version). ──
+        developer("signal", "signal check",
+            "settings › DEVELOPER › signal check reads the selected source, its owner, requested and observed " +
+                "format, and fresh sample windows. Reading starts nothing and grants nothing. Unavailable is not zero; " +
+                "stale measurements do not prove a running reader. For missing access use OPEN SOURCES and that " +
+                "source's own grant, retry or picker. For measured silence check the source app and Android's " +
+                "microphone privacy switch before touching size.",
+            "The detective found no samples. The detective did not immediately arrest DRM."),
+        developer("rails", "peaks, rails and age",
+            "A PCM full-scale rail means a sample reached its encoding's endpoint; it does not prove analog clipping. " +
+                "Duplicated mono stays mono provenance even in a two-channel ring. Hidden diagnostics never invent fresh timestamps.",
+            "A rail is a sample fact, not a certificate that the singer was too loud."),
+        developer("performance", "frame rate, beam rate, status band and grid data",
+            "frame rate: 60, 90, 120 (panel max) or max. Max removes the software limit, not the panel's 120 Hz, " +
+                "and costs heat. fps line shows fps and segments on, with keys, or off.\n\n" +
+                "beam rate (DEVELOPER): 120 · 48 kHz, 240 · 96 kHz or 480 · 192 kHz reconstruction points per audio " +
+                "window, not panel refresh. status band on, auto or off carries the numeric readouts. grid data " +
+                "shows raw L and R peaks and dBFS, independent of display size.",
             "Four hundred eighty on the beam dial did not summon a four-hundred-eighty-hertz panel."),
-        ManualChapter("motion", "MEANINGFUL MOTION and reduced motion", "Host-integrated, device acceptance pending",
-            "Settings chevrons show expanded or collapsed state. Progress motion represents actual ongoing work, not an idle decoration. Animation is intended to stop when its Activity, surface or component is hidden. This is a visibility contract, not a measured frame-pacing claim.\n\nFor reduced motion, enable Android Remove animations in Accessibility. Phosphor reads the system animation scales. In Settings > APPEARANCE, select MOTION CUT and APPLY · persist draft for hard transitions. MOTION EASED, MOTION DETENTED and MOTION SPRINGY select other styles. Duration scale adjusts timing from 0.25 to 2.0. Reduced motion takes precedence over decorative transitions. It does not pause audio. Use PAUSE DISPLAY ONLY for a held scope image. Device motion and hidden-callback acceptance remain pending.",
-            "The chevron moves because a drawer opened. It has no idle dance contract."),
-        ManualChapter("appearance-edit", "APPEARANCE EDITOR · exact fields and named saves", "Host-integrated, device acceptance pending",
-            "In Settings > APPEARANCE, load a draft before editing. RGB24 fields use RRGGBB. line and lineStrong use ARGB32 AARRGGBB, including alpha. DARK PALETTE changes palette classification. ACCENT FOLLOWS MEASURED BEAM uses a live accent while readable presentation colors protect control text. CHARACTER selects the visual style. MONOSPACE PROSE and PART DESIGNATORS change typography and labels.\n\nDuration scale accepts 0.25 to 2.0. Density scale accepts 0.85 to 1.25 without shrinking touch targets. Corner radius dp accepts integers 0 to 64. Panel opacity scale accepts 0.2 to 1.0. Correct the labeled field if Draft not applied appears. PREVIEW is temporary, while APPLY persists the draft.\n\nEnter Appearance name with 1 to 64 characters, then SAVE AS NEW NAMED APPEARANCE. A successful SAVE also applies and persists the draft. LOAD SAVED DRAFT selects an existing named record without applying it. SAVE DRAFT OVER updates that selected record. RENAME uses the entered name. DELETE retains active colors, not the deleted name. LEGACY SNAPSHOTS expands preserved records. LOAD IMMUTABLE DRAFT loads one without changing its original. Save a new named appearance to keep an edited copy. Device acceptance remains pending.",
+        developer("inspect", "pause display only and inspection",
+            "pause display only freezes the picture without pausing music; return display to live resumes the " +
+                "current timeline rather than replaying a backlog. While held, pan and pinch inspect without " +
+                "changing live size, geometry or source; reset inspection undoes them. Returning live waits for an " +
+                "application presentation acknowledgement, not a physical scanout guarantee.",
+            "Enhance. Enhance. Still the same captured phosphor, not new evidence."),
+        developer("mix", "input mix internals",
+            "include mic runs one bounded stereo timeline with clipping protection. Signal check reports both " +
+                "inputs separately, with estimated timing when capture timestamps are missing. If the microphone " +
+                "fails, healthy playback continues. A missing accessory never silently becomes the built-in mic; " +
+                "Phosphor releases only its own Bluetooth route and mode requests.",
+            "Two readers in a trench coat are not a synchronized mixer."),
+        developer("hdr", "HDR and screen brightness",
+            "HDR requests an HDR surface and falls back to SDR truthfully; the developer view shows the active " +
+                "mode and the reason. keep screen bright requests full window brightness only while the focused full " +
+                "app owns the foreground; PiP, HUD, background and focus loss release it. Global and automatic " +
+                "brightness are never changed. A requested override is not measured luminance.",
+            "We added the letters H D R. The panel asked for actual floating-point receipts."),
+        developer("setup-recovery", "setup recovery",
+            "An apply needs its matching receipt; a late or cancelled one cannot overwrite a newer edit. " +
+                "cancel apply stops a pending apply. undo apply is one level. retry save retries durability; " +
+                "restore appears when the shown setup must be restored. keep safe rejects a pending fast colour cycle. " +
+                "sources explains a remote-owned refusal. Import decisions are add, skip, replace or as copy.",
+            "The skeleton accepts receipts. Screenshots of confidence are not receipts."),
+        developer("appearance-values", "appearance values",
+            "DEVELOPER › APPEARANCE VALUES edits the raw look: RGB24 colour fields as RRGGBB, line and lineStrong as " +
+                "ARGB32 AARRGGBB, duration 0.25 to 2.0, density 0.85 to 1.25, corner radius 0 to 64, panel opacity " +
+                "0.2 to 1.0. PREVIEW is temporary, APPLY persists, SAVE also names a record. A readability warning " +
+                "reports contrast without rewriting colours. Recovery can replace an unreadable document with AMOLED " +
+                "or retry the authoritative save.",
             "A draft is a dressing room. APPLY is when the jacket actually leaves the shop."),
-        ManualChapter("appearance-recovery", "APPEARANCE RECOVERY · readable and authoritative", "Host-integrated, device acceptance pending",
-            "A READABILITY WARNING reports contrast without rewriting saved colors. PROPOSE READABLE COLORS IN DRAFT · replaces all color roles changes the draft only. Inspect it, then PREVIEW or APPLY deliberately. CANCEL · restore committed appearance returns to the committed look. RESET TO AMOLED · keep saved appearances resets active appearance without deleting named saves. None of these actions changes beam or source settings.\n\nIf unavailable appearance bytes block editing, REPLACE UNAVAILABLE APPEARANCE WITH AMOLED explicitly replaces that document only. Original bytes remain untouched until you choose replacement. If authoritative persistence recovery is required, use RETRY AUTHORITATIVE APPEARANCE, THEN INSTRUMENT SAVE. Read its status before trying new edits. A host-integrated recovery button is not proof that migration or failure recovery passed on the phone. Device acceptance remains pending.",
-            "The fox offered a readable palette, not permission to repaint your saved history."),
-        ManualChapter("archives", "EXPORT SETTINGS and IMPORT SETTINGS", "Available",
-            "Open Settings > ABOUT & MANUAL. EXPORT SETTINGS writes a portable .phossettings archive through Android's picker. IMPORT SETTINGS reads a selected archive and reports its result inline. Read that status after import or export. If access fails, choose a readable input or writable destination explicitly. Archives carry allowlisted instrument and appearance state, not media paths, relay hosts, consent tokens or root grants. They do not start capture or show a HUD. Named instrument imports stay inert until explicit apply. An appearance recovery state can block changes until its authoritative save is repaired. Search appearance recovery for that path.",
+        developer("archives", "settings files",
+            "A settings file is a portable archive of allowlisted instrument and appearance state. It carries no " +
+                "media paths, relay hosts, consent tokens or root grants, starts nothing and shows no HUD. Imported " +
+                "fast colour timing stays safe until confirmed; imported setups stay inert until applied.",
             "The suitcase holds the knobs. It leaves your house keys and permission tokens at home."),
+        developer("root", "root capture · a future beam",
+            "Root capture is deferred from this release. The bestiary's preview button requests nothing and " +
+                "starts nothing; earlier root settings stay inactive. Research showed 16 kHz mono feasibility, and " +
+                "duplicating mono does not recover stereo. Original stereo, SoundCloud and added latency are not yet accepted.",
+            "The turtle saved a door for a future beam. It has not secretly started a root orchestra."),
+        developer("startup", "startup",
+            "on launch starts nothing, the microphone or everything playing once per fresh launch, never on resume, " +
+                "rotation or permission return. ask for permission at launch lets that start use the real Android " +
+                "flow once. Imported startup choices wait for local confirmation.",
+            "Once per launch. Not once per blink. The permission dialog can rest."),
     ))
 
     fun chapter(id: String): ManualChapter = chapters.firstOrNull { it.id == id }
         ?: throw IllegalArgumentException("Unknown manual chapter")
 
-    fun search(query: String): List<ManualChapter> {
+    /** Chapters shown in this view: everyday always, developer only after the unlock. */
+    fun visible(developer: Boolean): List<ManualChapter> = chapters.filter { developer || !it.developer }
+
+    fun search(query: String, developer: Boolean = false): List<ManualChapter> {
         val words = query.take(QUERY_LIMIT).lowercase(Locale.ROOT).trim().split(Regex("\\s+")).filter(String::isNotEmpty)
-        return chapters.filter { chapter ->
-            val text = "${chapter.id} ${chapter.title} ${chapter.availability} ${chapter.text} ${chapter.response}".lowercase(Locale.ROOT)
+        return visible(developer).filter { chapter ->
+            val text = "${chapter.id} ${chapter.title} ${chapter.text} ${chapter.response}".lowercase(Locale.ROOT)
             words.all(text::contains)
         }
     }
