@@ -43,32 +43,6 @@ import androidx.compose.ui.unit.dp
 import androidx.compose.ui.unit.sp
 import dev.phosphor.mobil3.settings.appearance.AppearancePresentationPolicy
 
-@Composable
-internal fun LiveStyleSample(p: Palette, reduced: Boolean, overrides: StyleOverride) {
-    val style = LocalRoomStyle.current
-    var active by remember { mutableStateOf(false) }
-    LaunchedEffect(overrides) { active = !active }
-    val travel by animateDpAsState(
-        if (active && !reduced) 8.dp else 0.dp,
-        styleSpec(reduced, style, Motion.settle), label = "style-sample",
-    )
-    val shape = androidx.compose.foundation.shape.RoundedCornerShape(style.cornerRadius)
-    Row(
-        Modifier.fillMaxWidth().padding(top = 8.dp)
-            .background(p.surface2.copy(alpha = style.panelAlphaScale), shape)
-            .border(Dim.hairline, p.lineStrong, shape)
-            .padding((12f * style.densityScale).dp),
-        verticalAlignment = Alignment.CenterVertically,
-    ) {
-        StoneKey("TRY", p, size = 48.dp, reduced = reduced, designator = "S0") { active = !active }
-        Column(Modifier.weight(1f).padding(start = 12.dp).offset { IntOffset(travel.roundToPx(), 0) }) {
-            if (style.designators) Mono("V0 · LIVE SAMPLE", p.muted, Type.dataXs)
-            Prose("${style.character.name} · ${style.motion.name}", p.ink)
-            Mono("${style.cornerRadius.value.toInt()}dp · ${if (style.designators) "part-nos" else "plain"}", p.muted, Type.dataXs)
-        }
-    }
-}
-
 internal fun Modifier.sliderTrack(p: Palette, lo: Float, hi: Float? = null): Modifier = drawBehind {
     val geometry = SliderGeometry(size.width, density)
     val midY = size.height / 2f

@@ -90,6 +90,8 @@ fun LightSheetV2(
                 }
             }
 
+            LightChoices.ownerLine(light, state.lightTemporary)?.let { SettingNote(it, p) }
+
             // SAVED: six squares and `+`. Tap = wear, long-press = edit.
             GroupHeading("SAVED", p)
             val cells = light.slots.size + if (light.slots.size < 6) 1 else 0
@@ -107,7 +109,9 @@ fun LightSheetV2(
                         } else {
                             AddSwatch(p, Modifier.weight(1f)) {
                                 editSlot = light.slots.size
-                                onLightChange(LightChoices.addCurrent(light))
+                                val live = runCatching { dev.phosphor.mobil3.PhosphorNative.beamColorNow() }.getOrNull()
+                                onLightChange(LightChoices.addCurrent(light, state.lightTemporary,
+                                    live?.let(LightChoices::rgbOf)))
                             }
                         }
                     }
@@ -148,14 +152,14 @@ fun LightSheetV2(
                 if (LightChoices.cycle(light) == LightChoices.Cycle.TIMER) {
                     if (light.randomInterval) {
                         SettingRange("every", LightTime.toSlider(light.intervalMin), LightTime.toSlider(light.intervalMax),
-                            0f, 1f, p, { LightTime.words(LightTime.fromSlider(it)) }) { lo, hi ->
+                            0f, 1f, p, { LightTime.words(LightTime.fromSlider(it)) }, step = LightTime::stepOnRail) { lo, hi ->
                             val min = LightTime.fromSlider(lo)
                             val max = LightTime.fromSlider(hi).coerceAtLeast(min)
                             onLightChange(light.copy(intervalMin = min, intervalMax = max))
                         }
                     } else {
                         SettingSlider("every", LightTime.toSlider(light.seconds), 0f, 1f, p,
-                            { LightTime.words(LightTime.fromSlider(it)) }) {
+                            { LightTime.words(LightTime.fromSlider(it)) }, step = LightTime::stepOnRail) {
                             onLightChange(light.copy(seconds = LightTime.fromSlider(it)))
                         }
                     }

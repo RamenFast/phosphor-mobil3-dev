@@ -197,7 +197,8 @@ internal fun <T> SettingChoice(label: String, options: List<Pair<T, String>>, se
 /** Name left, value right on one line; the 48dp lane spans the full width below. */
 @Composable
 internal fun SliderRow(label: String, value: Float, min: Float, max: Float, p: Palette,
-    format: (Float) -> String, reset: (() -> Unit)? = null, onChange: (Float) -> Unit) {
+    format: (Float) -> String, reset: (() -> Unit)? = null, step: ((Float, Boolean) -> Float)? = null,
+    onChange: (Float) -> Unit) {
     val unit = remember { SliderGeometry(1f, 0f) }
     Column(Modifier.fillMaxWidth().padding(top = RowPadV, bottom = 4.dp)) {
         Row(Modifier.fillMaxWidth(), verticalAlignment = Alignment.CenterVertically) {
@@ -212,22 +213,24 @@ internal fun SliderRow(label: String, value: Float, min: Float, max: Float, p: P
         SliderLane(
             p, unit.fraction(value, min, max),
             Modifier.fillMaxWidth().settingsFocusBorder(p)
-                .settingsRange(label, format(value), SettingsRangeAction(value.coerceIn(min, max), min, max, onChange)),
+                .settingsRange(label, format(value), SettingsRangeAction(value.coerceIn(min, max), min, max, onChange)
+                    .also { a -> step?.let { a.stepping(it) } }),
         ) { onChange(unit.valueAt(it, min, max)) }
     }
 }
 
 @Composable
 internal fun SettingSlider(label: String, value: Float, min: Float, max: Float, p: Palette,
-    format: (Float) -> String, reset: (() -> Unit)? = null, onChange: (Float) -> Unit) {
-    SliderRow(label, value, min, max, p, format, reset, onChange)
+    format: (Float) -> String, reset: (() -> Unit)? = null, step: ((Float, Boolean) -> Float)? = null,
+    onChange: (Float) -> Unit) {
+    SliderRow(label, value, min, max, p, format, reset, step, onChange)
     RowDivider(p)
 }
 
 /** Two thumbs: the lane scrubs the nearest one. Each number is its own TalkBack range. */
 @Composable
 internal fun SettingRange(label: String, lo: Float, hi: Float, min: Float, max: Float, p: Palette,
-    format: (Float) -> String, onChange: (Float, Float) -> Unit) {
+    format: (Float) -> String, step: ((Float, Boolean) -> Float)? = null, onChange: (Float, Float) -> Unit) {
     val grab = remember { mutableIntStateOf(0) }
     val unit = remember { SliderGeometry(1f, 0f) }
     Column(Modifier.fillMaxWidth().padding(top = RowPadV, bottom = 4.dp)) {
@@ -235,10 +238,10 @@ internal fun SettingRange(label: String, lo: Float, hi: Float, min: Float, max: 
             Mono(label, p.ink, Type.label, Modifier.weight(1f))
             Spacer(Modifier.width(12.dp))
             Mono(format(lo), p.ink2, Type.value, Modifier.settingsFocusBorder(p)
-                .settingsRange("$label lowest", format(lo), SettingsRangeAction(lo, min, hi) { onChange(it, hi) }))
+                .settingsRange("$label lowest", format(lo), SettingsRangeAction(lo, min, hi) { onChange(it, hi) }.also { a -> step?.let { a.stepping(it) } }))
             Mono(" – ", p.ink2, Type.value)
             Mono(format(hi), p.ink2, Type.value, Modifier.settingsFocusBorder(p)
-                .settingsRange("$label highest", format(hi), SettingsRangeAction(hi, lo, max) { onChange(lo, it) }))
+                .settingsRange("$label highest", format(hi), SettingsRangeAction(hi, lo, max) { onChange(lo, it) }.also { a -> step?.let { a.stepping(it) } }))
         }
         SliderLane(
             p, unit.fraction(lo, min, max), Modifier.fillMaxWidth(),

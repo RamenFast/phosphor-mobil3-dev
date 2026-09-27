@@ -41,19 +41,6 @@ class AppearanceRuntimeWiringTest {
         assertTrue(callback.contains("owner.finishSettingsImport(ticket)"))
     }
 
-    @Test fun ordinaryAppearanceActionsHaveNoNativeTuningOrInstrumentEditAuthority() {
-        val actions = activity().substringAfter("override fun previewAppearance").substringBefore("override fun recoverAppearance")
-        listOf("PhosphorNative", "instrumentValueEdit", "instrumentEdit", ".settle(", ".forget(", "selectSource(").forEach {
-            assertFalse("Unexpected authority: $it", actions.contains(it))
-        }
-        val legacy = activity().substringAfter("override fun setRoom(room:").substringBefore("override fun setFocus")
-        assertTrue(legacy.contains("owner.apply(value"))
-        assertFalse(legacy.contains("PhosphorNative"))
-        val room = source("ui/Sheets.kt").substringAfter("fun RoomSheet(").substringBefore("private fun StyleSampleChip")
-        assertFalse(room.contains("state.styleOverride ="))
-        assertTrue(room.contains("onStyle(state.appearanceStyle.nextCharacter())"))
-    }
-
     @Test fun lifecycleAndEditorRetirementCancelPreview() {
         val main = activity()
         listOf("onPause", "onStop").forEach { method ->

@@ -21,6 +21,7 @@ import androidx.compose.foundation.layout.widthIn
 import androidx.compose.foundation.layout.width
 import androidx.compose.foundation.text.BasicTextField
 import androidx.compose.runtime.Composable
+import androidx.compose.runtime.LaunchedEffect
 import androidx.compose.runtime.getValue
 import androidx.compose.runtime.mutableStateOf
 import androidx.compose.runtime.remember
@@ -142,8 +143,10 @@ internal fun SetupsGroup(state: ScopeUiState, p: Palette, actions: SheetActions,
     val collection = state.instrumentCollection
     val ready = collection != null
 
-    // Live results and recovery only. No help prose.
-    val status = state.instrumentApplyStatus.ifBlank { state.instrumentStatus }
+    // Live results and recovery only. No help prose. The newest result wins.
+    var status by remember { mutableStateOf(state.instrumentApplyStatus.ifBlank { state.instrumentStatus }) }
+    LaunchedEffect(state.instrumentStatus) { if (state.instrumentStatus.isNotBlank()) status = state.instrumentStatus }
+    LaunchedEffect(state.instrumentApplyStatus) { if (state.instrumentApplyStatus.isNotBlank()) status = state.instrumentApplyStatus }
     if (status.isNotBlank()) SettingNote(status, p)
     if (state.instrumentRapid) {
         SettingNote("fast color changes can trigger seizures", p)

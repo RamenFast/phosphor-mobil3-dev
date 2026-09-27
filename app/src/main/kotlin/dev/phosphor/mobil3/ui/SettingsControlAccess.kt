@@ -48,6 +48,11 @@ internal class SettingsRangeAction(
     val maximum: Float,
     private val publish: (Float) -> Unit,
 ) {
+    /** Optional next/previous representable value, for quantized rails. */
+    private var stepper: ((Float, Boolean) -> Float)? = null
+
+    fun stepping(next: (Float, Boolean) -> Float): SettingsRangeAction = also { stepper = next }
+
     init {
         require(value.isFinite() && minimum.isFinite() && maximum.isFinite())
         require(minimum <= maximum && value in minimum..maximum)
@@ -62,7 +67,7 @@ internal class SettingsRangeAction(
     }
 
     fun step(increase: Boolean): Boolean =
-        set(value + (maximum - minimum) * if (increase) 0.01f else -0.01f)
+        set(stepper?.invoke(value, increase) ?: (value + (maximum - minimum) * if (increase) 0.01f else -0.01f))
 }
 
 internal fun Modifier.settingsRange(

@@ -109,8 +109,13 @@ as a word you can change. Before, three sizes of CAPS competed and the eye had n
     This works after scrolling: scroll back to the top and keep pulling in one motion.
   - Only a finger can pull the sheet. A fling that reaches the top stops there (the accidental-
     dismiss protection Ben liked).
-  - Release closes when pulled ≥ 96 dp, or ≥ 48 dp with a downward flick ≥ 920 dp/s.
-    Otherwise it glides home (160 ms, or a cut with reduced motion).
+  - Release closes when pulled ≥ 96 dp, or ≥ 32 dp with a downward flick ≥ 700 dp/s
+    (tuned on Ben's phone: real thumbs flick short). Otherwise it glides home (160 ms, or a cut
+    with reduced motion). A cancelled pull always goes home.
+  - Travel is the plain sum of finger deltas (they are already finger motion). Release speed is
+    measured from that travel over the last 100 ms, aged at release: flick, hold, release = still.
+    Local pointer positions are never used for speed; they drift with the moving card.
+  - Both nested-scroll phases react only to UserInput.
   - Scrim tap, ✕ and Back also close.
 - **Horizontal:** none inside sheets. Sliders own sideways drags. Locked landscape still slides
   sheets in from the edge; they leave downward after a drag.

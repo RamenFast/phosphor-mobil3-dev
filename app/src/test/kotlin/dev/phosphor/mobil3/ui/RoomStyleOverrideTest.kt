@@ -10,36 +10,6 @@ import kotlin.test.*
 class RoomStyleOverrideTest {
     private val styles = listOf(CarvedStyle, VoidStyle, BenchStyle, GlassStyle)
 
-    @Test fun roomTilesAndFullSpanStyleSampleShareOneBoundedScrollOwner() {
-        // Source structure only. Short and rotated viewport reachability still needs live acceptance.
-        val room = phase9Source("ui/Sheets.kt").substringAfter("fun RoomSheet(")
-            .substringBefore("private fun StyleSampleChip(")
-        assertEquals(1, Regex("LazyVerticalGrid\\(").findAll(room).count())
-        assertFalse(".verticalScroll(" in room)
-        assertFalse("LazyColumn(" in room)
-        assertTrue("SheetHost(p, \"ROOM\", reduced, onDismiss" in room)
-        assertTrue(".heightIn(max = 340.dp)" in room)
-        assertTrue("state = gridState" in room)
-        assertFalse("bottomBloomOverscroll" in room)
-        val grid = sourceBodyAfter(room, "overscrollEffect = null,\n        ) {")
-        assertTrue("itemsIndexed(Rooms)" in grid)
-        val footer = sourceBodyAfter(grid, "item(span = { GridItemSpan(maxLineSpan) }) {")
-        assertTrue("Column(Modifier.fillMaxWidth())" in footer)
-        assertTrue("SectionHeading(\"STYLE\", p)" in footer)
-        for (next in listOf("nextCharacter", "nextMotion", "nextCorners", "nextLabels")) {
-            assertTrue("state.appearanceStyle.$next()" in footer)
-        }
-        assertEquals(1, Regex("LiveStyleSample\\(p, reduced, currentStyle.choices\\(\\)\\)").findAll(footer).count())
-    }
-
-    @Test fun sampleReadsAnimatedOffsetDuringPlacementInsteadOfComposition() {
-        val sample = phase9Source("ui/Controls.kt").substringAfter("internal fun LiveStyleSample(")
-            .substringBefore("internal fun Modifier.sliderTrack")
-        assertTrue(".offset { IntOffset(travel.roundToPx(), 0) }" in sample)
-        assertFalse(".offset(x = travel)" in sample)
-        assertTrue("if (active && !reduced) 8.dp else 0.dp" in sample)
-    }
-
     private fun sourceBodyAfter(text: String, marker: String): String {
         val start = text.indexOf(marker)
         assertTrue(start >= 0, "Missing source block: $marker")
@@ -136,27 +106,4 @@ class RoomStyleOverrideTest {
         }
     }
 
-    @Test fun productionProviderAndSingleSampleReadEffectiveStyleAndCurrentState() {
-        val screen = phase9Source("ui/PhosphorScreen.kt")
-        assertTrue("val style = state.appearanceStyle" in screen)
-        assertFalse(".style.overridden(state.styleOverride)" in screen)
-        assertTrue("LocalRoomStyle provides style" in screen)
-        val sheets = phase9Source("ui/Sheets.kt")
-        for (next in listOf("nextCharacter", "nextMotion", "nextCorners", "nextLabels")) {
-            assertTrue("onStyle(state.appearanceStyle.$next())" in sheets)
-            assertFalse("state.styleOverride = state.styleOverride.$next()" in sheets)
-        }
-        assertEquals(1, Regex("LiveStyleSample\\(p, reduced, currentStyle.choices\\(\\)\\)").findAll(sheets).count())
-        val sample = phase9Source("ui/Controls.kt").substringAfter("internal fun LiveStyleSample(").substringBefore("internal fun Modifier.sliderTrack")
-        assertTrue("val style = LocalRoomStyle.current" in sample)
-        assertTrue("LaunchedEffect(overrides)" in sample)
-        assertTrue("active && !reduced" in sample)
-        assertTrue("styleSpec(reduced, style, Motion.settle)" in sample)
-        assertTrue("style.cornerRadius" in sample)
-        assertTrue("style.panelAlphaScale" in sample)
-        assertTrue("style.densityScale" in sample)
-        assertTrue("style.designators" in sample)
-        assertFalse("PhosphorNative" in sample)
-        assertFalse("rememberInfiniteTransition" in sample)
-    }
 }

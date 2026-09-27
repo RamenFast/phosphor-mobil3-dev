@@ -248,19 +248,4 @@ class AppearancePresentationTest {
     private fun source(path: String): String = listOf(File("src/main/kotlin/dev/phosphor/mobil3", path),
         File("app/src/main/kotlin/dev/phosphor/mobil3", path)).first { it.isFile }.readText()
 
-    @Test fun activityAndRoomUseTheTestedCurrentAdapterNotSavedRecordsOrLegacyTuples() {
-        val activity = source("MainActivity.kt")
-        val edit = activity.substringAfter("override fun setRoomStyle(").substringBefore("override fun setFocus")
-        assertTrue(edit.contains("AppearancePalette.editCurrentStyle(owner.effective ?: return, overrides)"))
-        assertFalse(edit.contains("current.users"))
-        assertFalse(edit.contains("AppearancePalette.style(current.active)"))
-        assertFalse(edit.contains("ui.styleOverride"))
-        val publish = activity.substringAfter("private fun refreshAppearance()").substringBefore("override fun previewAppearance")
-        assertTrue(publish.contains("ui.appearanceStyle = AppearancePalette.style(value)"))
-        assertTrue(publish.contains("ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride()"))
-        val room = source("ui/Sheets.kt").substringAfter("fun RoomSheet(").substringBefore("private fun StyleSampleChip")
-        for (field in listOf("Character", "Motion", "Corners", "Labels")) assertTrue(room.contains("onStyle(state.appearanceStyle.next$field())"))
-        assertFalse(room.contains("state.styleOverride"))
-        assertTrue(room.contains("val currentStyle = state.appearanceStyle"))
-    }
 }

@@ -878,10 +878,11 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 ) { sheet = Sheet.NONE }
                 Sheet.INSTRUMENT -> LaunchedEffect(Unit) { sheet = Sheet.SETTINGS } // retired sub-sheet: setups live in Settings
                 Sheet.SIGNAL_CHECK -> SignalCheckSheet(state, p, reduced) { sheet = Sheet.NONE }
-                Sheet.ROOM -> RoomSheet(state, p, reduced, onPick = { actions.setRoom(it) },
-                    onStyle = actions::setRoomStyle) {
-                    sheet = Sheet.NONE
-                }
+                Sheet.ROOM -> LookSheet(state, p, reduced,
+                    onPickRoom = { actions.setRoom(it) },
+                    onPickLook = { actions.selectAppearance(it) },
+                    onStyle = actions::setRoomStyle,
+                ) { sheet = Sheet.NONE }
                 Sheet.SETTINGS -> SettingsSheet(
                     state, p, reduced,
                     sheetActions.withSheetRouting(

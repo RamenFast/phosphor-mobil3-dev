@@ -47,3 +47,14 @@ Replacement: device UX checks on the test bed and primary phone (screens, gestur
 | `SheetEntryPolicyTest` | `sourceOnlyFirstCommitLatchesCurrentEntryBeforeClosingWithoutResettingLiveOffset` | source strings of the retired Settings dismissal adapter / expander |
 | `SettingsGestureAdapterTest` | `(whole file, 43 tests)` | its code (SettingsGestureAdapter) retired: all sheets share one scroll-then-pull mechanism |
 | `SettingsInteractionTest` | `(whole file, 15 tests)` | its code (SettingsDismissOwner, SettingsPresentationOwner) retired with the adapter and the expanders |
+
+## Redesign slice c (LOOK) · Designer · 2026-09-25
+
+| Test class | Test | Why |
+|---|---|---|
+| `AppearanceRuntimeWiringTest` | `ordinaryAppearanceActionsHaveNoNativeTuningOrInstrumentEditAuthority` | source strings of the retired ROOM sheet / live style sample |
+| `RoomStyleOverrideTest` | `productionProviderAndSingleSampleReadEffectiveStyleAndCurrentState` | source strings of the retired ROOM sheet / live style sample |
+| `RoomStyleOverrideTest` | `roomTilesAndFullSpanStyleSampleShareOneBoundedScrollOwner` | source strings of the retired ROOM sheet / live style sample |
+| `SettingsControlAccessTest` | `settingsOnlyContextKeepsLegacyLayoutsAndPointerSetters` | source strings of the retired ROOM sheet / live style sample |
+| `AppearancePresentationTest` | `activityAndRoomUseTheTestedCurrentAdapterNotSavedRecordsOrLegacyTuples` | source strings of the retired ROOM sheet / live style sample |
+| `RoomStyleOverrideTest` | `sampleReadsAnimatedOffsetDuringPlacementInsteadOfComposition` | source strings of the retired live style sample |

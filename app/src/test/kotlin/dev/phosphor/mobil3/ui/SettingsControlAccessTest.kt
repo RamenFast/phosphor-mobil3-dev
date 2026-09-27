@@ -109,33 +109,4 @@ class SettingsControlAccessTest {
         // This checks actual source wiring. Attached key delivery and focus pixels need Android.
     }
 
-    @Test fun settingsOnlyContextKeepsLegacyLayoutsAndPointerSetters() {
-        fun source(name: String): String = listOf(
-            java.io.File("src/main/kotlin/dev/phosphor/mobil3/ui/$name.kt"),
-            java.io.File("app/src/main/kotlin/dev/phosphor/mobil3/ui/$name.kt"),
-        ).first { it.isFile }.readText()
-        val sheets = source("Sheets")
-        val settings = sheets.substringAfter("internal fun SettingsSheet(").substringBefore("interface SheetActions")
-        val provider = "CompositionLocalProvider(LocalSettingsControlAccess provides true)"
-        val room = sheets.substringAfter("fun RoomSheet(").substringBefore("private fun StyleSampleChip(")
-        assertEquals(2, sheets.split(provider).size - 1)
-        assertEquals(1, settings.split(provider).size - 1)
-        assertEquals(1, room.split(provider).size - 1)
-        assertTrue(settings.indexOf(provider) >= 0)
-        assertTrue(settings.indexOf(provider) < settings.indexOf("SheetHost(p, \"SETTINGS\""))
-        assertTrue(source("SettingsControlAccess").contains("staticCompositionLocalOf { false }"))
-        assertTrue(source("Type").contains("if (LocalSettingsControlAccess.current) Int.MAX_VALUE else 1"))
-        val controls = source("Controls")
-        val flat = controls.substringAfter("fun FlatKey(").substringBefore("fun SheetRow(")
-        val chip = controls.substringAfter("fun ChipCell(").substringBefore("fun SwatchCell(")
-        assertTrue(flat.contains(".heightIn(min = 48.dp).widthIn(min = 48.dp)"))
-        assertTrue(chip.contains(".heightIn(min = 48.dp).widthIn(min = 48.dp)"))
-        assertTrue(controls.contains("height(if (LocalSettingsControlAccess.current) 48.dp else SliderGeometry.HIT_LANE_DP.dp)"))
-        assertEquals(2, controls.split("if (accessible) Modifier.settingsChoice(active) else Modifier").size - 1)
-        assertTrue(sheets.contains("onChange(unit.valueAt(it, min, max))"))
-        assertTrue(sheets.contains("onChange(moved.first, moved.second)"))
-        assertTrue(sheets.contains("toggleable(armed, role = Role.Checkbox)"))
-        assertTrue(sheets.contains("SettingsRangeAction(lo, min, hi) { onChange(it, hi) }"))
-        assertTrue(sheets.contains("SettingsRangeAction(hi, lo, max) { onChange(lo, it) }"))
-    }
 }

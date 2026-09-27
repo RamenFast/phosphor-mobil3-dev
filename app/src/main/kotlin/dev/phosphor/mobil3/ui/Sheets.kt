@@ -77,7 +77,6 @@ import androidx.compose.ui.geometry.Offset
 import androidx.compose.ui.graphics.Color
 import androidx.compose.ui.graphics.Shape
 import androidx.compose.ui.input.pointer.pointerInput
-import androidx.compose.ui.input.pointer.util.VelocityTracker
 import androidx.compose.ui.input.nestedscroll.NestedScrollConnection
 import androidx.compose.ui.input.nestedscroll.NestedScrollSource
 import androidx.compose.ui.input.nestedscroll.nestedScroll
@@ -190,8 +189,9 @@ private fun sheetCardShape(style: RoomStyle, curl: Float, density: androidx.comp
  */
 internal object SheetPullPolicy {
     const val CLOSE_DP = 96f
-    const val FLICK_MIN_DP = 48f
-    const val FLICK_DP_PER_SECOND = 920f
+    const val FLICK_MIN_DP = 32f
+    const val FLICK_DP_PER_SECOND = 700f
+    private const val VELOCITY_WINDOW_MS = 100L
     const val RESISTANCE_DP = 240f
 
     fun offset(rawPx: Float, resistancePx: Float): Float {
@@ -199,8 +199,22 @@ internal object SheetPullPolicy {
         return if (resistancePx <= 0f) raw else resistancePx * raw / (resistancePx + raw)
     }
 
-    fun closes(rawPx: Float, velocityPxPerSecond: Float, closePx: Float, flickMinPx: Float, flickPx: Float): Boolean =
-        rawPx >= closePx || (rawPx >= flickMinPx && velocityPxPerSecond >= flickPx)
+    fun closes(rawPx: Float, velocityPxPerSecond: Float, closePx: Float, flickMinPx: Float, flickPx: Float,
+        cancelled: Boolean = false): Boolean =
+        !cancelled && (rawPx >= closePx || (rawPx >= flickMinPx && velocityPxPerSecond >= flickPx))
+
+
+
+    /**
+     * Finger speed from accumulated travel samples (time ms, travel px) over the last
+     * 100 ms. Local pointer positions drift with the moving card, so they are not used.
+     */
+    fun velocity(samples: List<Pair<Long, Float>>): Float {
+        val last = samples.lastOrNull() ?: return 0f
+        val first = samples.firstOrNull { last.first - it.first <= VELOCITY_WINDOW_MS } ?: return 0f
+        val dt = last.first - first.first
+        return if (dt <= 0L) 0f else (last.second - first.second) * 1000f / dt
+    }
 }
 
 internal class SheetDismissState(private val scope: CoroutineScope, private val resistancePx: Float = 0f) {
@@ -213,10 +227,33 @@ internal class SheetDismissState(private val scope: CoroutineScope, private val 
         private set
     val offsetPx: Float get() = committed?.offsetPx ?: animation.value.coerceAtLeast(0f)
 
+    private val samples = ArrayDeque<Pair<Long, Float>>()
+
     fun begin() {
         if (committed != null) return
         rawPx = rawFor(animation.value.coerceAtLeast(0f))
+        samples.clear()
         scope.launch { if (committed == null) animation.stop() }
+    }
+
+    /**
+     * Finger speed at release, in px/s, from accumulated travel. A release sample at
+     * [nowMs] ages the history, so flick → hold still → release reads as still.
+     */
+    fun releaseVelocity(nowMs: Long): Float {
+        samples.addLast(nowMs to rawPx)
+        return SheetPullPolicy.velocity(samples.toList())
+    }
+
+    /**
+     * Pointer and nested-scroll deltas are already finger motion (Compose maps both
+     * positions through the current layout), so travel is their plain sum.
+     */
+    fun dragByFinger(delta: Float, nowMs: Long) {
+        if (committed != null) return
+        dragBy(delta)
+        samples.addLast(nowMs to rawPx)
+        while (samples.size > 2 && nowMs - samples.first().first > 200L) samples.removeFirst()
     }
 
     /** Inverse of the resistance curve, so a new grab continues from where the card sits. */
@@ -248,7 +285,7 @@ internal class SheetDismissState(private val scope: CoroutineScope, private val 
         reduced: Boolean,
         style: RoomStyle,
         commitDrag: () -> Unit,
-    ) = settle(velocityY, distancePx, flickPx, reduced, style, 0f, commitDrag)
+    ): Unit = settle(velocityY, distancePx, flickPx, reduced, style, 0f, false, commitDrag)
 
     fun settle(
         velocityY: Float,
@@ -257,13 +294,15 @@ internal class SheetDismissState(private val scope: CoroutineScope, private val 
         reduced: Boolean,
         style: RoomStyle,
         flickMinPx: Float,
+        cancelled: Boolean = false,
         commitDrag: () -> Unit,
     ) {
         if (committed != null) return
-        if (SheetPullPolicy.closes(rawPx, velocityY, distancePx, flickMinPx, flickPx)) {
+        if (SheetPullPolicy.closes(rawPx, velocityY, distancePx, flickMinPx, flickPx, cancelled)) {
             commitDrag()
         } else {
             rawPx = 0f
+            samples.clear()
             scope.launch {
                 if (committed != null) return@launch
                 animation.stop()
@@ -339,11 +378,18 @@ fun SheetHost(
     val dismissFlickMinPx = with(density) { SheetPullPolicy.FLICK_MIN_DP.dp.toPx() }
     val dismissFlickPx = with(density) { SheetPullPolicy.FLICK_DP_PER_SECOND.dp.toPx() }
     val beginDismiss = { dismissal.begin() }
-    val dragDismissBy: (Float) -> Unit = { delta -> dismissal.dragBy(delta) }
-    val settleDismiss: (Float) -> Unit = { velocityY ->
+    val dragDismissBy: (Float) -> Unit = { delta ->
+        dismissal.dragByFinger(delta, android.os.SystemClock.uptimeMillis())
+    }
+    val settleDismiss: (Float) -> Unit = { reported ->
+        val velocityY = maxOf(reported, dismissal.releaseVelocity(android.os.SystemClock.uptimeMillis()))
         dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style, dismissFlickMinPx) {
             commitDismiss(true)
         }
+    }
+    // A cancelled pull (another pointer, the system) always goes home, whatever its travel.
+    val cancelDismiss: () -> Unit = {
+        dismissal.settle(0f, dismissDistancePx, dismissFlickPx, reduced, style, dismissFlickMinPx, cancelled = true) {}
     }
     // One mechanism for every sheet (REDESIGN §5). Content scrolls first; only the finger's
     // unconsumed downward remainder at the top pulls the card. A fling never pulls it.
@@ -351,6 +397,7 @@ fun SheetHost(
         object : NestedScrollConnection {
             override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
                 if (dismissal.committed != null) return Offset.Zero
+                if (source != NestedScrollSource.UserInput) return Offset.Zero
                 if (dismissal.rawPx <= 0f || available.y >= 0f) return Offset.Zero
                 // A reversal first pushes the displaced sheet home; only the remainder
                 // scrolls content away from its top edge.
@@ -505,14 +552,13 @@ fun SheetHost(
                             .fillMaxWidth()
                             .heightIn(min = 48.dp)
                             .pointerInput(style.motion, reduced) {
-                                // The header always pulls; release speed counts as a flick.
-                                val tracker = VelocityTracker()
+                                // The header always pulls; release speed counts as a flick
+                                // (measured from finger travel, see SheetDismissState).
                                 detectVerticalDragGestures(
-                                    onDragStart = { tracker.resetTracking(); beginDismiss() },
-                                    onDragEnd = { settleDismiss(tracker.calculateVelocity().y.coerceAtLeast(0f)) },
-                                    onDragCancel = { settleDismiss(0f) },
+                                    onDragStart = { beginDismiss() },
+                                    onDragEnd = { settleDismiss(0f) },
+                                    onDragCancel = { cancelDismiss() },
                                 ) { change, delta ->
-                                    tracker.addPosition(change.uptimeMillis, change.position)
                                     if (delta > 0f || dismissal.rawPx > 0f) {
                                         change.consume()
                                         dragDismissBy(delta)
@@ -992,178 +1038,6 @@ fun ModeSheet(
                 "the sheet stays open — tap modes to try them live behind the glass",
                 p.muted, modifier = Modifier.padding(top = 4.dp),
             )
-        }
-    }
-}
-
-// ── ROOM: the 12 chrome rooms (self-portrait tiles arrive with the three souls). ──
-@Composable
-fun RoomSheet(
-    state: ScopeUiState,
-    p: Palette,
-    reduced: Boolean,
-    onPick: (Palette) -> Unit,
-    onStyle: (StyleOverride) -> Unit,
-    onDismiss: () -> Unit,
-) {
-    SheetHost(p, "ROOM", reduced, onDismiss, glyph = SettingsGlyph.Room) {
-        CompositionLocalProvider(LocalSettingsControlAccess provides true) {
-        val gridState = rememberLazyGridState()
-        LazyVerticalGrid(
-            columns = GridCells.Fixed(2),
-            state = gridState,
-            modifier = Modifier
-                .heightIn(max = 340.dp),
-            overscrollEffect = null,
-        ) {
-            itemsIndexed(Rooms) { _, room ->
-                val active = "legacy:${room.id}" == state.appearanceDocument?.activeId || room.id == state.room.id
-                val rs = room.style
-                Column(
-                    Modifier
-                        .padding(4.dp)
-                        .heightIn(min = 48.dp)
-                        .settingsFocusBorder(p)
-                        .semantics { contentDescription = "Apply legacy room ${room.label}" }
-                        .background(room.plane)
-                        .border(Dim.hairline, if (active) p.accent else room.lineStrong)
-                        .clickable {
-                            if (room.id == "amoled") state.amoledCaptionSeen = true
-                            onPick(room)
-                        }
-                        .padding(10.dp),
-                ) {
-                    Box(
-                        Modifier
-                            .fillMaxWidth()
-                            .heightIn(min = 34.dp)
-                            .clip(RoundedCornerShape(rs.cornerRadius))
-                            .background(
-                                if (rs.character == ChromeCharacter.Glass)
-                                    room.surface.copy(alpha = 0.6f)
-                                else room.surface
-                            )
-                            .border(Dim.hairline, room.line, RoundedCornerShape(rs.cornerRadius)),
-                        contentAlignment = Alignment.CenterStart,
-                    ) {
-                        Mono(
-                            "  " + room.label, room.ink, Type.dataXs,
-                            letterSpacing = if (rs.designators) 1.2.sp else TextUnit.Unspecified,
-                        )
-                        if (rs.designators) {
-                            Mono(
-                                "A2 ", room.muted, Type.dataXs,
-                                Modifier.align(Alignment.CenterEnd),
-                            )
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(verticalAlignment = Alignment.CenterVertically) {
-                        // Its own beam, tracing: the room's self-portrait glyph.
-                        ModeGlyph(2, room.accent)
-                        Spacer(Modifier.width(6.dp))
-                        // A sample of the room's control character:
-                        StyleSampleChip(room)
-                        if (room.accentFollowsBeam) {
-                            Spacer(Modifier.width(6.dp))
-                            Box(
-                                Modifier.size(6.dp)
-                                    .background(room.accent)
-                            )
-                        }
-                    }
-                    if (room.id == "amoled" && !state.amoledCaptionSeen) {
-                        Mono(
-                            "true black · made for this panel",
-                            room.muted, Type.dataXs, Modifier.padding(top = 4.dp),
-                        )
-                    }
-                }
-            }
-            item(span = { GridItemSpan(maxLineSpan) }) {
-                Column(Modifier.fillMaxWidth()) {
-                    SectionHeading("STYLE", p)
-                    val currentStyle = state.appearanceStyle
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            ChipCell(
-                                "FEEL · " + currentStyle.character.name.lowercase(),
-                                active = true, p = p, small = true,
-                            ) {
-                                onStyle(state.appearanceStyle.nextCharacter())
-                            }
-                        }
-                        Box(Modifier.weight(1f)) {
-                            ChipCell(
-                                "MOTION · " + currentStyle.motion.name.lowercase(),
-                                active = true, p = p, small = true,
-                            ) {
-                                onStyle(state.appearanceStyle.nextMotion())
-                            }
-                        }
-                    }
-                    Spacer(Modifier.height(6.dp))
-                    Row(Modifier.fillMaxWidth(), horizontalArrangement = Arrangement.spacedBy(6.dp)) {
-                        Box(Modifier.weight(1f)) {
-                            ChipCell(
-                                "CORNERS · ${currentStyle.cornerRadius.value.toInt()}dp",
-                                active = true, p = p, small = true,
-                            ) {
-                                onStyle(state.appearanceStyle.nextCorners())
-                            }
-                        }
-                        Box(Modifier.weight(1f)) {
-                            ChipCell(
-                                "LABELS · " + if (currentStyle.designators) "part-nos" else "plain",
-                                active = true, p = p, small = true,
-                            ) {
-                                onStyle(state.appearanceStyle.nextLabels())
-                            }
-                        }
-                    }
-                    LiveStyleSample(p, reduced, currentStyle.choices())
-                    Prose(
-                        "FEEL selects coupled chrome defaults. MOTION sets timing. CORNERS and LABELS change only their displayed field.",
-                        p.muted, modifier = Modifier.padding(top = 6.dp),
-                    )
-                }
-            }
-        }
-        }
-    }
-}
-
-// A tiny swatch of a room's control character — carved bevel, engraved outline,
-// annotated bevel, or a glass slab.
-@Composable
-private fun StyleSampleChip(room: Palette) {
-    val rs = room.style
-    val shape = RoundedCornerShape(if (rs.character == ChromeCharacter.Glass) 4.dp else 0.dp)
-    Box(
-        Modifier
-            .width(26.dp)
-            .height(12.dp)
-            .clip(shape)
-            .background(
-                when (rs.character) {
-                    ChromeCharacter.Engraved -> Color.Transparent
-                    ChromeCharacter.Glass -> room.stone.copy(alpha = 0.55f)
-                    else -> room.stone
-                }
-            )
-            .border(
-                Dim.hairline,
-                when (rs.character) {
-                    ChromeCharacter.Engraved -> room.lineStrong
-                    ChromeCharacter.Glass -> room.stoneHi.copy(alpha = 0.9f)
-                    else -> room.stoneHi
-                },
-                shape,
-            ),
-        contentAlignment = Alignment.Center,
-    ) {
-        if (rs.character == ChromeCharacter.Annotated) {
-            Mono("A2", room.muted, 7.sp)
         }
     }
 }

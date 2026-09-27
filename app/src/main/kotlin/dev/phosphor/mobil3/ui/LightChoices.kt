@@ -50,15 +50,32 @@ internal object LightChoices {
         }
     }
 
-    /** `+` saves the colour the beam wears now and wears it (or joins the ring). */
-    fun addCurrent(l: LightSettings): LightSettings {
+    /**
+     * `+` saves the colour the beam shows now and wears it (or joins the ring).
+     * A steady preset or saved colour is copied exactly; a moving, generated or rolled
+     * colour is read from the live beam ([live]), falling back to the preset.
+     */
+    fun addCurrent(l: LightSettings, temporary: Boolean = false, live: LightRgb? = null): LightSettings {
         require(l.slots.size < 6)
-        val worn = l.selected.singleOrNull()?.let { l.slots[it] }
+        val steady = !temporary && !l.generatedAuto && l.selected.size <= 1
+        val exact = l.selected.singleOrNull()?.let { l.slots[it] }
             ?: BeamColors[l.preset].color.let { LightRgb(it.red, it.green, it.blue) }
+        val worn = if (steady) exact else live ?: exact
         val added = l.add(worn)
         val newBit = 1 shl l.slots.size
-        return if (cycle(l) == Cycle.OFF) added.copy(selectedMask = newBit, generatedAuto = false) else added
+        return if (cycle(l) == Cycle.OFF || l.generatedAuto) added.copy(selectedMask = newBit, generatedAuto = false) else added
     }
+
+    /** One quiet line when the worn colour is not a swatch you can see selected. */
+    fun ownerLine(l: LightSettings, temporary: Boolean): String? = when {
+        temporary -> "rolled color · + keeps it"
+        l.generatedAuto -> "auto color · + keeps the one showing"
+        else -> null
+    }
+
+    /** Live beam colour packed 0xRRGGBB (already display-encoded) as a saved triple. */
+    fun rgbOf(packed: Int): LightRgb = LightRgb(((packed shr 16) and 0xff) / 255f,
+        ((packed shr 8) and 0xff) / 255f, (packed and 0xff) / 255f)
 }
 
 /** Seconds on a log rail: fine steps near a second, still reaching a minute. */
@@ -67,10 +84,22 @@ internal object LightTime {
     const val MAX = 60f
     private val span = ln(MAX / MIN)
     fun toSlider(seconds: Float): Float = (ln(seconds.coerceIn(MIN, MAX) / MIN) / span).coerceIn(0f, 1f)
-    fun fromSlider(position: Float): Float =
-        (MIN * (MAX / MIN).pow(position.coerceIn(0f, 1f))).coerceIn(MIN, MAX).let {
-            if (it < 10f) (it * 10f).toInt() / 10f else it.toInt().toFloat()
-        }.coerceIn(MIN, MAX)
+    fun fromSlider(position: Float): Float = snap(MIN * (MAX / MIN).pow(position.coerceIn(0f, 1f)))
+
+    /** Representable values: tenths below 10 s, whole seconds from 10 s. */
+    fun snap(seconds: Float): Float = seconds.coerceIn(MIN, MAX).let {
+        if (it < 9.95f) kotlin.math.round(it * 10f) / 10f else kotlin.math.round(it)
+    }.coerceIn(MIN, MAX)
+
+    /** The next representable value up or down (keyboard and TalkBack steps). */
+    fun next(seconds: Float, up: Boolean): Float {
+        val s = snap(seconds)
+        val stepped = if (up) (if (s < 10f) s + 0.1f else s + 1f) else (if (s <= 10f) s - 0.1f else s - 1f)
+        return snap(stepped)
+    }
+
+    /** The same step expressed on the slider rail. */
+    fun stepOnRail(position: Float, up: Boolean): Float = toSlider(next(fromSlider(position), up))
     fun words(seconds: Float): String =
         if (seconds < 10f) String.format(java.util.Locale.ROOT, "%.1f s", seconds)
         else String.format(java.util.Locale.ROOT, "%.0f s", seconds)
