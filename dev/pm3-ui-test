@@ -1,0 +1,108 @@
+#!/usr/bin/env bash
+# Run only the installed Compose suite. Never install, clear data, or select a device implicitly.
+set -uo pipefail
+TOOL=pm3-ui-test
+VERSION=1.0.0
+REPO="$(cd "$(dirname "${BASH_SOURCE[0]}")/.." && pwd)"
+RUNNER=dev.phosphor.mobil3.debug.test/dev.phosphor.mobil3.ui.TransposeTestRunner
+TARGET=dev.phosphor.mobil3.debug
+TEST_CLASS=dev.phosphor.mobil3.ui.TransposeUiTest
+SERIAL=''
+ALLOW_PRIMARY=0
+JSON=0
+VERB=''
+USAGE='dev/pm3-ui-test [--json] [--serial SERIAL] [--allow-primary] help|schema|run'
+
+escape() {
+    local s="$1"
+    s=${s//\\/\\\\}; s=${s//\"/\\\"}; s=${s//$'\n'/\\n}; s=${s//$'\r'/\\r}; s=${s//$'\t'/\\t}
+    printf '%s' "$s"
+}
+structured() { [[ "$JSON" == 1 || ! -t 1 ]]; }
+emit() {
+    local status="$1" fields="$2" human="$3"
+    if structured; then
+        printf '{"status":"%s","tool":"%s","version":"%s","ts":"%s",%s}\n' \
+            "$status" "$TOOL" "$VERSION" "$(date -Iseconds)" "$fields"
+    elif [[ "$status" == error ]]; then
+        printf '%s\n' "$human" >&2
+    else
+        printf '%s\n' "$human"
+    fi
+}
+fail() {
+    local code="$1" error="$2" fix="$3"
+    emit error "\"error\":\"$(escape "$error")\",\"fix\":\"$(escape "$fix")\"" "Error: $error. Fix: $fix"
+    exit "$code"
+}
+while (($#)); do
+    case "$1" in
+        --json) JSON=1 ;;
+        --serial)
+            if (($# < 2)); then fail 3 'Missing serial' "$USAGE"; fi
+            [[ -n "$2" && "$2" != -* ]] || fail 3 'Missing serial' "$USAGE"
+            [[ -z "$SERIAL" ]] || fail 3 'Duplicate serial' 'Use one --serial argument'
+            SERIAL="$2"; shift ;;
+        --allow-primary) ALLOW_PRIMARY=1 ;;
+        --help|-h) VERB=help ;;
+        --schema) VERB=schema ;;
+        help|schema|run)
+            [[ -z "$VERB" ]] || fail 3 'Multiple verbs' "$USAGE"
+            VERB="$1" ;;
+        *) fail 3 'Unknown argument' "$USAGE" ;;
+    esac
+    shift
+done
+[[ -n "$VERB" ]] || fail 3 'Missing verb' "$USAGE"
+case "$VERB" in
+    help)
+        emit ok "\"data\":{\"usage\":\"$USAGE\",\"runner\":\"$RUNNER\",\"class\":\"$TEST_CLASS\",\"note\":\"run requires compatible debug and test APKs already installed; no install or data reset is performed\"}" \
+            "$USAGE
+Runs the installed $RUNNER with class $TEST_CLASS.
+Requires compatible debug and test APKs already installed. No install or data reset.
+Primary NAAIB70036673ZC requires --allow-primary. S25 is not an approved transpose test device.
+Logs stay in ignored build/transpose/. schema describes fields and exit codes."
+        exit 0 ;;
+    schema)
+        # Schema is always JSON. additionalProperties is false for each response object.
+        JSON=1
+        specification='{"usage":"dev/pm3-ui-test [--json] [--serial SERIAL] [--allow-primary] help|schema|run","verbs":["help","schema","run"],"options":{"--json":"Force JSON; pipes use JSON automatically","--serial":"Required explicit adb serial for run; no environment fallback","--allow-primary":"Permit NAAIB70036673ZC for this invocation only"},"runner":"dev.phosphor.mobil3.debug.test/dev.phosphor.mobil3.ui.TransposeTestRunner","target":"dev.phosphor.mobil3.debug","class":"dev.phosphor.mobil3.ui.TransposeUiTest","sideEffects":"run starts an already installed instrumentation suite, foregrounds its ComponentActivity host, and writes a local log; no installation, package clearing, microphone or network requests","exitCodes":{"0":"ok","2":"adb/device/installed runner unavailable","3":"bad arguments or primary device not allowed","4":"instrumentation, timeout or receipt failure"},"responseSchema":{"type":"object","additionalProperties":false,"required":["status","tool","version","ts"],"properties":{"status":{"enum":["ok","error"]},"tool":{"const":"pm3-ui-test"},"version":{"type":"string"},"ts":{"type":"string","format":"date-time"},"error":{"type":"string"},"fix":{"type":"string"},"data":{"type":"object","additionalProperties":false,"properties":{"usage":{"type":"string"},"runner":{"type":"string"},"class":{"type":"string"},"note":{"type":"string"},"serial":{"type":"string"},"target":{"type":"string"},"tests":{"type":"integer","minimum":1},"log":{"type":"string"},"sha256":{"type":"string"}}},"schema":{"type":"object","additionalProperties":false,"required":["usage","verbs","options","runner","target","class","sideEffects","exitCodes","responseSchema"],"properties":{"usage":{"type":"string"},"verbs":{"type":"array","items":{"type":"string"}},"options":{"type":"object","additionalProperties":false,"properties":{"--json":{"type":"string"},"--serial":{"type":"string"},"--allow-primary":{"type":"string"}}},"runner":{"type":"string"},"target":{"type":"string"},"class":{"type":"string"},"sideEffects":{"type":"string"},"exitCodes":{"type":"object","additionalProperties":false,"properties":{"0":{"type":"string"},"2":{"type":"string"},"3":{"type":"string"},"4":{"type":"string"}}},"responseSchema":{"type":"object"}}}},"allOf":[{"if":{"properties":{"status":{"const":"error"}}},"then":{"required":["error","fix"]}}]}}'
+        emit ok "\"schema\":$specification" ''
+        exit 0 ;;
+esac
+
+[[ -n "$SERIAL" ]] || fail 3 'Explicit adb serial required' 'Use run --serial NAAIB700B7373PZ for the transpose test bed'
+[[ "$SERIAL" =~ ^[A-Za-z0-9._:-]+$ ]] || fail 3 'Invalid serial characters' 'Use the exact adb serial without whitespace or shell characters'
+if [[ "$SERIAL" == NAAIB70036673ZC && "$ALLOW_PRIMARY" != 1 ]]; then
+    fail 3 'Primary device refused' 'Use the test bed, or add --allow-primary only after approval for this run'
+fi
+# Load the repository toolchain only after argument and primary-device checks.
+# shellcheck disable=SC1091
+source "$REPO/scripts/env.sh"
+command -v adb >/dev/null || fail 2 'adb unavailable' 'Run scripts/bootstrap-android.sh to prepare the repository toolchain'
+command -v timeout >/dev/null || fail 2 'timeout unavailable' 'Install coreutils before running the suite'
+state="$(adb -s "$SERIAL" get-state 2>&1)" || fail 2 'Selected device unavailable' 'Connect and authorize the explicit serial, then retry'
+[[ "$state" == device ]] || fail 2 'Selected device is not ready' 'Unlock and authorize the explicit device, then retry'
+installed="$(adb -s "$SERIAL" shell pm list instrumentation 2>&1)" || fail 2 'Cannot inspect installed runner' 'Check adb authorization for the explicit serial'
+installed=${installed//$'\r'/}
+expected="instrumentation:$RUNNER (target=$TARGET)"
+grep -Fxq "$expected" <<< "$installed" || fail 2 'Exact debug runner is not installed' \
+    'Build :app:assembleDebugAndroidTest with ./gradlew, then arrange compatible data-preserving APK installs separately; this tool never installs'
+mkdir -p "$REPO/build/transpose" || fail 4 'Cannot create receipt directory' 'Restore write access to build/transpose'
+log="$(mktemp "$REPO/build/transpose/instrumented-${SERIAL}-$(date +%Y%m%dT%H%M%S)-XXXXXX.log")" || \
+    fail 4 'Cannot create instrumentation log' 'Restore write access to build/transpose'
+timeout --foreground 600 adb -s "$SERIAL" shell am instrument -w -r -e class "$TEST_CLASS" "$RUNNER" >"$log" 2>&1
+result=$?
+if ((result != 0)); then
+    fail 4 "Instrumentation exited $result; log: $log" 'Read the log, check the explicit device, and retry after correcting the failure'
+fi
+if grep -Eq 'FAILURES!!!|INSTRUMENTATION_FAILED|INSTRUMENTATION_ABORTED|Process crashed|shortMsg=' "$log"; then
+    fail 4 "Instrumentation reported failure; log: $log" 'Read the first failed assertion or runner error; correct it before retrying'
+fi
+tests="$(sed -nE 's/^[[:space:]]*OK \(([0-9]+) tests?\).*/\1/p' "$log" | tail -n 1)"
+[[ "$tests" =~ ^[1-9][0-9]*$ ]] || fail 4 "No passing test summary; log: $log" \
+    'Check runner compatibility and class selection; zero tests is not success'
+sha="$(sha256sum "$log")" || fail 4 'Cannot hash instrumentation log' 'Install coreutils and preserve the log'
+sha=${sha%% *}
+emit ok "\"data\":{\"serial\":\"$(escape "$SERIAL")\",\"target\":\"$TARGET\",\"runner\":\"$RUNNER\",\"class\":\"$TEST_CLASS\",\"tests\":$tests,\"log\":\"$(escape "$log")\",\"sha256\":\"$sha\"}" \
+    "$tests tests passed on $SERIAL. Log: $log. SHA-256: $sha"

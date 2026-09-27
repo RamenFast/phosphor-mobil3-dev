@@ -21,5 +21,11 @@
                 <action android:name="dev.phosphor.mobil3.ROOT_CAPTURE_TONE" />
             </intent-filter>
         </receiver>
+        <!-- Compose UI test host (ui-test-manifest). Instrumentation starts it in-process,
+             so other apps never need to launch it. -->
+        <activity
+            android:name="androidx.activity.ComponentActivity"
+            android:exported="false"
+            tools:replace="android:exported" />
     </application>
 </manifest>

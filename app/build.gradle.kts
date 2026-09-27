@@ -168,6 +168,8 @@ android {
         applicationId = "dev.phosphor.mobil3"
         minSdk = 29
         targetSdk = 36
+        testInstrumentationRunner = "dev.phosphor.mobil3.ui.TransposeTestRunner"
+        testApplicationId = "dev.phosphor.mobil3.debug.test"
         versionCode = appVersionCode
         versionName = appVersion
         ndk { abiFilters += "arm64-v8a" }
@@ -489,6 +491,12 @@ dependencies {
     implementation(libs.media3.session)
     implementation(libs.media3.common)
     implementation(libs.androidx.documentfile)
+    // ComponentActivity test host. Instrumentation never launches MainActivity or the engine.
+    debugImplementation(libs.compose.ui.test.manifest)
+    androidTestImplementation(platform(libs.compose.bom))
+    androidTestImplementation(libs.compose.ui.test.junit4)
+    androidTestImplementation(libs.androidx.test.runner)
+    androidTestImplementation(libs.androidx.test.junit)
     testImplementation(kotlin("test"))
     testImplementation(libs.junit4)
     testImplementation(libs.json)
