@@ -220,12 +220,9 @@ class FloatingHudService : Service() {
     private fun dp(value: Int) = (value * density()).toInt().coerceAtLeast(1)
     // The app's key language in Android Views (design/REDESIGN.md §4): sharp hairline keys,
     // mono labels, an instant 10% accent tint on press, one flat plane. Behavior is unchanged.
-    private object HudInk {
-        val plane = Color.rgb(10, 10, 13)
-        val line = Color.argb(72, 255, 255, 255)
-        val ink = Color.rgb(236, 234, 242)
-        val ink2 = Color.rgb(184, 180, 196)
-        val accent = Color.rgb(255, 108, 170)
+    // Read once when this HUD service builds its views: the active look, or the neutral dark.
+    private val HudInk by lazy {
+        dev.phosphor.mobil3.ui.HudLook.read(preferences().all[dev.phosphor.mobil3.settings.appearance.AppearancePreferences.KEY])
     }
     private fun monoFace(): Typeface =
         runCatching { androidx.core.content.res.ResourcesCompat.getFont(viewContext, R.font.jetbrains_mono) }.getOrNull()
