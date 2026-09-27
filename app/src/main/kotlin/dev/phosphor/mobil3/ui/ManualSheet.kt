@@ -194,6 +194,7 @@ fun ManualSheet(
                 }
                 Mono(selected.title, p.ink, Type.label, Modifier.padding(top = 12.dp, bottom = 8.dp).semantics { heading() })
                 Prose(selected.text, p.ink, size = Type.label, modifier = Modifier.padding(bottom = 12.dp))
+                if (selected.id == "reading") ScopeFigures(p)
                 Prose(selected.response, p.ink2, size = Type.hint, modifier = Modifier.padding(bottom = 12.dp))
                 RowDivider(p)
                 val list = ManualContent.visible(developer)
