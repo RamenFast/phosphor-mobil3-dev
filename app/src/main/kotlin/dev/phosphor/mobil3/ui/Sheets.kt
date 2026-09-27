@@ -832,6 +832,8 @@ interface SheetActions : AppearanceActions {
     fun importSettings()
     fun startMic()
     fun chooseMicrophone(id: Int)
+    /** Choose an idle input and start it (one tap in SRC). */
+    fun chooseAndStartMicrophone(id: Int) = chooseMicrophone(id)
     fun confirmMicrophoneBluetooth(accept: Boolean)
     fun setIncludeMicrophone(on: Boolean)
     fun setMicrophoneMixLevel(microphone: Boolean, value: Float)

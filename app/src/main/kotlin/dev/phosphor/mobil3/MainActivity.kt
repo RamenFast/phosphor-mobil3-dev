@@ -1794,7 +1794,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         if (bluetoothForMix) startMixMicrophone() else startMic()
     }
 
-    override fun chooseMicrophone(id: Int) {
+    override fun chooseMicrophone(id: Int) = selectMicrophone(id, startAfter = false)
+
+    /** SRC's one tap on an idle input: choose it, then start it through the existing start path. */
+    override fun chooseAndStartMicrophone(id: Int) = selectMicrophone(id, startAfter = true)
+
+    private fun selectMicrophone(id: Int, startAfter: Boolean) {
         if (!micStartEligible()) return
         val choice = MicrophoneRoutes.choices(this).singleOrNull { it.id == id } ?: run {
             ui.microphoneStatus = "Input disconnected. Refresh the input list"; return
@@ -1807,7 +1812,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         mic.stopForLocal(revision) { returned, error, _ -> tick.post {
             if (returned != micUiRevision || !micStartEligible()) return@post
             if (error != null) ui.microphoneStatus = error
-            else if (wasStandalone) startMic()
+            else if (wasStandalone || (startAfter && !wasMixing)) startMic()
             else if (wasMixing) startMixMicrophone()
         } }
     }

@@ -54,9 +54,9 @@ that state (for example range sliders under "vary per track"); that is context, 
 desktop visualizer · desktop sources · desktop library · disconnect).
 Active source rows say `stop` and stop on tap. The ⏻ LIVE stone is gone (it duplicated the rows).
 Microphone rows use kind names (`built-in`, `built-in · second`, `USB headset`, `Bluetooth`) and read
-`microphone` when there is only one. The active row stops; the chosen idle row says `start`; another
-row chooses that input (a running mic moves to it). Choosing an idle input and starting it are two
-taps: capture logic is unchanged, and a one-tap "choose and start" would need a new activity action.
+`microphone` when there is only one. One tap starts any idle input (slice i: `chooseAndStartMicrophone`
+reuses the existing start paths). The active row says `stop` and stops. Tapping another input while one
+runs moves the running microphone to it.
 Status and consent lines appear only when they carry live state; the relay empty state is one line.
 
 **MODE** · AUTOMATIC: random (⚄) → XY · 3D · TIME · SPECTRUM mode rows → GEOMETRY chips + amount

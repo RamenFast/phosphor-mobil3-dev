@@ -49,6 +49,16 @@ internal object MicNames {
 
     private val ordinals = listOf("", "second", "third")
 
+    enum class Tap { STOP, START, MOVE, CHOOSE_AND_START }
+
+    /** One tap per row: the running input stops, any idle input starts, another input takes over a running mic. */
+    fun tap(active: Boolean, chosen: Boolean, micLive: Boolean): Tap = when {
+        active -> Tap.STOP
+        chosen -> Tap.START
+        micLive -> Tap.MOVE
+        else -> Tap.CHOOSE_AND_START
+    }
+
     fun labels(inputs: List<MicrophoneChoice>): Map<Int, String> {
         val seen = mutableMapOf<String, Int>()
         val total = inputs.groupingBy { kind(it.type) }.eachCount()
@@ -231,12 +241,13 @@ private fun MicrophoneRows(state: ScopeUiState, p: Palette, actions: SheetAction
         SourceRow(
             if (state.microphoneInputs.size == 1) "microphone" else names[input.id] ?: "microphone",
             p, SettingsGlyph.Mic, active = active,
-            trailing = when { active -> "stop"; chosen -> "start"; else -> null },
+            trailing = if (active) "stop" else null,
         ) {
-            when {
-                active -> actions.stopMicrophone()
-                chosen -> actions.startMic()
-                else -> actions.chooseMicrophone(input.id)
+            when (MicNames.tap(active, chosen, micLive)) {
+                MicNames.Tap.STOP -> actions.stopMicrophone()
+                MicNames.Tap.START -> actions.startMic()
+                MicNames.Tap.MOVE -> actions.chooseMicrophone(input.id) // a running mic moves to it
+                MicNames.Tap.CHOOSE_AND_START -> actions.chooseAndStartMicrophone(input.id)
             }
         }
     }

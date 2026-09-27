@@ -23,4 +23,11 @@ class MicNamesTest {
         val names = MicNames.labels((1..4).map { MicrophoneChoice(it, 11, "USB") })
         assertEquals(listOf("USB", "USB · second", "USB · third", "USB · 4"), (1..4).map { names[it] })
     }
+
+    @Test fun everyMicrophoneRowIsOneTap() {
+        assertEquals(MicNames.Tap.STOP, MicNames.tap(active = true, chosen = true, micLive = true))
+        assertEquals(MicNames.Tap.START, MicNames.tap(active = false, chosen = true, micLive = false))
+        assertEquals(MicNames.Tap.MOVE, MicNames.tap(active = false, chosen = false, micLive = true))
+        assertEquals(MicNames.Tap.CHOOSE_AND_START, MicNames.tap(active = false, chosen = false, micLive = false))
+    }
 }

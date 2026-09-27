@@ -45,8 +45,8 @@ internal object ManualContent {
         everyday("microphone", "microphone",
             "Each input has its own row: built-in, built-in · second, USB, headset or Bluetooth. " +
                 "With only one input the row just says microphone.\n\n" +
-                "The chosen input says start. Tap it to begin; Android asks for permission the first time. " +
-                "The running input says stop. Tap another input to choose it; a running microphone moves to it.\n\n" +
+                "Tap an input to start it; Android asks for permission the first time. The running input says stop; " +
+                "tap it to stop. Tap another input while one runs and the microphone moves to it.\n\n" +
                 "A Bluetooth mic can lower playback quality while it runs. Phosphor asks first. " +
                 "Nothing is recorded or saved.",
             "The microphone is not judging your humming. It is counting samples."),
