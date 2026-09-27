@@ -124,7 +124,12 @@ class FloatingHudService : Service() {
                         syncTransport()
                     }
                 }
-            }.apply { orientation = LinearLayout.VERTICAL }
+            }.apply {
+                orientation = LinearLayout.VERTICAL
+                // Frame only: a clear HUD background must still show the apps behind the scope.
+                background = hairline(Color.TRANSPARENT)
+                setPadding(dp(1), dp(1), dp(1), dp(1))
+            }
             panel.setOnApplyWindowInsetsListener { _, insets ->
                 if (Build.VERSION.SDK_INT < 30 && legacyInsets != insets.stableInsets) {
                     legacyInsets = insets.stableInsets
@@ -134,7 +139,7 @@ class FloatingHudService : Service() {
             }
             root = panel
             val header = row()
-            val drag = label("PHOSPHOR · drag").apply { contentDescription = "Drag floating scope" }
+            val drag = label("⠿ phosphor").apply { contentDescription = "Drag floating scope" }
             header.addView(drag, LinearLayout.LayoutParams(0, dp(48), 1f))
             drag.setOnTouchListener(gesture(false))
             header.addView(button("↗", "Return to app") { returnToApp() })
@@ -190,7 +195,7 @@ class FloatingHudService : Service() {
             syncTransport()
             panel.addView(transport)
             val statusRow = row()
-            info = label("Connecting existing source").apply { textSize = 10f }
+            info = label("Connecting existing source").apply { textSize = 12f }
             statusRow.addView(info, LinearLayout.LayoutParams(0, dp(48), 1f))
             statusRow.addView(button("↘", "Resize floating scope") {}.apply { setOnTouchListener(gesture(true)) })
             panel.addView(statusRow)
@@ -213,15 +218,44 @@ class FloatingHudService : Service() {
         !getSystemService(PowerManager::class.java).isInteractive
     private fun density() = if (::viewContext.isInitialized) viewContext.resources.displayMetrics.density else resources.displayMetrics.density
     private fun dp(value: Int) = (value * density()).toInt().coerceAtLeast(1)
-    private fun row() = LinearLayout(viewContext).apply { orientation = LinearLayout.HORIZONTAL; setBackgroundColor(Color.rgb(19, 15, 23)) }
+    // The app's key language in Android Views (design/REDESIGN.md §4): sharp hairline keys,
+    // mono labels, an instant 10% accent tint on press, one flat plane. Behavior is unchanged.
+    private object HudInk {
+        val plane = Color.rgb(10, 10, 13)
+        val line = Color.argb(72, 255, 255, 255)
+        val ink = Color.rgb(236, 234, 242)
+        val ink2 = Color.rgb(184, 180, 196)
+        val accent = Color.rgb(255, 108, 170)
+    }
+    private fun monoFace(): Typeface =
+        runCatching { androidx.core.content.res.ResourcesCompat.getFont(viewContext, R.font.jetbrains_mono) }.getOrNull()
+            ?: Typeface.MONOSPACE
+    private fun hairline(fill: Int) = android.graphics.drawable.GradientDrawable().apply {
+        shape = android.graphics.drawable.GradientDrawable.RECTANGLE
+        cornerRadius = 0f
+        setColor(fill)
+        setStroke(dp(1), HudInk.line)
+    }
+    private fun row() = LinearLayout(viewContext).apply {
+        orientation = LinearLayout.HORIZONTAL; setBackgroundColor(HudInk.plane)
+    }
     private fun label(text: String) = TextView(viewContext).apply {
-        this.text = text; setTextColor(Color.WHITE); typeface = Typeface.MONOSPACE
-        gravity = Gravity.CENTER_VERTICAL; setPadding(dp(8), 0, dp(4), 0)
+        this.text = text; setTextColor(HudInk.ink2); typeface = monoFace(); textSize = 13f
+        gravity = Gravity.CENTER_VERTICAL; setPadding(dp(10), 0, dp(4), 0)
     }
     private fun button(text: String, description: String, action: () -> Unit) = Button(viewContext).apply {
-        this.text = text; contentDescription = description; typeface = Typeface.MONOSPACE
-        setTextColor(Color.rgb(229, 196, 235)); setBackgroundColor(Color.rgb(32, 25, 38))
-        setPadding(0, 0, 0, 0); minWidth = dp(48); minimumWidth = dp(48)
+        this.text = text; contentDescription = description; typeface = monoFace(); textSize = 15f
+        isAllCaps = false; stateListAnimator = null
+        setTextColor(android.content.res.ColorStateList(
+            arrayOf(intArrayOf(-android.R.attr.state_enabled), intArrayOf()),
+            intArrayOf(androidx.core.graphics.ColorUtils.setAlphaComponent(HudInk.ink, 102), HudInk.ink)))
+        background = android.graphics.drawable.StateListDrawable().apply {
+            val pressed = androidx.core.graphics.ColorUtils.compositeColors(
+                androidx.core.graphics.ColorUtils.setAlphaComponent(HudInk.accent, 26), HudInk.plane)
+            addState(intArrayOf(android.R.attr.state_pressed), hairline(pressed))
+            addState(intArrayOf(), hairline(HudInk.plane))
+        }
+        setPadding(0, 0, 0, 0); minWidth = dp(48); minimumWidth = dp(48); minHeight = dp(48); minimumHeight = dp(48)
         layoutParams = LinearLayout.LayoutParams(dp(48), dp(48))
         setOnClickListener { action() }
     }
