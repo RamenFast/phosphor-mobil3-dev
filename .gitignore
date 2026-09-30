@@ -2,10 +2,11 @@
 build/
 local.properties
 *.jks
-rust/target/
+rust/target
 root-helper/native/target/
 app/src/main/jniLibs/
 .kotlin/
 captures/
 *.log
 .toolchain/
+dev/scratch
