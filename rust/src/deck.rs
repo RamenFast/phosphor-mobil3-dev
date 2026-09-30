@@ -137,8 +137,13 @@ pub fn open_identity() -> u64 {
 
 pub fn signal_json() -> serde_json::Value {
     let guard = DECK.lock().unwrap();
-    guard.as_ref().map(|d| serde_json::json!({"open_id": d.open.id,
-        "playing_intent": d.activation.playing(), "output": d.signal.json()})).unwrap_or(serde_json::Value::Null)
+    guard
+        .as_ref()
+        .map(|d| {
+            serde_json::json!({"open_id": d.open.id,
+        "playing_intent": d.activation.playing(), "output": d.signal.json()})
+        })
+        .unwrap_or(serde_json::Value::Null)
 }
 
 /// The render command must still belong to the currently published native open.

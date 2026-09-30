@@ -208,13 +208,17 @@ struct RelaySignal {
 pub fn signal_json() -> serde_json::Value {
     let l = link();
     let current = plock(&l.current).clone();
-    let Some(s) = current.filter(|s| s.scope_live()) else { return serde_json::Value::Null; };
+    let Some(s) = current.filter(|s| s.scope_live()) else {
+        return serde_json::Value::Null;
+    };
     let now = monotonic_ms();
     let signal = match s.signal.try_lock() {
         Ok(value) => value.clone(),
         Err(_) => return serde_json::Value::Null,
     };
-    let field = |value: Option<(f64, u64)>| value.map(|(value, at)| serde_json::json!({"value": value, "age_ms": now.checked_sub(at)}));
+    let field = |value: Option<(f64, u64)>| {
+        value.map(|(value, at)| serde_json::json!({"value": value, "age_ms": now.checked_sub(at)}))
+    };
     let result = serde_json::json!({"session": s.signal_id, "input": signal.input.json(now),
         "geometry_points": signal.geometry_points, "geometry_age_ms": signal.geometry_at.and_then(|at| now.checked_sub(at)),
         "relay_rms": field(signal.rms), "relay_rms_peak": field(signal.rms_peak),
@@ -224,14 +228,25 @@ pub fn signal_json() -> serde_json::Value {
         "audio_enabled": l.cfg_audio.load(Ordering::Relaxed), "geometry_enabled": l.cfg_geometry.load(Ordering::Relaxed),
         "diagnostic_blocks_skipped": s.signal_skips.load(Ordering::Relaxed),
         "scope": s.scope.signal_json(&crate::render::RAW_STEREO)});
-    if s.scope_live() { result } else { serde_json::Value::Null }
+    if s.scope_live() {
+        result
+    } else {
+        serde_json::Value::Null
+    }
 }
 
 impl SessionShared {
     fn observe_signal(&self, observe: impl FnOnce(&mut RelaySignal)) {
         // Telemetry never parks the receive thread behind the UI. A missed block is explicit.
-        if let Ok(mut signal) = self.signal.try_lock() { observe(&mut signal); }
-        else { let _ = self.signal_skips.fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| Some(n.saturating_add(1))); }
+        if let Ok(mut signal) = self.signal.try_lock() {
+            observe(&mut signal);
+        } else {
+            let _ = self
+                .signal_skips
+                .fetch_update(Ordering::Relaxed, Ordering::Relaxed, |n| {
+                    Some(n.saturating_add(1))
+                });
+        }
     }
     fn cancelled(&self) -> bool {
         self.cancel.load(Ordering::Relaxed)
@@ -806,7 +821,10 @@ pub fn art_generation() -> u32 {
 pub fn status_json() -> String {
     let l = link();
     let current = plock(&l.current).clone();
-    let signal_session = current.as_ref().filter(|s| s.scope_live()).map_or(0, |s| s.signal_id);
+    let signal_session = current
+        .as_ref()
+        .filter(|s| s.scope_live())
+        .map_or(0, |s| s.signal_id);
     let media = current
         .filter(|s| {
             !l.quit.load(Ordering::Relaxed)
@@ -1023,7 +1041,12 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
     let muted = Arc::new(AtomicBool::new(l.muted.load(Ordering::Relaxed)));
     let (restart_tx, restart_rx) = std::sync::mpsc::channel::<()>();
     let signal_output = Arc::new(crate::engine::SignalOutput::default());
-    let out = match open_output(&path, signal_output.clone(), muted.clone(), restart_tx.clone()) {
+    let out = match open_output(
+        &path,
+        signal_output.clone(),
+        muted.clone(),
+        restart_tx.clone(),
+    ) {
         Ok(o) => o,
         Err(e) => return SessionEnd::Failed(e),
     };
@@ -1160,7 +1183,12 @@ fn run_session(my_gen: u64, host: &str, port: u16) -> SessionEnd {
                                 }
                             }
                         }
-                        match open_output(&path, shared_s.signal_output.clone(), muted_flag.clone(), restart_tx.clone()) {
+                        match open_output(
+                            &path,
+                            shared_s.signal_output.clone(),
+                            muted_flag.clone(),
+                            restart_tx.clone(),
+                        ) {
                             Ok(new_out) => {
                                 // Install under the slot lock. Teardown sets cancellation before
                                 // taking this lock, so a late install loses. An earlier install is
@@ -1499,7 +1527,8 @@ fn reader(
                 }) = media
                 {
                     shared.observe_signal(|signal| {
-                        signal.geometry_points = signal.geometry_points.saturating_add(points.len() as u64);
+                        signal.geometry_points =
+                            signal.geometry_points.saturating_add(points.len() as u64);
                         signal.geometry_at = Some(now);
                     });
                     crate::render::geometry_frame(crate::render::GeomFrame {
@@ -1583,13 +1612,17 @@ fn reader(
                     // K never refreshes the session's media receipt. Older relays omit
                     // loudness, so absence stays distinct from a genuine zero.
                     if let Some(rms) = v.get("rms").and_then(|r| r.as_f64()) {
-                        if rms.is_finite() && rms >= 0.0 { shared.observe_signal(|signal| signal.rms = Some((rms, now))); }
+                        if rms.is_finite() && rms >= 0.0 {
+                            shared.observe_signal(|signal| signal.rms = Some((rms, now)));
+                        }
                         l.remote_rms
                             .store((rms * RMS_FIXED_POINT) as u64, Ordering::Relaxed);
                         l.remote_rms_known.store(true, Ordering::Relaxed);
                     }
                     if let Some(peak) = v.get("rms_peak").and_then(|p| p.as_f64()) {
-                        if peak.is_finite() && peak >= 0.0 { shared.observe_signal(|signal| signal.rms_peak = Some((peak, now))); }
+                        if peak.is_finite() && peak >= 0.0 {
+                            shared.observe_signal(|signal| signal.rms_peak = Some((peak, now)));
+                        }
                         l.remote_rms_peak
                             .store((peak * RMS_FIXED_POINT) as u64, Ordering::Relaxed);
                     }

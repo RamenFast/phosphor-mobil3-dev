@@ -1,0 +1,11 @@
+name: Idea
+description: A feature, a scope view, an effect, a theme
+labels: [idea]
+body:
+  - type: textarea
+    id: idea
+    attributes: {label: The idea, description: "What it does and what it would look like on the tube."}
+    validations: {required: true}
+  - type: textarea
+    id: why
+    attributes: {label: Why, description: "What you were trying to see or do when you wanted this."}

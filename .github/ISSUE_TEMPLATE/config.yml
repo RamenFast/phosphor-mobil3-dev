@@ -1,0 +1,8 @@
+blank_issues_enabled: true
+contact_links:
+  - name: Stable build bug
+    url: https://github.com/RamenFast/phosphor-mobil3/issues/new
+    about: For the store release, file it on the stable repo.
+  - name: Show your beam or ask a question
+    url: https://github.com/RamenFast/phosphor-mobil3-dev/discussions
+    about: Discussions are for everything that is not a bug or a feature.

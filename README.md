@@ -1,4 +1,8 @@
-# phosphor-mobil3
+# phosphor-mobil3 · dev line
+
+> **This is the experiment line.** Features land here first, break here first, and get fixed here first.
+> Want the release everyone runs? That's **[phosphor-mobil3](https://github.com/RamenFast/phosphor-mobil3)**, the stable repo the Play Store links to.
+> Want to hack on it? Read **[CONTRIBUTING.md](CONTRIBUTING.md)**. Ideas, beams, and questions go in [Discussions](https://github.com/RamenFast/phosphor-mobil3-dev/discussions).
 
 Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop [phosphor](https://github.com/RamenFast/phosphor) beam engine to a full-screen mobile instrument with local playback, Android playback capture, microphone input, and an optional Tailscale PC relay.
 

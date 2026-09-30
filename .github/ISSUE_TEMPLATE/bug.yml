@@ -1,0 +1,23 @@
+name: Bug
+description: Something is wrong in a dev build
+labels: [bug]
+body:
+  - type: input
+    id: build
+    attributes: {label: Build, description: "versionName from Settings, or the commit you built", placeholder: "2.0.0-debug @ cf85bed"}
+    validations: {required: true}
+  - type: input
+    id: device
+    attributes: {label: Phone and Android version, placeholder: "Galaxy S25, Android 16"}
+    validations: {required: true}
+  - type: dropdown
+    id: source
+    attributes: {label: Audio source, options: [File or folder, Playback capture, Microphone, PC relay, Not source related]}
+    validations: {required: true}
+  - type: textarea
+    id: what
+    attributes: {label: What happened, description: "What you did, what you expected, what you saw. A screen recording helps (pm3 record)."}
+    validations: {required: true}
+  - type: textarea
+    id: logcat
+    attributes: {label: logcat, description: "pm3 logcat output around the moment, if you have it", render: text}

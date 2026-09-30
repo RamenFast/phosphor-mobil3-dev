@@ -183,8 +183,10 @@ mod tests {
     }
     #[test]
     fn stale_source_cannot_publish() {
-        let mut h = History::default();
-        h.generation = 4;
+        let mut h = History {
+            generation: 4,
+            ..Default::default()
+        };
         assert!(
             h.commit(
                 FrameToken {
@@ -226,8 +228,10 @@ mod tests {
     }
     #[test]
     fn old_generation_and_retired_session_cannot_change_new_history() {
-        let mut h = History::default();
-        h.generation = 5;
+        let mut h = History {
+            generation: 5,
+            ..Default::default()
+        };
         h.commit(h.frame_token(), Arc::new("new"));
         h.transition(Some(5), false, true, true);
         assert!(!h.transition(Some(4), true, true, true).0);

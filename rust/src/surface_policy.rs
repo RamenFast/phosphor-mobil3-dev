@@ -25,7 +25,6 @@ pub fn scope_alpha(requested_transparent: bool, active: wgpu::CompositeAlphaMode
     }
 }
 
-
 #[derive(Clone, Copy, Debug, PartialEq, Eq)]
 pub enum Transfer {
     ManualSdr,
@@ -42,20 +41,45 @@ pub struct OutputChoice {
 
 /// Requested HDR may attempt linear FP16 only on Vulkan with an actual pair and API 34+.
 /// Otherwise keep the request and use explicit SDR. Format lists are the surface capabilities.
-pub fn choose_output(requested_hdr: bool, vulkan: bool, api: i32, has_rgba16float: bool) -> OutputChoice {
+pub fn choose_output(
+    requested_hdr: bool,
+    vulkan: bool,
+    api: i32,
+    has_rgba16float: bool,
+) -> OutputChoice {
     if !requested_hdr {
-        return OutputChoice { transfer: Transfer::HardwareSrgb, use_fp16: false, reason: "hdr_off" };
+        return OutputChoice {
+            transfer: Transfer::HardwareSrgb,
+            use_fp16: false,
+            reason: "hdr_off",
+        };
     }
     if !vulkan {
-        return OutputChoice { transfer: Transfer::HardwareSrgb, use_fp16: false, reason: "non_vulkan" };
+        return OutputChoice {
+            transfer: Transfer::HardwareSrgb,
+            use_fp16: false,
+            reason: "non_vulkan",
+        };
     }
     if !has_rgba16float {
-        return OutputChoice { transfer: Transfer::HardwareSrgb, use_fp16: false, reason: "no_fp16_pair" };
+        return OutputChoice {
+            transfer: Transfer::HardwareSrgb,
+            use_fp16: false,
+            reason: "no_fp16_pair",
+        };
     }
     if api < 34 {
-        return OutputChoice { transfer: Transfer::HardwareSrgb, use_fp16: false, reason: "metadata_api" };
+        return OutputChoice {
+            transfer: Transfer::HardwareSrgb,
+            use_fp16: false,
+            reason: "metadata_api",
+        };
     }
-    OutputChoice { transfer: Transfer::LinearScRgb, use_fp16: true, reason: "attempt_linear" }
+    OutputChoice {
+        transfer: Transfer::LinearScRgb,
+        use_fp16: true,
+        reason: "attempt_linear",
+    }
 }
 
 #[cfg(test)]
