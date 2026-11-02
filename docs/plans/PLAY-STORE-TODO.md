@@ -1,6 +1,6 @@
 # Google Play: setup and release todo
 
-Started 2026-11-01 by Nexus in Hermes session `20261101_181137_520e6c` (CLI, titled "Google Play developer account setup"), on branch `play-store`. The code line itself is worked in session `20261101_174338_669df7`, and its starting point is recorded in [the S25 base reproduction receipt](../dev/receipts/play-store/2026-11-01-s25-base-reproduction.md).
+Started 2026-11-01 in Hermes session `20261101_181137_520e6c` (CLI, titled "Google Play developer account setup"), on branch `play-store`. The code line itself is worked in session `20261101_174338_669df7`, and its starting point is recorded in [the S25 base reproduction receipt](../dev/receipts/play-store/2026-11-01-s25-base-reproduction.md).
 
 What Ben asked (2026-11-01 PST, times from the session record):
 
@@ -57,7 +57,7 @@ The build already has the slot for this key. It is empty.
   The definitions are at `app/build.gradle.kts:33-58` and `:65`. Select the key with `PHOSPHOR_SIGNING_PROFILE=play-upload` (`:60-66`). Example block: `README.md:92-99`. In the play-store worktree, `local.properties` is a symlink to the root checkout's file (receipt, "Worktree setup"), so an edit there changes the root checkout too.
 - [ ] Back up the keystore and its passwords to two controlled places. A lost upload key can be reset through Google ("you are not locked out of your app", 9842756, "Upload key reset"), but the reset takes time.
 - [ ] Prove the key with `./gradlew :app:verifyPlayUploadSigning` (task at `app/build.gradle.kts:351`).
-- [ ] The full release gate in `scripts/ship-check.sh` wants both the direct-APK signer (`RELEASE_*`) and the Play signer (`PLAY_UPLOAD_*`), and the two must differ (`scripts/ship-check.sh:274-297`, `README.md:81`). Decide with Ben whether the direct-APK signer is provisioned now or whether the Play AAB goes first. Matching open asks: `docs/ASKS.md:14` and `docs/SERIOUS-TODOS.md:39-41`.
+- [ ] The full release gate in `scripts/ship-check.sh` wants both the direct-APK signer (`RELEASE_*`) and the Play signer (`PLAY_UPLOAD_*`), and the two must differ (`scripts/ship-check.sh:265-288`, `README.md:81`). Decide with Ben whether the direct-APK signer is provisioned now or whether the Play AAB goes first. The old ask ledgers (removed in the step 1 cleanup, kept at tag `archive/pre-cleanup-2026-11-01`) carried the same open item: provision both signers outside the repository, build the final APK/AAB, verify the signer, manifest, archive boundary and 16 KiB native alignment, then install the exact packaged APK with `dev/pm3 --profile release --serial <serial> install <APK>`.
 
 ## 4. App content declarations · agent drafts, Ben submits
 
@@ -67,7 +67,7 @@ Console path: Monitor and improve, App content. Overview: https://support.google
   - push `PRIVACY.md` to stable `main` (a push, so it needs his yes)
   - point the in-app link at the dev URL
 
-  Then give Console the same URL. The `ManualSheet.kt` change belongs to the code session (`20261101_174338_669df7`). Requirement: `spec/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md` section 6. Google's User Data policy: https://support.google.com/googleplay/android-developer/answer/10144311
+  Then give Console the same URL. The `ManualSheet.kt` change belongs to the code session (`20261101_174338_669df7`). Requirement: `docs/plans/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md` section 6. Google's User Data policy: https://support.google.com/googleplay/android-developer/answer/10144311
 - [ ] Before publishing, check `PRIVACY.md` against this branch's manifest. It must cover the microphone, playback capture, the root capture service, notification-listener metadata, local files, and the remote relay. Spec section 6 lists the required topics.
 - [ ] Data safety form, filled in from the exact release binary. Google requires it for every app on Google Play, including apps on closed, open, and production testing tracks. Ref: https://support.google.com/googleplay/android-developer/answer/10787469
 - [ ] Ads: No. App access: no login. Explain how a reviewer reaches each audio source.
@@ -93,7 +93,7 @@ Ref: https://support.google.com/googleplay/android-developer/answer/9866151
 - [ ] Upload an Android App Bundle (`.aab`). APK uploads are only for apps created before August 2021. Ref: https://support.google.com/googleplay/android-developer/answer/9859348
 - [x] Target API: `targetSdk = 36` (`app/build.gradle.kts:169`). Since 2026-08-31, new apps and app updates must target Android 16 (API 36) or higher. Ref: https://support.google.com/googleplay/android-developer/answer/11926878
 - [ ] `versionCode` must increase with every upload (9859152). Today it is derived from `appVersion = "2.0.0"`, giving `2000000` (`app/build.gradle.kts:10-12`).
-- [ ] Before any upload, run the release checks in `docs/AGENTS.md`, Validation (`:35-51`), and `spec/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md` section 8: bundletool validation, signer fingerprints, 16 KiB alignment, Data safety and foreground-service answers matching runtime behavior, and a reachable privacy policy. The bundle step is `:app:bundleRelease :app:validateReleaseBundle :app:checkPlayBoundary` (`scripts/ship-check.sh:324`).
+- [ ] Before any upload, run the release checks in `docs/AGENTS.md`, Validation, and `docs/plans/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md` section 8: bundletool validation, signer fingerprints, 16 KiB alignment, Data safety and foreground-service answers matching runtime behavior, and a reachable privacy policy. The bundle step is `:app:bundleRelease :app:validateReleaseBundle :app:checkPlayBoundary` (`scripts/ship-check.sh:315`).
 - [ ] Internal testing release: up to 100 testers, and builds normally reach them within seconds. Ref: https://support.google.com/googleplay/android-developer/answer/9845334
 
 ## 7. Closed test and production access · Ben
@@ -112,8 +112,8 @@ This applies to personal accounts created after 2023-11-13. Ref: https://support
 
 ## Background in this repo
 
-- `docs/dev/archive/2026-08-05-scope-reset/historical/docs/dev/GOOGLE-PLAY-PUBLISHING-PLAN.md`: the 2026-07-22 plan, archived at the 2026-08-05 scope reset. Its trial and $3.99 Billing model is superseded by `docs/AGENTS.md:33` (the first public release is free, with no purchase flow). Its `minSdk = 35` is stale: the minimum is now 29 (`app/build.gradle.kts:168`). Its section 17 is still a useful index of official pages.
-- `docs/dev/PUBLIC-RELEASE-DIVERGENCE.md:114`: the remaining Play blockers as of the scope reset.
+- `docs/plans/GOOGLE-PLAY-PUBLISHING-PLAN.md`: the 2026-07-22 plan, archived at the 2026-08-05 scope reset and moved here in the step 1 cleanup. Its links to other docs point at files that now live only at tag `archive/pre-cleanup-2026-11-01`. Its trial and $3.99 Billing model is superseded by `docs/AGENTS.md`, Product boundaries (the first public release is free, with no purchase flow). Its `minSdk = 35` is stale: the minimum is now 29 (`app/build.gradle.kts:168`). Its section 17 is still a useful index of official pages.
+- `docs/plans/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md`: the signing, permission and declaration requirements (moved from `spec/` in the step 1 cleanup).
 - `scripts/check-play-boundary.sh` and `scripts/test-play-boundary.sh`: the source and artifact boundary checks for the Play build.
 
 ## Picking this up

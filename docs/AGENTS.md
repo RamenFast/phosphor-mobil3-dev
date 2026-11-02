@@ -3,33 +3,27 @@
 ## Project surface
 
 - `./gradlew` owns Android compilation, native packaging, signing verification, and release artifacts.
-- `dev/pm3` is local developer tooling for build, install, launch, diagnostics, screenshots, recordings, and self-test receipts.
-- `relay/` is the retained PC audio and geometry relay.
-- `rust/` is the Android JNI runtime.
+- `dev/pm3` is local developer tooling: build, install, launch, diagnostics, screenshots, recordings.
+- `rust/` is the Android JNI runtime. Its path dependencies expect the desktop engine checked out beside this repo as `../phosphor`.
+- `relay/` is the PC audio relay.
 
-Do not add an app runtime administration protocol. Device operations always require an explicit adb serial.
+## Laws
 
-## Repository laws
-
-- Read the root governance file and relevant skills before changing code or documentation.
-- Do not use Python.
-- Use `$JCODE_SCRATCH_DIR` or an ignored project directory for temporary files.
-- Keep the Gradle wrapper as the sole Android build runtime.
-- Use locked Cargo resolution in build and test commands.
-- Do not commit credentials, keystores, passwords, private host lists, or generated artifacts.
-- Preserve historical decisions and receipts. Append to append-only ledgers.
-- Preserve `docs/dev/archive/2026-08-05-scope-reset/protected/` byte-for-byte.
-- Do not push, force-push, publish, or submit to a store without explicit approval.
+- Ben's current direction decides. When it is unclear, ask him.
+- No Python in the project.
+- The Gradle wrapper is the only Android build runtime. Cargo always runs with `--locked`.
+- Temporary files go in an ignored directory, never in tracked paths.
+- Never commit credentials, keystores, passwords, private host lists, or build artifacts. `local.properties` holds signing secrets: never print or copy it.
+- Device commands always name an explicit adb serial.
+- No push, force-push, publish, or store submission without Ben's explicit yes.
 
 ## Product boundaries
 
-- One application: debug and release build types only.
-- Debug package: `dev.phosphor.mobil3.debug`.
-- Production package: `dev.phosphor.mobil3`.
+- One application with two build types: debug (`dev.phosphor.mobil3.debug`) and release (`dev.phosphor.mobil3`).
 - Minimum SDK 29; target and compile SDK 36.
-- No account, ads, usage tracking, behavior tracking, or automatic reporting service.
-- No first-run relay endpoints or network connection.
-- Saved PC relays must remain inside the supported Tailscale address space.
+- No account, ads, usage or behavior tracking, or automatic reporting.
+- No runtime administration protocol inside the app.
+- No network connection until the user adds a relay, and saved relays stay inside the Tailscale address space.
 - The first public release is free, with no purchase flow.
 
 ## Validation
@@ -46,6 +40,6 @@ scripts/check-play-boundary.sh source --json
 scripts/ship-check.sh --json
 ```
 
-For device work, use the Android skill's explicit Galaxy S25 serial. `dev/pm3 install` must read back the installed base APK and prove its SHA-256 and signer. Record package, version, signer, device build, commands, observations, and artifact hashes.
+Device work runs on the ASUS test phone; take its serial from `adb devices`. `dev/pm3 install` reads back the installed APK and proves its SHA-256 and signer.
 
-A release claim also needs approved signing inputs, a clean exact release tag, clean sibling-engine source, `scripts/ship-check.sh --only=release.bundle`, and installation of the exact packaged release APK on the phone.
+A release also needs approved signing inputs, a clean release tag, clean sibling-engine source, `scripts/ship-check.sh --only=release.bundle`, and the exact packaged release APK installed on the phone.

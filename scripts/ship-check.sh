@@ -45,7 +45,7 @@ fi
 
 if [ "$MODE" = schema ]; then
   # shellcheck disable=SC2016 # $schema is a literal JSON Schema property name.
-  printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{"schema":{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ship-check contract","type":"object","additionalProperties":false,"properties":{"arguments":{"const":["--json","--quick","--only=PREFIX","schema"]},"gate_states":{"const":["green","red","skip"]},"exit_codes":{"const":{"0":"all non-skipped gates green; skips are allowed only for an unfiltered quick run","2":"one or more selected gates are red or an explicitly selected gate was skipped","3":"bad input","4":"runtime failure"}},"gate_ids":{"const":["android.compile","android.tests","android.lint","android.assemble","native.tests","native.lint","relay.tests","relay.lint","pm3.fixtures","boundary.fixtures","release.fixtures","boundary.source","scope.docs","scope.source","privacy.tracking","protected.archive","nopython","antistub","signing.release","provenance.release","release.bundle"]}}}}}\n' \
+  printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{"schema":{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ship-check contract","type":"object","additionalProperties":false,"properties":{"arguments":{"const":["--json","--quick","--only=PREFIX","schema"]},"gate_states":{"const":["green","red","skip"]},"exit_codes":{"const":{"0":"all non-skipped gates green; skips are allowed only for an unfiltered quick run","2":"one or more selected gates are red or an explicitly selected gate was skipped","3":"bad input","4":"runtime failure"}},"gate_ids":{"const":["android.compile","android.tests","android.lint","android.assemble","native.tests","native.lint","relay.tests","relay.lint","pm3.fixtures","boundary.fixtures","release.fixtures","boundary.source","scope.docs","scope.source","privacy.tracking","nopython","antistub","signing.release","provenance.release","release.bundle"]}}}}}\n' \
     "$TOOL" "$VERSION" "$(ts)"
   exit 0
 fi
@@ -203,8 +203,8 @@ fi
 
 if selected scope.docs; then
   docs_hits=$(grep -RInE 'Nexus|Nexidex|phosphor[.]nexus|dev[.]nexus[.]mobile|NEXUS_BINDER|agent surface|agent harness|agent entry|agent control' \
-    README.md HANDOFF.md vision spec docs \
-    --exclude-dir=dev --exclude='PUBLIC-RELEASE-DIVERGENCE.md' 2>/dev/null | head -20 || true)
+    README.md docs \
+    --exclude-dir=dev 2>/dev/null | head -20 || true)
   if [ -z "$docs_hits" ]; then
     record scope.docs green "active product docs make no retired integration promises"
   else
@@ -229,15 +229,6 @@ if selected privacy.tracking; then
     record privacy.tracking green "no analytics, behavior tracking, advertising ID, or reporting SDK"
   else
     record privacy.tracking red "tracking or reporting marker found" "inspect and remove: $tracking_hits"
-  fi
-fi
-
-if selected protected.archive; then
-  protected_dir="docs/dev/archive/2026-08-05-scope-reset/protected"
-  if [ -f "$protected_dir/SHA256SUMS" ] && (cd "$protected_dir" && sha256sum -c SHA256SUMS >/dev/null 2>&1); then
-    record protected.archive green "all protected inputs remain byte-identical"
-  else
-    record protected.archive red "protected archive hash mismatch" "restore the protected archive from phase 00"
   fi
 fi
 

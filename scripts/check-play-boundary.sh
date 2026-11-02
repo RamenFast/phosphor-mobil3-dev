@@ -117,7 +117,7 @@ check_manifest() {
   status=$?
   set -e
   if [ "$status" -eq 4 ]; then
-    fail 4 manifest_boundary_violation "$output" "repair the named manifest entry according to spec/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md"
+    fail 4 manifest_boundary_violation "$output" "repair the named manifest entry according to docs/plans/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md"
   fi
   [ "$status" -eq 0 ] || fail 4 manifest_parser_failed "$output" "repair the build JDK or private parser before accepting manifest evidence"
 }
