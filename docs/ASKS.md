@@ -144,3 +144,4 @@ All worker workstreams use proposed Astra/high reasoning, at most two live worke
 | date | ask | status |
 |---|---|---|
 | 2026-11-01 | Develop from the build installed on the Galaxy S25 (`06f84e2`), not from `master`, and prepare that line for a Play Store release | active · base reproduced byte-for-byte, all offline checks green · [receipt](dev/receipts/play-store/2026-11-01-s25-base-reproduction.md) |
+| 2026-11-01 | Walk through the Google-side Play developer setup and keep it as a durable todo list with exact links, for a later session to pick up | active · [PLAY-STORE-TODO](plans/PLAY-STORE-TODO.md) · Hermes session `20261101_181137_520e6c` |

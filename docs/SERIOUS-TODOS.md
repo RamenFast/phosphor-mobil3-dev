@@ -1,5 +1,9 @@
 # Serious todos
 
+## Play Store line, 2026-11-01
+
+- [ ] Google Play developer account, Console app, upload key, declarations, listing, and the 14-day closed test: [PLAY-STORE-TODO.md](plans/PLAY-STORE-TODO.md) holds the ordered list with official links and file references.
+
 ## Active mobile expansion, 2026-09-08
 
 - [ ] Finish section 1's exact artifact boundary after [independent round 1, 7/10](plans/mobile-expansion/critiques/section-01-round-01.md). The original 91 parser checks passed, but real debug APK plus unrelated production XML escaped the archive gate. Correct actual packaged-manifest binding and two error contracts, then independently review round 2.
