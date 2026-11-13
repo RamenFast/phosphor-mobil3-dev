@@ -55,12 +55,6 @@ pub enum Cmd {
     /// mode pins the Activity and rotates the BEAM to gravity instead — the chrome
     /// physically cannot move. DSP path only; remote geometry keeps its own frame.
     SetViewRotation(u8),
-    /// Geometry FX stage (0 off · 1 kaleido · 2 spin · 3 tunnel · 4 pulse). Applies to
-    /// locally computed beams only, BEFORE SetViewRotation's quarter-turn remap. NEVER
-    /// mirrored to the desktop — these are phone-local tags the protocol doesn't know.
-    SetGeomFx(u8),
-    /// Geometry FX depth 0..1.
-    SetGeomAmount(f32),
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
     /// Custom beam light: 1–3 color slots + grid color. count==0 returns to presets.
@@ -238,14 +232,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut target_fps: i32 = 0; // 0 = panel vsync
     let mut oversample: u32 = 1; // DSP reconstruction multiplier (48/96/192 kHz)
     let mut view_rotation: u32 = 0; // quadrants; beam-to-gravity in UI-locked mode
-    // Geometry FX state is loop-local (like view_rotation/oversample): the idle loop
-    // drains commands before the first surface, so pre-surface restoreTuning is safe
-    // without joining the renderer-creation mirror block below.
-    let mut geom_fx: u8 = 0;
-    let mut geom_amount: f32 = 0.6;
-    let mut geom_phase: f32 = 0.0;
-    let mut geom_env: f32 = 0.0;
-    let mut geom_last = std::time::Instant::now();
     // Settings can arrive before the first surface. Mirror them so renderer creation uses
     // persisted values instead of reverting to defaults.
     let mut grid_on = true;
@@ -405,11 +391,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     oversample = crate::engine::set_reconstruction_rate(&mut computer, n as u32);
                     log::info!("beam oversample: {oversample}x");
                 }
-                Cmd::SetGeomFx(k) => {
-                    geom_fx = k.min(4);
-                    log::info!("geom fx: {geom_fx}");
-                }
-                Cmd::SetGeomAmount(v) => geom_amount = v.clamp(0.0, 1.0),
                 Cmd::SetViewRotation(q) => {
                     view_rotation = (q % 4) as u32;
                     log::info!("view rotation: {}°", view_rotation * 90);
@@ -529,9 +510,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             (source_active, samples, raw_peak)
         });
 
-        // Meter, autosize and geometry share the same raw pre-gain stereo window.
+        // Meter and autosize share the same raw pre-gain stereo window.
         let frame_peak = raw_peak.map_or(0.0, crate::engine::StereoPeak::max);
-        geom_env = frame_peak.max(geom_env * 0.92);
 
         // Empty and sub-threshold frames hold gain. Remote geometry bypasses local DSP.
         if source_active && !geometry_active && auto_gain.enabled() {
@@ -708,28 +688,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             } else {
                 (w, h)
             };
-            let mut segments = crate::engine::compute_scope_frame(&mut computer, &samples, cw, ch);
-            // Geometry FX bends the freshly computed beam BEFORE the quarter-turn remap,
-            // so it composes with every mode and every rotation lock. Local beams only —
-            // remote geometry frames and the resting dot never reach this branch.
-            if geom_fx != 0 && geom_amount > 0.0 {
-                let dt = geom_last.elapsed().as_secs_f32().clamp(0.0, 0.05);
-                geom_phase += dt
-                    * match geom_fx {
-                        2 => geom_amount * (0.5 + 5.0 * geom_env.min(1.2)), // audio-whipped spin
-                        _ => 0.6, // tunnel breathing clock
-                    };
-                segments = crate::engine::apply_geom_fx(
-                    &segments,
-                    cw,
-                    ch,
-                    geom_fx,
-                    geom_amount,
-                    geom_phase,
-                    geom_env,
-                );
-            }
-            geom_last = std::time::Instant::now();
+            let segments = crate::engine::compute_scope_frame(&mut computer, &samples, cw, ch);
             if view_rotation == 0 {
                 advance(r, &segments, &mut seg_count);
             } else {

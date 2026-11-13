@@ -74,7 +74,7 @@ class SettingsArchiveTest {
         val tuning = mapOf<String, Any>(
             "room" to "paper", "mode" to 0, "beam" to 2, "gain" to 2.25f,
             "auto_gain" to false, "grid" to true, "fullscreen" to false,
-            "hud_mode" to 2, "band_mode" to 0, "focus" to 1.5f, "geom_amount" to 0.2f,
+            "hud_mode" to 2, "band_mode" to 0, "focus" to 1.5f,
             "beam_random_range" to "4,25", "glow_random_range" to "0.1,0.8",
             "scope_rotation_locked" to false, "scope_locked_orientation" to 8,
             "custom_count" to 3, "custom_rgb" to "0,1,0,1,0,1,0.25,0.5,0.75",

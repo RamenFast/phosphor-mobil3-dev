@@ -221,9 +221,7 @@ fun ManualSheet(
             Prose(
                 "MODE holds 5 faces — XY figures, waveform, ring, spectrum. " +
                     "The ⚄ die rolls a new face on every track; BAN FACES strikes the " +
-                    "ones you're tired of (at least two stay in play). GEOMETRY bends " +
-                    "the beam after any face draws it: kaleido, spin, tunnel, pulse — " +
-                    "spin and pulse ride the loudness of the music.",
+                    "ones you're tired of (at least two stay in play).",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
 

@@ -3,10 +3,6 @@
 Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop [phosphor](https://github.com/RamenFast/phosphor) beam engine to a full-screen mobile instrument with local playback, Android playback capture, microphone input, and an optional Tailscale PC relay.
 
 <p align="center">
-  <img src="docs/screenshots/kaleido-live.png" width="45%" alt="KALEIDO geometry effect on live audio">
-  <img src="docs/screenshots/kaleido-dense.png" width="45%" alt="Dense kaleidoscope pattern from live music">
-</p>
-<p align="center">
   <img src="docs/screenshots/source-picker.png" width="45%" alt="Source picker for files, playback capture, microphone, and remote PC">
   <img src="docs/screenshots/settings-sheet.png" width="45%" alt="Focus, gain, beam, and glow settings">
 </p>

@@ -162,8 +162,6 @@ interface ScopeActions {
     fun setBeamRandomRange(lo: Float, hi: Float)
     fun tapGlowRandom()
     fun setGlowRandomRange(lo: Float, hi: Float)
-    fun setGeomFx(kind: Int)
-    fun setGeomAmount(v: Float)
     fun setGrid(on: Boolean)
     fun setGridData(on: Boolean)
     fun setGainAuto(on: Boolean)
@@ -744,8 +742,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                 Sheet.MODE -> ModeSheet(
                     state, p, reduced,
                     onPick = { actions.setMode(it) },
-                    onGeomFx = { actions.setGeomFx(it) },
-                    onGeomAmount = { actions.setGeomAmount(it) },
                 ) {
                     sheet = Sheet.NONE
                 }

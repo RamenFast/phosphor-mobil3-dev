@@ -27,7 +27,6 @@ class KnownDefaultsTest {
         assertEquals(1, state.hudMode)
         assertEquals(1, state.bandMode)
         assertTrue(state.fullscreen)
-        assertEquals(0.6f, state.geomAmount)
         assertEquals(6f, state.beamRandomLo)
         assertEquals(20f, state.beamRandomHi)
         assertEquals(3f, state.cycleSeconds)
@@ -116,7 +115,6 @@ class KnownDefaultsTest {
             "ui.hudMode = p.getInt(\"hud_mode\", 1).coerceIn(0, 2)",
             "ui.bandMode = p.getInt(\"band_mode\", 1)",
             "ui.fullscreen = p.getBoolean(\"fullscreen\", true)",
-            "ui.geomAmount = p.getFloat(\"geom_amount\", 0.6f)",
             "range(\"beam_random_range\", 1f, 30f, 6f, 20f)",
             "ui.cycleSeconds = p.getFloat(\"cycle_seconds\", 3.0f)",
             "p.getInt(\"custom_count\", 0)",

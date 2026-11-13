@@ -46,9 +46,6 @@ fun rollModeExcluding(currentMode: Int, banned: Set<Int> = emptySet()): Int {
     return pool.random()
 }
 
-// Geometry FX stage (rides every mode; phone-local, never mirrored to the desktop).
-val GeomFxLabels = listOf("off", "kaleido", "spin", "tunnel", "pulse")
-
 data class BeamSwatch(val label: String, val color: Color)
 
 val BeamColors = listOf(

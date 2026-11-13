@@ -52,8 +52,6 @@ class ScopeUiState {
     var glowRandomArmed by mutableStateOf(false)
     var glowRandomLo by mutableFloatStateOf(0.30f)
     var glowRandomHi by mutableFloatStateOf(0.90f)
-    var geomFx by mutableIntStateOf(0)
-    var geomAmount by mutableFloatStateOf(0.6f)
     var autoGain by mutableStateOf(true)
     var localAutoGain by mutableStateOf(true)
     var noSignal by mutableStateOf(false)

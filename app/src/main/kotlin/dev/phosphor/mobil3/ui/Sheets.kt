@@ -739,15 +739,13 @@ fun SourceSheet(
     }
 }
 
-// Grouped scope modes and geometry controls.
+// Grouped scope modes.
 @Composable
 fun ModeSheet(
     state: ScopeUiState,
     p: Palette,
     reduced: Boolean,
     onPick: (Int) -> Unit,
-    onGeomFx: (Int) -> Unit,
-    onGeomAmount: (Float) -> Unit,
     onDismiss: () -> Unit,
 ) {
     val view = LocalView.current
@@ -838,30 +836,6 @@ fun ModeSheet(
                     Spacer(Modifier.height(6.dp))
                 }
             }
-            SectionHeading("GEOMETRY", p)
-            Row(
-                Modifier.fillMaxWidth(),
-                horizontalArrangement = Arrangement.spacedBy(6.dp),
-            ) {
-                GeomFxLabels.forEachIndexed { i, label ->
-                    Box(Modifier.weight(1f)) {
-                        ChipCell(label, state.geomFx == i, p, small = true) {
-                            Haptics.medium(view)
-                            onGeomFx(i)
-                        }
-                    }
-                }
-            }
-            if (state.geomFx != 0) {
-                DragRule("AMOUNT", state.geomAmount, 0f, 1f, p, { "%.0f %%".format(it * 100) }) {
-                    onGeomAmount(it)
-                }
-            }
-            Prose(
-                "geometry bends the beam after the mode draws it — it rides every face, " +
-                    "⚄ included. phone-local: a remote desktop beam is untouched",
-                p.muted, modifier = Modifier.padding(top = 4.dp),
-            )
             Prose(
                 "the sheet stays open — tap modes to try them live behind the glass",
                 p.muted, modifier = Modifier.padding(top = 4.dp),

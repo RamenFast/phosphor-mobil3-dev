@@ -75,8 +75,6 @@ object SettingsArchive {
         "beam_random_range" to rangeString(1f, 30f),
         "glow_random_armed" to Spec(Kind.BOOLEAN),
         "glow_random_range" to rangeString(0f, 0.98f),
-        "geom_fx" to intRange(0, 4),
-        "geom_amount" to floatRange(0f, 1f),
         "grid" to Spec(Kind.BOOLEAN),
         "grid_data" to Spec(Kind.BOOLEAN),
         "focus" to floatRange(0.3f, 3f),

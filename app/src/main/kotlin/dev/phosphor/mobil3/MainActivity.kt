@@ -1153,8 +1153,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putString("beam_random_range", "${ui.beamRandomLo},${ui.beamRandomHi}")
             putBoolean("glow_random_armed", ui.glowRandomArmed)
             putString("glow_random_range", "${ui.glowRandomLo},${ui.glowRandomHi}")
-            putInt("geom_fx", ui.geomFx)
-            putFloat("geom_amount", ui.geomAmount)
             putBoolean("grid", ui.grid)
             putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)
             putFloat("focus", focusPref)
@@ -1245,9 +1243,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.glowRandomArmed = p.getBoolean("glow_random_armed", false)
         ui.bestiaryFound = p.getBoolean("bestiary_found", false)
         refreshRootState()
-        ui.geomFx = p.getInt("geom_fx", 0).coerceIn(0, 4).also { PhosphorNative.setGeomFx(it) }
-        ui.geomAmount = p.getFloat("geom_amount", 0.6f).coerceIn(0f, 1f)
-            .also { PhosphorNative.setGeomAmount(it) }
         ui.grid = p.getBoolean("grid", false).also { PhosphorNative.setGrid(it) }
         ui.gridData = p.getBoolean(dev.phosphor.mobil3.ui.GridData.KEY, dev.phosphor.mobil3.ui.GridData.DEFAULT)
         ui.gridReading = null
@@ -1824,8 +1819,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.glowRandomLo = lo.coerceIn(0f, 0.98f)
         ui.glowRandomHi = hi.coerceIn(ui.glowRandomLo, 0.98f)
     }
-    override fun setGeomFx(kind: Int) { ui.geomFx = kind.coerceIn(0, 4); PhosphorNative.setGeomFx(ui.geomFx) }
-    override fun setGeomAmount(v: Float) { ui.geomAmount = v.coerceIn(0f, 1f); PhosphorNative.setGeomAmount(ui.geomAmount) }
     override fun setGrid(on: Boolean) { PhosphorNative.setGrid(on); ui.grid = on }
     override fun setGridData(on: Boolean) {
         ui.gridData = on
