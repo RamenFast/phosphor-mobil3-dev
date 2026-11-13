@@ -2,11 +2,15 @@ package dev.phosphor.mobil3.ui
 
 import java.io.File
 import androidx.compose.runtime.BroadcastFrameClock
+import androidx.compose.ui.geometry.Offset
+import androidx.compose.ui.input.nestedscroll.NestedScrollSource
+import androidx.compose.ui.unit.Velocity
 import kotlinx.coroutines.CoroutineDispatcher
 import kotlinx.coroutines.CoroutineScope
 import kotlinx.coroutines.Dispatchers
 import kotlinx.coroutines.Job
 import kotlinx.coroutines.cancel
+import kotlinx.coroutines.runBlocking
 import org.junit.Test
 import kotlin.test.assertEquals
 import kotlin.test.assertFalse
@@ -158,7 +162,8 @@ class SheetEntryPolicyTest {
             "detectTapGestures(onTap = { dismiss() })",
             "Modifier.clickable(onClick = dismiss)",
             "onDragEnd = { settleDismiss(0f) }",
-            "settleDismiss(available.y.coerceAtLeast(0f))",
+            // The nested close is owned by SheetPullConnection (tested by behavior below).
+            ".nestedScroll(dismissNestedScroll)",
             "if (!openState.targetState && openState.isIdle) onDismiss()",
             "!openState.isIdle || dismissOffset.isRunning",
         )) assertTrue(host.contains(wiring), wiring)
@@ -283,11 +288,50 @@ class SheetEntryPolicyTest {
             "dismissal.dragBy(delta)",
             "dismissal.settle(velocityY, dismissDistancePx, dismissFlickPx, reduced, style)",
             "dismissal.offsetPx.roundToInt()",
-            "if (dismissal.committed != null) return Velocity.Zero",
+            "SheetPullConnection(dismissal) { velocityY -> settleDismiss(velocityY) }",
         )) assertTrue(host.contains(wiring), wiring)
-        assertEquals(2, Regex(Regex.escape("if (dismissal.committed != null) return Offset.Zero")).findAll(host).count())
         assertFalse(host.contains("dismissOffset.snapTo"))
         assertFalse(host.contains("dismissOffset.animateTo"))
+    }
+
+    @Test
+    fun onlyTheFingerPullsASheetAndTheReleaseSettlesBeforeTheBodyCanFling() {
+        val dispatcher = QueuedDispatcher()
+        val scope = CoroutineScope(Job() + dispatcher)
+        try {
+            val state = SheetDismissState(scope)
+            val settled = mutableListOf<Float>()
+            val pull = SheetPullConnection(state) { settled += it }
+            val finger = NestedScrollSource.UserInput
+            val coast = NestedScrollSource.SideEffect
+
+            // A fling's leftover at the top edge is refused, so the body's decay ends there.
+            // Taken, it carried the sheet off-screen for 2-3 s with the scrim still up.
+            assertEquals(Offset.Zero, pull.onPostScroll(Offset.Zero, Offset(0f, 300f), coast))
+            assertEquals(0f, state.rawPx)
+            assertEquals(Velocity.Zero, runBlocking { pull.onPreFling(Velocity(0f, 4000f)) })
+            assertTrue(settled.isEmpty())
+
+            // The finger's leftover pulls; a reversal pushes the sheet home before the body scrolls.
+            assertEquals(Offset(0f, 90f), pull.onPostScroll(Offset.Zero, Offset(0f, 90f), finger))
+            assertEquals(Offset(0f, -30f), pull.onPreScroll(Offset(0f, -30f), finger))
+            assertEquals(60f, state.rawPx)
+            assertEquals(Offset.Zero, pull.onPreScroll(Offset(0f, -30f), coast))
+            assertEquals(Offset.Zero, pull.onPostScroll(Offset.Zero, Offset(0f, 300f), coast))
+            assertEquals(60f, state.rawPx)
+
+            // Letting go settles at once and takes the whole velocity: nothing coasts.
+            val release = Velocity(0f, 2500f)
+            assertEquals(release, runBlocking { pull.onPreFling(release) })
+            assertEquals(listOf(2500f), settled)
+
+            // After the commit every late event is refused.
+            assertTrue(state.commit(SheetEntry.FROM_BOTTOM, fromDrag = true))
+            assertEquals(Offset.Zero, pull.onPreScroll(Offset(0f, -10f), finger))
+            assertEquals(Offset.Zero, pull.onPostScroll(Offset.Zero, Offset(0f, 10f), finger))
+            assertEquals(Velocity.Zero, runBlocking { pull.onPreFling(release) })
+            assertEquals(listOf(2500f), settled)
+        } finally { scope.cancel() }
     }
 
     private class QueuedDispatcher : CoroutineDispatcher() {

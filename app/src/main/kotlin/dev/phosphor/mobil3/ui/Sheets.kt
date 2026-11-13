@@ -8,6 +8,7 @@ import androidx.compose.animation.core.Animatable
 import androidx.compose.animation.core.RepeatMode
 import androidx.compose.animation.core.VisibilityThreshold
 import androidx.compose.animation.core.animateFloat
+import androidx.compose.animation.core.animateFloatAsState
 import androidx.compose.animation.core.infiniteRepeatable
 import androidx.compose.animation.core.rememberInfiniteTransition
 import androidx.compose.animation.core.spring
@@ -243,6 +244,51 @@ internal class SheetDismissState(private val scope: CoroutineScope) {
     }
 }
 
+/**
+ * Hands the finger's leftover downward pull from a sheet's scrolling body to the sheet.
+ *
+ * Only the finger pulls. A fling's leftover is refused, so the body's decay stops at its
+ * top edge, and the release is settled in [onPreFling], before the body can fling. While
+ * a fling's leftover was taken here, the decay ran its whole 2-3 s carrying the sheet
+ * off-screen with the scrim still up, and the release was only settled after it.
+ */
+internal class SheetPullConnection(
+    private val dismissal: SheetDismissState,
+    private val settle: (velocityY: Float) -> Unit,
+) : NestedScrollConnection {
+    override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
+        if (dismissal.committed != null) return Offset.Zero
+        if (source != NestedScrollSource.UserInput) return Offset.Zero
+        if (dismissal.rawPx <= 0f || available.y >= 0f) return Offset.Zero
+        // A reversal first pushes the displaced sheet home; only the remainder
+        // scrolls content away from its top edge.
+        val consumedY = available.y.coerceAtLeast(-dismissal.rawPx)
+        dismissal.dragBy(consumedY)
+        return Offset(0f, consumedY)
+    }
+
+    override fun onPostScroll(
+        consumed: Offset,
+        available: Offset,
+        source: NestedScrollSource,
+    ): Offset {
+        if (dismissal.committed != null) return Offset.Zero
+        // The body gets first refusal, and a fling cannot start or feed a dismissal.
+        if (source != NestedScrollSource.UserInput || available.y <= 0f) return Offset.Zero
+        if (dismissal.rawPx == 0f) dismissal.begin()
+        dismissal.dragBy(available.y)
+        return Offset(0f, available.y)
+    }
+
+    override suspend fun onPreFling(available: Velocity): Velocity {
+        if (dismissal.committed != null) return Velocity.Zero
+        if (dismissal.rawPx <= 0f) return Velocity.Zero
+        // A displaced sheet takes the whole release, so nothing coasts under it.
+        settle(available.y.coerceAtLeast(0f))
+        return available
+    }
+}
+
 internal val LocalSheetEntryQuadrant = staticCompositionLocalOf { 0 }
 
 @Composable
@@ -302,52 +348,35 @@ fun SheetHost(
             commitDismiss(true)
         }
     }
-    // A scroll child first consumes every ordinary scroll delta. Only its unconsumed
-    // downward remainder at TOP reaches this parent, becoming the sheet pull.
+    // A scroll child first consumes every ordinary scroll delta. Only the finger's
+    // unconsumed downward remainder at TOP reaches this parent, becoming the sheet pull.
     val dismissNestedScroll = remember(style.motion, reduced, dismissDistancePx, dismissFlickPx) {
-        object : NestedScrollConnection {
-            override fun onPreScroll(available: Offset, source: NestedScrollSource): Offset {
-                if (dismissal.committed != null) return Offset.Zero
-                if (dismissal.rawPx <= 0f || available.y >= 0f) return Offset.Zero
-                // A reversal first pushes the displaced sheet home; only the remainder
-                // scrolls content away from its top edge.
-                val consumedY = available.y.coerceAtLeast(-dismissal.rawPx)
-                dragDismissBy(consumedY)
-                return Offset(0f, consumedY)
-            }
-
-            override fun onPostScroll(
-                consumed: Offset,
-                available: Offset,
-                source: NestedScrollSource,
-            ): Offset {
-                if (dismissal.committed != null) return Offset.Zero
-                if (available.y <= 0f) return Offset.Zero
-                if (dismissal.rawPx == 0f) beginDismiss()
-                dragDismissBy(available.y)
-                return Offset(0f, available.y)
-            }
-
-            override suspend fun onPostFling(consumed: Velocity, available: Velocity): Velocity {
-                if (dismissal.committed != null) return Velocity.Zero
-                if (dismissal.rawPx <= 0f) return Velocity.Zero
-                settleDismiss(available.y.coerceAtLeast(0f))
-                return if (available.y > 0f) Velocity(0f, available.y) else Velocity.Zero
-            }
-        }
+        SheetPullConnection(dismissal) { velocityY -> settleDismiss(velocityY) }
     }
     LaunchedEffect(openState.targetState, openState.isIdle) {
         if (!openState.targetState && openState.isIdle) onDismiss()
     }
     BackHandler { dismiss() }
+    // The scrim belongs to the sheet: it thins as the sheet is pulled away and leaves
+    // with the sheet's own exit, so the scope is never left dark behind a card that is gone.
+    val scrimExit by animateFloatAsState(
+        if (openState.targetState) 1f else 0f,
+        styleSpec(reduced, style, Motion.settle, Motion.accelerate),
+        label = "sheetScrim",
+    )
     Box(
         Modifier
             .fillMaxSize()
-            .background(
-                Color.Black.copy(
-                    alpha = Dim.scrimAlpha * (entryReveal?.progress ?: 1f)
+            .drawBehind {
+                val pulled = if (sheetHeightPx > 0) {
+                    (dismissal.offsetPx / sheetHeightPx).coerceIn(0f, 1f)
+                } else 0f
+                drawRect(
+                    Color.Black,
+                    alpha = Dim.scrimAlpha * (entryReveal?.progress ?: 1f) *
+                        (1f - pulled) * scrimExit,
                 )
-            )
+            }
             .pointerInput(Unit) { detectTapGestures(onTap = { dismiss() }) },
     ) {
         Box(
