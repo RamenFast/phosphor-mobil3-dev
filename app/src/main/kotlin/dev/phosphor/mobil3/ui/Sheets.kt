@@ -844,7 +844,7 @@ fun ModeSheet(
     }
 }
 
-// ── ROOM: the 12 chrome rooms (self-portrait tiles arrive with the three souls). ──
+// ── ROOM: the shipped chrome rooms. ──
 @Composable
 fun RoomSheet(
     state: ScopeUiState,

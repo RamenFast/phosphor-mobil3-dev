@@ -239,7 +239,7 @@ fun ManualSheet(
             Prose(
                 "LIGHT picks the phosphor color — presets or up to three custom slots " +
                     "that can cycle on a timer or once per track. ROOM changes the whole " +
-                    "chrome character; thirteen rooms, each with its own temperament.",
+                    "chrome character; three rooms, each with its own temperament.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
 

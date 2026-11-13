@@ -59,7 +59,7 @@ class RoomStyleOverrideTest {
         for (room in Rooms) assertEquals(room.style, room.style.overridden(StyleOverride()))
         val custom = RoomStyle(durationScale = 1.7f, densityScale = .8f, panelAlphaScale = .7f)
         assertEquals(custom, custom.overridden(StyleOverride()))
-        assertEquals(CarvedStyle, BlossomDark.copy(id = "unknown").style)
+        assertEquals(CarvedStyle, Blossom.copy(id = "unknown").style)
     }
 
     @Test fun feelReplacesAllCoupledFieldsInsteadOfLeavingPreviousRoomResidue() {

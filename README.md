@@ -9,7 +9,7 @@ Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop
 
 ## What it does
 
-- Renders the shared Rust beam engine edge to edge, with 11 scope views and 13 interface rooms.
+- Renders the shared Rust beam engine edge to edge, with 5 scope views and 3 interface rooms.
 - Plays selected files or folders as a gapless local queue with Android media controls.
 - Converts audio from compatible Android apps into light after the user approves the system playback-capture prompt.
 - Uses the microphone as an optional live source after runtime permission is granted.

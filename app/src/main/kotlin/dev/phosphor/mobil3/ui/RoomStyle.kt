@@ -70,7 +70,6 @@ val GlassStyle = RoomStyle(
 
 private val styleById = mapOf(
     "amoled" to VoidStyle,
-    "amber" to BenchStyle,
     "glass" to GlassStyle,
 )
 
