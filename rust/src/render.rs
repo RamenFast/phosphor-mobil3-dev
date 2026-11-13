@@ -45,10 +45,6 @@ pub enum Cmd {
     NewLocalItem(u64),
     /// Phosphor persistence 0..0.98 (glow / trail length).
     SetGlow(f32),
-    /// Orbit the 3D camera by deltas (radians). 2D modes ignore it silently.
-    OrbitBy(f32, f32),
-    /// Dolly the 3D camera by a delta (positive = pull back). Clamped 1.6..8.
-    DollyBy(f32),
     /// Remove-animations accessibility: hard cuts instead of envelopes.
     SetReducedMotion(bool),
     /// Beam focus in px (the desktop slider, 0.3..3.0) — smaller = sharper.
@@ -99,15 +95,12 @@ fn mode_from_index(i: u8) -> Mode {
     match i % MODE_COUNT {
         0 => Mode::Xy,
         1 => Mode::Xy45,
-        2 => Mode::XySwirl,
-        3 => Mode::XyDots,
-        4 => Mode::XyzTakens,
-        5 => Mode::Helix,
         6 => Mode::Waveform,
         7 => Mode::Ring,
         8 => Mode::Spectrum,
-        9 => Mode::SpectrumRadial,
-        _ => Mode::Tunnel,
+        // Engine indices 2-5, 9 and 10 (swirl, dots, attractor, helix, radial, tunnel)
+        // are not shipped; a stale index draws the goniometer.
+        _ => Mode::Xy45,
     }
 }
 
@@ -259,9 +252,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut glow_persistence = defaults.persistence;
     let mut focus_px = defaults.beam_focus;
     let mut last_present = std::time::Instant::now();
-
-    // Camera mirror (Computer's camera is crate-private; set_camera takes absolutes).
-    let (mut cam_yaw, mut cam_pitch, mut cam_dolly) = (0.55_f64, 0.35_f64, 3.0_f64);
 
     // Motion envelopes.
     let mut reduced_motion = false;
@@ -455,15 +445,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     if let Some(r) = renderer.as_mut() {
                         r.persistence = glow_persistence;
                     }
-                }
-                Cmd::OrbitBy(dy, dp) => {
-                    cam_yaw += dy as f64;
-                    cam_pitch = (cam_pitch + dp as f64).clamp(-1.45, 1.45);
-                    computer.set_camera(Some(cam_yaw), Some(cam_pitch), None);
-                }
-                Cmd::DollyBy(d) => {
-                    cam_dolly = (cam_dolly + d as f64).clamp(1.6, 8.0);
-                    computer.set_camera(None, None, Some(cam_dolly));
                 }
                 Cmd::SetFocus(f) => {
                     focus_px = f.clamp(0.3, 3.0);

@@ -110,9 +110,8 @@ var bestiaryFound by mutableStateOf(false)
     fun bindRandomModeRequest(request: () -> Unit) { randomModeRequest = request }
     fun requestRandomMode() { randomModeRequest?.invoke() }
 
-    val modeLabel: String get() = ModeLabels.getOrElse(modeIndex) { "?" }
-    val modeTag: String get() = ModeTags.getOrElse(modeIndex) { "?" }
-    val mode3d: Boolean get() = modeIndex == 4 || modeIndex == 5
+    val modeLabel: String get() = scopeMode(modeIndex)?.label ?: "?"
+    val modeTag: String get() = scopeMode(modeIndex)?.tag ?: "?"
 }
 
 /** Absolute raw-channel values from scopeStats, independent of display gain and HUD visibility. */

@@ -219,7 +219,7 @@ fun ManualSheet(
 
             SectionHeading("THE GLASS", p)
             Prose(
-                "MODE holds 11 faces — XY figures, a 3D attractor, waveforms, spectra. " +
+                "MODE holds 5 faces — XY figures, waveform, ring, spectrum. " +
                     "The ⚄ die rolls a new face on every track; BAN FACES strikes the " +
                     "ones you're tired of (at least two stay in play). GEOMETRY bends " +
                     "the beam after any face draws it: kaleido, spin, tunnel, pulse — " +

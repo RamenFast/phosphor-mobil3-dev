@@ -437,25 +437,6 @@ pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setGlow(
 }
 
 #[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_orbitBy(
-    _env: JNIEnv,
-    _class: JClass,
-    dyaw: jni::sys::jfloat,
-    dpitch: jni::sys::jfloat,
-) {
-    let _ = crate::render::sender().send(crate::render::Cmd::OrbitBy(dyaw, dpitch));
-}
-
-#[unsafe(no_mangle)]
-pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_dollyBy(
-    _env: JNIEnv,
-    _class: JClass,
-    delta: jni::sys::jfloat,
-) {
-    let _ = crate::render::sender().send(crate::render::Cmd::DollyBy(delta));
-}
-
-#[unsafe(no_mangle)]
 pub extern "system" fn Java_dev_phosphor_mobil3_PhosphorNative_setReducedMotion(
     _env: JNIEnv,
     _class: JClass,

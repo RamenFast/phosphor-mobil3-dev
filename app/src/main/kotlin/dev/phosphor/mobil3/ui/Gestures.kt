@@ -279,9 +279,6 @@ interface StageGestureHost {
     /** AUTO-GAIN or VIEW LOCK armed: gain gestures inform, never move. */
     fun gainLocked(): Boolean
     fun gainAutoArmed(): Boolean
-    fun orbitBy(dyaw: Float, dpitch: Float)
-    fun dollyBy(delta: Float)
-    fun is3d(): Boolean
     fun modeStep(delta: Int)
     fun currentGlow(): Float
     fun setGlowAbsolute(g: Float)
@@ -456,9 +453,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                         continue
                     }
                     pinchScale.sample(dist)?.let { zoom ->
-                            if (host.is3d()) {
-                                host.dollyBy((1f - zoom) * 2.2f)
-                            } else if (host.gainLocked()) {
+                            if (host.gainLocked()) {
                                 // Auto-gain owns the viewport, so explain the lock instead of changing gain.
                                 ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
                             } else {
@@ -485,9 +480,7 @@ fun Modifier.stageGestures(host: StageGestureHost, ribbon: RibbonState): Modifie
                     }
                     if (mode == 1 && ch.positionChanged()) {
                         val d = ch.position - ch.previousPosition
-                        if (host.is3d()) {
-                            host.orbitBy(d.x * 0.006f, d.y * 0.006f)
-                        } else if (host.gainLocked()) {
+                        if (host.gainLocked()) {
                             ribbon.text = if (host.gainAutoArmed()) "auto · view locked" else "view locked"
                             ribbon.at = ch.position
                             ribbon.visible = true

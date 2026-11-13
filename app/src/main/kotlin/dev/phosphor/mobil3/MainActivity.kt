@@ -1207,13 +1207,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.controlsAlwaysVisible = dev.phosphor.mobil3.ui.ControlsVisibilityPolicy.alwaysVisible(p.all)
         ui.pipAutoEnter = PictureInPicturePolicy.autoEnter(p.all)
         updatePictureInPictureParams()
-        ui.modeIndex = p.getInt("mode", 1).also { PhosphorNative.setMode(it) }
+        ui.modeIndex = dev.phosphor.mobil3.ui.keptModeOrDefault(p.getInt("mode", 1)).also { PhosphorNative.setMode(it) }
         ui.randomModeArmed = p.getBoolean("random_mode_armed", false)
         lastRandomTrackTitle = runtimePrefs().getString("random_track_title", null)
-        ui.randomBanModes = (p.getString("random_ban_modes", "") ?: "")
-            .split(",").mapNotNull { it.toIntOrNull() }
-            .filter { it in dev.phosphor.mobil3.ui.ModeLabels.indices }.toSet()
-            .let { if (dev.phosphor.mobil3.ui.ModeLabels.size - it.size < 2) emptySet() else it }
+        ui.randomBanModes = dev.phosphor.mobil3.ui.keptBans(
+            (p.getString("random_ban_modes", "") ?: "").split(",").mapNotNull { it.toIntOrNull() },
+        )
         ui.beamIndex = p.getInt("beam", 7).also { PhosphorNative.setBeamColor(it) }
         ui.fpsValue = p.getInt("fps", 0).also { PhosphorNative.setTargetFps(it) }
         ui.oversample = p.getInt("oversample", 1).also { PhosphorNative.setOversample(it) }
@@ -1389,11 +1388,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
 
     private fun rollRandomMode() = applyMode(rollModeExcluding(ui.modeIndex, ui.randomBanModes))
 
-    private fun applyMode(index: Int) {
+    private fun applyMode(requested: Int) {
+        val index = dev.phosphor.mobil3.ui.keptModeOrDefault(requested)
         PhosphorNative.setMode(index); ui.modeIndex = index
         // Remote geometry uses the desktop renderer's mode names.
         if (ui.remote && ui.remoteGeometry) {
-            PhosphorNative.remoteScopeCtl("mode", dev.phosphor.mobil3.ui.ModeTags[index])
+            PhosphorNative.remoteScopeCtl("mode", ui.modeTag)
         }
     }
     override fun setMode(index: Int) {
@@ -1767,9 +1767,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             reassertSourceWake()
         }
     }
-
-    override fun orbitBy(dyaw: Float, dpitch: Float) = PhosphorNative.orbitBy(dyaw, dpitch)
-    override fun dollyBy(delta: Float) = PhosphorNative.dollyBy(delta)
 
     override fun setCustomBeam(colors: List<androidx.compose.ui.graphics.Color>, count: Int) {
         val rgb = FloatArray(9)

@@ -3,25 +3,46 @@ package dev.phosphor.mobil3.ui
 import androidx.compose.ui.graphics.Color
 import kotlin.random.Random
 
-// Mirrors the engine's mode order (phosphor-dsp Mode) and beam presets (phosphor-beam).
-val ModeLabels = listOf(
-    "xy · scope art", "xy · goniometer", "xy · swirl", "xy · dots",
-    "attractor", "time helix", "waveform", "ring",
-    "spectrum", "spectrum · radial", "spectrum · tunnel",
+// The faces this app ships. `engine` is the engine's own mode index (phosphor-dsp Mode
+// order), and it is the value stored in prefs and sent to the renderer, so the list can
+// change without renumbering anyone's saved settings.
+data class ScopeMode(val engine: Int, val label: String, val tag: String)
+
+val ScopeModes = listOf(
+    ScopeMode(0, "xy · scope art", "xy"),
+    ScopeMode(1, "xy · goniometer", "xy45"),
+    ScopeMode(6, "waveform", "wave"),
+    ScopeMode(7, "ring", "ring"),
+    ScopeMode(8, "spectrum", "spec"),
 )
 
-// Short tags for the status band.
-val ModeTags = listOf(
-    "xy", "xy45", "swirl", "dots", "3d", "helix", "wave", "ring", "spec", "radial", "tunnel",
-)
+const val DefaultScopeMode = 1
 
-// A RANDOM roll is always a real engine mode, never the face already on glass, and never
+val ScopeModeIds: List<Int> = ScopeModes.map { it.engine }
+
+fun scopeMode(engine: Int): ScopeMode? = ScopeModes.firstOrNull { it.engine == engine }
+
+// A stored mode from an older build may name a face that no longer ships.
+fun keptModeOrDefault(engine: Int): Int = if (engine in ScopeModeIds) engine else DefaultScopeMode
+
+// Stored bans: only shipped faces count, and at least two faces must stay in play.
+fun keptBans(stored: Collection<Int>): Set<Int> =
+    stored.filter { it in ScopeModeIds }.toSet()
+        .let { if (ScopeModes.size - it.size < 2) emptySet() else it }
+
+// Swipe stepping walks the shipped list and wraps.
+fun stepMode(current: Int, delta: Int): Int {
+    val at = ScopeModeIds.indexOf(keptModeOrDefault(current))
+    return ScopeModeIds[Math.floorMod(at + delta, ScopeModeIds.size)]
+}
+
+// A RANDOM roll is always a shipped face, never the face already on glass, and never
 // a banned face. If bans ever starve the pool (belt-and-braces; the sheet guard keeps ≥2
 // faces in play), they are ignored rather than freezing the die.
 fun rollModeExcluding(currentMode: Int, banned: Set<Int> = emptySet()): Int {
-    val current = currentMode.takeIf { it in ModeLabels.indices } ?: ModeLabels.indices.first
-    val pool = ModeLabels.indices.filter { it != current && it !in banned }
-        .ifEmpty { ModeLabels.indices.filter { it != current } }
+    val current = keptModeOrDefault(currentMode)
+    val pool = ScopeModeIds.filter { it != current && it !in banned }
+        .ifEmpty { ScopeModeIds.filter { it != current } }
     return pool.random()
 }
 

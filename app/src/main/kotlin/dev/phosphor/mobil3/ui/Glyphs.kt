@@ -641,7 +641,8 @@ fun OverflowHandleGlyph(
     }
 }
 
-// Engraved mode glyphs — tiny etched vectors of each mode's characteristic figure.
+// Engraved mode glyphs — tiny etched vectors of each mode's characteristic figure,
+// keyed by engine mode index (see ScopeModes).
 // Static, ink_2, hairline stroke: an instrument's front-panel legends, not icons.
 @Composable
 fun ModeGlyph(modeIndex: Int, color: Color, modifier: Modifier = Modifier) {
@@ -671,33 +672,6 @@ fun ModeGlyph(modeIndex: Int, color: Color, modifier: Modifier = Modifier) {
                 val y = r * sin(2f * a)
                 Pair(cx + (x - y) * 0.707f, cy + (x + y) * 0.707f)
             }
-            2 -> curve(72) { t -> // swirl — a spiral falling inward
-                val a = t * 6f * Math.PI.toFloat()
-                val rr = r * (1f - t * 0.85f)
-                Pair(cx + rr * cos(a), cy + rr * sin(a))
-            }
-            3 -> { // dots — the figure sampled, not traced
-                for (i in 0 until 10) {
-                    val a = i / 10f * (2f * Math.PI.toFloat())
-                    drawCircle(
-                        color, radius = 1.2.dp.toPx(),
-                        center = Offset(
-                            cx + r * sin(2f * a + 1.57f), cy + r * sin(3f * a),
-                        ),
-                    )
-                }
-            }
-            4 -> curve(80) { t -> // attractor — two-lobed takens butterfly
-                val a = t * (2f * Math.PI.toFloat())
-                Pair(
-                    cx + r * sin(a) * cos(a * 2f),
-                    cy + r * 0.85f * sin(a * 2f) * 0.9f - r * 0.05f * sin(a * 5f),
-                )
-            }
-            5 -> curve(72) { t -> // helix — the spring of time
-                val a = t * 4f * Math.PI.toFloat()
-                Pair(cx - r + t * 2f * r, cy + r * 0.62f * sin(a))
-            }
             6 -> curve(48) { t -> // waveform
                 Pair(cx - r + t * 2f * r, cy - r * 0.55f * sin(t * 4f * Math.PI.toFloat()))
             }
@@ -714,27 +688,7 @@ fun ModeGlyph(modeIndex: Int, color: Color, modifier: Modifier = Modifier) {
                     poly(listOf(Pair(x, cy + r), Pair(x, cy + r - 2f * r * hh * 0.9f)))
                 }
             }
-            9 -> { // radial — bars around the circle
-                for (i in 0 until 12) {
-                    val a = i / 12f * (2f * Math.PI.toFloat())
-                    val len = r * (0.45f + 0.5f * ((i * 7) % 5) / 5f)
-                    poly(
-                        listOf(
-                            Pair(cx + r * 0.42f * cos(a), cy + r * 0.42f * sin(a)),
-                            Pair(cx + (r * 0.42f + len * 0.55f) * cos(a), cy + (r * 0.42f + len * 0.55f) * sin(a)),
-                        )
-                    )
-                }
-            }
-            else -> { // tunnel — rings racing away
-                for (i in 0 until 4) {
-                    val rr = r * (1f - i * 0.24f)
-                    drawCircle(
-                        color, radius = rr, style = stroke,
-                        center = Offset(cx, cy + i * r * 0.06f),
-                    )
-                }
-            }
+            else -> Unit
         }
     }
 }

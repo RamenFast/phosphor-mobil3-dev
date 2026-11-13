@@ -50,8 +50,6 @@ object PhosphorNative {
     /** Graticule on/off (desktop grid_enabled). */
     external fun setGrid(on: Boolean)
     external fun setGlow(persistence: Float)
-    external fun orbitBy(dyaw: Float, dpitch: Float)
-    external fun dollyBy(delta: Float)
     external fun setReducedMotion(reduced: Boolean)
     external fun gainNow(): Float
     external fun gainAutoNow(): Boolean

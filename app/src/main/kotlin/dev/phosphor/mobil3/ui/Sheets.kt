@@ -753,10 +753,9 @@ fun ModeSheet(
     val view = LocalView.current
     val scroll = rememberScrollState()
     val groups = listOf(
-        "XY" to listOf(0, 1, 2, 3),
-        "3D" to listOf(4, 5),
+        "XY" to listOf(0, 1),
         "TIME" to listOf(6, 7),
-        "SPECTRUM" to listOf(8, 9, 10),
+        "SPECTRUM" to listOf(8),
     )
     SheetHost(p, "MODE", reduced, onDismiss, glyph = SettingsGlyph.Display) {
         Column(
@@ -790,17 +789,18 @@ fun ModeSheet(
             ) { banEditing = !banEditing }
             if (banEditing) {
                 Spacer(Modifier.height(6.dp))
-                ModeTags.indices.chunked(4).forEach { rowIdx ->
+                ScopeModes.chunked(4).forEach { rowIdx ->
                     Row(
                         Modifier.fillMaxWidth(),
                         horizontalArrangement = Arrangement.spacedBy(6.dp),
                     ) {
-                        rowIdx.forEach { i ->
+                        rowIdx.forEach { face ->
+                            val i = face.engine
                             Box(Modifier.weight(1f)) {
-                                ChipCell(ModeTags[i], i in banned, p, small = true) {
+                                ChipCell(face.tag, i in banned, p, small = true) {
                                     state.randomBanModes = when {
                                         i in banned -> banned - i
-                                        ModeLabels.size - banned.size > 2 -> banned + i
+                                        ScopeModes.size - banned.size > 2 -> banned + i
                                         else -> banned
                                     }
                                 }
@@ -818,7 +818,8 @@ fun ModeSheet(
             Spacer(Modifier.height(6.dp))
             groups.forEach { (heading, indices) ->
                 SectionHeading(heading, p)
-                indices.forEach { i ->
+                indices.mapNotNull(::scopeMode).forEach { face ->
+                    val i = face.engine
                     val active = state.modeIndex == i
                     Row(
                         Modifier
@@ -830,9 +831,9 @@ fun ModeSheet(
                     ) {
                         ModeGlyph(i, if (active) p.accent else p.ink2.copy(alpha = 0.8f))
                         Spacer(Modifier.width(Dim.gapLg))
-                        Mono(ModeLabels[i], if (active) p.accent else p.ink, Type.dataLg)
+                        Mono(face.label, if (active) p.accent else p.ink, Type.dataLg)
                         Spacer(Modifier.weight(1f))
-                        Mono(ModeTags[i], p.muted, Type.dataXs)
+                        Mono(face.tag, p.muted, Type.dataXs)
                     }
                     Spacer(Modifier.height(6.dp))
                 }
@@ -936,7 +937,7 @@ fun RoomSheet(
                     Spacer(Modifier.height(6.dp))
                     Row(verticalAlignment = Alignment.CenterVertically) {
                         // Its own beam, tracing: the room's self-portrait glyph.
-                        ModeGlyph(2, room.accent)
+                        ModeGlyph(1, room.accent)
                         Spacer(Modifier.width(6.dp))
                         // A sample of the room's control character:
                         StyleSampleChip(room)

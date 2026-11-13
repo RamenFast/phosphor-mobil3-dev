@@ -204,8 +204,6 @@ interface ScopeActions {
     fun epilepsyAcknowledged(): Boolean
     fun ackEpilepsy()
     fun setGainAbsolute(g: Float)
-    fun orbitBy(dyaw: Float, dpitch: Float)
-    fun dollyBy(delta: Float)
     fun openFolder()
     fun jumpToQueue(index: Int)
     fun makeSurface(): SurfaceView
@@ -545,12 +543,8 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
                                     // Auto-gain owns the viewport and blocks manual gain gestures.
                                     override fun gainLocked() = state.viewLock
                                     override fun gainAutoArmed() = state.autoGain
-                                    override fun orbitBy(dyaw: Float, dpitch: Float) =
-                                        actions.orbitBy(dyaw, dpitch)
-                                    override fun dollyBy(delta: Float) = actions.dollyBy(delta)
-                                    override fun is3d() = state.mode3d
                                     override fun modeStep(delta: Int) =
-                                        actions.setMode((state.modeIndex + delta + 11) % 11)
+                                        actions.setMode(stepMode(state.modeIndex, delta))
                                     override fun currentGlow() = state.glow
                                     override fun setGlowAbsolute(g: Float) = actions.setGlow(g)
                                     // The console owns its upward swipe while visible. Once it

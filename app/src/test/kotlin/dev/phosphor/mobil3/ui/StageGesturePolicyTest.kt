@@ -209,7 +209,7 @@ class StageGesturePolicyTest {
         assertTrue("physicalPoints.size == pressed.size" in owner)
         val guard = owner.indexOf("if (scopeFrame != StageGesturePolicy.ScopeFrame.Apply)")
         assertTrue(guard > 0)
-        for (setter in listOf("host.setGainAbsolute(", "host.orbitBy(", "host.dollyBy(", "host.modeStep(", "host.setGlowAbsolute(")) {
+        for (setter in listOf("host.setGainAbsolute(", "host.modeStep(", "host.setGlowAbsolute(")) {
             assertTrue(owner.indexOf(setter) > guard, setter)
         }
         val rebase = owner.substringAfter("if (scopeFrame != StageGesturePolicy.ScopeFrame.Apply)").substringBefore("val a = pressed[0].position")

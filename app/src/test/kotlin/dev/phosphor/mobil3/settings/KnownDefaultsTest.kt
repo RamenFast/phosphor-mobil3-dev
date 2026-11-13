@@ -107,7 +107,7 @@ class KnownDefaultsTest {
         val activity = source("MainActivity.kt")
         val restore = section(activity, "private fun restoreTuning()", "override fun captureConsentNeeded()")
         for (read in listOf(
-            "ui.modeIndex = p.getInt(\"mode\", 1).also { PhosphorNative.setMode(it) }",
+            "ui.modeIndex = dev.phosphor.mobil3.ui.keptModeOrDefault(p.getInt(\"mode\", 1)).also { PhosphorNative.setMode(it) }",
             "ui.beamIndex = p.getInt(\"beam\", 7).also { PhosphorNative.setBeamColor(it) }",
             "gainValue = p.getFloat(\"gain\", 1.8332275f)",
             "val autoGain = p.getBoolean(\"auto_gain\", true)",
