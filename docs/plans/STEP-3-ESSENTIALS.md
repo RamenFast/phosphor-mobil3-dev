@@ -8,7 +8,7 @@ Quotes are Ben's, 2026-11-13.
 
 ## Order
 
-1. Scope stays dim after SETTINGS closes (bug)
+1. Scope stays dim after SETTINGS closes (fixed)
 2. Fixed brightness (done)
 3. More zoom, and a zoom dial
 4. "Open external player" button
@@ -25,25 +25,45 @@ Quotes are Ben's, 2026-11-13.
 > readability (the settings menu is partially transparant). Happens every time I open the
 > settings and go back to the scope, it's a bit laggy when returning.
 
-State: not reproduced with an idle scope; not yet tested with music running.
+> It's because the settings dims it. When I go back to the screen, I can wait a couple of
+> seconds then the media keys pop up and it fixes itself, but when I swipe settings away it's
+> dark. Either I have to tap or wait a couple seconds.
 
-What is known:
+State: fixed in 25b0d64. Ben's check on the S25: "fixed".
 
-- An open sheet lays a dark veil (40 % black) over the scope. The veil has no fade of its own;
-  it is removed when the sheet's closing animation reports that it finished (`ui/Sheets.kt`,
-  `SheetHost`).
-- Measured on the S25 with no source playing: SETTINGS opened six times and closed by Back,
-  the close key, a tap outside and a drag. The veil was gone in the first screen grab after
-  each close (0.56 to 0.74 s later).
-- A plain home-and-back app switch showed no dimming either.
+The cause:
 
-Ruled out by reading: the keep-awake flag, the 1.2 s warm-up (it runs only when the renderer
-is first made), every timer in the Kotlin code except the 4 s controls timer.
+- An open sheet lays a dark veil (40 % black) over the scope (`ui/Sheets.kt`, `SheetHost`).
+- The bug needed one gesture: swiping the sheet away with a finger on its body, the list that
+  scrolls. Back, the close key and a drag on the title bar never showed it, and the first
+  measurements used only those.
+- The sheet took every leftover scroll from its body as a pull on itself, a fling's leftovers
+  included. After the finger lifted, the list's fling ran on for 2 to 3 s and carried the
+  sheet off the screen. The release was settled only when that fling ended, and the veil
+  stayed up for all of it. A tap on the veil closed the sheet at once: the "physical tap".
 
-Next: the same open-and-close measurement while a song is playing through capture. If the
-veil lingers there, give it its own fade tied to the sheet's exit and find what delays the
-"finished" report. If the grabs stay clear while the eye still sees dimming, the cause is in
-the trace or the display, not the veil.
+Measured on the S25, a steady tone through capture, 120 fps screen recordings read in 0.25 s
+rows:
+
+1. Ben's fingers, build 33b4e78: five closes, each dark until his next touch, 1.25 to 2.5 s.
+   Beam light 7.9 against 13.4 clear, top text 0.404 against 0.678: both about 60 %, the veil.
+   The display's own brightness never changed.
+2. A scripted swipe on the sheet's body, hands off after, same build: dark from 4.75 s to
+   7.0 s, 2.25 s with no touch, then the console.
+3. The same script on 25b0d64: clear, console up, in the first row after the sheet left.
+
+The fix:
+
+- Only a finger's drag pulls a sheet (`SheetPullConnection`). The release is settled the
+  moment the finger lifts, before the body can fling, and it takes the fling's whole speed.
+- The veil is drawn from the sheet's presence: it thins as the sheet is pulled away and fades
+  with the sheet's exit.
+- All six sheets share the one host, so all six have it.
+- A test holds the rule: `onlyTheFingerPullsASheetAndTheReleaseSettlesBeforeTheBodyCanFling`.
+
+Ruled out on the way: the display's brightness (no brightness events during the dark spells),
+Android's own bars (none were up), the keep-awake flag, the 1.2 s warm-up (it runs only when
+the renderer is first made), every timer in the Kotlin code except the 4 s controls timer.
 
 ## 2. Fixed brightness
 
