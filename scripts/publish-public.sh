@@ -27,7 +27,7 @@ esac
 # --- allowlist copy (delete strays so removals propagate) ---
 rsync -a --delete --exclude build --exclude 'src/main/jniLibs' "$REPO/app/"   "$PUB/app/"
 rsync -a --delete --exclude target                             "$REPO/rust/"  "$PUB/rust/"
-rsync -a --delete --exclude target                             "$REPO/relay/" "$PUB/relay/"
+rm -rf "$PUB/relay" "$PUB/docs/REMOTE.md"  # remote streaming left the product; archived at tag archive/remote-streaming-2026-11-13
 rsync -a --delete                                              "$REPO/scripts/" "$PUB/scripts/"
 rsync -a --delete                                              "$REPO/dev/"    "$PUB/dev/"
 rsync -a --delete                                              "$REPO/gradle/" "$PUB/gradle/"
@@ -35,7 +35,6 @@ rsync -a "$REPO/build.gradle.kts" "$REPO/settings.gradle.kts" "$REPO/gradle.prop
   "$REPO/gradlew" "$REPO/gradlew.bat" "$REPO/LICENSE" "$REPO/README.md" "$REPO/.gitignore" "$PUB/"
 mkdir -p "$PUB/docs"
 rsync -a --delete "$REPO/docs/screenshots" "$PUB/docs/"
-rsync -a "$REPO/docs/UX-SPEC.md" "$REPO/docs/REMOTE.md" "$PUB/docs/"
 # ARCHITECTURE ships minus its private-governance pointer line.
 sed '/docs\/AGENTS\.md/d' "$REPO/docs/ARCHITECTURE.md" > "$PUB/docs/ARCHITECTURE.md"
 # The publisher itself stays private-side only: it names the private hosts in its gate.

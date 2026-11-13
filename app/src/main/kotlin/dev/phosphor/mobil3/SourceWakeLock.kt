@@ -23,9 +23,6 @@ internal class SourceWakeLock(
     fun localChanged(published: Boolean, playing: Boolean, ready: Boolean, failed: Boolean) =
         update(SourceWakePolicy.local(published, playing, ready, failed))
 
-    fun remoteChanged(owned: Boolean, state: RemoteLinkState?) =
-        update(SourceWakePolicy.remote(owned, state))
-
     fun captureChanged(recording: Boolean, projection: Boolean) =
         update(SourceWakePolicy.capture(recording, projection))
 

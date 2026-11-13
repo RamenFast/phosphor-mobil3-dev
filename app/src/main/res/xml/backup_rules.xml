@@ -3,7 +3,7 @@
     <!-- Android 10 and 11 use this full-backup contract. -->
     <include domain="sharedpref" path="." />
 
-    <!-- Remote endpoints and runtime consent belong to one device and network. -->
+    <!-- Retired remote endpoints (older installs) and runtime consent stay on the device. -->
     <exclude domain="sharedpref" path="remote_hosts.xml" />
     <exclude domain="sharedpref" path="phosphor.runtime.xml" />
 

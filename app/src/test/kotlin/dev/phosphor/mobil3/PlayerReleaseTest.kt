@@ -11,15 +11,6 @@ import kotlin.test.assertTrue
 
 /** Calls production handlers only. Android construction, Looper and SimpleBasePlayer.release are not exercised. */
 class PlayerReleaseTest {
-    @Test fun remoteProductionHandleReleaseIsImmediateRepeatedAndDoesNotDisconnectTheOwner() {
-        val player = withoutAndroidConstructor(RemotePlayer::class.java)
-        var effects = 0
-        player.onStopRequested = { effects++ }
-        player.onTransportIntent = { effects++ }
-        assertImmediateHandler(player)
-        assertEquals(0, effects)
-    }
-
     @Test fun localProductionHandleReleaseIsImmediateRepeatedAndDoesNotStopTheOwner() {
         val player = withoutAndroidConstructor(PhosphorPlayer::class.java)
         var effects = 0

@@ -37,7 +37,7 @@ class ReaderStopTest {
     }
 
     @Test
-    fun idleRemoteCleanupPreservesPublishedNativeOwnership() {
+    fun idleSourceCleanupPreservesPublishedNativeOwnership() {
         val survival = LocalSourceSurvival()
         survival.published()
         var disconnects = 0
@@ -50,7 +50,7 @@ class ReaderStopTest {
     }
 
     @Test
-    fun ownedRemoteCleanupRecordsLossBeforeDisconnecting() {
+    fun ownedSourceCleanupRecordsLossBeforeDisconnecting() {
         val survival = LocalSourceSurvival()
         var disconnects = 0
         cleanupOwnedSource(owned = true) {
@@ -158,7 +158,7 @@ class ReaderStopTest {
             consumed += item
             if (item == "tree") {
                 val request = SourceStopRequest(1)
-                slot.enqueue("remote")
+                slot.enqueue("file")
                 request.complete(1, null)
                 assertEquals("Source request was superseded", request.await(1, isLatest))
             }
@@ -166,7 +166,7 @@ class ReaderStopTest {
         slot.enqueue("tree")
         assertTrue(consumed.isEmpty())
         tasks.removeFirst().invoke()
-        assertEquals(listOf("tree", "remote"), consumed)
+        assertEquals(listOf("tree", "file"), consumed)
     }
 
     @Test

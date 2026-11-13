@@ -14,8 +14,7 @@ The app contains no account system, advertising, usage tracking, behavior tracki
 1. **Compose interface** presents the console, sheets, queue, source selection, settings, and status.
 2. **MainActivity** owns Android permissions, system pickers, orientation, picture-in-picture, lifecycle, and JNI intent calls.
 3. **Android services** own local playback, playback capture, and optional media-metadata observation.
-4. **Rust JNI runtime** owns DSP, rendering, remote protocol state, audio buffering, and the native surface.
-5. **PC relay** is a separate Rust program under `relay/` that captures or plays desktop audio and serves protocol v2.
+4. **Rust JNI runtime** owns DSP, rendering, audio buffering, and the native surface.
 
 The Android interface never performs socket or real-time audio work in Compose callbacks. JNI setters publish bounded intent to the native runtime.
 
@@ -46,11 +45,9 @@ The user first approves microphone permission because Android's capture audio pa
 
 Playback audio and microphone audio are processed in memory. Phosphor does not record or upload them.
 
-### PC relay
+### Network
 
-A fresh install has no relay hosts and creates no Phosphor-owned network traffic. The user must save and select a host.
-
-Accepted hosts are Tailscale MagicDNS names, `.ts.net` names, legacy `.tailnet` names, or IPv4 addresses in `100.64.0.0/10`. The app then opens protocol v2 to receive audio or geometry and send playback commands. The protocol relies on Tailscale for identity and encryption. Relay authentication and bind-address polish remain deferred work.
+The app opens no socket of its own. The one network path is cover art: when a captured app's media session links its artwork by http(s), PlaybackService fetches that image. PC remote streaming was removed; its code is kept at the tag `archive/remote-streaming-2026-11-13`.
 
 ## State and migration
 
@@ -58,7 +55,7 @@ User-facing settings live in ordinary private preferences and are exported only 
 
 One startup migration preserves the existing HUD mode from older preference layouts. It then deletes obsolete preference files and the old Android Keystore alias. The removed command graph and audit history are not retained at runtime.
 
-Saved relay hosts, consent state, metadata access state, and runtime settings are excluded from Android cloud backup.
+Consent state, metadata access state, and runtime settings are excluded from Android cloud backup.
 
 ## Android compatibility
 
@@ -87,5 +84,4 @@ Release signing profiles are `production` and `play-upload`. Both require extern
 
 1. The API 29 floor needs a real Android 10 or API 29 emulator receipt.
 2. Large-screen, foldable, desktop-window, and multi-window layouts need a device matrix.
-3. The PC relay binds broadly and depends on the host firewall plus Tailscale. Binding and protocol hardening are deferred to the networking stage.
-4. Google Play enrollment, signing evidence, declarations, listing assets, and submission are human gates.
+3. Google Play enrollment, signing evidence, declarations, listing assets, and submission are human gates.

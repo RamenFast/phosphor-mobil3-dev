@@ -285,15 +285,8 @@ class KnownDefaultsTest {
         // This checks the actual Android writer/reader linkage, not Android execution.
     }
 
-    @Test fun sourceOnlyFirstRemoteSessionCannotPersistDisplayGainAsLocalAuthority() {
+    @Test fun displayGainCannotPersistAsLocalAuthority() {
         val activity = source("MainActivity.kt")
-        val start = section(activity, "override fun startRemoteHost(", "override fun setRemoteStreams(")
-        assertTrue(start.contains("prefs().edit { putFloat(\"gain\", gainValue) }"))
-        assertFalse(start.contains("ui.autoGain"))
-        val poll = source("PlaybackService.kt").substringAfter("private fun startRemotePoll()")
-        assertTrue(poll.contains("if (p.getBoolean(\"auto_gain\", true)) \"auto\""))
-        assertTrue(poll.contains("p.getFloat(\"gain\", 1.8332275f)"))
-        assertFalse(poll.contains("p.getBoolean(\"auto_gain\", false)"))
         val save = section(activity, "private fun saveTuning()", "private fun restoreTuning()")
         assertTrue(save.contains("putBoolean(\"auto_gain\", prefs().getBoolean(\"auto_gain\", true))"))
         assertTrue(save.contains("putFloat(\"gain\", gainValue)"))
@@ -302,10 +295,9 @@ class KnownDefaultsTest {
         val local = section(activity, "private fun applyLocalGainPolicy()", "private fun applyImmersive()")
         assertTrue(local.contains("prefs().getBoolean(\"auto_gain\", true)"))
         assertTrue(local.contains("PhosphorNative.setGain(gainValue)"))
-        assertTrue(activity.contains("remoteGain?.let { ui.autoGain = it.optBoolean(\"auto\", false) }"))
-        // Remote gain status may still display false. Direct typed preference reads keep
-        // explicit local false authoritative and use true only when the key is absent.
-        // No relay, SharedPreferences, or Activity lifecycle is executed by this check.
+        // Direct typed preference reads keep explicit local false authoritative and use
+        // true only when the key is absent. No SharedPreferences or Activity lifecycle
+        // is executed by this check.
     }
 
     private fun source(path: String) = repoFile("app/src/main/kotlin/dev/phosphor/mobil3/$path").readText()

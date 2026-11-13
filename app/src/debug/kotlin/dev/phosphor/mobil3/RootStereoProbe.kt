@@ -28,7 +28,7 @@ internal object RootStereoProbe {
         val handler = Handler(Looper.getMainLooper())
         val work = Runnable {
             if (gate.accepts()) runCatching {
-                CaptureService.quiescent() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay()
+                CaptureService.quiescent() && MicController.quiescent() && !PlaybackService.ownsLocal()
             }.fold(done::complete, done::completeExceptionally)
         }
         handler.post(work)

@@ -12,23 +12,23 @@ Phosphor can process the following data only to provide features the user choose
 - **Microphone audio:** When the user grants microphone permission and selects the microphone source, Phosphor converts live microphone input into graphics in memory. It does not record or upload this audio.
 - **Local files and folders:** Files are read only after the user selects them through Android's system picker. Folder access can persist so a selected queue remains available after restart.
 - **Media metadata:** If the user grants Android notification-listener access, Phosphor can read active media titles, artists, playback state, and artwork. This information is used on the device for the display and controls.
-- **Preferences:** Display settings, consent state, saved relay endpoints, and other app preferences are stored locally on the device.
+- **Preferences:** Display settings, consent state, and other app preferences are stored locally on the device.
 
 ## Network use
 
 A fresh installation does not contact a Phosphor service.
 
-Phosphor opens a relay connection only after the user saves and selects a remote host. The app accepts Tailscale MagicDNS names, `.ts.net` names, and Tailscale IPv4 addresses in `100.64.0.0/10`. The connection receives audio or geometry from the user's PC relay and can send playback-control messages. Tailscale supplies network identity and transport encryption. Phosphor does not operate a relay service or receive a copy of this traffic.
+Phosphor makes one kind of network request. When playback capture is running and another app's media session gives its cover art as a web link, Phosphor downloads that image from the address the other app supplied so it can show the art. Nothing about the user is sent beyond what any image download carries, and no audio leaves the device. Phosphor has no server of its own.
 
 Links to the source repository, releases, license, or this policy open only when the user selects them. They open in the user's browser and are then subject to the destination site's policy.
 
 ## Storage, backup, and deletion
 
-Sensitive runtime preferences, saved relay hosts, consent state, and media access state are excluded from Android cloud backup. A user can remove saved relay hosts in the app. Clearing app storage or uninstalling Phosphor removes app-owned local data. A settings export is created only when the user explicitly requests it and chooses its destination.
+Sensitive runtime preferences, consent state, and media access state are excluded from Android cloud backup. Clearing app storage or uninstalling Phosphor removes app-owned local data. A settings export is created only when the user explicitly requests it and chooses its destination.
 
 ## Sharing and sale
 
-Phosphor does not sell personal data. It does not share data with an advertising, analytics, or profiling company. User-directed relay traffic goes only to the endpoint the user selects.
+Phosphor does not sell personal data. It does not share data with an advertising, analytics, or profiling company.
 
 ## Children
 

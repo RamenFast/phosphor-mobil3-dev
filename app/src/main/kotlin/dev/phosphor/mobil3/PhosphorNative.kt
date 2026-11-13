@@ -61,34 +61,6 @@ object PhosphorNative {
     /** Existing HUD heartbeat also consumes a <=500ms raw L/R grid_data window, or null for no data. */
     external fun scopeStats(): String
 
-    // Remote source (Tailscale bridge, protocol v2 — docs/BRIDGE.md).
-    // connect is NON-BLOCKING: it spawns the link manager; observe remoteStatus().
-    external fun remoteConnect(host: String, port: Int, audio: Boolean, geometry: Boolean): Boolean
-    external fun remoteTransport(cmd: String) // bare verb or JSON {cmd,ms}
-    external fun remoteMetadata(): String
-    external fun remoteDisconnect()
-    // Includes audio_latency_mode/audio_target_ms/audio_underruns for the Nerd HUD.
-    external fun remoteStatus(): String // {state,host,port,rx_*,art_id,*_gen,scope,welcome,last_error,...}
-    external fun remoteScopeCtl(verb: String, value: String) // drive the DESKTOP scope (mode/theme/ui/gain)
-    external fun remoteSetStreams(audio: Boolean, geometry: Boolean)
-    external fun remoteSetMuted(muted: Boolean)
-    /** 0=tight (~80 ms), 1=balanced (~150 ms), 2=safe; applies during a live stream. */
-    external fun remoteSetLatencyMode(mode: Int)
-    external fun remoteSeekMs(ms: Long)
-    external fun remoteRequestSources()
-    external fun remoteSources(): String
-    external fun remoteChooseSource(id: String)
-    external fun remoteBrowse(root: String, path: String)
-    external fun remoteListing(): String
-    external fun remotePlayFile(root: String, path: String)
-    external fun remoteStopFile()
-    external fun remoteRequestArt(id: String)
-    external fun remoteArt(): ByteArray?
-    external fun remoteMetaGeneration(): Int
-    external fun remoteArtGeneration(): Int
-    external fun remoteSourcesGeneration(): Int
-    external fun remoteListingGeneration(): Int
-
     // Capture/mic ingest (M4): interleaved stereo f32 chunks into the scope ring.
     external fun pushCaptureSamples(samples: FloatArray, count: Int)
     external fun setRingActive(active: Boolean)

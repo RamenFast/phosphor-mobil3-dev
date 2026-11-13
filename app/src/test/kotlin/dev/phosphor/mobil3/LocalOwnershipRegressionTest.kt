@@ -91,7 +91,7 @@ class LocalOwnershipRegressionTest {
         assertTrue(result.clearsReaderFace("mic"))
         assertFalse(result.clearsReaderFace("capture"))
         assertFalse(result.clearsReaderFace("deck"))
-        assertFalse(result.clearsReaderFace("remote"))
+        assertFalse(result.clearsReaderFace("deck"))
     }
 
     @Test

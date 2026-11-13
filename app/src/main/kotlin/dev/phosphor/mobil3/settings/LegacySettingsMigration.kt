@@ -13,12 +13,15 @@ internal object LegacySettingsMigration {
     const val CAUSAL_ENVELOPE = "__phosphor_private.hud_causal_envelope"
     const val PENDING_HUD_IMPORT = "__phosphor_private.pending_settings_import_hud"
     const val REMOTE_NETWORK_MODE = "remote_network_mode"
+    const val REMOTE_LATENCY_MODE = "remote_latency_mode"
+    const val RETIRED_REMOTE_HOSTS = "remote_hosts"
     const val LEGACY_TAILNET_KEY_ALIAS = "phosphor.pm3.tailnet-secret.v1"
     val PORTABLE_KEYS_TO_REMOVE = setOf(
         NERD_HUD,
         CAUSAL_ENVELOPE,
         PENDING_HUD_IMPORT,
         REMOTE_NETWORK_MODE,
+        REMOTE_LATENCY_MODE,
     )
 
     fun resolveHudMode(

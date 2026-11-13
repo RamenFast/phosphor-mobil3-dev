@@ -40,7 +40,6 @@ import androidx.core.net.toUri
 import androidx.core.view.WindowInsetsCompat
 import androidx.core.view.WindowInsetsControllerCompat
 import androidx.media3.common.MediaMetadata
-import androidx.media3.common.PlaybackException
 import androidx.media3.common.Player
 import androidx.media3.session.MediaController
 import androidx.media3.session.SessionToken
@@ -391,7 +390,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
         super.onResume()
         refreshRotationAuthority(force = true)
         refreshCaptureMetadataAccess()
-        // Resume only passive live sources once per process. Files and relays remain explicit choices.
+        // Resume only passive live sources once per process. Files remain explicit choices.
         if (taskIsCurrent() && !lastSourceReopened) {
             lastSourceReopened = true
             if (!ui.live && ui.sourceLabel == "no source") {
@@ -509,12 +508,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
                     override fun onAvailableCommandsChanged(availableCommands: Player.Commands) {
                         syncCaptureCommands(c)
                     }
-                    // The relay's failures arrive here carrying the engine's fix text.
-                    // Keeping the message means the REMOTE sheet can show a remedy instead
-                    // of a dead end; a recovered link clears it.
-                    override fun onPlayerErrorChanged(error: PlaybackException?) {
-                        if (ui.remote) ui.remoteFailure = error?.message.orEmpty()
-                    }
                     override fun onTimelineChanged(
                         t: androidx.media3.common.Timeline, reason: Int,
                     ) {
@@ -589,7 +582,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     // One gentle heartbeat for display facts Compose can't observe directly:
     // seek position, resting-beam flag and breathing accent.
     private var baseRoom: Palette? = null
-    private var lastRxBytes = 0L
     private val uiTick = object : Runnable {
         override fun run() {
             refreshRotationAuthority()
@@ -597,38 +589,16 @@ class MainActivity : ComponentActivity(), ScopeActions {
             refreshRootState()
             controller?.let { c ->
                 val dur = c.duration
-                ui.seekable = !ui.remote && dur > 0 &&
+                ui.seekable = dur > 0 &&
                     c.isCommandAvailable(Player.COMMAND_SEEK_IN_CURRENT_MEDIA_ITEM)
                 ui.durationMs = if (dur > 0) dur else 0L
                 ui.positionMs = c.currentPosition.coerceAtLeast(0L)
             }
             ui.noSignal = PhosphorNative.scopeSilent()
-            val rs = if (ui.remote) runCatching {
-                org.json.JSONObject(PhosphorNative.remoteStatus())
-            }.getOrNull() else null
-            val remoteScope = rs?.optJSONObject("scope")
-            val remoteGain = remoteScope?.optJSONObject("gain")
-            // Show measured renderer and relay gain rather than saved preference values.
+            // Show measured renderer gain rather than saved preference values.
             ui.localAutoGain = PhosphorNative.gainAutoNow()
-            if (!ui.remoteGeometry) ui.gain = PhosphorNative.gainNow()
-            if (ui.remote) {
-                remoteGain?.let { ui.autoGain = it.optBoolean("auto", false) }
-            } else {
-                ui.autoGain = ui.localAutoGain
-            }
-            // When the desktop supplies geometry, show its measured mode and gain.
-            ui.remoteScopeLine = if (ui.remote && ui.remoteGeometry) {
-                remoteScope?.let { sc ->
-                    val mode = sc.optString("mode", "—")
-                    val g = sc.optJSONObject("gain")
-                    when {
-                        g == null -> "$mode · pc"
-                        g.optBoolean("auto") ->
-                            "%s · auto ×%.2f · pc".format(mode, g.optDouble("effective", 0.0))
-                        else -> "%s · ×%.2f · pc".format(mode, g.optDouble("effective", 0.0))
-                    }
-                }
-            } else null
+            ui.gain = PhosphorNative.gainNow()
+            ui.autoGain = ui.localAutoGain
             val stats = if (dev.phosphor.mobil3.ui.GridData.needsStats(ui.hudMode, ui.gridData)) {
                 runCatching {
                     org.json.JSONObject(PhosphorNative.scopeStats())
@@ -636,30 +606,10 @@ class MainActivity : ComponentActivity(), ScopeActions {
             } else null
             ui.gridReading = dev.phosphor.mobil3.ui.GridData.read(stats)
             if (ui.hudMode != 2) {
-                val rx = rs?.optLong("rx_bytes") ?: 0L
-                val mbps = if (lastRxBytes in 1 until rx) {
-                    (rx - lastRxBytes) * 8f * 2f / 1_000_000f // 500 ms tick → per-second
-                } else 0f
-                lastRxBytes = rx
                 ui.hudLine = buildString {
                     append("%.1f fps".format(stats?.optDouble("fps") ?: 0.0))
                     append(" · ${stats?.optInt("segs") ?: 0} segs")
-                    if (ui.remote) append(" · %.1f Mb/s".format(mbps))
                 }
-                // Bridge health (the hardening made visible): live buffer depth,
-                // catch-up skips, channel drops, and the leak counter that must
-                // stay zero. All real numbers from the session's atomics.
-                ui.hudLine2 = if (rs != null) buildString {
-                    append("bridge · buf ${rs.optInt("audio_buf_ms")} ms")
-                    append(" · tgt ${rs.optInt("audio_target_ms")} ms")
-                    append(" · und ${rs.optInt("audio_underruns")}")
-                    append(" · skip ${rs.optInt("audio_skips")}")
-                    val skipMs = rs.optInt("audio_skip_ms")
-                    if (skipMs > 0) append(" (${skipMs} ms)")
-                    append(" · drop ${rs.optInt("a_drops")}")
-                    val leaked = rs.optInt("leaked_threads")
-                    if (leaked > 0) append(" · LEAK $leaked")
-                } else ""
             }
             // Moving chrome accents follow the measured beam color; structural accents opt in per room.
             val base = baseRoom ?: ui.room
@@ -690,7 +640,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun handleIntent(intent: Intent) {
         intent.getStringExtra("open")?.let { openDeck(it) }
         if (intent.getBooleanExtra("capture", false)) startCapture()
-        if (intent.getBooleanExtra("remote", false)) startRemote()
     }
 
     // Direct documents use the same serial staging and validation path as tree entries.
@@ -703,18 +652,15 @@ class MainActivity : ComponentActivity(), ScopeActions {
             .putExtra(PlaybackService.EXTRA_DOCUMENT_URI, uri.toString()))
     }
 
-    // Mirror the session's timeline into the deck sheet's queue rows (ghost items from
-    // the remote deck are filtered by their reserved ids).
+    // Mirror the session's timeline into the deck sheet's queue rows.
     private fun syncQueue(c: MediaController) {
         val n = c.mediaItemCount
         val titles = mutableListOf<String>()
-        var remoteGhosts = false
         for (i in 0 until n) {
             val item = c.getMediaItemAt(i)
-            if (item.mediaId.startsWith("remote:")) { remoteGhosts = true; break }
             titles += item.mediaMetadata.title?.toString() ?: "track ${i + 1}"
         }
-        ui.queueTitles = if (remoteGhosts) emptyList() else titles
+        ui.queueTitles = titles
         ui.queueIndex = c.currentMediaItemIndex.coerceAtLeast(0)
     }
 
@@ -726,36 +672,14 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.artwork = metadata.artworkData?.takeIf { it.isNotEmpty() }
         val source = metadata.extras?.getString("source")
             ?: c.currentMediaItem?.mediaId?.takeIf { it.startsWith("q") }?.let { "local" }
-        ui.remote = source == "remote"
         when (source) {
             "local" -> {
                 ui.sourceLabel = "deck"
                 ui.live = false
-                ui.remote = false
             }
             "capture" -> {
                 ui.sourceLabel = "capture"
                 ui.live = true
-            }
-            "remote" -> {
-                ui.live = false
-                val conn = metadata.extras?.getString("conn")
-                val host = metadata.extras?.getString("host") ?: "remote"
-                ui.sourceLabel = when (conn) {
-                    "CONNECTING" -> "remote · connecting…"
-                    // A welcome frame alone is not a live media link.
-                    "GREETED" -> "remote · waiting for audio"
-                    // The relay says it is sending silence. Without this the user sees a
-                    // dark scope and cannot tell whether the desktop is quiet or the link
-                    // is broken.
-                    "SILENT" -> "remote · $host · no sound"
-                    // Frozen socket, not a dropped one. Acceptance H-04 forbids showing a
-                    // frozen live trace, and this is what stops that happening.
-                    "STALLED" -> "remote · signal stalled"
-                    "LOST" -> "remote · reconnecting…"
-                    "FAILED" -> "remote · unreachable"
-                    else -> "remote · $host"
-                }
             }
             else -> if (ui.sourceLabel == "capture" && c.mediaItemCount == 0) {
                 // Capture ended (including a system MediaProjection stop): clear the
@@ -836,7 +760,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
 
     // The transport law, unified: ALL transport goes through the one MediaController —
-    // the session's player routes to the local deck or the bridge. Notification, lock
+    // the session's player routes to the local deck or the capture mirror. Notification, lock
     // screen, earbuds and the console are therefore the same code path.
     override fun togglePlay() {
         val c = controller
@@ -852,84 +776,7 @@ class MainActivity : ComponentActivity(), ScopeActions {
     override fun prev() { controller?.seekToPrevious() }
 
     override fun seekTo(ms: Long) {
-        if (!ui.remote) controller?.seekTo(ms)
-    }
-
-    override fun startRemote() {
-        val first = remoteHosts().firstOrNull() ?: return
-        startRemoteHost(first.first, first.second.first, first.second.second)
-    }
-
-    // The relay hosts the phone knows. Seeded once from BuildConfig (a build-machine
-    // fact, never source) and thereafter owned by the user, so the Play distribution,
-    // which compiles an empty seed, can still reach a desktop the user runs.
-    private val remoteHostStore by lazy {
-        RemoteHostStore(this, "")
-    }
-
-    override fun remoteHosts(): List<Pair<String, Pair<String, Int>>> =
-        remoteHostStore.hosts().map { it.label to (it.host to it.port) }
-
-    override fun saveRemoteHost(
-        existingHost: String,
-        existingPort: Int,
-        label: String,
-        host: String,
-        port: String,
-    ): String? {
-        // The port arrives as raw text because the field is a text field. Refuse it here
-        // in the same fix-bearing shape the store uses, so the sheet has one error path.
-        val parsedPort = port.trim().toIntOrNull()
-            ?: return "Enter a port number from 1 through 65535."
-        val outcome = if (existingHost.isEmpty()) {
-            remoteHostStore.add(label, host, parsedPort)
-        } else {
-            remoteHostStore.update(existingHost, existingPort, label, host, parsedPort)
-        }
-        return when (outcome) {
-            is RemoteHostOutcome.Saved -> null
-            is RemoteHostOutcome.Refused -> "${outcome.message} ${outcome.fix}"
-            is RemoteHostOutcome.Failed -> "${outcome.message} ${outcome.fix}"
-        }
-    }
-
-    override fun removeRemoteHost(host: String, port: Int): String? =
-        when (val outcome = remoteHostStore.remove(host, port)) {
-            is RemoteHostOutcome.Saved -> null
-            is RemoteHostOutcome.Refused -> "${outcome.message} ${outcome.fix}"
-            is RemoteHostOutcome.Failed -> "${outcome.message} ${outcome.fix}"
-        }
-
-    override fun startRemoteHost(label: String, host: String, port: Int) {
-        selectSource()
-        prefs().edit { putFloat("gain", gainValue) }
-        ui.sourceLabel = "remote · connecting…" // honest immediately (kills the race)
-        ui.remoteFailure = "" // a fresh attempt clears the previous failure's fix
-        ui.remote = true
-        startSourceService(
-            Intent(this, PlaybackService::class.java)
-                .setAction(PlaybackService.ACTION_REMOTE_CONNECT)
-                .putExtra(PlaybackService.EXTRA_HOST, host)
-                .putExtra(PlaybackService.EXTRA_PORT, port)
-                .putExtra(PlaybackService.EXTRA_LABEL, label)
-        )
-    }
-
-    override fun setRemoteStreams(audio: Boolean, geometry: Boolean) {
-        PhosphorNative.remoteSetStreams(audio, geometry)
-        ui.remoteAudio = audio
-        ui.remoteGeometry = geometry
-    }
-
-    override fun disconnectRemote() {
-        selectSource()
-        startSourceService(
-            Intent(this, PlaybackService::class.java)
-                .setAction(PlaybackService.ACTION_REMOTE_DISCONNECT)
-        )
-        ui.remote = false
-        ui.sourceLabel = "no source"
-        applyLocalGainPolicy()
+        controller?.seekTo(ms)
     }
 
     override fun openFile() {
@@ -1115,14 +962,12 @@ class MainActivity : ComponentActivity(), ScopeActions {
             LocalSourcePublication.Source.LOCAL -> {
                 ui.sourceLabel = "deck"
                 ui.live = false
-                ui.remote = false
             }
             LocalSourcePublication.Source.NONE, LocalSourcePublication.Source.RELEASED_READERS -> {
                 if (publication.current.source == LocalSourcePublication.Source.RELEASED_READERS &&
                     !publication.current.clearsReaderFace(ui.sourceLabel)) return
                 ui.sourceLabel = "no source"
                 ui.live = false
-                ui.remote = false
                 acceptTrackTitle(null)
                 ui.trackArtist = null
                 ui.artwork = null
@@ -1157,7 +1002,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putBoolean(dev.phosphor.mobil3.ui.GridData.KEY, ui.gridData)
             putFloat("focus", focusPref)
             putString("room", ui.room.id)
-            // Relay auto-gain is display truth, not authority for an absent local preference.
             putBoolean("auto_gain", prefs().getBoolean("auto_gain", true))
             putInt("hud_mode", ui.hudMode)
             putInt("band_mode", ui.bandMode)
@@ -1174,7 +1018,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("scope_locked_orientation", lockedScopeOrientation)
             putBoolean("ui_placement_locked", uiPlacementLockState)
             putBoolean("ui_locked_landscape", lockedUiLandscape)
-            putInt("remote_latency_mode", ui.latencyMode)
             putBoolean("amoled_seen", ui.amoledCaptionSeen)
             putInt("ov_char", ui.styleOverride.character?.ordinal ?: -1)
             putInt("ov_motion", ui.styleOverride.motion?.ordinal ?: -1)
@@ -1265,8 +1108,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             "ui_locked_landscape",
             resources.configuration.orientation == Configuration.ORIENTATION_LANDSCAPE,
         )
-        ui.latencyMode = p.getInt("remote_latency_mode", 2).coerceIn(0, 2)
-            .also { PhosphorNative.remoteSetLatencyMode(it) }
         ui.calDate = runtimePrefs().getString("cal_date", "") ?: ""
         ui.amoledCaptionSeen = p.getBoolean("amoled_seen", false)
         ui.styleOverride = dev.phosphor.mobil3.ui.StyleOverride(
@@ -1386,10 +1227,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     private fun applyMode(requested: Int) {
         val index = dev.phosphor.mobil3.ui.keptModeOrDefault(requested)
         PhosphorNative.setMode(index); ui.modeIndex = index
-        // Remote geometry uses the desktop renderer's mode names.
-        if (ui.remote && ui.remoteGeometry) {
-            PhosphorNative.remoteScopeCtl("mode", ui.modeTag)
-        }
     }
     override fun setMode(index: Int) {
         ui.randomModeArmed = false
@@ -1397,10 +1234,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
     }
     override fun setBeam(index: Int) {
         PhosphorNative.setBeamColor(index); ui.beamIndex = index
-        // LIGHT presets are the desktop's theme names, verbatim (theme = beam).
-        if (ui.remote && ui.remoteGeometry) {
-            PhosphorNative.remoteScopeCtl("theme", dev.phosphor.mobil3.ui.BeamColors[index].label)
-        }
     }
     override fun setFps(value: Int) { PhosphorNative.setTargetFps(value); ui.fpsValue = value }
     override fun setOversample(n: Int) { PhosphorNative.setOversample(n); ui.oversample = n }
@@ -1416,31 +1249,13 @@ class MainActivity : ComponentActivity(), ScopeActions {
         prefs().edit { putBoolean("auto_gain", false) }
         tick.removeCallbacks(persistGain)
         tick.postDelayed(persistGain, 250)
-        // Pinch drives the DESKTOP's gain while it renders the beam (throttled —
-        // the gesture fires per-frame; the scope only needs ~10 Hz).
-        if (ui.remote) {
-            val now = android.os.SystemClock.uptimeMillis()
-            if (now - lastRemoteGainMs > 100) {
-                lastRemoteGainMs = now
-                PhosphorNative.remoteScopeCtl("gain", String.format(java.util.Locale.US, "%.2f", gainValue))
-            }
-        }
     }
-    private var lastRemoteGainMs = 0L
 
     override fun setGainAuto(on: Boolean) {
         prefs().edit { putBoolean("auto_gain", on) }
-        // Keep the local renderer ready for local/captured remote audio, while a
-        // remote source also receives the desktop's existing typed gain verb.
         PhosphorNative.setGainAuto(on)
         ui.localAutoGain = on
         ui.autoGain = on
-        if (ui.remote) {
-            PhosphorNative.remoteScopeCtl(
-                "gain",
-                if (on) "auto" else String.format(java.util.Locale.US, "%.2f", gainValue),
-            )
-        }
     }
 
     override fun setHudMode(mode: Int) {
@@ -1489,12 +1304,6 @@ class MainActivity : ComponentActivity(), ScopeActions {
             }
         }
         return editor.commit()
-    }
-
-    override fun setRemoteLatencyMode(mode: Int) {
-        ui.latencyMode = mode.coerceIn(0, 2)
-        prefs().edit { putInt("remote_latency_mode", ui.latencyMode) }
-        PhosphorNative.remoteSetLatencyMode(ui.latencyMode)
     }
 
     private fun applyLocalGainPolicy() {

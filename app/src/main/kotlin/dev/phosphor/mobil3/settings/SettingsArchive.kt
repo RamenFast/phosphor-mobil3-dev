@@ -93,7 +93,6 @@ object SettingsArchive {
         "ui_placement_locked" to Spec(Kind.BOOLEAN),
         "ui_locked_landscape" to Spec(Kind.BOOLEAN),
         "ui_locked_orientation" to intRange(-1, 14),
-        "remote_latency_mode" to intRange(0, 2),
         "amoled_seen" to Spec(Kind.BOOLEAN),
         "bestiary_found" to Spec(Kind.BOOLEAN),
         "ov_char" to intRange(-1, 3),

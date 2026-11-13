@@ -99,7 +99,7 @@ class MicHandoffPolicyTest {
 
     @Test
     fun cancellationForEveryNewSourceRejectsIdleReleaseAndLateStartupCompletion() {
-        for (source in listOf("local", "remote", "capture", "stop", "destroy")) {
+        for (source in listOf("local", "capture", "stop", "destroy")) {
             for (alreadyStarting in listOf(false, true)) {
                 val rig = Rig()
                 rig.request()
@@ -343,7 +343,7 @@ class MicHandoffPolicyTest {
         assertTrue("PlaybackService.localSourcePublication.accepts(revision)" in activity)
         val startCapture = activity.substringAfter("override fun startCapture()").substringBefore("private fun launchCaptureConsent")
         assertTrue(startCapture.indexOf("selectSource()") < startCapture.indexOf("if (alreadyCapturing) return"))
-        for (entry in listOf("private fun loadUri", "private fun openDeck", "override fun startRemoteHost", "override fun disconnectRemote",
+        for (entry in listOf("private fun loadUri", "private fun openDeck",
             "override fun startCapture", "override fun openFile", "override fun openFolder")) {
             assertTrue("selectSource()" in activity.substringAfter(entry).substringBefore("\n    }"), entry)
         }

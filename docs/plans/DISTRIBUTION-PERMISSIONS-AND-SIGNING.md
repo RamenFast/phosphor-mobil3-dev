@@ -39,9 +39,9 @@ Allowed manifest permissions must map to a supported feature:
 
 | Permission or access | Purpose |
 |---|---|
-| `INTERNET` | User-selected PC relay connection |
+| `INTERNET` | Cover-art fetch when a captured app links its artwork by http(s) |
 | foreground service | Active playback and capture |
-| media playback FGS | Background local or remote playback |
+| media playback FGS | Background local playback |
 | media projection FGS | User-approved playback capture |
 | microphone FGS | Actual service-owned microphone input, including optional visualization mixing |
 | `SYSTEM_ALERT_WINDOW` | Explicitly enabled floating HUD |
@@ -96,17 +96,15 @@ Forbidden production access includes Binder authority permissions, package manag
 
 Ordinary source wake remains tied to actual live owners. The separate, off-by-default brightness pin may keep only the full foreground app window awake during pause or no-source use. It uses the window brightness override, never global brightness settings, and releases ownership outside full-app foreground. HUD/PiP cannot acquire that exception.
 
-Each actual playback or capture owner may hold one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. PlaybackService owns local or remote playback and CaptureService owns projection capture. Microphone ownership transfers from the existing Activity to a real service under the expansion contract. A capture metadata mirror is not an owner. The shared platform wrapper creates one lock per owner and narrowly suppresses the deprecated constant there. It must not use a wake-up flag or change system brightness or timeout settings.
+Each actual playback or capture owner may hold one non-reference-counted `SCREEN_BRIGHT_WAKE_LOCK`. PlaybackService owns local playback and CaptureService owns projection capture. Microphone ownership transfers from the existing Activity to a real service under the expansion contract. A capture metadata mirror is not an owner. The shared platform wrapper creates one lock per owner and narrowly suppresses the deprecated constant there. It must not use a wake-up flag or change system brightness or timeout settings.
 
 Pause, end, error, revocation, stop, destruction, and replacement release wake when that source ceases to be live. Repeated cleanup is idempotent. A destroyed owner cannot reacquire from a delayed callback. Acquisition or release failure is reported locally without claiming that PowerManager succeeded. Existing source update paths may retry. Picture-in-picture and background linger do not own wake state. Host policy and fake-lock tests do not replace Android screen timeout and sleep acceptance.
 
 Local wake release consumes current-deck drained or stopped-output error truth through the existing event poll and main publication. Decoder EOF after a timed-out drain cannot discard a paused tail. Absent duration, early decoder termination, and output failure cannot leave a permanently READY source face. A microphone read failure releases its recorder lock and clears only its guarded mic face. No screen-lock timeout substitutes for these source transitions. Host tests exercise the real ring and ownership helpers with synthetic platform boundaries, not Android callback delivery or physical output latency.
 
-Remote wake consumes current-session valid media receipt and freshness from the existing native owner. Control traffic, historical counters, and signal amplitude cannot grant or renew it. Silent valid audio and valid geometry-only flow qualify. Malformed media, stale media despite continuing heartbeats, and retired sessions do not. The existing 3-second media stall threshold and service status updates release wake without a new timer or owner. Socket death retains its separate 10-second threshold. Host regressions exercise the actual acceptance and status/watchdog helpers without sockets or audio. Android main and picture-in-picture timeout, recovery, and disconnect checks remain required.
-
 ## 5. Backup and migration
 
-Backup rules must exclude remote hosts, connection state, consent markers, obsolete authority state, and release credentials.
+Backup rules must exclude retired remote-host state, consent markers, obsolete authority state, and release credentials.
 
 A one-release settings migration may preserve current user-facing display values. It must delete obsolete audit, principal, token, grant, and session data.
 
@@ -116,7 +114,7 @@ Same-package upgrades and the existing settings archive must preserve accepted i
 
 The app must link to a stable HTTPS privacy policy and show an in-app privacy summary.
 
-The summary must describe microphone audio, playback capture, media metadata and artwork, local files, remote endpoints, and the absence of analytics or silent reporting.
+The summary must describe microphone audio, playback capture, media metadata and artwork, the cover-art fetch, local files, and the absence of analytics or silent reporting.
 
 ## 7. Release artifacts
 

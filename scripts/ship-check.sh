@@ -37,7 +37,7 @@ ship-check: release-gate scoreboard for Phosphor Mobile
   scripts/ship-check.sh [--json] [--quick] [--only=PREFIX]
   scripts/ship-check.sh schema
 
---quick skips compile, test, lint, native, relay, and release-artifact gates.
+--quick skips compile, test, lint, native, and release-artifact gates.
 --only runs gates whose ID begins with PREFIX.
 USAGE
   exit 0
@@ -45,7 +45,7 @@ fi
 
 if [ "$MODE" = schema ]; then
   # shellcheck disable=SC2016 # $schema is a literal JSON Schema property name.
-  printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{"schema":{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ship-check contract","type":"object","additionalProperties":false,"properties":{"arguments":{"const":["--json","--quick","--only=PREFIX","schema"]},"gate_states":{"const":["green","red","skip"]},"exit_codes":{"const":{"0":"all non-skipped gates green; skips are allowed only for an unfiltered quick run","2":"one or more selected gates are red or an explicitly selected gate was skipped","3":"bad input","4":"runtime failure"}},"gate_ids":{"const":["android.compile","android.tests","android.lint","android.assemble","native.tests","native.lint","relay.tests","relay.lint","pm3.fixtures","boundary.fixtures","release.fixtures","boundary.source","scope.docs","scope.source","privacy.tracking","nopython","antistub","signing.release","provenance.release","release.bundle"]}}}}}\n' \
+  printf '{"status":"ok","tool":"%s","version":"%s","ts":"%s","data":{"schema":{"$schema":"https://json-schema.org/draft/2020-12/schema","title":"ship-check contract","type":"object","additionalProperties":false,"properties":{"arguments":{"const":["--json","--quick","--only=PREFIX","schema"]},"gate_states":{"const":["green","red","skip"]},"exit_codes":{"const":{"0":"all non-skipped gates green; skips are allowed only for an unfiltered quick run","2":"one or more selected gates are red or an explicitly selected gate was skipped","3":"bad input","4":"runtime failure"}},"gate_ids":{"const":["android.compile","android.tests","android.lint","android.assemble","native.tests","native.lint","pm3.fixtures","boundary.fixtures","release.fixtures","boundary.source","scope.docs","scope.source","privacy.tracking","nopython","antistub","signing.release","provenance.release","release.bundle"]}}}}}\n' \
     "$TOOL" "$VERSION" "$(ts)"
   exit 0
 fi
@@ -148,27 +148,6 @@ if selected native.lint; then
   fi
 fi
 
-if selected relay.tests; then
-  if [ "$QUICK" -eq 1 ]; then
-    record relay.tests skip "skipped (--quick)"
-  elif cargo test --manifest-path relay/Cargo.toml --locked >/dev/null 2>&1; then
-    record relay.tests green "PC relay tests pass with the lockfile"
-  else
-    record relay.tests red "PC relay tests failed" "run cargo test --manifest-path relay/Cargo.toml --locked"
-  fi
-fi
-
-if selected relay.lint; then
-  if [ "$QUICK" -eq 1 ]; then
-    record relay.lint skip "skipped (--quick)"
-  elif cargo fmt --manifest-path relay/Cargo.toml --check >/dev/null 2>&1 &&
-       cargo clippy --manifest-path relay/Cargo.toml --locked --all-targets -- -D warnings >/dev/null 2>&1; then
-    record relay.lint green "PC relay formatting and Clippy pass"
-  else
-    record relay.lint red "PC relay lint failed" "run cargo fmt --manifest-path relay/Cargo.toml --check && cargo clippy --manifest-path relay/Cargo.toml --locked --all-targets -- -D warnings"
-  fi
-fi
-
 if selected pm3.fixtures; then
   if scripts/test-pm3.sh >/dev/null 2>&1; then
     record pm3.fixtures green "developer-only pm3 contract passes"
@@ -224,7 +203,7 @@ fi
 
 if selected privacy.tracking; then
   tracking_hits=$(grep -RInEi 'firebase|crashlytics|sentry|analytics|telemetry|datadog|newrelic|appcenter|advertising[_.-]?id|installation[_.-]?id' \
-    app/src app/build.gradle.kts gradle/libs.versions.toml rust/Cargo.toml relay/Cargo.toml 2>/dev/null | head -20 || true)
+    app/src app/build.gradle.kts gradle/libs.versions.toml rust/Cargo.toml 2>/dev/null | head -20 || true)
   if [ -z "$tracking_hits" ]; then
     record privacy.tracking green "no analytics, behavior tracking, advertising ID, or reporting SDK"
   else

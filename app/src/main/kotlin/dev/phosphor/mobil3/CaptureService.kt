@@ -322,7 +322,7 @@ open class CaptureService : Service() {
                             try {
                                 if (owner === this && !cleanedUp && rootSession === session && session.live &&
                                     PlaybackService.localSourcePublication.accepts(sourceRevision) &&
-                                    (check == null || (check.accepts() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay()))) {
+                                    (check == null || (check.accepts() && MicController.quiescent() && !PlaybackService.ownsLocal()))) {
                                     PhosphorNative.deckSetPaused(true)
                                     PhosphorNative.setRingActive(true)
                                     running = true

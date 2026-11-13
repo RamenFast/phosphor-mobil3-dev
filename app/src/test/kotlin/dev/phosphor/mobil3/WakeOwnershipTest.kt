@@ -241,7 +241,7 @@ class WakeOwnershipTest {
     }
 
     @Test fun oldMicFailureCannotClearReplacementRecorderSourceTaskOrDestroyedFace() {
-        for (replacement in listOf("mic", "deck", "capture", "remote", "task", "destroyed")) {
+        for (replacement in listOf("mic", "deck", "capture", "task", "destroyed")) {
             val h = MicFailureHarness()
             val replacementOwner = Owner()
             h.start(); h.failRead(false)
@@ -254,7 +254,6 @@ class WakeOwnershipTest {
                     when (replacement) {
                         "deck" -> replacementOwner.wake.localChanged(true, true, true, false)
                         "capture" -> replacementOwner.wake.captureChanged(true, true)
-                        "remote" -> replacementOwner.wake.remoteChanged(true, RemoteLinkState.STREAMING)
                     }
                 }
             }
@@ -268,7 +267,7 @@ class WakeOwnershipTest {
                 assertTrue(h.owner.lock.isHeld)
             }
             if (replacement == "destroyed") assertFalse(h.owner.lock.isHeld)
-            if (replacement in listOf("deck", "capture", "remote")) {
+            if (replacement in listOf("deck", "capture")) {
                 assertTrue(replacementOwner.lock.isHeld)
                 assertEquals(0, replacementOwner.lock.releases)
             }
@@ -345,7 +344,7 @@ class WakeOwnershipTest {
         assertTrue(player.contains("!output.ready -> Player.STATE_ENDED"))
         assertTrue(player.contains(".setPlayerError(if (output.failed)"))
         val watcher = playback.substringAfter("private fun startEndWatcher()")
-            .substringBefore("private fun startRemote")
+            .substringBefore("private fun requestFocus()")
         assertTrue(watcher.contains("if (isCurrent() && session?.player === localPlayer)"))
         assertTrue(watcher.indexOf("localPlayer.onNativeTerminal(result)") < watcher.indexOf("if (continueQueue)"))
         assertTrue(watcher.contains("result != PlaybackTruth.Terminal.OUTPUT_FAILED"))
@@ -422,32 +421,6 @@ class WakeOwnershipTest {
         assertFalse(owner.wake.live)
     }
 
-    @Test fun remoteConnectingGreetedLiveSilentLostFailedAndStoppedUseLinkTruth() {
-        val owner = Owner()
-        val cases = listOf(
-            """{"state":"connecting"}""" to false,
-            """{"state":"streaming","rx_a":0,"media_received":false,"media_live":false}""" to false,
-            """{"state":"streaming","rx_a":1,"media_received":true,"media_live":true,"remote_rms":0.2}""" to true,
-            """{"state":"streaming","rx_g":1,"media_received":true,"media_live":true,"remote_rms":0.0}""" to true,
-            """{"state":"streaming","rx_a":900,"media_received":true,"media_live":false}""" to false,
-            """{"state":"streaming","rx_a":900,"media_received":false,"media_live":false}""" to false,
-            """{"state":"streaming","rx_a":900}""" to false,
-            """{"state":"stalled","rx_a":1}""" to false,
-            """{"state":"reconnecting"}""" to false,
-            """{"state":"failed"}""" to false,
-        )
-        cases.forEach { (json, expected) ->
-            owner.wake.remoteChanged(true, RemoteLinkTruth.read(JSONObject(json)).state)
-            assertEquals(expected, owner.wake.live, json)
-            assertEquals(expected, owner.lock.isHeld, json)
-        }
-        owner.wake.remoteChanged(true, RemoteLinkState.STREAMING)
-        owner.wake.remoteChanged(false, RemoteLinkState.STREAMING)
-        assertFalse(owner.wake.live)
-        owner.wake.remoteChanged(true, null)
-        assertFalse(owner.wake.live)
-    }
-
     @Test fun captureStartingLiveSilentRevokedAndStoppedUseRecorderAndProjectionNotMetadata() {
         val owner = Owner()
         owner.wake.captureChanged(recording = false, projection = false)
@@ -486,7 +459,6 @@ class WakeOwnershipTest {
         repeat(3) { owner.wake.stop() }
         repeat(3) { owner.wake.destroy() }
         owner.wake.localChanged(true, true, true, false)
-        owner.wake.remoteChanged(true, RemoteLinkState.STREAMING)
         owner.wake.captureChanged(true, true)
         owner.wake.microphoneChanged(true, false)
         assertFalse(owner.wake.live)
@@ -663,7 +635,6 @@ class WakeOwnershipTest {
             .contains("reassertSourceWake()"))
         assertTrue(playback.contains("override fun onEvents(player: Player, events: Player.Events)"))
         assertTrue(playback.contains("sourceWake.localChanged("))
-        assertTrue(playback.contains("sourceWake.remoteChanged("))
         assertFalse(playback.contains("sourceWake.captureChanged("))
         assertTrue(playback.contains("beginShutdown(stopReaders = false)"))
         assertTrue(capture.contains("sourceWake.captureChanged(recording = running, projection = projection === proj)"))

@@ -387,7 +387,7 @@ class PlaybackTruthTest {
         assertEquals(1, Regex("PhosphorNative::deckPollEvent").findAll(service).count())
         assertFalse(player.contains("PhosphorNative.deckMetadata"))
         assertFalse(player.contains("PhosphorNative.deckCoverArt"))
-        val watcher = service.substringAfter("private fun startEndWatcher()").substringBefore("private fun startRemote")
+        val watcher = service.substringAfter("private fun startEndWatcher()").substringBefore("private fun requestFocus()")
         assertTrue(watcher.contains("playbackTruth.poll("))
         assertTrue(watcher.contains("localDeckExecutor.execute"))
         assertTrue(watcher.contains("localPlayer.onTrackMetadata"))

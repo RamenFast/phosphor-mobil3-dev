@@ -20,10 +20,6 @@ class ScopeUiState {
     var sourceLabel by mutableStateOf("no source")
     var captureStatus by mutableStateOf("")
     var captureFix by mutableStateOf("")
-    var remote by mutableStateOf(false)
-    var remoteFailure by mutableStateOf("")
-    var remoteAudio by mutableStateOf(true)
-    var remoteGeometry by mutableStateOf(false)
     var live by mutableStateOf(false)
     var captureMetadataAccess by mutableStateOf(false)
     var captureCanPlay by mutableStateOf(false)
@@ -58,7 +54,6 @@ class ScopeUiState {
     var hudMode by mutableIntStateOf(1)
     var hudControlStatus by mutableStateOf("")
     var hudLine by mutableStateOf("")
-    var hudLine2 by mutableStateOf("")
     var bandMode by mutableIntStateOf(1)
     var fullscreen by mutableStateOf(true)
     var lingerBackground by mutableStateOf(false)
@@ -80,9 +75,7 @@ class ScopeUiState {
     val uprightQuadrant: Int get() = rotationPresentation.uprightQuadrant
     val chromeQuadrant: Int get() = rotationPresentation.chromeQuadrant
     var viewLock by mutableStateOf(false)
-    var latencyMode by mutableIntStateOf(2)
     var calDate by mutableStateOf("")
-    var remoteScopeLine by mutableStateOf<String?>(null)
     var styleOverride by mutableStateOf(StyleOverride())
     var amoledCaptionSeen by mutableStateOf(false)
 var bestiaryFound by mutableStateOf(false)

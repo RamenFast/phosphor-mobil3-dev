@@ -1,9 +1,9 @@
 # phosphor-mobil3
 
-Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop [phosphor](https://github.com/RamenFast/phosphor) beam engine to a full-screen mobile instrument with local playback, Android playback capture, microphone input, and an optional Tailscale PC relay.
+Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop [phosphor](https://github.com/RamenFast/phosphor) beam engine to a full-screen mobile instrument with local playback, Android playback capture, and microphone input.
 
 <p align="center">
-  <img src="docs/screenshots/source-picker.png" width="45%" alt="Source picker for files, playback capture, microphone, and remote PC">
+  <img src="docs/screenshots/source-picker.png" width="45%" alt="Source picker for files, playback capture, and microphone">
   <img src="docs/screenshots/settings-sheet.png" width="45%" alt="Focus, gain, beam, and glow settings">
 </p>
 
@@ -13,7 +13,6 @@ Phosphor for Android is a CRT oscilloscope in your pocket. It brings the desktop
 - Plays selected files or folders as a gapless local queue with Android media controls.
 - Converts audio from compatible Android apps into light after the user approves the system playback-capture prompt.
 - Uses the microphone as an optional live source after runtime permission is granted.
-- Connects to a user-selected PC relay over Tailscale for audio, geometry, metadata, artwork, and playback control.
 - Supports portrait, landscape, multi-window, and picture-in-picture layouts.
 - Stores settings locally. It has no account, ads, usage tracking, or behavior tracking. See [PRIVACY.md](PRIVACY.md).
 
@@ -102,17 +101,11 @@ scripts/ship-check.sh --json --only=release.bundle
 
 The release gate verifies the clean mobile and sibling-engine commits, the Ben-controlled APK signer, the Play upload AAB signer, bundletool, production boundary, 16 KiB ZIP and ELF alignment, combined exact-source archive, `BUILD-MANIFEST.json`, and `SHA256SUMS`. Generated release assets land under `app/build/outputs/release-package/v2.0.0/`.
 
-## PC relay
-
-Install the relay on a Linux PC with `scripts/relay-install.sh`. Add the PC in the app with a Tailscale MagicDNS name, a `.ts.net` name, or a Tailscale IPv4 address in `100.64.0.0/10`.
-
-The relay protocol currently relies on Tailscale for peer identity and transport encryption. Do not expose relay port 45777 to the public internet. Setup and protocol details are in [docs/REMOTE.md](docs/REMOTE.md) and [docs/BRIDGE.md](docs/BRIDGE.md).
-
 ## Current release ledger
 
 - The repository now has one debug/release Android product.
 - Android 10 compatibility is implemented and lint-clean.
 - Playback capture requests microphone permission before projection consent when required and asks Android for the full display on Android 14 and newer.
-- Saved PC relays are empty on a fresh install and remain dormant until the user selects one.
+- PC remote streaming was removed from this line. Its code is kept at the tag `archive/remote-streaming-2026-11-13`.
 - The first public release is free. There is no dormant trial or purchase surface.
 - A current signed APK/AAB, device compatibility matrix, Play Console evidence, and final on-phone release installation are still pending.

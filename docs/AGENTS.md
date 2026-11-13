@@ -5,7 +5,6 @@
 - `./gradlew` owns Android compilation, native packaging, signing verification, and release artifacts.
 - `dev/pm3` is local developer tooling: build, install, launch, diagnostics, screenshots, recordings.
 - `rust/` is the Android JNI runtime. Its path dependencies expect the desktop engine checked out beside this repo as `../phosphor`.
-- `relay/` is the PC audio relay.
 
 ## Laws
 
@@ -23,7 +22,7 @@
 - Minimum SDK 29; target and compile SDK 36.
 - No account, ads, usage or behavior tracking, or automatic reporting.
 - No runtime administration protocol inside the app.
-- No network connection until the user adds a relay, and saved relays stay inside the Tailscale address space.
+- No network connection except fetching cover art that a captured app links by http(s).
 - The first public release is free, with no purchase flow.
 
 ## Validation
@@ -32,7 +31,6 @@
 source scripts/env.sh
 ./gradlew --no-daemon :app:testDebugUnitTest :app:lintDebug :app:assembleDebug :app:checkEngine
 cargo test --manifest-path rust/Cargo.toml --locked
-cargo test --manifest-path relay/Cargo.toml --locked
 scripts/test-pm3.sh
 scripts/test-play-boundary.sh
 scripts/test-release-gates.sh

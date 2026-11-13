@@ -199,8 +199,7 @@ fun ManualSheet(
             SectionHeading("SOURCES", p, Modifier.padding(top = 0.dp))
             Prose(
                 "SRC picks what the beam listens to: your own files (one, or a folder as " +
-                    "a queue), the microphone, another machine over your own network " +
-                    "(REMOTE), or EVERYTHING PLAYING — the sound other apps make.",
+                    "a queue), the microphone, or EVERYTHING PLAYING — the sound other apps make.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
 
@@ -260,8 +259,8 @@ fun ManualSheet(
             SectionHeading("PRIVACY", p)
             Prose(
                 "phosphor has no account, ads, or tracking. Local audio is processed " +
-                    "in memory and is not recorded or uploaded. A relay connection opens " +
-                    "only after you select a saved Tailscale host.",
+                    "in memory and is not recorded or uploaded. The only network use is " +
+                    "fetching cover art that another app's now-playing entry links to.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
             LinkCard("privacy policy", "…/phosphor-mobil3/blob/master/PRIVACY.md", p) {

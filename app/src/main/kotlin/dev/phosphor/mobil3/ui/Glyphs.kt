@@ -32,7 +32,6 @@ enum class SettingsGlyph {
     Signal,
     Display,
     Performance,
-    Remote,
     RoomLight,
     About,
     Room,
@@ -135,30 +134,6 @@ object SettingsGlyphs {
                 lineTo(12f, 8f)
                 moveTo(16.2f, 16.2f)
                 lineTo(17.6f, 17.6f)
-            }
-        }.build()
-    }
-
-    val Remote: ImageVector by lazy {
-        builder("Remote").apply {
-            hairline {
-                moveTo(12f, 9.5f)
-                lineTo(14.5f, 12f)
-                lineTo(12f, 14.5f)
-                lineTo(9.5f, 12f)
-                close()
-                moveTo(12f, 14.5f)
-                lineTo(12f, 21f)
-                moveTo(8f, 21f)
-                lineTo(16f, 21f)
-                moveTo(8.5f, 8.5f)
-                curveTo(6.6f, 10.4f, 6.6f, 13.6f, 8.5f, 15.5f)
-                moveTo(15.5f, 8.5f)
-                curveTo(17.4f, 10.4f, 17.4f, 13.6f, 15.5f, 15.5f)
-                moveTo(5.5f, 5.5f)
-                curveTo(1.9f, 9.1f, 1.9f, 14.9f, 5.5f, 18.5f)
-                moveTo(18.5f, 5.5f)
-                curveTo(22.1f, 9.1f, 22.1f, 14.9f, 18.5f, 18.5f)
             }
         }.build()
     }
@@ -528,7 +503,6 @@ object SettingsGlyphs {
         SettingsGlyph.Signal -> Signal
         SettingsGlyph.Display -> Display
         SettingsGlyph.Performance -> Performance
-        SettingsGlyph.Remote -> Remote
         SettingsGlyph.RoomLight -> RoomLight
         SettingsGlyph.About -> About
         SettingsGlyph.Room -> Room

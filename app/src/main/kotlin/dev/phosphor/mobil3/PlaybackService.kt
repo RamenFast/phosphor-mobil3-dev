@@ -36,7 +36,6 @@ import androidx.media3.session.MediaSession
 import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
-import org.json.JSONObject
 import java.io.ByteArrayOutputStream
 import java.net.URL
 import java.util.concurrent.Executors
@@ -44,26 +43,21 @@ import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
 import java.util.concurrent.atomic.AtomicLong
 
-// The deck's Android citizenship: ONE MediaSessionService, ONE MediaSession, TWO players
-// — the local Rust deck (PhosphorPlayer) and the Tailscale bridge deck (RemotePlayer) —
-// swapped with MediaSession.setPlayer(). The loaded deck owns the transport: lock screen,
-// notification, earbuds and Bluetooth all drive whichever deck the session holds.
+// The deck's Android citizenship: ONE MediaSessionService, ONE MediaSession, TWO faces
+// — the local Rust deck (PhosphorPlayer) and the capture mirror (CaptureMirrorPlayer) —
+// swapped with MediaSession.setPlayer(). The loaded face owns the transport: lock screen,
+// notification, earbuds and Bluetooth all drive whichever face the session holds.
 // SimpleBasePlayer does NOT handle audio focus or becoming-noisy — hand-rolled here.
 @androidx.annotation.OptIn(UnstableApi::class)
 class PlaybackService : MediaSessionService() {
 
     private lateinit var localPlayer: PhosphorPlayer
-    private lateinit var remotePlayer: RemotePlayer
     private lateinit var capturePlayer: CaptureMirrorPlayer
     private var session: MediaSession? = null
     private lateinit var audioManager: AudioManager
     private var focusRequest: AudioFocusRequest? = null
     private val focusResume = LocalFocusResume()
     private lateinit var main: Handler
-    private var remotePolling = false
-    private data class RemoteEndpoint(val host: String, val port: Int, val label: String)
-    private var remoteEndpoint: RemoteEndpoint? = null
-    private var remoteGainApplied = false
     private lateinit var platformSessionManager: MediaSessionManager
     private lateinit var notificationListenerComponent: ComponentName
     private var captureActive = false
@@ -101,7 +95,6 @@ class PlaybackService : MediaSessionService() {
         data object Retain : LocalDeckRequest
         data class Shutdown(
             val readers: List<CompletableFuture<String?>>,
-            val disconnectRemote: Boolean,
             val completion: CompletableFuture<String?>,
         ) : LocalDeckRequest
     }
@@ -148,7 +141,7 @@ class PlaybackService : MediaSessionService() {
     private val sourceWake = SourceWakeLock.forOwner(this, "playback")
     private var advancingAtEnd = false
 
-    // Player events own local transport truth. Remote wake comes only from the existing link pump.
+    // Player events own local transport truth.
     private fun updatePlaybackWake() = synchronized(sourceSurvival) {
         when (session?.player) {
             localPlayer -> sourceWake.localChanged(
@@ -229,8 +222,6 @@ class PlaybackService : MediaSessionService() {
         notificationListenerComponent =
             ComponentName(this, CaptureNotificationListenerService::class.java)
         localPlayer = PhosphorPlayer(mainLooper)
-        remotePlayer = RemotePlayer(mainLooper)
-        remotePlayer.onTransportIntent = localPlayer::recordTransportIntent
         capturePlayer = CaptureMirrorPlayer(mainLooper).apply {
             playPauseRouter = ::routeCapturePlayPause
             nextRouter = { routeCaptureSkip(next = true) }
@@ -249,9 +240,7 @@ class PlaybackService : MediaSessionService() {
         localPlayer.onSwitchTrack = ::stageAndOpen
         localPlayer.onSeek = ::seekLocalDeck
         localPlayer.onStopRequested = ::closeLocalDeck
-        remotePlayer.onStopRequested = ::stopRemote
         localPlayer.addListener(focusOnPlay)
-        remotePlayer.addListener(focusOnPlay)
         val sessionActivity = PendingIntent.getActivity(
             this, 0,
             Intent(this, MainActivity::class.java),
@@ -279,11 +268,6 @@ class PlaybackService : MediaSessionService() {
             startService(
                 CaptureService.stopIntent(this)
             )
-        }
-        if (target === remotePlayer) {
-            // Entering remote: silence the other feeders (one scope ring, one owner).
-            localPlayer.setPublishedPlaying(false)
-            // Reader release was acknowledged by the serial request before remote startup.
         }
         s.setPlayer(target)
         updatePlaybackWake()
@@ -318,19 +302,6 @@ class PlaybackService : MediaSessionService() {
                         publishCapturePlayback(null)
                     }
                 }
-                return START_NOT_STICKY
-            }
-            ACTION_REMOTE_CONNECT -> {
-                beginLocalSelection()
-                val host = intent.getStringExtra(EXTRA_HOST) ?: return START_NOT_STICKY
-                val port = intent.getIntExtra(EXTRA_PORT, 45777)
-                val label = intent.getStringExtra(EXTRA_LABEL) ?: host
-                localDeckRequests.enqueue(LocalDeckRequest.Release(stopReaders = true) { startRemote(host, port, label) })
-                return START_NOT_STICKY
-            }
-            ACTION_REMOTE_DISCONNECT -> {
-                closeLocalDeck()
-                stopRemote()
                 return START_NOT_STICKY
             }
             ACTION_RELEASE_LOCAL -> {
@@ -371,19 +342,12 @@ class PlaybackService : MediaSessionService() {
     // ── Phone-local capture face: external Android session → our ONE MediaSession. ──
     private fun beginCaptureMirror() {
         sourceWake.stop() // The mirror never owns the projection or its screen lock.
-        val previousPlayer = session?.player
         CaptureMirrorPolicy.attach(session?.player, capturePlayer) { session?.setPlayer(it) }
         if (captureActive) {
             refreshCaptureController()
             return
         }
-        // Capture supersedes either deck without creating a second MediaSession.
-        if (previousPlayer === remotePlayer) {
-            remotePolling = false
-            remoteEndpoint = null
-            PhosphorNative.remoteDisconnect()
-            remotePlayer.reset()
-        }
+        // Capture supersedes the deck without creating a second MediaSession.
         localPlayer.setPublishedPlaying(false)
         captureActive = true
         captureTrackKey = null
@@ -775,7 +739,6 @@ class PlaybackService : MediaSessionService() {
                     }
                 }
                 stop { if (openedLocalPath != null) closeOpenedLocal() else playbackTruth.closed() }
-                stop { if (request.disconnectRemote) PhosphorNative.remoteDisconnect() }
                 request.readers.forEach { reader ->
                     val error = runCatching { reader.get(4, TimeUnit.SECONDS) }
                         .getOrElse { "Reader shutdown did not complete: ${it.message}" }
@@ -797,9 +760,6 @@ class PlaybackService : MediaSessionService() {
                     if (!destroying && !stopping && isLatest()) {
                         localQueuePolicy.failed(preservesNative = !lost)
                         if (lost) {
-                            remotePolling = false
-                            remoteEndpoint = null
-                            remotePlayer.reset()
                             localPlayer.setPublishedPlaying(false)
                             localPlayer.setQueue(emptyList(), 0)
                         }
@@ -915,11 +875,6 @@ class PlaybackService : MediaSessionService() {
     private fun publishNativeFailure(isLatest: () -> Boolean) {
         main.post {
             if (destroying || stopping || !isLatest()) return@post
-            // A superseded release may have disconnected remote before its guarded face reset.
-            // Retire that session/poll too, so it cannot republish a source that no longer exists.
-            remotePolling = false
-            remoteEndpoint = null
-            remotePlayer.reset()
             leaveCaptureMirror()
             localQueuePolicy.failed(preservesNative = false)
             localPlayer.setPublishedPlaying(false)
@@ -983,19 +938,9 @@ class PlaybackService : MediaSessionService() {
             return false
         }
         if (!current()) return false
-        // Disconnecting remote also destroys a potentially published nonlocal source.
-        cleanupOwnedSource(remoteEndpoint != null) {
-            retireNativeWake()
-            PhosphorNative.remoteDisconnect()
-        }
         val reset = CompletableFuture<Unit>()
         main.post {
-            if (current()) {
-                remotePolling = false
-                remoteEndpoint = null
-                remotePlayer.reset()
-                leaveCaptureMirror()
-            }
+            if (current()) leaveCaptureMirror()
             reset.complete(Unit)
         }
         reset.get(4, TimeUnit.SECONDS)
@@ -1182,172 +1127,6 @@ class PlaybackService : MediaSessionService() {
         })
     }
 
-    private fun startRemote(host: String, port: Int, label: String) {
-        sourceWake.stop()
-        switchTo(remotePlayer)
-        remotePlayer.onConnecting(label)
-        requestFocus()
-        val endpoint = RemoteEndpoint(host, port, label)
-        remoteEndpoint = endpoint
-        PhosphorNative.remoteDisconnect()
-        connectRemoteNow(endpoint)
-    }
-
-    private fun stopRemote() {
-        sourceWake.stop()
-        remotePolling = false
-        remoteEndpoint = null
-        PhosphorNative.remoteDisconnect()
-        remotePlayer.reset()
-        switchTo(localPlayer)
-    }
-
-    private fun prefs() = getSharedPreferences("phosphor.prefs", MODE_PRIVATE)
-
-    private fun connectRemoteNow(endpoint: RemoteEndpoint) {
-        // Latency is policy, not session state: apply before every fresh link.
-        PhosphorNative.remoteSetLatencyMode(
-            prefs().getInt("remote_latency_mode", 2).coerceIn(0, 2)
-        )
-        remoteGainApplied = false
-        // v2 connect is non-blocking: rust owns timeout/watchdog/backoff; the
-        // service owns route selection and the status pump.
-        if (!PhosphorNative.remoteConnect(endpoint.host, endpoint.port, true, false)) {
-            sourceWake.stop()
-            remoteEndpoint = null
-            remotePlayer.onConnectFailed("couldn't start the bridge link")
-            return
-        }
-        startRemotePoll()
-    }
-
-    /**
-     * Stop trying and tell the truth about why.
-     *
-     * The engine populates `last_error` with both an `error` and a `fix`, and the relay
-     * guarantees a `fix` on every error frame. Both are carried through to the player so
-     * the user reads the remedy rather than a bare failure.
-     */
-    private fun giveUpOnRemote(status: JSONObject) {
-        sourceWake.stop()
-        remotePolling = false
-        PhosphorNative.remoteDisconnect()
-        remoteEndpoint = null
-        val failure = RemoteLinkTruth.failureText(status)
-        remotePlayer.onConnectFailed(failure.ifBlank { "bridge unreachable" })
-    }
-
-    /**
-     * Give-up policy: 60 s without a live link surfaces the failure.
-     *
-     * Returns true when the caller should stop pumping. The clock covers every
-     * not-streaming state, including a relay that greets and then sends nothing.
-     */
-    private fun giveUpIfStuck(status: JSONObject): Boolean {
-        if (System.currentTimeMillis() - failingSinceMs <= REMOTE_GIVE_UP_MS) return false
-        giveUpOnRemote(status)
-        return true
-    }
-
-    // 1 Hz status+metadata pump. Rust exposes generation counters so quiet ticks cost
-    // one JNI read; state transitions drive the player face; art rides art_id changes.
-    private var lastMetaGen = -1
-    private var lastArtGen = -1
-    private var failingSinceMs = 0L
-    private fun startRemotePoll() {
-        if (remotePolling) return
-        remotePolling = true
-        lastMetaGen = -1; lastArtGen = -1
-        failingSinceMs = 0L
-        main.post(object : Runnable {
-            override fun run() {
-                if (stopping || destroying || !remotePolling || session?.player !== remotePlayer) {
-                    remotePolling = false
-                    return
-                }
-                val status = runCatching { JSONObject(PhosphorNative.remoteStatus()) }.getOrNull()
-                val reading = status?.let { RemoteLinkTruth.read(it) }
-                synchronized(sourceSurvival) {
-                    sourceWake.remoteChanged(
-                        owned = !stopping && !destroying && !sourceSurvival.loss().native && remoteEndpoint != null,
-                        state = reading?.state,
-                    )
-                }
-                if (status != null && reading != null) {
-                    // The read is a tested pure function (RemoteLinkTruth) so the rules
-                    // about what counts as a live link live in one place and are provable
-                    // on the host, rather than being spread through this pump.
-                    when (reading.state) {
-                        RemoteLinkState.STREAMING, RemoteLinkState.SILENT -> {
-                            failingSinceMs = 0L
-                            // A silent link is healthy, so it never counts against the
-                            // give-up clock. It just has nothing to draw.
-                            if (reading.state == RemoteLinkState.SILENT) {
-                                remotePlayer.onSilent()
-                            } else {
-                                remotePlayer.onConnected()
-                            }
-                            if (!remoteGainApplied) {
-                                val p = prefs()
-                                PhosphorNative.remoteScopeCtl(
-                                    "gain",
-                                    if (p.getBoolean("auto_gain", true)) "auto"
-                                    else String.format(
-                                        java.util.Locale.US, "%.2f", p.getFloat("gain", 1.8332275f)
-                                    ),
-                                )
-                                remoteGainApplied = true
-                            }
-                        }
-                        RemoteLinkState.GREETED -> {
-                            // Greeted but nothing flowing yet. Still counts against the
-                            // give-up clock: a relay that greets and never sends is broken.
-                            if (failingSinceMs == 0L) failingSinceMs = System.currentTimeMillis()
-                            if (giveUpIfStuck(status)) return
-                            remotePlayer.onGreeted()
-                        }
-                        RemoteLinkState.STALLED -> {
-                            // Frozen socket, not a dropped one. Acceptance H-04 forbids
-                            // showing this as a live trace, and it is not a reconnect either.
-                            if (failingSinceMs == 0L) failingSinceMs = System.currentTimeMillis()
-                            if (giveUpIfStuck(status)) return
-                            remotePlayer.onConnectionStalled()
-                        }
-                        RemoteLinkState.RECONNECTING, RemoteLinkState.CONNECTING -> {
-                            if (failingSinceMs == 0L) failingSinceMs = System.currentTimeMillis()
-                            if (giveUpIfStuck(status)) return
-                            remotePlayer.onConnectionLost()
-                        }
-                        RemoteLinkState.FAILED -> {
-                            giveUpOnRemote(status)
-                            return
-                        }
-                    }
-                    val mg = status.optInt("meta_gen")
-                    if (mg != lastMetaGen) {
-                        lastMetaGen = mg
-                        runCatching { JSONObject(PhosphorNative.remoteMetadata()) }
-                            .getOrNull()?.let { metadata ->
-                                // The desired id lives on M. RemotePlayer clears the old
-                                // bytes before returning the new content-addressed request.
-                                remotePlayer.onMeta(metadata)?.let {
-                                    PhosphorNative.remoteRequestArt(it)
-                                }
-                            }
-                    }
-                    val ag = status.optInt("art_gen")
-                    if (ag != lastArtGen) {
-                        lastArtGen = ag
-                        // status.art_id identifies the R reply, not the desired M art.
-                        // RemotePlayer rejects it if a newer track already owns the session.
-                        remotePlayer.onArt(status.optString("art_id"), PhosphorNative.remoteArt())
-                    }
-                }
-                main.postDelayed(this, 1000)
-            }
-        })
-    }
-
     private fun requestFocus() {
         val req = focusRequest ?: AudioFocusRequest.Builder(AudioManager.AUDIOFOCUS_GAIN)
             .setAudioAttributes(
@@ -1389,7 +1168,7 @@ class PlaybackService : MediaSessionService() {
         val completion = CompletableFuture<String?>()
         retirement.add(this, completion)
         focusResume.cancel()
-        if (stopReaders || remoteEndpoint != null ||
+        if (stopReaders ||
             (session?.player === localPlayer && localPlayer.queueSize() > 0)) {
             localSourcePublication.published(LocalSourcePublication.Source.NONE)
         } else {
@@ -1400,12 +1179,9 @@ class PlaybackService : MediaSessionService() {
             MicController.stopForLocal(stopSequence.incrementAndGet()) { _, error, _ -> mic.complete(error) }
             listOf(mic, CaptureService.stopExisting())
         } else emptyList()
-        val disconnect = remoteEndpoint != null
-        remotePolling = false
-        remoteEndpoint = null
         localPlayer.recordTransportIntent(false)
         // One terminal request supersedes pending opens. Destruction must not replace it.
-        localDeckRequests.enqueue(LocalDeckRequest.Shutdown(readers, disconnect, completion))
+        localDeckRequests.enqueue(LocalDeckRequest.Shutdown(readers, completion))
         localDeckExecutor.shutdown()
         leaveCaptureMirror()
         localPlayer.setPublishedPlaying(false)
@@ -1418,11 +1194,9 @@ class PlaybackService : MediaSessionService() {
         localPlayer.onSwitchTrack = null
         localPlayer.onSeek = null
         localPlayer.onStopRequested = null
-        remotePlayer.onTransportIntent = null
         session?.release()
         session = null
         localPlayer.release()
-        remotePlayer.release()
         capturePlayer.release()
     }
 
@@ -1444,28 +1218,18 @@ class PlaybackService : MediaSessionService() {
             !it.stopping && !it.destroying && !it.sourceSurvival.loss().native &&
                 it.session?.player === it.localPlayer && it.localPlayer.queueSize() > 0
         } == true
-        internal fun ownsRelay(): Boolean = owner?.let {
-            !it.stopping && !it.sourceSurvival.loss().native && it.remoteEndpoint != null
-        } == true
         internal fun removeTask(keep: Boolean) { owner?.taskRemoved(keep) }
         internal fun captureStopped(captureOwnerId: Long) {
             owner?.takeIf { !it.stopping && !it.destroying && it.captureOwner.accepts(captureOwnerId) }?.endCaptureMirror()
         }
         private val SOURCE_ACTIONS = setOf(
-            ACTION_CAPTURE_STARTED, ACTION_RELEASE_LOCAL, ACTION_REMOTE_CONNECT,
+            ACTION_CAPTURE_STARTED, ACTION_RELEASE_LOCAL,
             ACTION_OPEN_TREE, ACTION_OPEN_DOCUMENT,
         )
         internal val localSourcePublication = LocalSourcePublication()
         const val ACTION_LOCAL_SOURCE_CHANGED = "dev.phosphor.mobil3.LOCAL_SOURCE_CHANGED"
         const val EXTRA_SOURCE_REVISION = "source_revision"
         private const val TAG = "PhosphorPlayback"
-        /**
-         * Surface a link that remains non-streaming for 60 seconds.
-         *
-         * The engine's backoff ladder reaches 15 seconds, so this ceiling allows several
-         * complete retry cycles before the session becomes a visible failure.
-         */
-        private const val REMOTE_GIVE_UP_MS = 60_000L
         const val EXTRA_OPEN = "open"
         const val ACTION_OPEN_TREE = "dev.phosphor.mobil3.OPEN_TREE"
         const val EXTRA_TREE_URI = "tree_uri"
@@ -1474,16 +1238,11 @@ class PlaybackService : MediaSessionService() {
         const val EXTRA_QUEUE_START = "queue_start"
         const val ACTION_RELEASE_LOCAL = "dev.phosphor.mobil3.RELEASE_LOCAL"
         const val EXTRA_RELEASE_REPLY = "release_reply"
-        const val ACTION_REMOTE_CONNECT = "dev.phosphor.mobil3.REMOTE_CONNECT"
-        const val ACTION_REMOTE_DISCONNECT = "dev.phosphor.mobil3.REMOTE_DISCONNECT"
         const val ACTION_CAPTURE_STARTED = "dev.phosphor.mobil3.CAPTURE_STARTED"
         const val ACTION_CAPTURE_STOPPED = "dev.phosphor.mobil3.CAPTURE_STOPPED"
         const val ACTION_CAPTURE_ACCESS_CHANGED =
             "dev.phosphor.mobil3.CAPTURE_ACCESS_CHANGED"
         const val EXTRA_CAPTURE_ACCESS_GRANTED = "capture_access_granted"
-        const val EXTRA_HOST = "host"
-        const val EXTRA_PORT = "port"
-        const val EXTRA_LABEL = "label"
         private const val MAX_ART_EDGE = 1024
         internal val ACTIVE_PLATFORM_STATES = setOf(
             PlatformPlaybackState.STATE_PLAYING,

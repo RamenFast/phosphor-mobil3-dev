@@ -53,7 +53,7 @@ pub enum Cmd {
     SetBeamEnergy(f32),
     /// View rotation in quadrants (0..3, CCW screen-relative). UI-PLACEMENT-LOCKED
     /// mode pins the Activity and rotates the BEAM to gravity instead — the chrome
-    /// physically cannot move. DSP path only; remote geometry keeps its own frame.
+    /// physically cannot move.
     SetViewRotation(u8),
     /// Graticule on/off (desktop grid_enabled).
     SetGrid(bool),
@@ -70,17 +70,6 @@ pub enum Cmd {
     },
     /// A track boundary passed (Kotlin's metadata listener) — advance a per-track cycle.
     CycleAdvance,
-    /// Remote geometry mode: draw the desktop's decimated beam, bypassing the DSP.
-    GeometryActive(bool),
-    GeometryMode(crate::remote::GeometryMode),
-    /// One desktop tap frame (normalized 0..1 points in trace space).
-    GeometryFrame(GeomFrame),
-}
-
-pub struct GeomFrame {
-    pub points: Vec<[f32; 2]>,
-    pub aspect: f32,
-    pub intensity: f32,
 }
 
 pub const MODE_COUNT: u8 = 11;
@@ -245,11 +234,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
     let mut flip: Option<Flip> = None;
     let mut silent_since: Option<std::time::Instant> = None;
     let mut rest_phase: f32 = 0.0;
-
-    // Remote geometry (bridge visualizer mode): latest frame wins, decay keeps ticking.
-    let mut geometry_active = false;
-    let mut geometry_mode = None;
-    let mut geom_frame: Option<GeomFrame> = None;
 
     // Custom light + cycle: colors lerp slot→slot over `cycle_secs` per leg (timer mode)
     // or advance one leg per track boundary (per-track mode; exempt from the guard).
@@ -475,18 +459,6 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
                     }
                     log::info!("reduced motion: {rm}");
                 }
-                Cmd::GeometryActive(on) => {
-                    geometry_active = on;
-                    geometry_mode = None;
-                    if !on {
-                        geom_frame = None;
-                    }
-                    log::info!("geometry mode: {on}");
-                }
-                Cmd::GeometryMode(mode) => geometry_mode = Some(mode),
-                Cmd::GeometryFrame(f) => {
-                    geom_frame = Some(f); // latest wins
-                }
             }
         }
         if had_cmds && (active.is_none() || paused) {
@@ -513,8 +485,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // Meter and autosize share the same raw pre-gain stereo window.
         let frame_peak = raw_peak.map_or(0.0, crate::engine::StereoPeak::max);
 
-        // Empty and sub-threshold frames hold gain. Remote geometry bypasses local DSP.
-        if source_active && !geometry_active && auto_gain.enabled() {
+        // Empty and sub-threshold frames hold gain.
+        if source_active && auto_gain.enabled() {
             if let Some(gain) = auto_gain.update(frame_peak) {
                 computer.gain = gain;
                 GAIN_MILLI.store((gain * 1000.0) as u32, Ordering::Relaxed);
@@ -522,12 +494,8 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         }
 
         // Resting-beam bookkeeping: an idle stage (no source) rests immediately; an
-        // active-but-silent source rests after the sleep window. Geometry mode IS the
-        // signal — the local ring rests by design, never the display.
-        let resting = if geometry_active {
-            silent_since = None;
-            false
-        } else if samples.is_empty() {
+        // active-but-silent source rests after the sleep window.
+        let resting = if samples.is_empty() {
             if source_active {
                 let since = *silent_since.get_or_insert_with(std::time::Instant::now);
                 since.elapsed().as_secs_f32() > REST_AFTER_SECS
@@ -618,11 +586,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
         // The graticule follows effective gain so a pinch zooms the scene instead of only
         // amplifying the trace. Clamping prevents stripes and oversized cells.
         r.grid_spacing_fraction = (0.1125 * computer.gain).clamp(0.035, 0.55);
-        r.grid_angle = crate::engine::grid_angle(
-            computer.mode,
-            geometry_active,
-            geometry_mode.as_ref().and_then(|m| m.current()),
-        );
+        r.grid_angle = crate::engine::grid_angle(computer.mode);
 
         // The DSP reconstructs the contiguous 48 kHz tap at the selected factor. Each display
         // frame performs one compute and one decay/deposit. Splitting a drained window into
@@ -645,33 +609,7 @@ fn render_thread(rx: mpsc::Receiver<Cmd>) {
             }
         };
 
-        if geometry_active {
-            // The desktop's beam, letterboxed into this panel; empty advances keep the
-            // decay honest between frames.
-            if let Some(f) = geom_frame.take() {
-                let aspect = f.aspect.max(0.05);
-                let rect_w = w.min(h * aspect);
-                let rect_h = rect_w / aspect;
-                let ox = (w - rect_w) * 0.5;
-                let oy = (h - rect_h) * 0.5;
-                let segs: Vec<[f32; 5]> = f
-                    .points
-                    .windows(2)
-                    .map(|p| {
-                        [
-                            ox + p[0][0] * rect_w,
-                            oy + p[0][1] * rect_h,
-                            ox + p[1][0] * rect_w,
-                            oy + p[1][1] * rect_h,
-                            f.intensity,
-                        ]
-                    })
-                    .collect();
-                advance(r, &segs, &mut seg_count);
-            } else {
-                advance(r, &[], &mut seg_count);
-            }
-        } else if resting {
+        if resting {
             // The resting beam: a small breathing point at center — never a black mystery.
             rest_phase += 1.0 / 40.0;
             let i = 0.45 + 0.25 * (rest_phase * 0.8).sin();

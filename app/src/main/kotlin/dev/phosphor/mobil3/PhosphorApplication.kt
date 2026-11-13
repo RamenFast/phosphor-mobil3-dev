@@ -50,6 +50,7 @@ class PhosphorApplication : Application() {
 
         deleteSharedPreferences(LegacySettingsMigration.CAUSAL_PREFERENCES)
         deleteSharedPreferences(LegacySettingsMigration.LEGACY_TAILNET_PREFERENCES)
+        deleteSharedPreferences(LegacySettingsMigration.RETIRED_REMOTE_HOSTS)
         runCatching {
             val keys = KeyStore.getInstance("AndroidKeyStore").apply { load(null) }
             if (keys.containsAlias(LegacySettingsMigration.LEGACY_TAILNET_KEY_ALIAS)) {

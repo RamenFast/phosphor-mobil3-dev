@@ -149,16 +149,16 @@ class BackgroundLifecyclePolicyTest {
         val policy = BackgroundLifecyclePolicy()
         val serviceRevision = policy.enterActivity(11)
         val first = policy.callbackRevision(serviceRevision, currentTaskPresent = false)!!
-        assertEquals(BackgroundLifecyclePolicy.Removal(true, true), policy.remove(first, true, false, false, true))
+        assertEquals(BackgroundLifecyclePolicy.Removal(true, true), policy.remove(first, true, false, true))
         policy.enterActivity(22)
         val second = policy.callbackRevision(serviceRevision, currentTaskPresent = false)!!
-        assertEquals(BackgroundLifecyclePolicy.Removal(false, false), policy.remove(second, false, false, false, true))
+        assertEquals(BackgroundLifecyclePolicy.Removal(false, false), policy.remove(second, false, false, true))
     }
 
     @Test fun aNewerLiveTaskRejectsDelayedRemovalOnTheSameRetainedService() {
         val policy = BackgroundLifecyclePolicy()
         val serviceRevision = policy.enterActivity(11)
-        policy.remove(serviceRevision, true, true, false, false)
+        policy.remove(serviceRevision, true, true, false)
         val newer = policy.enterActivity(22)
         assertNull(policy.callbackRevision(serviceRevision, currentTaskPresent = true))
         assertTrue(policy.accepts(newer))
@@ -168,36 +168,36 @@ class BackgroundLifecyclePolicyTest {
 
     @Test fun absentLingerStopsEveryOwnedSourceCombination() {
         assertFalse(BackgroundLifecyclePolicy.linger(emptyMap<String, Any>()))
-        for (local in listOf(false, true)) for (relay in listOf(false, true)) for (capture in listOf(false, true)) {
+        for (local in listOf(false, true)) for (capture in listOf(false, true)) {
             val policy = BackgroundLifecyclePolicy()
             val task = policy.enterActivity()
-            assertEquals(BackgroundLifecyclePolicy.Removal(false, false), policy.remove(task, false, local, relay, capture))
+            assertEquals(BackgroundLifecyclePolicy.Removal(false, false), policy.remove(task, false, local, capture))
             assertFalse(policy.accepts(task))
         }
     }
 
     @Test fun lingerPreservesOnlyExistingServiceOwnersIncludingPausedLocal() {
-        for (local in listOf(false, true)) for (relay in listOf(false, true)) for (capture in listOf(false, true)) {
+        for (local in listOf(false, true)) for (capture in listOf(false, true)) {
             val policy = BackgroundLifecyclePolicy()
-            val removal = policy.remove(policy.enterActivity(), true, local, relay, capture)
-            assertEquals(BackgroundLifecyclePolicy.Removal(local || relay || capture, capture), removal)
+            val removal = policy.remove(policy.enterActivity(), true, local, capture)
+            assertEquals(BackgroundLifecyclePolicy.Removal(local || capture, capture), removal)
         }
         // There is no microphone service owner or playing-state requirement in this decision.
         val micOnly = BackgroundLifecyclePolicy()
-        assertEquals(BackgroundLifecyclePolicy.Removal(false, false), micOnly.remove(micOnly.enterActivity(), true, false, false, false))
+        assertEquals(BackgroundLifecyclePolicy.Removal(false, false), micOnly.remove(micOnly.enterActivity(), true, false, false))
     }
 
     @Test fun bothServiceCallbackOrdersRetireOnceAndRejectOldCallbacksAfterReentry() {
         for (firstOwner in listOf("capture", "playback")) {
             val policy = BackgroundLifecyclePolicy()
             val oldTask = policy.enterActivity()
-            assertNotNull(policy.remove(oldTask, false, true, true, true), firstOwner)
-            assertNull(policy.remove(oldTask, false, true, true, true))
+            assertNotNull(policy.remove(oldTask, false, true, true), firstOwner)
+            assertNull(policy.remove(oldTask, false, true, true))
             val newTask = policy.enterActivity()
             assertTrue(policy.accepts(newTask))
-            assertNull(policy.remove(oldTask, false, true, true, true))
+            assertNull(policy.remove(oldTask, false, true, true))
             assertTrue(policy.accepts(newTask))
-            assertNotNull(policy.remove(newTask, false, true, true, true))
+            assertNotNull(policy.remove(newTask, false, true, true))
         }
     }
 
@@ -207,7 +207,7 @@ class BackgroundLifecyclePolicyTest {
             val task = policy.enterActivity()
             val activity = policy.activityRevision
             val callbacks = List(4) { { policy.accepts(task) && policy.acceptsActivity(activity) } }
-            policy.remove(task, linger, true, false, true)
+            policy.remove(task, linger, true, true)
             assertTrue(callbacks.none { it() })
             policy.enterActivity()
             assertTrue(callbacks.none { it() })
@@ -240,7 +240,7 @@ class BackgroundLifecyclePolicyTest {
                 "prepare" -> {
                     publications.addLast { if (current()) events += "late restart" }
                     slot.enqueue("pending start")
-                    policy.remove(task, false, true, false, false)
+                    policy.remove(task, false, true, false)
                     slot.enqueue("shutdown")
                 }
                 else -> events += request

@@ -118,7 +118,7 @@ internal object RootCaptureChecks {
         try {
             check(manager.mode == AudioManager.MODE_NORMAL && !manager.isMusicActive) { "A call or player is active. Leave it untouched and retry when idle" }
             main {
-                check(CaptureService.quiescent() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay() && RootHelperLease.available()) { "An existing source/helper or cleanup owns the input. Stop it explicitly before testing" }
+                check(CaptureService.quiescent() && MicController.quiescent() && !PlaybackService.ownsLocal() && RootHelperLease.available()) { "An existing source/helper or cleanup owns the input. Stop it explicitly before testing" }
             }
             val tone = Fixture(manager, if (allowSystem) AudioAttributes.ALLOW_CAPTURE_BY_SYSTEM else AudioAttributes.ALLOW_CAPTURE_BY_NONE)
             fixture = tone
@@ -142,7 +142,7 @@ internal object RootCaptureChecks {
             }
             reserved = observer // Identity-only cleanup is safe even if admission never occurs.
             main {
-                check(CaptureService.quiescent() && MicController.quiescent() && !PlaybackService.ownsLocal() && !PlaybackService.ownsRelay())
+                check(CaptureService.quiescent() && MicController.quiescent() && !PlaybackService.ownsLocal())
                 RootCaptureService.reserveCheck(observer)
                 check(gate.accepts())
                 context.startForegroundService(BackgroundLifecycle.stamp(Intent(context, RootCaptureService::class.java), BackgroundLifecycle.policy.revision))

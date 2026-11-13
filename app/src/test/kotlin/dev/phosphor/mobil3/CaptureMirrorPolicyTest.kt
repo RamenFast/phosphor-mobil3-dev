@@ -114,9 +114,9 @@ class CaptureMirrorPolicyTest {
         assertEquals(2, attachments)
     }
 
-    @Test fun captureBufferingToPausedLocalOrRemoteUsesUnchangedNoncaptureTruth() {
+    @Test fun captureBufferingToPausedLocalUsesUnchangedNoncaptureTruth() {
         assertTrue(CaptureMirrorPolicy.displayedPlaying(true, false, PlaybackState.STATE_BUFFERING))
-        for (source in listOf("local", "remote")) {
+        for (source in listOf("local")) {
             assertFalse(CaptureMirrorPolicy.displayedPlaying(source == "capture", false, PlaybackState.STATE_PLAYING))
             assertTrue(CaptureMirrorPolicy.displayedPlaying(source == "capture", true, PlaybackState.STATE_PAUSED))
         }

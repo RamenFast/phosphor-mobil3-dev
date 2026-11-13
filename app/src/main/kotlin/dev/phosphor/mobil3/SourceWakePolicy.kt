@@ -5,9 +5,6 @@ internal object SourceWakePolicy {
     fun local(published: Boolean, playing: Boolean, ready: Boolean, failed: Boolean): Boolean =
         published && playing && ready && !failed
 
-    fun remote(owned: Boolean, state: RemoteLinkState?): Boolean = owned &&
-        (state == RemoteLinkState.STREAMING || state == RemoteLinkState.SILENT)
-
     fun capture(recording: Boolean, projection: Boolean): Boolean = recording && projection
 
     fun root(recording: Boolean, helper: Boolean): Boolean = recording && helper

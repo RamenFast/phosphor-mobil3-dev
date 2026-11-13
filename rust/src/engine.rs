@@ -1,8 +1,6 @@
 //! Host-testable engine glue. No JNI, no Android — plain `cargo test` covers this.
 
 use phosphor_dsp::{Computer, Mode};
-use std::sync::atomic::{AtomicBool, Ordering};
-use std::sync::{Arc, Mutex};
 
 /// One complete, finite stereo tap window, before display gain or DSP.
 #[derive(Clone, Copy, Debug, PartialEq)]
@@ -55,7 +53,6 @@ impl StereoPeak {
 pub(crate) struct StereoWindow {
     peak: Option<StereoPeak>,
     started_ms: u64,
-    remote_boundary: Option<Arc<()>>,
 }
 
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
@@ -64,7 +61,6 @@ impl StereoWindow {
         Self {
             peak: None,
             started_ms: 0,
-            remote_boundary: None,
         }
     }
 
@@ -107,97 +103,9 @@ pub(crate) fn with_stereo_window<T>(
     work(&mut ring, &mut meter)
 }
 
-/// One remote attempt, distinct even when reconnect reuses the Link generation.
-/// Generic source boundaries replace StereoWindow and invalidate both identities.
 #[cfg_attr(not(target_os = "android"), allow(dead_code))]
-pub(crate) struct RemoteScopeLease {
-    before: Arc<()>,
-    owner: Arc<()>,
-}
-
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
-impl RemoteScopeLease {
-    pub(crate) fn prepare(
-        ring: &Mutex<phosphor_audio::SampleRing>,
-        meter: &Mutex<StereoWindow>,
-    ) -> Self {
-        with_stereo_window(ring, meter, |_, meter| Self {
-            before: meter
-                .remote_boundary
-                .get_or_insert_with(|| Arc::new(()))
-                .clone(),
-            owner: Arc::new(()),
-        })
-    }
-
-    fn matches(meter: &StereoWindow, identity: &Arc<()>) -> bool {
-        meter
-            .remote_boundary
-            .as_ref()
-            .is_some_and(|id| Arc::ptr_eq(id, identity))
-    }
-
-    pub(crate) fn activate(
-        &self,
-        ring: &Mutex<phosphor_audio::SampleRing>,
-        meter: &Mutex<StereoWindow>,
-        active: &AtomicBool,
-        live: impl FnOnce() -> bool,
-    ) -> bool {
-        with_stereo_window(ring, meter, |ring, meter| {
-            if !live() || !Self::matches(meter, &self.before) {
-                return false;
-            }
-            ring.clear_pending();
-            *meter = StereoWindow::new();
-            meter.remote_boundary = Some(self.owner.clone());
-            active.store(true, Ordering::Relaxed);
-            true
-        })
-    }
-
-    pub(crate) fn ingest(
-        &self,
-        ring: &Mutex<phosphor_audio::SampleRing>,
-        meter: &Mutex<StereoWindow>,
-        samples: &[f32],
-        live: impl FnOnce() -> bool,
-    ) -> bool {
-        with_stereo_window(ring, meter, |ring, meter| {
-            if !live() || !Self::matches(meter, &self.owner) {
-                return false;
-            }
-            ring.push_interleaved(samples);
-            true
-        })
-    }
-
-    pub(crate) fn retire(
-        &self,
-        ring: &Mutex<phosphor_audio::SampleRing>,
-        meter: &Mutex<StereoWindow>,
-        active: &AtomicBool,
-    ) -> bool {
-        with_stereo_window(ring, meter, |ring, meter| {
-            if !Self::matches(meter, &self.owner) {
-                return false;
-            }
-            ring.clear_pending();
-            *meter = StereoWindow::new();
-            active.store(false, Ordering::Relaxed);
-            true
-        })
-    }
-}
-
-#[cfg_attr(not(target_os = "android"), allow(dead_code))]
-pub(crate) fn grid_angle(mode: Mode, remote_geometry: bool, remote_mode: Option<Mode>) -> f32 {
-    let actual = if remote_geometry {
-        remote_mode
-    } else {
-        Some(mode)
-    };
-    if actual == Some(Mode::Xy45) {
+pub(crate) fn grid_angle(mode: Mode) -> f32 {
+    if mode == Mode::Xy45 {
         std::f32::consts::FRAC_PI_4
     } else {
         0.0
@@ -714,288 +622,6 @@ mod tests {
                 .unwrap()
                 .contains("set_ring_active(false)")
         );
-        assert!(include_str!("remote.rs").contains("self.scope.retire("));
-    }
-
-    fn delayed_remote_scope_ingest(adapter: &str) {
-        use std::sync::{Arc, Mutex, mpsc};
-        use std::time::Duration;
-        let ring = Arc::new(Mutex::new(SampleRing::new(48_000)));
-        let meter = Arc::new(Mutex::new(super::StereoWindow::new()));
-        let active = super::AtomicBool::new(false);
-        let cancel = Arc::new(super::AtomicBool::new(false));
-        let lease = Arc::new(super::RemoteScopeLease::prepare(&ring, &meter));
-        assert!(lease.activate(&ring, &meter, &active, || true));
-        let (checked_tx, checked_rx) = mpsc::sync_channel(1);
-        let (resume_tx, resume_rx) = mpsc::sync_channel(1);
-        let (done_tx, done_rx) = mpsc::sync_channel(1);
-        let wait = Duration::from_secs(5);
-        let producer = {
-            let (ring, meter, lease, cancel) =
-                (ring.clone(), meter.clone(), lease.clone(), cancel.clone());
-            std::thread::spawn(move || {
-                assert!(!cancel.load(super::Ordering::SeqCst));
-                checked_tx.send(()).unwrap();
-                // This is upstream of ring acquisition, unlike the retained drain regression.
-                resume_rx.recv_timeout(wait).unwrap();
-                let accepted = lease.ingest(&ring, &meter, &[0.75, 0.25], || {
-                    !cancel.load(super::Ordering::SeqCst)
-                });
-                done_tx.send(accepted).unwrap();
-            })
-        };
-        checked_rx.recv_timeout(wait).unwrap();
-        cancel.store(true, super::Ordering::SeqCst);
-        assert!(lease.retire(&ring, &meter, &active));
-        super::with_stereo_window(&ring, &meter, |ring, meter| {
-            ring.clear_pending();
-            *meter = super::StereoWindow::new();
-            active.store(true, super::Ordering::Relaxed);
-            ring.push_interleaved(&[0.0, 0.0]);
-            meter.observe(
-                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
-                110,
-            );
-        });
-        resume_tx.send(()).unwrap();
-        assert!(!done_rx.recv_timeout(wait).unwrap());
-        producer.join().unwrap(); // Completion is received before joining.
-        super::with_stereo_window(&ring, &meter, |ring, meter| {
-            let mut samples = ring.take_stereo_samples();
-            assert!(samples.is_empty());
-            meter.observe(super::StereoPeak::prepare(&mut samples), 120);
-            assert_eq!(
-                meter.take(120),
-                Some(super::StereoPeak {
-                    left: 0.0,
-                    right: 0.0
-                })
-            );
-        });
-        assert!(active.load(super::Ordering::Relaxed));
-        // Runtime proof above covers the production ingest guard. This only maps each adapter.
-        assert!(include_str!("remote.rs").contains(adapter));
-    }
-
-    #[test]
-    fn stereo_peak_remote_scope_worker_rejects_delayed_old_batch() {
-        delayed_remote_scope_ingest("shared_v.push_scope(&buf[..got])");
-    }
-
-    #[test]
-    fn stereo_peak_remote_reader_fallback_rejects_delayed_old_batch() {
-        delayed_remote_scope_ingest("shared.push_scope(&f32buf)");
-    }
-
-    #[test]
-    fn stereo_peak_remote_retirement_clears_pending_and_measured_without_expiry() {
-        let ring = super::Mutex::new(SampleRing::new(48_000));
-        let meter = super::Mutex::new(super::StereoWindow::new());
-        let active = super::AtomicBool::new(false);
-        let lease = super::RemoteScopeLease::prepare(&ring, &meter);
-        assert!(lease.activate(&ring, &meter, &active, || true));
-        assert!(lease.ingest(&ring, &meter, &[0.75, 0.25], || true));
-        super::with_stereo_window(&ring, &meter, |ring, meter| {
-            meter.observe(
-                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
-                100,
-            );
-        });
-        assert!(lease.ingest(&ring, &meter, &[0.5, 0.125], || true));
-        assert!(lease.retire(&ring, &meter, &active));
-        assert!(!active.load(super::Ordering::Relaxed));
-        assert!(ring.lock().unwrap().take_stereo_samples().is_empty());
-        assert_eq!(meter.lock().unwrap().take(101), None); // 1ms, not the 501ms expiry.
-        assert!(!lease.ingest(&ring, &meter, &[0.75, 0.25], || true));
-        assert!(!lease.activate(&ring, &meter, &active, || true));
-        assert!(!lease.retire(&ring, &meter, &active));
-    }
-
-    #[test]
-    fn stereo_peak_remote_late_cleanup_preserves_local_capture_and_mic() {
-        for source in ["local", "capture", "mic"] {
-            let ring = super::Mutex::new(SampleRing::new(48_000));
-            let meter = super::Mutex::new(super::StereoWindow::new());
-            let active = super::AtomicBool::new(false);
-            let old = super::RemoteScopeLease::prepare(&ring, &meter);
-            assert!(old.activate(&ring, &meter, &active, || true));
-            // The actual deck open and generic set_ring_active boundaries use this reset.
-            let measured = super::StereoPeak {
-                left: 0.5,
-                right: 0.125,
-            };
-            super::with_stereo_window(&ring, &meter, |ring, meter| {
-                ring.clear_pending();
-                *meter = super::StereoWindow::new();
-                active.store(true, super::Ordering::Relaxed);
-                meter.observe(Some(measured), 100);
-                ring.push_interleaved(&[0.25, 0.0625]);
-            });
-            // Keep outer liveness true to prove identity rejects independently of cancellation.
-            assert!(
-                !old.ingest(&ring, &meter, &[0.75, 0.25], || true),
-                "{source}"
-            );
-            assert!(!old.retire(&ring, &meter, &active), "{source}");
-            assert!(active.load(super::Ordering::Relaxed), "{source}");
-            assert_eq!(meter.lock().unwrap().take(101), Some(measured), "{source}");
-            assert_eq!(
-                ring.lock().unwrap().take_stereo_samples(),
-                [0.25, 0.0625],
-                "{source}"
-            );
-        }
-    }
-
-    #[test]
-    fn stereo_peak_remote_same_generation_successor_keeps_its_lease_and_measurement() {
-        let ring = super::Mutex::new(SampleRing::new(48_000));
-        let meter = super::Mutex::new(super::StereoWindow::new());
-        let active = super::AtomicBool::new(false);
-        let generation = std::sync::atomic::AtomicU64::new(77);
-        let live = || generation.load(super::Ordering::SeqCst) == 77;
-        let old = super::RemoteScopeLease::prepare(&ring, &meter);
-        assert!(old.activate(&ring, &meter, &active, live));
-        assert!(old.retire(&ring, &meter, &active));
-        let new = super::RemoteScopeLease::prepare(&ring, &meter);
-        assert!(new.activate(&ring, &meter, &active, live));
-        // Consumption and expiry must not retire the current session identity.
-        let measured = super::StereoPeak {
-            left: 0.5,
-            right: 0.125,
-        };
-        for (observed, read) in [(100, 101), (200, 701)] {
-            assert!(new.ingest(&ring, &meter, &[0.5, 0.125], live));
-            super::with_stereo_window(&ring, &meter, |ring, meter| {
-                meter.observe(
-                    super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
-                    observed,
-                );
-                assert_eq!(
-                    meter.take(read),
-                    (read - observed <= 500).then_some(measured)
-                );
-            });
-        }
-        assert!(new.ingest(&ring, &meter, &[0.5, 0.125], live));
-        super::with_stereo_window(&ring, &meter, |ring, meter| {
-            meter.observe(
-                super::StereoPeak::prepare(&mut ring.take_stereo_samples()),
-                710,
-            );
-        });
-        assert!(new.ingest(&ring, &meter, &[0.25, 0.0625], live));
-        assert!(!old.ingest(&ring, &meter, &[0.75, 0.25], live));
-        assert!(!old.retire(&ring, &meter, &active));
-        assert!(!old.activate(&ring, &meter, &active, live));
-        assert!(active.load(super::Ordering::Relaxed));
-        assert_eq!(meter.lock().unwrap().take(711), Some(measured));
-        assert_eq!(ring.lock().unwrap().take_stereo_samples(), [0.25, 0.0625]);
-        assert_eq!(generation.load(super::Ordering::SeqCst), 77);
-    }
-
-    #[test]
-    fn stereo_peak_remote_cancel_between_outer_check_and_locked_activation() {
-        use std::sync::{Arc, Mutex, mpsc};
-        use std::time::Duration;
-        for cancellation in ["session", "quit", "generation"] {
-            let ring = Arc::new(Mutex::new(SampleRing::new(48_000)));
-            let meter = Arc::new(Mutex::new(super::StereoWindow::new()));
-            let active = Arc::new(super::AtomicBool::new(false));
-            let cancel = Arc::new(super::AtomicBool::new(false));
-            let quit = Arc::new(super::AtomicBool::new(false));
-            let generation = Arc::new(std::sync::atomic::AtomicU64::new(77));
-            let lease = Arc::new(super::RemoteScopeLease::prepare(&ring, &meter));
-            let (checked_tx, checked_rx) = mpsc::sync_channel(1);
-            let (resume_tx, resume_rx) = mpsc::sync_channel(1);
-            let (done_tx, done_rx) = mpsc::sync_channel(1);
-            let wait = Duration::from_secs(5);
-            let setup = {
-                let (ring, meter, active, lease, cancel, quit, generation) = (
-                    ring.clone(),
-                    meter.clone(),
-                    active.clone(),
-                    lease.clone(),
-                    cancel.clone(),
-                    quit.clone(),
-                    generation.clone(),
-                );
-                std::thread::spawn(move || {
-                    let live = || {
-                        !cancel.load(super::Ordering::SeqCst)
-                            && !quit.load(super::Ordering::SeqCst)
-                            && generation.load(super::Ordering::SeqCst) == 77
-                    };
-                    assert!(live());
-                    checked_tx.send(()).unwrap();
-                    resume_rx.recv_timeout(wait).unwrap();
-                    done_tx
-                        .send(lease.activate(&ring, &meter, &active, live))
-                        .unwrap();
-                })
-            };
-            checked_rx.recv_timeout(wait).unwrap();
-            match cancellation {
-                "session" => cancel.store(true, super::Ordering::SeqCst),
-                "quit" => quit.store(true, super::Ordering::SeqCst),
-                _ => generation.store(78, super::Ordering::SeqCst),
-            }
-            resume_tx.send(()).unwrap();
-            assert!(!done_rx.recv_timeout(wait).unwrap(), "{cancellation}");
-            setup.join().unwrap();
-            assert!(!active.load(super::Ordering::Relaxed), "{cancellation}");
-            assert_eq!(meter.lock().unwrap().take(1), None);
-            assert!(!lease.retire(&ring, &meter, &active));
-        }
-    }
-
-    #[test]
-    fn stereo_peak_remote_setup_before_generic_replacement_cannot_activate_or_clear_it() {
-        let ring = super::Mutex::new(SampleRing::new(48_000));
-        let meter = super::Mutex::new(super::StereoWindow::new());
-        let active = super::AtomicBool::new(false);
-        let pending = super::RemoteScopeLease::prepare(&ring, &meter);
-        let measured = super::StereoPeak {
-            left: 0.0,
-            right: 0.0,
-        };
-        super::with_stereo_window(&ring, &meter, |ring, meter| {
-            ring.clear_pending();
-            *meter = super::StereoWindow::new();
-            active.store(true, super::Ordering::Relaxed);
-            meter.observe(Some(measured), 100);
-            ring.push_interleaved(&[0.0, 0.0]);
-        });
-        assert!(!pending.activate(&ring, &meter, &active, || true));
-        assert!(!pending.retire(&ring, &meter, &active));
-        assert!(active.load(super::Ordering::Relaxed));
-        assert_eq!(meter.lock().unwrap().take(101), Some(measured));
-        assert_eq!(ring.lock().unwrap().take_stereo_samples(), [0.0, 0.0]);
-    }
-
-    #[test]
-    fn stereo_peak_remote_adapters_share_production_lease_guard() {
-        let remote: String = include_str!("remote.rs")
-            .chars()
-            .filter(|ch| !ch.is_whitespace())
-            .collect();
-        assert!(remote.contains("self.scope.ingest("));
-        assert!(remote.contains("shared_v.push_scope(&buf[..got])"));
-        assert!(remote.contains("shared.push_scope(&f32buf)"));
-        assert!(remote.contains("shared.scope.activate("));
-        assert!(remote.contains("self.scope.retire("));
-        assert!(!remote.contains("push_interleaved("));
-        assert!(!remote.contains("set_ring_active("));
-        let setup = remote.split("fnrun_session(").nth(1).unwrap();
-        assert!(
-            setup.find("RemoteScopeLease::prepare").unwrap()
-                < setup.find(".to_socket_addrs()").unwrap()
-        );
-        let teardown = remote.split("fnteardown_session(").nth(1).unwrap();
-        assert!(
-            teardown.find("shared.trip()").unwrap()
-                < teardown.find("bridge_core::bounded_join(").unwrap()
-        );
     }
 
     #[test]
@@ -1053,16 +679,14 @@ mod tests {
     }
 
     #[test]
-    fn grid_angle_uses_actual_local_or_known_current_remote_mode_only() {
+    fn grid_angle_follows_the_local_mode() {
         for mode in Mode::ALL {
             let expected = if mode == Mode::Xy45 {
                 std::f32::consts::FRAC_PI_4
             } else {
                 0.0
             };
-            assert_eq!(super::grid_angle(mode, false, Some(Mode::Xy45)), expected);
-            assert_eq!(super::grid_angle(Mode::Xy45, true, Some(mode)), expected);
-            assert_eq!(super::grid_angle(mode, true, None), 0.0);
+            assert_eq!(super::grid_angle(mode), expected);
         }
         let compact =
             |source: &str| -> String { source.chars().filter(|ch| !ch.is_whitespace()).collect() };
@@ -1081,30 +705,7 @@ mod tests {
             .strip_suffix(')')
             .unwrap()
             .trim_end_matches(',');
-        assert_eq!(
-            arguments,
-            "computer.mode,geometry_active,geometry_mode.as_ref().and_then(|m|m.current())"
-        );
-        let remote = compact(include_str!("remote.rs"));
-        assert!(remote.contains("Arc::ptr_eq(s,&session)"));
-        assert!(remote.contains("!session.cancelled()"));
-        let command = remote
-            .split_once("crate::render::Cmd::GeometryMode(")
-            .unwrap()
-            .1
-            .split_once(';')
-            .unwrap()
-            .0;
-        let fields = command
-            .split_once("GeometryMode{")
-            .unwrap()
-            .1
-            .split_once('}')
-            .unwrap()
-            .0
-            .trim_end_matches(',');
-        assert_eq!(fields, "session:Arc::downgrade(&shared),mode");
-        // Protocol K and G have no shared mode revision. These are adapter checks, not GPU or relay execution.
+        assert_eq!(arguments, "computer.mode");
     }
 
     #[test]

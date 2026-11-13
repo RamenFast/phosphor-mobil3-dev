@@ -42,11 +42,11 @@ internal class BackgroundLifecyclePolicy {
         else -> null
     }
 
-    fun remove(request: Long, linger: Boolean, local: Boolean, relay: Boolean, capture: Boolean): Removal? {
+    fun remove(request: Long, linger: Boolean, local: Boolean, capture: Boolean): Removal? {
         if (!accepts(request)) return null
         removed = true
         revision++
-        return Removal(linger && (local || relay || capture), linger && capture)
+        return Removal(linger && (local || capture), linger && capture)
     }
 
     companion object {
@@ -142,7 +142,7 @@ internal object BackgroundLifecycle {
         val removal = policy.remove(
             removedRevision,
             BackgroundLifecyclePolicy.linger(prefs.all),
-            PlaybackService.ownsLocal(), PlaybackService.ownsRelay(), CaptureService.ownsCapture(),
+            PlaybackService.ownsLocal(), CaptureService.ownsCapture(),
         ) ?: return
         PlaybackService.localSourcePublication.selected()
         context.getSharedPreferences(PhosphorApplication.RUNTIME_PREFERENCES_NAME, Context.MODE_PRIVATE).edit {

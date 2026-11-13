@@ -147,7 +147,6 @@ interface ScopeActions {
     fun next()
     fun prev()
     fun seekTo(ms: Long)
-    fun startRemote()
     fun setMode(index: Int)
     fun setBeam(index: Int)
     fun setFps(value: Int)
@@ -181,24 +180,6 @@ interface ScopeActions {
     fun isUiPlacementLocked(): Boolean
     fun lockedUiLandscape(): Boolean
     fun setUiPlacementLocked(locked: Boolean)
-    fun setRemoteLatencyMode(mode: Int)
-    fun remoteHosts(): List<Pair<String, Pair<String, Int>>>
-    /**
-     * Add, edit, or remove a saved relay. Returns null on success, or the store's
-     * fix-bearing refusal text so the sheet can show the user exactly why it declined.
-     * The empty-string [existingHost] means "add", matching the editor's null [existing].
-     */
-    fun saveRemoteHost(
-        existingHost: String,
-        existingPort: Int,
-        label: String,
-        host: String,
-        port: String,
-    ): String?
-    fun removeRemoteHost(host: String, port: Int): String?
-    fun startRemoteHost(label: String, host: String, port: Int)
-    fun setRemoteStreams(audio: Boolean, geometry: Boolean)
-    fun disconnectRemote()
     fun epilepsyAcknowledged(): Boolean
     fun ackEpilepsy()
     fun setGainAbsolute(g: Float)
@@ -323,7 +304,6 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun startStandardCapture() = actions.startStandardCapture()
             override fun setRootCapture(enabled: Boolean) = actions.setRootCapture(enabled)
             override fun openRootManager() = actions.openRootManager()
-            override fun startRemote() = actions.startRemote()
             override fun stopLive() = actions.stopLive()
             override fun captureConsentNeeded() = actions.captureConsentNeeded()
             override fun setFps(value: Int) = actions.setFps(value)
@@ -355,26 +335,10 @@ fun PhosphorScreen(state: ScopeUiState, actions: ScopeActions, reduced: Boolean)
             override fun isUiPlacementLocked() = actions.isUiPlacementLocked()
             override fun setUiPlacementLocked(locked: Boolean) =
                 actions.setUiPlacementLocked(locked)
-            override fun setRemoteLatencyMode(mode: Int) = actions.setRemoteLatencyMode(mode)
             override fun openRoom() { }
             override fun openLight() { }
             override fun openManual() { }
             override fun openLink(url: String) = actions.openLink(url)
-            override fun remoteHosts() = actions.remoteHosts()
-            override fun saveRemoteHost(
-                existingHost: String,
-                existingPort: Int,
-                label: String,
-                host: String,
-                port: String,
-            ) = actions.saveRemoteHost(existingHost, existingPort, label, host, port)
-            override fun removeRemoteHost(host: String, port: Int) =
-                actions.removeRemoteHost(host, port)
-            override fun startRemoteHost(label: String, host: String, port: Int) =
-                actions.startRemoteHost(label, host, port)
-            override fun setRemoteStreams(audio: Boolean, geometry: Boolean) =
-                actions.setRemoteStreams(audio, geometry)
-            override fun disconnectRemote() = actions.disconnectRemote()
             override fun openFolder() = actions.openFolder()
             override fun jumpToQueue(index: Int) = actions.jumpToQueue(index)
         }

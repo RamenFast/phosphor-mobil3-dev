@@ -64,7 +64,7 @@ class LocalPlaybackPolicyTest {
         assertTrue(snapshot.clearsReaderFace("mic"))
         assertFalse(snapshot.clearsReaderFace("capture"))
         assertFalse(snapshot.clearsReaderFace("deck"))
-        assertFalse(snapshot.clearsReaderFace("remote"))
+        assertFalse(snapshot.clearsReaderFace("deck"))
     }
 
     @Test
@@ -188,7 +188,7 @@ class LocalPlaybackPolicyTest {
     fun crossSourceHumanPauseUsesTheSameLocalPublicationIntent() {
         val local = LocalTransportIntent()
         val selectedAt = local.revision
-        // Remote command hook and capture router both forward the explicit command to record.
+        // The media-session command hook and capture router both forward the explicit command to record.
         val sourceCommand = local::record
         sourceCommand(false)
         local.publish(false)

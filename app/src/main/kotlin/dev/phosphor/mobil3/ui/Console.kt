@@ -111,20 +111,11 @@ fun StatusBand(state: ScopeUiState, p: Palette, reduced: Boolean, hudVisible: Bo
                 if (hudVisible && state.hudLine.isNotBlank()) {
                     Mono(state.hudLine, p.muted.copy(alpha = 0.8f), Type.dataXs)
                 }
-                if (hudVisible && state.hudLine2.isNotBlank()) {
-                    Mono(state.hudLine2, p.muted.copy(alpha = 0.8f), Type.dataXs)
-                }
             }
-            // Remote geometry reports the desktop mode and measured gain, not the idle local renderer.
             val rolledMark = if (state.randomModeArmed) " ⚄" else ""
-            val right = state.remoteScopeLine?.let { remoteTruth ->
-                if (rolledMark.isEmpty()) remoteTruth
-                else remoteTruth.replaceFirst(" ·", "$rolledMark ·")
-            } ?: run {
-                val gainTag = "×" + String.format(Locale.ROOT, "%.2f", state.gain) +
-                    if (state.localAutoGain) "·a" else ""
-                "${state.modeTag}$rolledMark · $gainTag"
-            }
+            val gainTag = "×" + String.format(Locale.ROOT, "%.2f", state.gain) +
+                if (state.localAutoGain) "·a" else ""
+            val right = "${state.modeTag}$rolledMark · $gainTag"
             Mono(
                 right, p.ink2.copy(alpha = 0.70f), Type.dataSm,
                 Modifier.padding(start = Dim.gapLg).widthIn(max = 280.dp),
@@ -192,7 +183,7 @@ fun Console(
     chromeMoving: Boolean = false,
 ) {
     val view = LocalView.current
-    val hasTransport = state.trackTitle != null || state.remote
+    val hasTransport = state.trackTitle != null
     val capture = state.sourceLabel == "capture"
     val style = LocalRoomStyle.current
     val landscape = LocalChromeLandscape.current
@@ -331,7 +322,7 @@ fun BenchPost(state: ScopeUiState, p: Palette) {
     var lines by remember { mutableIntStateOf(0) }
     var visible by remember { mutableStateOf(true) }
     LaunchedEffect(Unit) {
-        repeat(3) {
+        repeat(1) {
             kotlinx.coroutines.delay(160)
             lines = it + 1
         }
@@ -341,8 +332,6 @@ fun BenchPost(state: ScopeUiState, p: Palette) {
     if (!visible) return
     val checks = listOf(
         "V1 ENGINE" to "OK",
-        "J1 RELAY" to if (state.remote) "OK" else "—",
-        "V2 HEATER" to if (state.remote && state.remoteAudio) "OK" else "—",
     )
     Column {
         checks.take(lines).forEach { (k, v) ->
