@@ -259,8 +259,8 @@ fun ManualSheet(
             SectionHeading("PRIVACY", p)
             Prose(
                 "phosphor has no account, ads, or tracking. Local audio is processed " +
-                    "in memory and is not recorded or uploaded. The only network use is " +
-                    "fetching cover art that another app's now-playing entry links to.",
+                    "in memory and is not recorded or uploaded. The app has no network " +
+                    "permission and makes no network requests.",
                 p.muted, modifier = Modifier.padding(bottom = Dim.gap),
             )
             LinkCard("privacy policy", "…/phosphor-mobil3/blob/master/PRIVACY.md", p) {

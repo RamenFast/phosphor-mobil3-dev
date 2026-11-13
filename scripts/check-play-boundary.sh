@@ -80,6 +80,16 @@ SOURCE_CHECKS=0
 ARTIFACT_CHECKS=0
 TRUSTED_RUNTIME_EXEMPTIONS=0
 
+# Routing-surface grep. The one exempt line is the source manifest's removal of the
+# network-state permission a dependency merges in; the manifest parser checks its form.
+forced_routing_hits() {
+  local out status
+  out=$(grep -RInE "$1" "$REPO/app/src/main" "$REPO/app/src/debug")
+  status=$?
+  [ "$status" -le 1 ] || return "$status"
+  printf '%s\n' "$out" | grep -vF 'ACCESS_NETWORK_STATE" tools:node="remove"' || true
+}
+
 record_hits() {
   local label="$1"
   shift
@@ -145,7 +155,7 @@ check_source() {
   record_hits tracking_surface grep -RInEi "$tracking_regex" "$REPO/app/src" "$REPO/app/build.gradle.kts" "$REPO/gradle/libs.versions.toml"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
   local forced_routing_regex='bindProcessToNetwork|requestNetwork|setRemoteNetworkMode|networkMode|ACTION_REMOTE_POLICY_CHANGED|ACCESS_NETWORK_STATE|CHANGE_NETWORK_STATE'
-  record_hits forced_physical_routing grep -RInE "$forced_routing_regex" "$REPO/app/src/main" "$REPO/app/src/debug"
+  record_hits forced_physical_routing forced_routing_hits "$forced_routing_regex"
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))
   record_hits source_symlink find "$REPO/app/src" -type l -print
   SOURCE_CHECKS=$((SOURCE_CHECKS + 1))

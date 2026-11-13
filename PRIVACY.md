@@ -16,9 +16,7 @@ Phosphor can process the following data only to provide features the user choose
 
 ## Network use
 
-A fresh installation does not contact a Phosphor service.
-
-Phosphor makes one kind of network request. When playback capture is running and another app's media session gives its cover art as a web link, Phosphor downloads that image from the address the other app supplied so it can show the art. Nothing about the user is sent beyond what any image download carries, and no audio leaves the device. Phosphor has no server of its own.
+Phosphor does not request Android's network permission and makes no network requests. Audio, metadata, artwork, and settings stay on the device.
 
 Links to the source repository, releases, license, or this policy open only when the user selects them. They open in the user's browser and are then subject to the destination site's policy.
 

@@ -37,7 +37,6 @@ import androidx.media3.session.MediaSessionService
 import com.google.common.util.concurrent.Futures
 import com.google.common.util.concurrent.ListenableFuture
 import java.io.ByteArrayOutputStream
-import java.net.URL
 import java.util.concurrent.Executors
 import java.util.concurrent.CompletableFuture
 import java.util.concurrent.TimeUnit
@@ -601,11 +600,9 @@ class PlaybackService : MediaSessionService() {
 
     private fun decodeArtworkUri(value: String): Bitmap? = runCatching {
         val uri = value.toUri()
+        // The app has no network permission: web art links are skipped, local ones are read.
         val stream = when (uri.scheme?.lowercase()) {
-            "http", "https" -> URL(value).openConnection().apply {
-                connectTimeout = 4_000
-                readTimeout = 4_000
-            }.getInputStream()
+            "http", "https" -> null
             else -> contentResolver.openInputStream(uri)
         }
         stream?.use(BitmapFactory::decodeStream)

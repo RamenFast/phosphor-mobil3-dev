@@ -47,7 +47,7 @@ class ManifestBoundaryTest {
         String micPermissions = fgs + permission("FOREGROUND_SERVICE_MICROPHONE") + permission("RECORD_AUDIO");
 
         test("minimal merged", manifest("", "", ""), null);
-        test("alternate namespace prefix", manifest(permission("INTERNET"), "", ""), null);
+        test("alternate namespace prefix", manifest(permission("WAKE_LOCK"), "", ""), null);
         test("formatted permission", manifest(permission("RECORD_AUDIO").replace(" a:name", "\n a:name"), "", ""), null);
         test("comment is not permission", manifest("<!-- <uses-permission a:name='android.permission.CAPTURE_AUDIO_OUTPUT'/> -->", "", ""), null);
         test("root candidate", manifest(special, "", root), null);
@@ -74,12 +74,17 @@ class ManifestBoundaryTest {
         test("legacy Bluetooth unbounded", manifest(micPermissions + permission("BLUETOOTH"), "", mic), "end at API 30");
         test("legacy Bluetooth extended", manifest(micPermissions + "<uses-permission a:name='android.permission.BLUETOOTH' a:maxSdkVersion='31'/>", "", mic), "end at API 30");
 
-        for (String name : new String[] { "CAPTURE_AUDIO_OUTPUT", "WRITE_SECURE_SETTINGS", "QUERY_ALL_PACKAGES", "READ_SMS", "BLUETOOTH_SCAN", "UNKNOWN&#x9;NAME" })
+        for (String name : new String[] { "INTERNET", "CAPTURE_AUDIO_OUTPUT", "WRITE_SECURE_SETTINGS", "QUERY_ALL_PACKAGES", "READ_SMS", "BLUETOOTH_SCAN", "UNKNOWN&#x9;NAME" })
             test("unapproved " + name, manifest(permission(name), "", ""), "Unapproved permission");
+        String strip = "<uses-permission a:name='android.permission.ACCESS_NETWORK_STATE' t:node='remove' xmlns:t='http://schemas.android.com/tools'/>";
+        test("merged network state", manifest(permission("ACCESS_NETWORK_STATE"), "", ""), "Unapproved permission");
+        test("merged network state strip marker", manifest(strip, "", ""), "Unapproved permission");
+        test("source network state strip", manifest(strip, "", "").replace(SDK, ""), null, false);
+        test("source network state kept", manifest(permission("ACCESS_NETWORK_STATE"), "", "").replace(SDK, ""), "Unapproved permission", false);
         test("sdk23 unapproved permission", manifest("<uses-permission-sdk-23 a:name='android.permission.CAPTURE_AUDIO_OUTPUT'/>", "", ""), "Unapproved permission");
-        test("duplicate permission", manifest(permission("INTERNET") + permission("INTERNET"), "", ""), "Duplicate permission");
+        test("duplicate permission", manifest(permission("WAKE_LOCK") + permission("WAKE_LOCK"), "", ""), "Duplicate permission");
         test("permission expiry", manifest("<uses-permission a:name='android.permission.RECORD_AUDIO' a:maxSdkVersion='29'/>", "", ""), "cannot silently expire");
-        test("spoofed attribute namespace", manifest(permission("INTERNET"), "", "").replace(SDK, "").replace(NS, "urn:not-android"), "Unapproved permission");
+        test("spoofed attribute namespace", manifest(permission("WAKE_LOCK"), "", "").replace(SDK, "").replace(NS, "urn:not-android"), "Unapproved permission");
         test("wrong root element", "<application/>", "Expected manifest root");
         test("namespaced root", manifest("", "", "").replace("<manifest ", "<manifest xmlns='urn:fake' "), "Expected manifest root");
         test("malformed XML", "<manifest><application>", "must start and end");

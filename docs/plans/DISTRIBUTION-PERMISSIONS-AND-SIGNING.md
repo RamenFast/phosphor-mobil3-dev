@@ -39,7 +39,6 @@ Allowed manifest permissions must map to a supported feature:
 
 | Permission or access | Purpose |
 |---|---|
-| `INTERNET` | Cover-art fetch when a captured app links its artwork by http(s) |
 | foreground service | Active playback and capture |
 | media playback FGS | Background local playback |
 | media projection FGS | User-approved playback capture |
@@ -56,9 +55,9 @@ Allowed manifest permissions must map to a supported feature:
 
 The local boundary command parses XML by namespace and rejects malformed documents, DTDs, external entities, and unknown permission/component identities. Comments and formatting cannot grant an exception. Its private parser uses the existing pinned JDK's standard XML library. This adds no product dependency, Android build runtime, public helper command, or installed service.
 
-Base permission entries are `INTERNET`, `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `FOREGROUND_SERVICE_MEDIA_PROJECTION`, `RECORD_AUDIO`, and `WAKE_LOCK`. Optional expansion entries are `SYSTEM_ALERT_WINDOW`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `BLUETOOTH_CONNECT`, and legacy `BLUETOOTH` bounded through API 30. Adding an entry to this permitted set does not grant access or establish tested product behavior.
+Base permission entries are `FOREGROUND_SERVICE`, `FOREGROUND_SERVICE_MEDIA_PLAYBACK`, `FOREGROUND_SERVICE_MEDIA_PROJECTION`, `RECORD_AUDIO`, and `WAKE_LOCK`. Optional expansion entries are `SYSTEM_ALERT_WINDOW`, `FOREGROUND_SERVICE_MICROPHONE`, `FOREGROUND_SERVICE_SPECIAL_USE`, `POST_NOTIFICATIONS`, `BLUETOOTH_CONNECT`, and legacy `BLUETOOTH` bounded through API 30. Adding an entry to this permitted set does not grant access or establish tested product behavior.
 
-Merged AndroidX output may add `ACCESS_NETWORK_STATE` and the production package's signature-only `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. This is not authorization for process-wide physical-network routing. App source retains the existing forced-routing ban. Production rejects debug package identity, `debuggable=true`, `testOnly=true`, shared system UID, persistent application mode, instrumentation, unknown services/providers/receivers, and activity aliases.
+Merged AndroidX output may add the production package's signature-only `DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION`. The `ACCESS_NETWORK_STATE` entry that media3-common merges in is stripped by the source manifest (`tools:node="remove"`), and the gate rejects it in merged output. This is not authorization for process-wide physical-network routing. App source retains the existing forced-routing ban. Production rejects debug package identity, `debuggable=true`, `testOnly=true`, shared system UID, persistent application mode, instrumentation, unknown services/providers/receivers, and activity aliases.
 
 | Component | Exposure | Required role |
 |---|---|---|
@@ -114,7 +113,7 @@ Same-package upgrades and the existing settings archive must preserve accepted i
 
 The app must link to a stable HTTPS privacy policy and show an in-app privacy summary.
 
-The summary must describe microphone audio, playback capture, media metadata and artwork, the cover-art fetch, local files, and the absence of analytics or silent reporting.
+The summary must describe microphone audio, playback capture, media metadata and artwork, local files, the absence of any network permission, and the absence of analytics or silent reporting.
 
 ## 7. Release artifacts
 

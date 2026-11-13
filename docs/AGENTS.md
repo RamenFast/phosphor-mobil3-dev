@@ -22,7 +22,7 @@
 - Minimum SDK 29; target and compile SDK 36.
 - No account, ads, usage or behavior tracking, or automatic reporting.
 - No runtime administration protocol inside the app.
-- No network connection except fetching cover art that a captured app links by http(s).
+- No network permission and no network connection.
 - The first public release is free, with no purchase flow.
 
 ## Validation

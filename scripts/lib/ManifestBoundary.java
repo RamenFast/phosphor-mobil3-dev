@@ -17,10 +17,11 @@ class ManifestBoundary {
     static final String APP = "dev.phosphor.mobil3";
     static final String ANDROID = "http://schemas.android.com/apk/res/android";
     static final String PERMISSION = "android.permission.";
+    static final String TOOLS = "http://schemas.android.com/tools";
     static final String DYNAMIC = APP + ".DYNAMIC_RECEIVER_NOT_EXPORTED_PERMISSION";
     static final String SUBTYPE = "android.app.PROPERTY_SPECIAL_USE_FGS_SUBTYPE";
     static final Set<String> PERMISSIONS = Set.of(
-        "INTERNET", "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
+        "FOREGROUND_SERVICE", "FOREGROUND_SERVICE_MEDIA_PLAYBACK",
         "FOREGROUND_SERVICE_MEDIA_PROJECTION", "RECORD_AUDIO", "WAKE_LOCK",
         "SYSTEM_ALERT_WINDOW", "FOREGROUND_SERVICE_MICROPHONE",
         "FOREGROUND_SERVICE_SPECIAL_USE", "POST_NOTIFICATIONS", "BLUETOOTH_CONNECT", "BLUETOOTH"
@@ -123,8 +124,11 @@ class ManifestBoundary {
             switch (node.getTagName()) {
                 case "uses-permission", "uses-permission-sdk-23" -> {
                     boolean base = name.startsWith(PERMISSION) && PERMISSIONS.contains(name.substring(PERMISSION.length()));
-                    boolean dependency = merged && (name.equals(PERMISSION + "ACCESS_NETWORK_STATE") || name.equals(DYNAMIC));
-                    require(base || dependency, "Unapproved permission: " + name);
+                    // The source manifest strips the one network permission a dependency merges in.
+                    boolean removal = !merged && name.equals(PERMISSION + "ACCESS_NETWORK_STATE")
+                        && node.getAttributeNS(TOOLS, "node").equals("remove");
+                    boolean dependency = merged && name.equals(DYNAMIC);
+                    require(base || dependency || removal, "Unapproved permission: " + name);
                     require(permissions.add(name), "Duplicate permission: " + name);
                     if (name.equals(PERMISSION + "BLUETOOTH"))
                         require(attr(node, "maxSdkVersion").equals("30"), "Legacy BLUETOOTH must end at API 30");

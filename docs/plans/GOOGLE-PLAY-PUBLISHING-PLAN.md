@@ -1,6 +1,6 @@
 # Google Play publishing plan
 
-> **Scope addendum, 2026-11-13:** PC remote streaming (the relay, Tailscale hosts, geometry transport) was removed from the product on the `play-store` line; its code is kept at the tag `archive/remote-streaming-2026-11-13`. Every remote or relay item below is historical. The one remaining network use is the cover-art fetch during playback capture.
+> **Scope addendum, 2026-11-13:** PC remote streaming (the relay, Tailscale hosts, geometry transport) was removed from the product on the `play-store` line; its code is kept at the tag `archive/remote-streaming-2026-11-13`. Every remote or relay item below is historical. The `INTERNET` permission was dropped with it: the app makes no network requests.
 
 > **Product-alignment addendum, 2026-07-22:** This document still controls Google Play publication, commerce, privacy, and Console work. The broader product is now specified in `vision/` and `spec/`. Play and Fortress are separate compile-time distributions. Fortress-only agent, overlay, ADB/Shizuku, and privileged-audio work must be absent from the Play AAB. Any earlier first-release non-goal that conflicts with the new cabinet means “does not block initial Play submission,” not “must not be designed or built in Fortress.” The Play promises remain unchanged: no ads, seven full days, $3.99 one-time Pro, no auto-charge, no subscription, and minimal user-controlled diagnostics.
 

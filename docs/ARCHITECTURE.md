@@ -47,7 +47,7 @@ Playback audio and microphone audio are processed in memory. Phosphor does not r
 
 ### Network
 
-The app opens no socket of its own. The one network path is cover art: when a captured app's media session links its artwork by http(s), PlaybackService fetches that image. PC remote streaming was removed; its code is kept at the tag `archive/remote-streaming-2026-11-13`.
+The app declares no network permission and opens no socket. Cover art comes from the bitmap or local content link a captured app's media session provides; web art links are skipped. PC remote streaming was removed; its code is kept at the tag `archive/remote-streaming-2026-11-13`.
 
 ## State and migration
 
