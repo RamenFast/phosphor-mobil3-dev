@@ -743,6 +743,8 @@ fn configure(
         .find(|f| f.is_srgb())
         .copied()
         .unwrap_or(caps.formats[0]);
+    // What the driver offers, for the HDR question: a 16-bit float entry here is the door.
+    log::info!("surface formats offered: {:?}; using {:?}", caps.formats, format);
     let config = wgpu::SurfaceConfiguration {
         usage: wgpu::TextureUsages::RENDER_ATTACHMENT,
         format,

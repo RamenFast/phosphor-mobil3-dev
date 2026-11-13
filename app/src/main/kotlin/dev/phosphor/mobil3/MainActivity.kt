@@ -1006,6 +1006,8 @@ class MainActivity : ComponentActivity(), ScopeActions {
             putInt("hud_mode", ui.hudMode)
             putInt("band_mode", ui.bandMode)
             putBoolean("fullscreen", ui.fullscreen)
+            putBoolean(dev.phosphor.mobil3.ui.FixedBrightnessPolicy.KEY_ON, ui.fixedBrightness)
+            putFloat(dev.phosphor.mobil3.ui.FixedBrightnessPolicy.KEY_LEVEL, ui.fixedBrightnessLevel)
             putBoolean("linger_background", ui.lingerBackground)
             putBoolean("view_lock", ui.viewLock)
             putInt("custom_count", ui.customCount)
@@ -1093,6 +1095,17 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.hudMode = p.getInt("hud_mode", 1).coerceIn(0, 2)
         ui.bandMode = p.getInt("band_mode", 1)
         ui.fullscreen = p.getBoolean("fullscreen", true)
+        ui.fixedBrightness = p.getBoolean(
+            dev.phosphor.mobil3.ui.FixedBrightnessPolicy.KEY_ON,
+            dev.phosphor.mobil3.ui.FixedBrightnessPolicy.DEFAULT_ON,
+        )
+        ui.fixedBrightnessLevel = dev.phosphor.mobil3.ui.FixedBrightnessPolicy.level(
+            p.getFloat(
+                dev.phosphor.mobil3.ui.FixedBrightnessPolicy.KEY_LEVEL,
+                dev.phosphor.mobil3.ui.FixedBrightnessPolicy.DEFAULT_LEVEL,
+            )
+        )
+        applyFixedBrightness()
         ui.viewLock = p.getBoolean("view_lock", false)
         scopeRotationLockState = p.getBoolean("scope_rotation_locked", true)
         lockedScopeOrientation = p.getInt(
@@ -1332,6 +1345,35 @@ class MainActivity : ComponentActivity(), ScopeActions {
         ui.fullscreen = on
         prefs().edit { putBoolean("fullscreen", on) }
         applyImmersive()
+    }
+
+    // The window's brightness holds only while this window is in front; the phone's own
+    // setting (auto-brightness included) returns by itself when the app leaves.
+    private fun applyFixedBrightness() {
+        val value = dev.phosphor.mobil3.ui.FixedBrightnessPolicy.windowValue(
+            ui.fixedBrightness, ui.fixedBrightnessLevel,
+        )
+        val attributes = window.attributes
+        if (attributes.screenBrightness != value) {
+            attributes.screenBrightness = value
+            window.attributes = attributes
+        }
+    }
+
+    override fun setFixedBrightness(on: Boolean) {
+        ui.fixedBrightness = on
+        prefs().edit { putBoolean(dev.phosphor.mobil3.ui.FixedBrightnessPolicy.KEY_ON, on) }
+        applyFixedBrightness()
+    }
+
+    // Moving the slider takes over, like the other rules: it also turns the hold on.
+    override fun setFixedBrightnessLevel(level: Float) {
+        ui.fixedBrightnessLevel = dev.phosphor.mobil3.ui.FixedBrightnessPolicy.level(level)
+        if (!ui.fixedBrightness) {
+            setFixedBrightness(true)
+        } else {
+            applyFixedBrightness()
+        }
     }
 
     override fun isScopeRotationLocked(): Boolean = scopeRotationLockState

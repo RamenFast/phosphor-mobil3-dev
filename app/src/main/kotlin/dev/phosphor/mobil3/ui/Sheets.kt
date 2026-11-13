@@ -1128,6 +1128,20 @@ fun SettingsSheet(
         val display: @Composable () -> Unit = {
             SettingsSectionHeading("DISPLAY", SettingsGlyph.Display, p)
             ChipCell(
+                "FIXED BRIGHTNESS · " + if (state.fixedBrightness) "on" else "off",
+                active = state.fixedBrightness, p = p, small = true,
+            ) { actions.setFixedBrightness(!state.fixedBrightness) }
+            DragRule(
+                "BRIGHTNESS", state.fixedBrightnessLevel,
+                FixedBrightnessPolicy.MIN_LEVEL, FixedBrightnessPolicy.MAX_LEVEL, p,
+                { "%.0f %%".format(it * 100) },
+            ) { actions.setFixedBrightnessLevel(it) }
+            Prose(
+                "Holds the screen at this level while Phosphor is in front. Your phone's own " +
+                    "brightness, automatic or not, returns when you leave.",
+                p.muted, modifier = Modifier.padding(bottom = 6.dp),
+            )
+            ChipCell(
                 "CONTROLS ALWAYS VISIBLE · " + if (state.controlsAlwaysVisible) "on" else "off",
                 active = state.controlsAlwaysVisible, p = p, small = true,
             ) { actions.setControlsAlwaysVisible(!state.controlsAlwaysVisible) }
@@ -1377,6 +1391,8 @@ interface SheetActions {
     fun enterPictureInPicture()
     fun setDoubleTapPlayback(on: Boolean)
     fun setFullscreen(on: Boolean)
+    fun setFixedBrightness(on: Boolean)
+    fun setFixedBrightnessLevel(level: Float)
     fun setLingerBackground(on: Boolean)
     fun setViewLock(on: Boolean)
     fun isScopeRotationLocked(): Boolean

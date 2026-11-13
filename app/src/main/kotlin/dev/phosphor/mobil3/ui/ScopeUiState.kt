@@ -56,6 +56,8 @@ class ScopeUiState {
     var hudLine by mutableStateOf("")
     var bandMode by mutableIntStateOf(1)
     var fullscreen by mutableStateOf(true)
+    var fixedBrightness by mutableStateOf(FixedBrightnessPolicy.DEFAULT_ON)
+    var fixedBrightnessLevel by mutableFloatStateOf(FixedBrightnessPolicy.DEFAULT_LEVEL)
     var lingerBackground by mutableStateOf(false)
     var doubleTapPlayback by mutableStateOf(true)
     var pipAutoEnter by mutableStateOf(dev.phosphor.mobil3.PictureInPicturePolicy.DEFAULT)

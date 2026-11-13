@@ -83,6 +83,8 @@ object SettingsArchive {
         "hud_mode" to intRange(0, 2),
         "band_mode" to intRange(0, 2),
         "fullscreen" to Spec(Kind.BOOLEAN),
+        "fixed_brightness" to Spec(Kind.BOOLEAN),
+        "fixed_brightness_level" to floatRange(0.01f, 1f),
         "linger_background" to Spec(Kind.BOOLEAN),
         "double_tap_playback" to Spec(Kind.BOOLEAN),
         "controls_always_visible" to Spec(Kind.BOOLEAN),
