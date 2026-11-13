@@ -68,7 +68,8 @@ Console path: Monitor and improve, App content. Overview: https://support.google
   - point the in-app link at the dev URL
 
   Then give Console the same URL. The `ManualSheet.kt` change belongs to the code session (`20261101_174338_669df7`). Requirement: `docs/plans/DISTRIBUTION-PERMISSIONS-AND-SIGNING.md` section 6. Google's User Data policy: https://support.google.com/googleplay/android-developer/answer/10144311
-- [ ] Before publishing, check `PRIVACY.md` against this branch's manifest. It must cover the microphone, playback capture, the root capture service, notification-listener metadata, local files, and the remote relay. Spec section 6 lists the required topics.
+- [ ] Before publishing, check `PRIVACY.md` against this branch's manifest. It must cover the microphone, playback capture, the root capture service, notification-listener metadata and local files, and it must say the app makes no network requests (remote streaming and the internet permission were removed on 2026-11-13). Spec section 6 lists the required topics.
+- [ ] Later, before publishing: give the privacy policy a public address and point the in-app link at it. Today the "privacy policy" link in `ManualSheet.kt` opens `PRIVACY.md` on the stable repo's master, which does not exist there yet (404). Ben, 2026-11-13: the policy will be roughly "no data collection, GPLv3, do as you will"; candidates are the dev repo's file, a file in the main repo, or a small github.io page. Play Console also needs this address.
 - [ ] Data safety form, filled in from the exact release binary. Google requires it for every app on Google Play, including apps on closed, open, and production testing tracks. Ref: https://support.google.com/googleplay/android-developer/answer/10787469
 - [ ] Ads: No. App access: no login. Explain how a reviewer reaches each audio source.
 - [ ] Target audience and content: https://support.google.com/googleplay/android-developer/answer/9285070

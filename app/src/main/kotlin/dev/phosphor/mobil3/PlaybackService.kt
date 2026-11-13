@@ -64,6 +64,12 @@ class PlaybackService : MediaSessionService() {
     private val captureBinding = CaptureControllerBinding<PlatformMediaController>()
     private val externalCaptureController: PlatformMediaController? get() = captureBinding.current
     private var externalControllerCallback: PlatformMediaController.Callback? = null
+    private class CaptureWatch(
+        val controller: PlatformMediaController,
+        val callback: PlatformMediaController.Callback,
+        var rank: Int,
+    )
+    private val captureWatches = HashMap<android.media.session.MediaSession.Token, CaptureWatch>()
     private var captureTrackKey: String? = null
     private var captureArtwork: ByteArray? = null
     private var captureArtGeneration = 0
@@ -377,6 +383,7 @@ class PlaybackService : MediaSessionService() {
     }
 
     private fun unregisterCaptureSessionsListener() {
+        syncCaptureWatches(emptyList())
         if (captureSessionsListenerRegistered) {
             runCatching {
                 platformSessionManager.removeOnActiveSessionsChangedListener(activeSessionsChanged)
@@ -413,23 +420,62 @@ class PlaybackService : MediaSessionService() {
     }
 
     /**
-     * Never mirror Phosphor itself. Prefer PLAYING, then another active state, then a
-     * metadata-bearing session; retain the current controller on an exact tie.
+     * Watch every other app's session, not only the mirrored one: the system does not
+     * announce that a second app started playing, so without this the title stays on
+     * whichever app was mirrored first. Only a change of rank asks for a new choice.
+     */
+    private fun syncCaptureWatches(candidates: List<PlatformMediaController>) {
+        val live = candidates.map { it.sessionToken }.toSet()
+        for (token in captureWatches.keys.filter { it !in live }) {
+            captureWatches.remove(token)?.let { watch ->
+                runCatching { watch.controller.unregisterCallback(watch.callback) }
+            }
+        }
+        for (controller in candidates) {
+            val token = controller.sessionToken
+            val rank = CaptureSessionChoice.rank(
+                controller.playbackState?.state ?: PlatformPlaybackState.STATE_NONE
+            )
+            val watch = captureWatches[token]
+            if (watch != null) {
+                watch.rank = rank
+                continue
+            }
+            val callback = object : PlatformMediaController.Callback() {
+                override fun onPlaybackStateChanged(state: PlatformPlaybackState?) {
+                    val mine = captureWatches[token] ?: return
+                    val now = CaptureSessionChoice.rank(
+                        state?.state ?: PlatformPlaybackState.STATE_NONE
+                    )
+                    if (now == mine.rank) return
+                    mine.rank = now
+                    if (captureActive) refreshCaptureController()
+                }
+            }
+            if (runCatching { controller.registerCallback(callback, main) }.isSuccess) {
+                captureWatches[token] = CaptureWatch(controller, callback, rank)
+            }
+        }
+    }
+
+    /**
+     * Never mirror Phosphor itself. The choice is [CaptureSessionChoice]; the mirrored
+     * session is rebound only when the choice lands on a different session.
      */
     private fun chooseCaptureController(controllers: List<PlatformMediaController>) {
         val candidates = controllers.filter { it.packageName != packageName }
-        val chosen = candidates.maxWithOrNull(
-            compareBy<PlatformMediaController> {
-                it.playbackState?.state == PlatformPlaybackState.STATE_PLAYING
-            }.thenBy {
-                it.playbackState?.state in ACTIVE_PLATFORM_STATES
-            }.thenBy {
-                it.metadata != null
-            }.thenBy {
-                it.sessionToken == externalCaptureController?.sessionToken
-            }
+        syncCaptureWatches(candidates)
+        val currentToken = externalCaptureController?.sessionToken
+        val chosen = candidates.getOrNull(
+            CaptureSessionChoice.pick(candidates.map {
+                CaptureSessionChoice.Candidate(
+                    state = it.playbackState?.state ?: PlatformPlaybackState.STATE_NONE,
+                    hasMetadata = it.metadata != null,
+                    isCurrent = it.sessionToken == currentToken,
+                )
+            })
         )
-        if (chosen !== externalCaptureController) {
+        if (chosen?.sessionToken != currentToken) {
             AcceptanceTrace.record("capture_binding") {
                 "old=${System.identityHashCode(externalCaptureController)} new=${System.identityHashCode(chosen)}"
             }

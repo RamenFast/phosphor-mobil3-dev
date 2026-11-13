@@ -205,4 +205,55 @@ class CaptureMirrorPolicyTest {
         assertTrue(console.contains("if (hasTransport && (!capture || state.captureCanPrevious))"))
         assertTrue(console.contains("FlatKey(\"SRC\", p, designator = \"J1\", onClick = onSrc)"))
     }
+
+    private fun candidate(state: Int, metadata: Boolean = true, current: Boolean = false) =
+        CaptureSessionChoice.Candidate(state, metadata, current)
+
+    @Test fun thePlayingAppWinsOverThePausedAppAlreadyMirrored() {
+        // The S25 on 2026-11-13: VLC playing, YouTube paused and mirrored, two more paused.
+        val picked = CaptureSessionChoice.pick(listOf(
+            candidate(PlaybackState.STATE_PAUSED, current = true),
+            candidate(PlaybackState.STATE_PAUSED),
+            candidate(PlaybackState.STATE_PLAYING),
+            candidate(PlaybackState.STATE_PAUSED),
+        ))
+        assertEquals(2, picked)
+    }
+
+    @Test fun aFullTieKeepsTheMirroredAppAndOtherwiseTheSystemOrder() {
+        assertEquals(1, CaptureSessionChoice.pick(listOf(
+            candidate(PlaybackState.STATE_PAUSED),
+            candidate(PlaybackState.STATE_PAUSED, current = true),
+        )))
+        assertEquals(0, CaptureSessionChoice.pick(listOf(
+            candidate(PlaybackState.STATE_PAUSED),
+            candidate(PlaybackState.STATE_PAUSED),
+        )))
+        assertEquals(0, CaptureSessionChoice.pick(listOf(
+            candidate(PlaybackState.STATE_PLAYING),
+            candidate(PlaybackState.STATE_PLAYING, current = true, metadata = false),
+        )))
+        assertEquals(-1, CaptureSessionChoice.pick(emptyList()))
+    }
+
+    @Test fun playingOutranksBusyOutranksIdleAndPositionTicksDoNotChangeRank() {
+        assertEquals(2, CaptureSessionChoice.rank(PlaybackState.STATE_PLAYING))
+        assertEquals(1, CaptureSessionChoice.rank(PlaybackState.STATE_BUFFERING))
+        assertEquals(1, CaptureSessionChoice.rank(PlaybackState.STATE_SKIPPING_TO_NEXT))
+        for (state in listOf(PlaybackState.STATE_PAUSED, PlaybackState.STATE_STOPPED,
+            PlaybackState.STATE_NONE, PlaybackState.STATE_ERROR)) {
+            assertEquals(0, CaptureSessionChoice.rank(state))
+        }
+        assertEquals(1, CaptureSessionChoice.pick(listOf(
+            candidate(PlaybackState.STATE_PAUSED, current = true),
+            candidate(PlaybackState.STATE_BUFFERING, metadata = false),
+        )))
+    }
+
+    @Test fun captureWatchesEveryOtherSessionAndRebindsByToken() {
+        val service = File("src/main/kotlin/dev/phosphor/mobil3/PlaybackService.kt").readText()
+        assertTrue(service.contains("syncCaptureWatches(candidates)"))
+        assertTrue(service.contains("if (chosen?.sessionToken != currentToken) {"))
+        assertFalse(service.contains("chosen !== externalCaptureController"))
+    }
 }

@@ -32,6 +32,33 @@ internal object CaptureMirrorPolicy {
     }
 }
 
+/**
+ * Which other app's media session capture mirrors: the one playing wins, then a busy one
+ * (buffering, skipping), then one with metadata, then the one already mirrored. The
+ * system's own order (most recent first) settles a full tie.
+ */
+internal object CaptureSessionChoice {
+    data class Candidate(val state: Int, val hasMetadata: Boolean, val isCurrent: Boolean)
+
+    /** 2 = playing, 1 = busy, 0 = idle. A session is re-chosen only when this changes. */
+    fun rank(state: Int): Int = when {
+        state == PlaybackState.STATE_PLAYING -> 2
+        state in PlaybackService.ACTIVE_PLATFORM_STATES -> 1
+        else -> 0
+    }
+
+    /** Index of the session to mirror, or -1 when there is none. */
+    fun pick(candidates: List<Candidate>): Int {
+        var best = -1
+        for (index in candidates.indices) {
+            if (best < 0 || ORDER.compare(candidates[index], candidates[best]) > 0) best = index
+        }
+        return best
+    }
+
+    private val ORDER = compareBy<Candidate>({ rank(it.state) }, { it.hasMetadata }, { it.isCurrent })
+}
+
 /** A queued platform callback loses authority even when the same controller is later rebound. */
 internal class CaptureControllerBinding<T : Any> {
     var current: T? = null
