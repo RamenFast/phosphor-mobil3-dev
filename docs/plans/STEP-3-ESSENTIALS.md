@@ -8,34 +8,42 @@ Quotes are Ben's, 2026-11-13.
 
 ## Order
 
-1. Dim after returning to the app (bug)
-2. Fixed brightness
+1. Scope stays dim after SETTINGS closes (bug)
+2. Fixed brightness (done)
 3. More zoom, and a zoom dial
 4. "Open external player" button
 5. HDR beam (decided after a check that rides in the first build)
 
-## 1. Dim after returning to the app
+## 1. Scope stays dim after SETTINGS closes
 
 > there is a long standing bug when switching apps/opening settings, it's like the settings are
 > still open and the scope is dimmed until after like 3 seconds of the main screen being looked
 > at or a physical tap to restore the scope clarity/brightness.
 
-State: not reproduced. A home-and-back test with fullscreen off and controls always visible
-showed three equally bright screen grabs (before, 0.9 s after return, 5.9 s after).
+> When I open settings then go back to the scope, that scope brightness doesn't come back. I
+> think it's because of the settings menu lowering the scope brightness because of text
+> readability (the settings menu is partially transparant). Happens every time I open the
+> settings and go back to the scope, it's a bit laggy when returning.
 
-Leads, none proven:
+State: not reproduced with an idle scope; not yet tested with music running.
 
-- Fullscreen and auto-hiding controls both end "after a few seconds or on a tap", the same
-  clock as the bug. Both were off during the test.
-- The dark veil behind a sheet has no fade of its own. It is removed only when the sheet's
-  closing animation reports that it finished (`ui/Sheets.kt`, `SheetHost`).
+What is known:
+
+- An open sheet lays a dark veil (40 % black) over the scope. The veil has no fade of its own;
+  it is removed when the sheet's closing animation reports that it finished (`ui/Sheets.kt`,
+  `SheetHost`).
+- Measured on the S25 with no source playing: SETTINGS opened six times and closed by Back,
+  the close key, a tap outside and a drag. The veil was gone in the first screen grab after
+  each close (0.56 to 0.74 s later).
+- A plain home-and-back app switch showed no dimming either.
 
 Ruled out by reading: the keep-awake flag, the 1.2 s warm-up (it runs only when the renderer
 is first made), every timer in the Kotlin code except the 4 s controls timer.
 
-Next: reproduce with fullscreen on and auto-hiding controls, take a screen grab while it is
-dim. If the grab is dim, the cause is a layer the app draws. If the grab is normal, the cause
-is the display.
+Next: the same open-and-close measurement while a song is playing through capture. If the
+veil lingers there, give it its own fade tied to the sheet's exit and find what delays the
+"finished" report. If the grabs stay clear while the eye still sees dimming, the cause is in
+the trace or the display, not the veil.
 
 ## 2. Fixed brightness
 
